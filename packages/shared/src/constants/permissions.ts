@@ -20,6 +20,10 @@ export const DEFAULT_PERMISSION_KEYS = [
   'report.export',
   'user.manage',
   'role.manage',
+  'role.view',
+  'department.manage',
+  'position.manage',
+  'audit.view',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

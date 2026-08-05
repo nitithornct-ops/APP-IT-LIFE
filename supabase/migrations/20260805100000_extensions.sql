@@ -1,0 +1,2 @@
+-- gen_random_uuid() เป็นฟังก์ชันในตัวของ PostgreSQL ตั้งแต่เวอร์ชัน 13 ขึ้นไป (ซึ่ง Supabase ใช้)
+-- จึงไม่ต้องเปิด extension เพิ่มเพื่อสร้าง UUID สำหรับ Primary Key ของทุกตาราง

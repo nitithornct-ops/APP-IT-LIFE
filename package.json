@@ -5,7 +5,8 @@
   "description": "LIFE IT Smart Service Center — React + Cloudflare Workers + Supabase monorepo",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "supabase"
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace=apps/web",
