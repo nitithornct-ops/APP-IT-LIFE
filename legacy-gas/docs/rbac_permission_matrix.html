@@ -1,0 +1,45 @@
+<style>
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.pm-wrap{padding:0.5rem 0}
+table.pm{width:100%;border-collapse:collapse;font-size:14px}
+table.pm th,table.pm td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--color-border-tertiary)}
+table.pm thead th{font-weight:500;color:var(--color-text-secondary);font-size:13px;border-bottom:1px solid var(--color-border-secondary)}
+table.pm td.mod,table.pm th.mod{text-align:left;font-weight:400;color:var(--color-text-primary);white-space:nowrap}
+table.pm tbody tr:nth-child(even){background:var(--color-background-secondary)}
+.d{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:middle}
+.m{background:var(--color-text-info)}
+.v{border:1.5px solid var(--color-border-primary);background:transparent}
+.n{color:var(--color-text-tertiary)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--color-text-secondary);align-items:center}
+.legend span.d{margin-right:6px}
+</style>
+<div class="pm-wrap">
+<h2 class="sr-only">ตารางสิทธิ์การเข้าถึงแต่ละโมดูลแยกตามบทบาทผู้ใช้ห้าบทบาท</h2>
+<table class="pm">
+<thead>
+<tr><th class="mod">โมดูล</th><th>ผู้ดูแลระบบ</th><th>หัวหน้า</th><th>ช่าง</th><th>จนท. ISMS</th><th>ผู้แจ้ง</th></tr>
+</thead>
+<tbody>
+<tr><td class="mod">แจ้งซ่อม (Help Desk)</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d v"></span></td></tr>
+<tr><td class="mod">ครุภัณฑ์</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">ยืม-คืน</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="d v"></span></td></tr>
+<tr><td class="mod">Knowledge Base</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="d v"></span></td></tr>
+<tr><td class="mod">License</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">บำรุงรักษา (PM)</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">ความเสี่ยง (Risk)</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">นโยบาย (Policy)</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">เหตุภัยคุกคาม (Incident)</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">Compliance</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">BCP / DRP</td><td><span class="d m"></span></td><td><span class="d v"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">Dashboard / รายงาน</td><td><span class="d m"></span></td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">Audit Log</td><td><span class="d m"></span></td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="d m"></span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">จัดการผู้ใช้</td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="n">–</span></td><td><span class="n">–</span></td><td><span class="n">–</span></td></tr>
+<tr><td class="mod">ตั้งค่าระบบ</td><td><span class="d m"></span></td><td><span class="n">–</span></td><td><span class="n">–</span></td><td><span class="n">–</span></td><td><span class="n">–</span></td></tr>
+</tbody>
+</table>
+<div class="legend">
+<span><span class="d m"></span>จัดการ / ดำเนินการได้</span>
+<span><span class="d v"></span>ดู / สิทธิ์จำกัด</span>
+<span><span class="n" style="margin-right:6px">–</span>ไม่มีสิทธิ์</span>
+</div>
+</div>

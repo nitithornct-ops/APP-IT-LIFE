@@ -1,0 +1,189 @@
+﻿<!-- AccessControl.html — หน้าจอบริหารสิทธิ์การเข้าถึง (include_ ใน Index) -->
+<script>
+  var AC_DATA = null;
+
+  function renderAccess(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getAccessModuleData').then(function (d) {
+      AC_DATA = d;
+      var isIT = d.role === 'ITAdmin';
+      var isApprover = d.role === 'Approver' || isIT;
+      var html = '<h3 class="text-primary mb-3">การบริหารสิทธิ์การเข้าถึงระบบ</h3>';
+      html += acDashboard(d);
+
+      // แท็บ
+      html += '<ul class="nav nav-tabs mb-3" role="tablist">';
+      html += acTab('req', 'ยื่นคำขอ', true);
+      html += acTab('mine', 'คำขอของฉัน (' + d.myRequests.length + ')', false);
+      if (isApprover) html += acTab('approve', 'รออนุมัติ (' + d.pendingApprovals.length + ')', false);
+      if (isIT) html += acTab('it', 'รอไอทีดำเนินการ (' + d.pendingIT.length + ')', false);
+      if (isIT) html += acTab('reg', 'ทะเบียนสิทธิ์ (' + d.registry.length + ')', false);
+      if (isIT) html += acTab('hr', 'พ้นสภาพ', false);
+      html += '</ul><div class="tab-content">';
+
+      // ฟอร์มยื่นคำขอ
+      html += '<div class="tab-pane fade show active" id="ac-req">' + acFormHtml(d) + '</div>';
+      html += '<div class="tab-pane fade" id="ac-mine">' + acReqTable(d.myRequests, false) + '</div>';
+      if (isApprover) html += '<div class="tab-pane fade" id="ac-approve">' + acReqTable(d.pendingApprovals, 'approve') + '</div>';
+      if (isIT) html += '<div class="tab-pane fade" id="ac-it">' + acReqTable(d.pendingIT, 'it') + '</div>';
+      if (isIT) html += '<div class="tab-pane fade" id="ac-reg">' + acRegTable(d.registry) + '</div>';
+      if (isIT) html += '<div class="tab-pane fade" id="ac-hr">' + acHrHtml() + '</div>';
+      html += '</div>';
+
+      container.innerHTML = html;
+    });
+  }
+
+  function acDashboard(d) {
+    var active = (d.registry || []).filter(function (r) { return String(r.status).toLowerCase() === 'active'; }).length;
+    var due = (d.registry || []).filter(function (r) { return r.reviewDays !== null && r.reviewDays <= 30 && String(r.status).toLowerCase() === 'active'; }).length;
+    return moduleDashboard([
+      mdStat('คำขอของฉัน', d.myRequests.length, 'bi-person-lines-fill', 'blue'),
+      mdStat('รอหัวหน้าอนุมัติ', d.pendingApprovals.length, 'bi-person-check', d.pendingApprovals.length ? 'amber' : 'gray'),
+      mdStat('รอ IT ดำเนินการ', d.pendingIT.length, 'bi-tools', d.pendingIT.length ? 'amber' : 'gray'),
+      mdStat('สิทธิ์ Active', active || '-', 'bi-key', due ? 'danger' : 'teal', due ? 'ใกล้/เลยรอบทบทวน ' + due : '')
+    ]);
+  }
+
+  function acTab(key, label, active) {
+    return '<li class="nav-item"><button class="nav-link' + (active ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#ac-' + key + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+
+  function acFormHtml(d) {
+    var opts = d.systems.map(function (s) { return '<option>' + escapeHtmlJs(s) + '</option>'; }).join('');
+    return '<div class="card stat-card"><div class="card-body" style="max-width:680px">' +
+      '<div class="mb-3"><label class="form-label">ระบบงานที่ขอสิทธิ์ *</label>' +
+      '<select id="ac-system" class="form-select"><option value="">-- เลือกระบบงาน --</option>' + opts + '</select></div>' +
+      '<div class="mb-3"><label class="form-label">ระดับสิทธิ์ *</label>' +
+      '<select id="ac-level" class="form-select"><option value="">-- เลือก --</option>' +
+      '<option value="Standard">Standard (ผู้ใช้งานทั่วไป)</option><option value="Admin">Admin (ผู้ดูแล)</option></select></div>' +
+      '<div class="mb-3"><label class="form-label">ประเภทคำขอ</label>' +
+      '<select id="ac-type" class="form-select"><option value="ขอเพิ่มสิทธิ์">ขอเพิ่มสิทธิ์</option>' +
+      '<option value="เพิกถอนสิทธิ์">เพิกถอนสิทธิ์</option></select></div>' +
+      '<div class="mb-3"><label class="form-label">เหตุผล/ความจำเป็น *</label>' +
+      '<textarea id="ac-reason" class="form-control" rows="3"></textarea></div>' +
+      '<button class="btn btn-primary" onclick="acSubmit()">ส่งคำขอ</button>' +
+      '</div></div>';
+  }
+
+  function acSubmit() {
+    var form = {
+      system: document.getElementById('ac-system').value,
+      level: document.getElementById('ac-level').value,
+      type: document.getElementById('ac-type').value,
+      reason: document.getElementById('ac-reason').value
+    };
+    callServer('submitAccessRequest', form).then(function (msg) {
+      toast(msg, 'success'); loadModule('access');
+    });
+  }
+
+  function acReqTable(rows, mode) {
+    if (!rows.length) return '<div class="alert alert-secondary">ไม่มีรายการ</div>';
+    var th = '<tr><th>เลขที่</th><th>ผู้ขอ</th><th>ระบบ/ระดับ</th><th>ประเภท</th><th>สถานะ</th><th>วันที่</th>';
+    if (mode) th += '<th>ดำเนินการ</th>';
+    th += '</tr>';
+    var body = rows.map(function (r) {
+      var act = '';
+      if (mode === 'approve') {
+        act = '<button class="btn btn-sm btn-success me-1" onclick="acApprove(\'' + r.reqId + '\',true)">อนุมัติ</button>' +
+          '<button class="btn btn-sm btn-outline-danger" onclick="acApprove(\'' + r.reqId + '\',false)">ปฏิเสธ</button>';
+      } else if (mode === 'it') {
+        act = '<button class="btn btn-sm btn-primary me-1" onclick="acIT(\'' + r.reqId + '\',true)">ดำเนินการแล้ว</button>' +
+          '<button class="btn btn-sm btn-outline-secondary" onclick="acIT(\'' + r.reqId + '\',false)">ไม่สำเร็จ</button>';
+      }
+      return '<tr><td>' + escapeHtmlJs(r.reqId) + '</td><td>' + escapeHtmlJs(r.requester) + '</td>' +
+        '<td>' + escapeHtmlJs(r.system) + ' / ' + escapeHtmlJs(r.level) + '</td><td>' + escapeHtmlJs(r.type) + '</td>' +
+        '<td>' + escapeHtmlJs(r.status) + '</td><td>' + escapeHtmlJs(r.requestDate) + '</td>' +
+        (mode ? '<td>' + act + '</td>' : '') + '</tr>';
+    }).join('');
+    return '<div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead>' +
+      th + '</thead><tbody>' + body + '</tbody></table></div></div>';
+  }
+
+  function acApprove(reqId, ok) {
+    if (ok) {
+      showConfirm('ยืนยันอนุมัติคำขอสิทธิ์ ' + reqId + '?', function () {
+        callServer('approveAccessRequest', reqId, true, '').then(function (m) { toast(m); loadModule('access'); });
+      }, { title: 'อนุมัติคำขอสิทธิ์', okLabel: 'อนุมัติ' });
+      return;
+    }
+    showFormModal({
+      title: 'ปฏิเสธคำขอสิทธิ์',
+      submitLabel: 'บันทึกการปฏิเสธ',
+      fields: [{ id: 'comment', label: 'เหตุผลการปฏิเสธ', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('approveAccessRequest', reqId, false, v.comment)
+          .then(function (m) { toast(m); loadModule('access'); });
+      }
+    });
+  }
+  function acIT(reqId, ok) {
+    showFormModal({
+      title: ok ? 'บันทึกผลดำเนินการสิทธิ์' : 'บันทึกเหตุผลที่ไม่สำเร็จ',
+      submitLabel: ok ? 'บันทึกว่าสำเร็จ' : 'บันทึกว่าไม่สำเร็จ',
+      fields: [{
+        id: 'notes',
+        label: ok ? 'หมายเหตุการดำเนินการ' : 'เหตุผลที่ไม่สำเร็จ',
+        type: 'textarea',
+        rows: 3,
+        required: !ok
+      }],
+      onSubmit: function (v) {
+        return callServer('itProcessAccessRequest', reqId, ok, v.notes || '')
+          .then(function (m) { toast(m); loadModule('access'); });
+      }
+    });
+  }
+
+  function acRegTable(rows) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีสิทธิ์ในทะเบียน</div>';
+    var body = rows.map(function (r) {
+      var due = r.reviewDays === null ? '-' :
+        (r.reviewDays < 0 ? '<span class="overdue">เลย ' + Math.abs(r.reviewDays) + ' วัน</span>' :
+          (r.reviewDays <= 30 ? '<span class="soon">' + r.reviewDays + ' วัน</span>' : r.reviewDays + ' วัน'));
+      var act = String(r.status).toLowerCase() === 'active' ?
+        ('<button class="btn btn-sm btn-outline-success me-1" onclick="acReview(\'' + r.accessId + '\')">ทบทวน</button>' +
+          '<button class="btn btn-sm btn-outline-danger" onclick="acRevoke(\'' + r.accessId + '\')">เพิกถอน</button>') : '';
+      return '<tr><td>' + escapeHtmlJs(r.userName) + '<br><small class="text-muted">' + escapeHtmlJs(r.userEmail) +
+        '</small></td><td>' + escapeHtmlJs(r.system) + '</td><td>' + escapeHtmlJs(r.level) + '</td>' +
+        '<td>' + escapeHtmlJs(r.status) + '</td><td>' + escapeHtmlJs(r.nextReview) + '<br>' + due + '</td>' +
+        '<td>' + act + '</td></tr>';
+    }).join('');
+    return '<div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead>' +
+      '<tr><th>ผู้ใช้</th><th>ระบบ</th><th>ระดับ</th><th>สถานะ</th><th>ทบทวนถัดไป</th><th>ดำเนินการ</th></tr>' +
+      '</thead><tbody>' + body + '</tbody></table></div></div>';
+  }
+  function acReview(id) { callServer('reviewAccessEntry', id).then(function (m) { toast(m); loadModule('access'); }); }
+  function acRevoke(id) {
+    showFormModal({
+      title: 'เพิกถอนสิทธิ์',
+      submitLabel: 'เพิกถอน',
+      fields: [{ id: 'reason', label: 'เหตุผลการเพิกถอน', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('revokeAccessEntry', id, v.reason)
+          .then(function (m) { toast(m); loadModule('access'); });
+      }
+    });
+  }
+
+  function acHrHtml() {
+    return '<div class="card stat-card"><div class="card-body" style="max-width:560px">' +
+      '<h6 class="text-danger">ระงับสิทธิ์ผู้พ้นสภาพพนักงาน</h6>' +
+      '<p class="small text-muted">ใช้เมื่อ HR แจ้งพ้นสภาพ — จะตั้งบัญชีเป็น Inactive และระงับทุกสิทธิ์ในทะเบียน</p>' +
+      '<div class="mb-2"><label class="form-label">อีเมลพนักงาน</label>' +
+      '<input id="ac-hr-email" type="email" class="form-control"></div>' +
+      '<div class="mb-2"><label class="form-label">เหตุผล/อ้างอิง</label>' +
+      '<input id="ac-hr-reason" class="form-control"></div>' +
+      '<button class="btn btn-danger" onclick="acDeactivate()">ระงับสิทธิ์ทั้งหมด</button></div></div>';
+  }
+  function acDeactivate() {
+    var email = document.getElementById('ac-hr-email').value;
+    var reason = document.getElementById('ac-hr-reason').value;
+    if (!email) { toast('กรุณากรอกอีเมลพนักงาน', 'warning'); return; }
+    showConfirm('ยืนยันระงับสิทธิ์ของ ' + email + '?', function () {
+      callServer('deactivateEmployee', email, reason).then(function (m) { toast(m); loadModule('access'); });
+    }, { title: 'ระงับสิทธิ์ผู้พ้นสภาพ', okLabel: 'ระงับสิทธิ์', danger: true });
+  }
+</script>

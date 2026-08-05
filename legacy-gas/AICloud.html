@@ -1,0 +1,149 @@
+﻿<!-- AICloud.html — ทะเบียนเครื่องมือ AI และระบบ Cloud (สองเมนูใช้ไฟล์ร่วมกัน) -->
+<script>
+  // ===== AI =====
+  function renderAI(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getAIModuleData').then(function (d) {
+      var e = d.canEdit;
+      var html = '<h3 class="text-primary mb-3">ทะเบียนเครื่องมือ AI ที่อนุญาต</h3>';
+      html += aiDashboard(d);
+      if (e) {
+        html += '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มเครื่องมือ AI</h6><div class="row g-2">' +
+          fld('ai-name', 'ชื่อเครื่องมือ *', 'text', 'col-md-4') +
+          fld('ai-vendor', 'ผู้ให้บริการ', 'text', 'col-md-4') +
+          fld('ai-owner', 'ผู้รับผิดชอบ', 'text', 'col-md-4') +
+          textareaFld('ai-purpose', 'วัตถุประสงค์ *', 2, 'col-md-12') +
+          textareaFld('ai-allowed', 'ประเภทข้อมูลที่อนุญาต', 2, 'col-md-6') +
+          textareaFld('ai-prohibited', 'ประเภทข้อมูลที่ห้ามใช้', 2, 'col-md-6') +
+          fld('ai-approval', 'อ้างอิงการอนุมัติ', 'text', 'col-md-12') +
+          '</div><button class="btn btn-primary mt-3" onclick="aiSave()">บันทึก</button></div></div>';
+      }
+      html += '<div class="alert alert-info small">ช่องทางรายงานเหตุผิดปกติจากการใช้ AI: แจ้งผ่านเมนู "การบริหารจัดการเหตุการณ์"</div>';
+      html += aiTable(d.items, e);
+      container.innerHTML = html;
+    });
+  }
+  function aiDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.items)) d.items = [];
+    var allowed = 0, suspended = 0;
+    d.items.forEach(function (r) {
+      if (r.status === 'อนุญาต') allowed++;
+      if (r.status === 'ระงับ') suspended++;
+    });
+    return moduleDashboard([
+      mdStat('เครื่องมือทั้งหมด', d.items.length, 'bi-robot', 'blue'),
+      mdStat('อนุญาตใช้งาน', allowed, 'bi-check-circle', 'teal'),
+      mdStat('ระงับ', suspended, 'bi-pause-circle', suspended ? 'amber' : 'gray'),
+      mdStat('ช่องทางรายงาน', 'Incident', 'bi-exclamation-triangle', 'blue')
+    ]);
+  }
+  function aiSave() {
+    var form = { name: val('ai-name'), vendor: val('ai-vendor'), owner: val('ai-owner'),
+      purpose: val('ai-purpose'), allowed: val('ai-allowed'), prohibited: val('ai-prohibited'), approvalRef: val('ai-approval') };
+    callServer('addAITool', form).then(function (m) { toast(m); loadModule('ai'); });
+  }
+  function aiTable(rows, e) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีเครื่องมือ AI</div>';
+    var body = rows.map(function (r) {
+      var act = e ? statusToggle('ai', r.id, r.status, r.name) : '';
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.purpose || '') + '</td>' +
+        '<td>' + escapeHtmlJs(r.allowed || '') + '</td><td>' + escapeHtmlJs(r.prohibited || '') + '</td>' +
+        '<td>' + statusBadge(r.status) + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>เครื่องมือ</th><th>วัตถุประสงค์</th><th>ข้อมูลที่อนุญาต</th><th>ห้ามใช้</th><th>สถานะ</th><th></th></tr>', body);
+  }
+
+  // ===== Cloud =====
+  function renderCloud(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getCloudModuleData').then(function (d) {
+      var e = d.canEdit;
+      var html = '<h3 class="text-primary mb-3">ทะเบียนระบบ Cloud ที่อนุญาต</h3>';
+      html += clDashboard(d);
+      if (e) {
+        var cls = d.classifications.map(function (c) { return '<option>' + c + '</option>'; }).join('');
+        html += '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มระบบ Cloud</h6><div class="row g-2">' +
+          fld('cl-name', 'ชื่อบริการ *', 'text', 'col-md-4') +
+          fld('cl-provider', 'ผู้ให้บริการ *', 'text', 'col-md-4') +
+          sel('cl-class', 'ระดับข้อมูลที่จัดเก็บได้', cls, 'col-md-4') +
+          textareaFld('cl-purpose', 'วัตถุประสงค์', 2, 'col-md-6') +
+          fld('cl-owner', 'ผู้รับผิดชอบ', 'text', 'col-md-3') +
+          fld('cl-expiry', 'สัญญาหมดอายุ', 'date', 'col-md-3') +
+          textareaFld('cl-backup', 'การสำรองข้อมูล', 2, 'col-md-6') +
+          textareaFld('cl-exit', 'แผนถ่ายโอน/ยกเลิก (Exit Plan)', 2, 'col-md-6') +
+          fld('cl-approval', 'อ้างอิงการอนุมัติ', 'text', 'col-md-12') +
+          '</div><button class="btn btn-primary mt-3" onclick="clSave()">บันทึก</button></div></div>';
+      }
+      html += clTable(d.items, e);
+      container.innerHTML = html;
+    });
+  }
+  function clDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.items)) d.items = [];
+    var allowed = 0, suspended = 0, expiring = 0;
+    d.items.forEach(function (r) {
+      if (r.status === 'อนุญาต') allowed++;
+      if (r.status === 'ระงับ') suspended++;
+      if (r.expiryDays !== null && r.expiryDays >= 0 && r.expiryDays <= 30 && r.status !== 'ยกเลิกใช้งาน') expiring++;
+    });
+    return moduleDashboard([
+      mdStat('ระบบ Cloud', d.items.length, 'bi-cloud', 'blue'),
+      mdStat('อนุญาต', allowed, 'bi-check-circle', 'teal'),
+      mdStat('ระงับ', suspended, 'bi-pause-circle', suspended ? 'amber' : 'gray'),
+      mdStat('สัญญาใกล้หมด', expiring, 'bi-calendar-event', expiring ? 'amber' : 'gray')
+    ]);
+  }
+  function clSave() {
+    var form = { name: val('cl-name'), provider: val('cl-provider'), allowedClass: val('cl-class'),
+      purpose: val('cl-purpose'), owner: val('cl-owner'), expiry: val('cl-expiry'),
+      backup: val('cl-backup'), exitPlan: val('cl-exit'), approvalRef: val('cl-approval') };
+    callServer('addCloudService', form).then(function (m) { toast(m); loadModule('cloud'); });
+  }
+  function clTable(rows, e) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีระบบ Cloud</div>';
+    var body = rows.map(function (r) {
+      var exp = r.expiry ? (r.expiryDays !== null && r.expiryDays < 0 ? '<span class="overdue">' + r.expiry + '</span>' :
+        (r.expiryDays !== null && r.expiryDays <= 30 ? '<span class="soon">' + r.expiry + '</span>' : r.expiry)) : '-';
+      var act = e ? statusToggle('cloud', r.id, r.status, r.name) : '';
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.provider) + '</td>' +
+        '<td>' + escapeHtmlJs(r.allowedClass || '') + '</td><td>' + escapeHtmlJs(r.exitPlan || '') + '</td>' +
+        '<td>' + exp + '</td><td>' + statusBadge(r.status) + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>บริการ</th><th>ผู้ให้บริการ</th><th>ระดับข้อมูล</th><th>Exit Plan</th><th>หมดสัญญา</th><th>สถานะ</th><th></th></tr>', body);
+  }
+
+  // ===== ร่วม =====
+  function statusBadge(s) {
+    var c = s === 'อนุญาต' ? 'success' : (s === 'ระงับ' ? 'warning' : 'secondary');
+    return '<span class="badge bg-' + c + '">' + escapeHtmlJs(s) + '</span>';
+  }
+  function statusToggle(kind, id, status, name) {
+    var btn;
+    if (kind === 'ai') {
+      var next = status === 'อนุญาต' ? 'ระงับ' : 'อนุญาต';
+      btn = '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="aiStatus(\'' + id + '\',\'' + next + '\')">' + next + '</button>';
+    } else {
+      btn = '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="clStatusMenu(\'' + id + '\')">เปลี่ยนสถานะ</button>';
+    }
+    return btn + deleteBtn(kind, id, name || id);
+  }
+  function aiStatus(id, status) { callServer('setAIStatus', id, status).then(function (m) { toast(m); loadModule('ai'); }); }
+  function clStatusMenu(id) {
+    showFormModal({
+      title: 'เปลี่ยนสถานะระบบ Cloud',
+      submitLabel: 'บันทึกสถานะ',
+      fields: [{
+        id: 'status',
+        label: 'สถานะใหม่',
+        type: 'select',
+        value: 'ระงับ',
+        required: true,
+        options: ['อนุญาต', 'ระงับ', 'ยกเลิกใช้งาน']
+      }],
+      onSubmit: function (v) {
+        return callServer('setCloudStatus', id, v.status)
+          .then(function (m) { toast(m); loadModule('cloud'); });
+      }
+    });
+  }
+</script>

@@ -1,0 +1,108 @@
+﻿<!-- Logging.html — Logging & Monitoring Register (include_ ใน Index) -->
+<script>
+  var LG_DATA = null;
+
+  function renderLogging(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getLoggingModuleData').then(function (d) {
+      LG_DATA = d;
+      var e = d.canEdit;
+      var html = '<h3 class="text-primary mb-3">Logging &amp; Monitoring</h3>';
+      html += lgDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3">' +
+        lgTab('reg', 'ทะเบียนระบบ Log (' + d.register.length + ')', true) +
+        lgTab('rev', 'บันทึกการตรวจสอบ (' + d.reviews.length + ')', false) + '</ul>';
+      html += '<div class="tab-content">';
+      html += '<div class="tab-pane fade show active" id="lg-reg">' + (e ? lgRegForm(d) : '') + lgRegTable(d.register) + '</div>';
+      html += '<div class="tab-pane fade" id="lg-rev">' + (e ? lgRevForm(d) : '') + lgRevTable(d.reviews) + '</div>';
+      html += '</div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function lgDashboard(d) {
+    var due = d.register.filter(function (r) { return r.reviewDays !== null && r.reviewDays <= 7; }).length;
+    var anomalies = d.reviews.filter(function (r) { return r.anomaly === 'Yes'; }).length;
+    return moduleDashboard([
+      mdStat('ระบบในทะเบียน', d.register.length, 'bi-journal-text', 'blue'),
+      mdStat('ถึงรอบตรวจ', due, 'bi-calendar-event', due ? 'amber' : 'gray'),
+      mdStat('บันทึกตรวจสอบ', d.reviews.length, 'bi-clipboard-check', 'blue'),
+      mdStat('Anomaly', anomalies, 'bi-exclamation-triangle', anomalies ? 'danger' : 'teal')
+    ]);
+  }
+
+  function lgTab(k, label, a) {
+    return '<li class="nav-item"><button class="nav-link' + (a ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#lg-' + k + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+
+  function lgRegForm(d) {
+    var freq = d.frequencies.map(function (f) { return '<option>' + f + '</option>'; }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>ลงทะเบียนระบบที่ต้องบันทึก Log</h6>' +
+      '<div class="row g-2">' +
+      fld('lg-system', 'ระบบงาน *', 'text', 'col-md-4') +
+      fld('lg-type', 'ประเภท Log', 'text', 'col-md-4') +
+      sel('lg-freq', 'ความถี่ตรวจสอบ *', freq, 'col-md-4') +
+      fld('lg-loc', 'ที่จัดเก็บ Log', 'text', 'col-md-5') +
+      fld('lg-resp', 'ผู้รับผิดชอบ', 'text', 'col-md-4') +
+      fld('lg-ret', 'ระยะเก็บรักษา', 'text', 'col-md-3') +
+      '</div><button class="btn btn-primary mt-3" onclick="lgRegSave()">บันทึก</button></div></div>';
+  }
+  function lgRegSave() {
+    var form = { system: val('lg-system'), logType: val('lg-type'), frequency: val('lg-freq'),
+      location: val('lg-loc'), responsible: val('lg-resp'), retention: val('lg-ret') };
+    callServer('addLogSystem', form).then(function (m) { toast(m); loadModule('logging'); });
+  }
+  function lgRegTable(rows) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีระบบในทะเบียน</div>';
+    var body = rows.map(function (r) {
+      var due = r.reviewDays === null ? '-' : (r.reviewDays < 0 ?
+        '<span class="overdue">เลย ' + Math.abs(r.reviewDays) + ' วัน</span>' :
+        (r.reviewDays <= 7 ? '<span class="soon">' + r.reviewDays + ' วัน</span>' : r.reviewDays + ' วัน'));
+      return '<tr><td>' + escapeHtmlJs(r.system) + '</td><td>' + escapeHtmlJs(r.logType) + '</td>' +
+        '<td>' + escapeHtmlJs(r.frequency) + '</td><td>' + escapeHtmlJs(r.responsible) + '</td>' +
+        '<td>' + escapeHtmlJs(r.lastReview || '-') + '</td><td>' + escapeHtmlJs(r.nextReview) + ' ' + due + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>ระบบ</th><th>ประเภท</th><th>ความถี่</th><th>ผู้รับผิดชอบ</th><th>ตรวจล่าสุด</th><th>ครั้งถัดไป</th></tr>', body);
+  }
+
+  function lgRevForm(d) {
+    var sysOpts = d.register.map(function (r) {
+      return '<option value="' + escapeHtmlJs(r.id) + '">' + escapeHtmlJs(r.system) + ' (' + escapeHtmlJs(r.frequency) + ')</option>';
+    }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>บันทึกผลการตรวจสอบ Log</h6>' +
+      '<div class="row g-2">' +
+      sel('lr-sys', 'ระบบ *', sysOpts, 'col-md-5') +
+      fld('lr-date', 'วันที่ตรวจ *', 'date', 'col-md-3') +
+      fld('lr-period', 'รอบ/ช่วงที่ตรวจ *', 'text', 'col-md-4') +
+      '<div class="col-md-4"><label class="form-label">พบความผิดปกติ?</label>' +
+      '<select id="lr-anom" class="form-select" onchange="document.getElementById(\'lr-anom-box\').style.display=this.value===\'yes\'?\'block\':\'none\'">' +
+      '<option value="no">ไม่พบ (ปกติ)</option><option value="yes">พบ Anomaly</option></select></div>' +
+      fileFld('lr-file', 'หลักฐาน', 'col-md-8') +
+      '<div class="col-12" id="lr-anom-box" style="display:none">' +
+      '<div class="row g-2">' +
+      textareaFld('lr-anom-detail', 'รายละเอียดความผิดปกติ', 2, 'col-md-6') +
+      textareaFld('lr-action', 'การดำเนินการ', 2, 'col-md-6') +
+      '</div></div>' +
+      '</div><button class="btn btn-primary mt-3" onclick="lgRevSave()">บันทึก</button></div></div>';
+  }
+  function lgRevSave() {
+    var form = { logSysId: val('lr-sys'), date: val('lr-date'), period: val('lr-period'),
+      anomaly: val('lr-anom'), anomalyDetail: val('lr-anom-detail'), action: val('lr-action') };
+    uploadIfAny('lr-file', 'logging').then(function (url) {
+      form.evidence = url;
+      callServer('addLogReview', form).then(function (m) { toast(m); loadModule('logging'); });
+    });
+  }
+  function lgRevTable(rows) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีบันทึกการตรวจสอบ</div>';
+    var body = rows.map(function (r) {
+      var an = r.anomaly === 'Yes' ? '<span class="overdue">พบ</span>' : '<span class="text-success">ไม่พบ</span>';
+      return '<tr><td>' + escapeHtmlJs(r.date) + '</td><td>' + escapeHtmlJs(r.system) + '</td>' +
+        '<td>' + escapeHtmlJs(r.period) + '</td><td>' + an + '</td>' +
+        '<td>' + escapeHtmlJs(r.anomalyDetail || '') + '</td><td>' + escapeHtmlJs(r.status) + '</td>' +
+        '<td>' + (r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : '') + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>วันที่</th><th>ระบบ</th><th>รอบ</th><th>Anomaly</th><th>รายละเอียด</th><th>สถานะ</th><th></th></tr>', body);
+  }
+</script>

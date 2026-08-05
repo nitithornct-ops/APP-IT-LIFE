@@ -1,0 +1,106 @@
+﻿<!-- Vendor.html — ทะเบียนผู้ให้บริการ / สัญญา -->
+<script>
+  var VENDOR_DATA = null;
+
+  function renderVendor(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getVendorModuleData').then(function (d) {
+      VENDOR_DATA = d;
+      var actions = d.canEdit
+        ? '<button class="btn btn-primary" onclick="vnOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่มผู้ให้บริการ</button>'
+        : '';
+      var html = pageHeader(
+        'ผู้ให้บริการ / สัญญา',
+        'ติดตามเจ้าของสัญญา ระดับความเสี่ยง เงื่อนไขสำคัญ และวันหมดอายุ',
+        actions,
+        'bi-buildings'
+      );
+      html += vnDashboard(d);
+      html += dataTable(vnTableCfg(d));
+      container.innerHTML = html;
+    });
+  }
+  function vnDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.vendors)) d.vendors = [];
+    var expiring = 0, expired = 0, active = 0;
+    d.vendors.forEach(function (r) {
+      if (String(r.status).toLowerCase() === 'active') active++;
+      if (r.expiryDays !== null) { if (r.expiryDays < 0) expired++; else if (r.expiryDays <= 30) expiring++; }
+    });
+    return moduleDashboard([
+      mdStat('ผู้ให้บริการทั้งหมด', d.vendors.length, 'bi-buildings', 'blue'),
+      mdStat('Active', active, 'bi-check-circle', 'teal'),
+      mdStat('สัญญาใกล้หมด', expiring, 'bi-calendar-event', expiring ? 'amber' : 'gray'),
+      mdStat('หมดสัญญาแล้ว', expired, 'bi-calendar-x', expired ? 'danger' : 'gray')
+    ]);
+  }
+  function vnExpHtml(r) {
+    var v = r.end || r.expiry; if (!v) return '-';
+    if (r.expiryDays !== null && r.expiryDays < 0) return '<span class="overdue">' + escapeHtmlJs(v) + '</span>';
+    if (r.expiryDays !== null && r.expiryDays <= 30) return '<span class="soon">' + escapeHtmlJs(v) + '</span>';
+    return escapeHtmlJs(v);
+  }
+  function vnTableCfg(d) {
+    return {
+      id: 'vendor', rows: d.vendors, empty: 'ยังไม่มีผู้ให้บริการ',
+      columns: [
+        { key: 'name', label: 'ผู้ให้บริการ', value: function (r) { return '<b>' + escapeHtmlJs(r.name) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.serviceType || '') + '</small>'; }, raw: function (r) { return (r.name || '') + ' ' + (r.serviceType || ''); } },
+        { key: 'contact', label: 'ผู้ติดต่อ', value: function (r) { return escapeHtmlJs(r.contact || '-') + (r.phone ? '<br><small class="text-muted">☎ ' + escapeHtmlJs(r.phone) + '</small>' : '') + (r.email ? '<br><small class="text-muted">' + escapeHtmlJs(r.email) + '</small>' : ''); }, raw: function (r) { return [r.contact, r.phone, r.email].join(' '); } },
+        { key: 'contractNo', label: 'เลขสัญญา', value: function (r) { return escapeHtmlJs(r.contractNo || '-'); } },
+        { key: 'start', label: 'เริ่มสัญญา', value: function (r) { return escapeHtmlJs(r.start || '-'); }, default: false },
+        { key: 'end', label: 'หมดสัญญา', value: vnExpHtml, raw: function (r) { return r.end || r.expiry || ''; } },
+        { key: 'assessment', label: 'ผลประเมิน', value: function (r) { return escapeHtmlJs(r.assessment || '-'); }, default: false },
+        { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status); } }
+      ],
+      filters: [
+        { key: 'serviceType', label: 'ประเภท', value: function (r) { return r.serviceType || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        var a = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="vnOpenForm(\'' + r.id + '\')">แก้ไข</button>';
+        a += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="vnAssess(\'' + r.id + '\')">ประเมิน</button>';
+        var next = String(r.status).toLowerCase() === 'active' ? 'Inactive' : 'Active';
+        a += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="vnStatus(\'' + r.id + '\',\'' + next + '\')">' + next + '</button>';
+        a += deleteBtn('vendor', r.id, r.name || r.id);
+        return a;
+      } : null
+    };
+  }
+  function vnFind(id) { return (VENDOR_DATA.vendors || []).filter(function (x) { return x.id === id; })[0]; }
+
+  function vnOpenForm(id) {
+    var d = VENDOR_DATA, r = id ? vnFind(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไข: ' + r.name) : 'เพิ่มผู้ให้บริการ', submitLabel: id ? 'อัปเดต' : 'บันทึก',
+      fields: [
+        { id: 'name', label: 'ชื่อผู้ให้บริการ', value: r.name, required: true, col: 'col-md-8' },
+        { id: 'serviceType', label: 'ประเภทบริการ', type: 'select', options: d.serviceTypes, value: r.serviceType, col: 'col-md-4' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: d.statuses, value: r.status || 'Active', placeholder: false, col: 'col-md-4' },
+        { id: 'contractNo', label: 'เลขที่สัญญา', value: r.contractNo, col: 'col-md-4' },
+        { id: 'start', label: 'วันเริ่มสัญญา', type: 'date', value: dmyToInput(r.start), col: 'col-md-4' },
+        { id: 'end', label: 'วันสิ้นสุดสัญญา', type: 'date', value: dmyToInput(r.end || r.expiry), col: 'col-md-4' },
+        { id: 'contact', label: 'ผู้ติดต่อ', value: r.contact, col: 'col-md-4' },
+        { id: 'phone', label: 'เบอร์โทร', value: r.phone, col: 'col-md-4' },
+        { id: 'email', label: 'อีเมล', type: 'email', value: r.email, col: 'col-md-4' },
+        { id: 'scope', label: 'ขอบเขต/หมายเหตุ', type: 'textarea', rows: 2, value: r.scope, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var fn = id ? callServer('updateVendor', id, v) : callServer('addVendor', v);
+        return fn.then(function (m) { toast(m, 'success'); loadModule('vendor'); });
+      }
+    });
+  }
+  function vnStatus(id, status) {
+    var r = vnFind(id);
+    showConfirm('ปรับสถานะ "' + r.name + '" เป็น ' + status + '?',
+      function () { callServer('setVendorStatus', id, status).then(function (m) { toast(m); loadModule('vendor'); }); });
+  }
+  function vnAssess(id) {
+    var r = vnFind(id);
+    showFormModal({
+      title: 'ประเมิน/ตรวจรับ: ' + r.name, submitLabel: 'บันทึกผล', size: 'md',
+      fields: [{ id: 'result', label: 'ผลการประเมิน/ตรวจรับงาน', type: 'textarea', rows: 3, value: r.assessment, required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('assessVendor', id, v.result).then(function (m) { toast(m); loadModule('vendor'); }); }
+    });
+  }
+</script>

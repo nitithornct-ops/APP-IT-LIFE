@@ -1,0 +1,739 @@
+<!-- Workflow.html — Central Workflow / Approval Engine -->
+<style>
+  .wf-record-label { max-width: 380px; }
+  .wf-overdue { color: var(--bs-danger); font-weight: 700; }
+  .wf-timeline { position: relative; margin-left: .55rem; padding-left: 1.35rem; border-left: 2px solid var(--border, #dbe3ef); }
+  .wf-timeline-item { position: relative; padding: 0 0 1.1rem .35rem; }
+  .wf-timeline-item::before { content: ''; position: absolute; left: -1.82rem; top: .28rem; width: .75rem; height: .75rem; border-radius: 50%; background: var(--bs-primary); border: 2px solid var(--surface, #fff); box-shadow: 0 0 0 2px rgba(13,110,253,.18); }
+  .wf-timeline-item:last-child { padding-bottom: 0; }
+  .wf-json { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wf-attachment-row + .wf-attachment-row { border-top: 1px solid var(--border, #e5e7eb); }
+  .wf-step-chip { min-width: 2.15rem; height: 2.15rem; display: inline-flex; align-items: center; justify-content: center; }
+</style>
+<script>
+  var WF_DATA = null;
+  var WF_CONTAINER = null;
+  var WF_ACTIVE_TAB = 'approvals';
+
+  function renderWorkflow(container) {
+    WF_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div>' +
+      '<div class="mt-2">กำลังโหลดงานอนุมัติ...</div></div>';
+    return callServer('getWorkflowModuleData', {}).then(function (data) {
+      WF_DATA = data || {};
+      wfRender_();
+    });
+  }
+
+  function wfRender_() {
+    var data = WF_DATA || {};
+    data.summary = data.summary || {};
+    data.myApprovals = Array.isArray(data.myApprovals) ? data.myApprovals : [];
+    data.myRequests = Array.isArray(data.myRequests) ? data.myRequests : [];
+    data.instances = Array.isArray(data.instances) ? data.instances : [];
+    data.definitions = Array.isArray(data.definitions) ? data.definitions : [];
+    data.delegations = Array.isArray(data.delegations) ? data.delegations : [];
+
+    var actions = '<button class="btn btn-outline-primary" type="button" onclick="wfDelegationForm()">' +
+      '<i class="bi bi-person-gear"></i> ตั้งผู้อนุมัติแทน</button>';
+    if (data.canRunAutomation) {
+      actions += '<button class="btn btn-outline-secondary" type="button" onclick="wfAutomationForm()">' +
+        '<i class="bi bi-arrow-repeat"></i> ประมวลผลคิว</button>';
+    }
+    if (data.canManage) {
+      actions += '<button class="btn btn-primary" type="button" onclick="wfDefinitionForm()">' +
+        '<i class="bi bi-plus-lg"></i> สร้าง Workflow</button>';
+    }
+
+    var html = pageHeader('Workflow / งานอนุมัติ',
+      'ติดตาม อนุมัติ มอบหมาย และตรวจสอบประวัติการตัดสินใจจากศูนย์กลาง', actions, 'bi-diagram-3');
+    html += wfDashboard_(data.summary);
+    html += '<ul class="nav nav-tabs mb-3" role="tablist">' +
+      wfTab_('approvals', 'งานอนุมัติของฉัน (' + data.myApprovals.length + ')') +
+      wfTab_('requests', 'คำขอของฉัน (' + data.myRequests.length + ')') +
+      wfTab_('all', 'ทั้งหมด (' + data.instances.length + ')') +
+      wfTab_('settings', 'ตั้งค่า') + '</ul>';
+    html += '<div class="tab-content">' +
+      wfPane_('approvals', wfApprovalTable_(data.myApprovals)) +
+      wfPane_('requests', wfInstanceTable_(data.myRequests, 'requests')) +
+      wfPane_('all', wfInstanceTable_(data.instances, 'all')) +
+      wfPane_('settings', wfSettings_(data)) + '</div>';
+    WF_CONTAINER.innerHTML = html;
+  }
+
+  function wfDashboard_(summary) {
+    return moduleDashboard([
+      mdStat('รอฉันอนุมัติ', summary.pendingMine || 0, 'bi-person-check', summary.pendingMine ? 'amber' : 'gray'),
+      mdStat('เกินกำหนด', summary.overdueMine || 0, 'bi-alarm', summary.overdueMine ? 'danger' : 'gray'),
+      mdStat('คำขอของฉันที่เปิดอยู่', summary.activeMine || 0, 'bi-hourglass-split', summary.activeMine ? 'blue' : 'gray'),
+      mdStat('Workflow ที่กำลังดำเนินการ', summary.activeVisible || 0, 'bi-diagram-3', 'teal')
+    ]);
+  }
+
+  function wfTab_(key, label) {
+    var active = WF_ACTIVE_TAB === key;
+    return '<li class="nav-item"><button class="nav-link' + (active ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#wf-' + key + '" type="button" onclick="wfSetTab_(\'' + key + '\')">' +
+      escapeHtmlJs(label) + '</button></li>';
+  }
+
+  function wfPane_(key, body) {
+    var active = WF_ACTIVE_TAB === key;
+    return '<div class="tab-pane fade' + (active ? ' show active' : '') + '" id="wf-' + key + '">' + body + '</div>';
+  }
+
+  function wfSetTab_(key) { WF_ACTIVE_TAB = key || 'approvals'; }
+
+  function wfApprovalTable_(rows) {
+    return dataTable({
+      id: 'wf-approval-table', rows: rows, empty: 'ไม่มีงานอนุมัติที่รอท่าน',
+      columns: [
+        { key: 'record', label: 'รายการ', value: function (row) {
+          return '<div class="wf-record-label"><b>' + escapeHtmlJs(row.recordLabel || row.recordId || row.instanceId) + '</b>' +
+            '<br><small class="text-muted">' + escapeHtmlJs(row.moduleKey || '-') + ' · ' + escapeHtmlJs(row.recordId || '') + '</small></div>';
+        }, raw: function (row) { return [row.recordLabel, row.recordId, row.instanceId, row.moduleKey].join(' '); } },
+        { key: 'step', label: 'ขั้นตอน', value: function (row) {
+          return '<span class="badge rounded-pill bg-primary wf-step-chip">' + escapeHtmlJs(row.stepOrder || '-') + '</span>' +
+            (row.approvalGroup ? '<br><small class="text-muted">' + escapeHtmlJs(row.approvalGroup) + '</small>' : '');
+        }, raw: function (row) { return row.stepOrder; } },
+        { key: 'due', label: 'กำหนด', value: function (row) { return wfDueHtml_(row); }, raw: function (row) { return row.dueAt || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (row) { return wfStatusBadge_(row.status); }, raw: function (row) { return row.status || ''; } }
+      ],
+      filters: [
+        { key: 'module', label: 'โมดูล', value: function (row) { return row.moduleKey || ''; } },
+        { key: 'overdue', label: 'SLA', value: function (row) { return row.overdue ? 'เกินกำหนด' : 'อยู่ในกำหนด'; } }
+      ],
+      actionsLabel: 'ดำเนินการ',
+      actions: function (row) {
+        var approvalId = wfJsArg_(row.id), instanceId = wfJsArg_(row.instanceId);
+        var html = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="wfOpenDetail(\'' + instanceId + '\')">รายละเอียด</button>';
+        if (row.canApprove) {
+          html += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="wfDecision(\'' + approvalId + '\',\'APPROVE\',\'' + instanceId + '\')">อนุมัติ</button>' +
+            '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="wfDecision(\'' + approvalId + '\',\'REJECT\',\'' + instanceId + '\')">ปฏิเสธ</button>';
+        }
+        if (row.canDelegate) {
+          html += '<button class="btn btn-sm btn-outline-primary mb-1" onclick="wfDelegateApproval(\'' + approvalId + '\')">มอบหมาย</button>';
+        }
+        return html;
+      }
+    });
+  }
+
+  function wfInstanceTable_(rows, mode) {
+    return dataTable({
+      id: 'wf-' + mode + '-table', rows: rows, empty: mode === 'requests' ? 'ยังไม่มีคำขอ Workflow' : 'ไม่พบ Workflow ที่ท่านดูได้',
+      columns: [
+        { key: 'record', label: 'รายการ', value: function (row) {
+          return '<div class="wf-record-label"><b>' + escapeHtmlJs(row.recordLabel || row.recordId || row.id) + '</b>' +
+            '<br><small class="text-muted">' + escapeHtmlJs(row.id) + '</small></div>';
+        }, raw: function (row) { return [row.recordLabel, row.recordId, row.id].join(' '); } },
+        { key: 'module', label: 'โมดูล', value: function (row) {
+          return escapeHtmlJs(row.moduleKey || '-') + '<br><small class="text-muted">' + escapeHtmlJs(row.recordId || '') + '</small>';
+        }, raw: function (row) { return row.moduleKey || ''; } },
+        { key: 'requester', label: 'ผู้ขอ', value: function (row) {
+          return escapeHtmlJs(row.requesterEmail || '-') + '<br><small class="text-muted">' + escapeHtmlJs(row.requesterDepartment || '') + '</small>';
+        }, raw: function (row) { return [row.requesterEmail, row.requesterDepartment].join(' '); }, default: mode === 'all' },
+        { key: 'progress', label: 'ขั้นตอน', value: function (row) {
+          return 'ขั้น ' + escapeHtmlJs(row.currentStepOrder || '-') +
+            (row.pendingCount ? '<br><small class="text-muted">รอ ' + escapeHtmlJs(row.pendingCount) + ' คน</small>' : '');
+        }, raw: function (row) { return row.currentStepOrder || 0; } },
+        { key: 'status', label: 'สถานะ', value: function (row) { return wfStatusBadge_(row.status); }, raw: function (row) { return row.status || ''; } },
+        { key: 'due', label: 'กำหนด', value: function (row) { return wfDueHtml_(row); }, raw: function (row) { return row.dueAt || ''; } }
+      ],
+      filters: [
+        { key: 'module', label: 'โมดูล', value: function (row) { return row.moduleKey || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (row) { return row.status || ''; } }
+      ],
+      actionsLabel: 'ดำเนินการ',
+      actions: function (row) {
+        var id = wfJsArg_(row.id);
+        var html = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="wfOpenDetail(\'' + id + '\')">รายละเอียด</button>';
+        if (row.allowedActions && row.allowedActions.canCancel) {
+          html += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="wfCancelInstance(\'' + id + '\')">ยกเลิก</button>';
+        }
+        return html;
+      }
+    });
+  }
+
+  function wfSettings_(data) {
+    var html = '<div class="row g-4">';
+    if (data.canManage) {
+      html += '<div class="col-12"><div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">' +
+        '<div><h5 class="mb-0">Workflow Definitions</h5><div class="small text-muted">แบบกระบวนการและขั้นอนุมัติที่มีเวอร์ชันกำกับ</div></div>' +
+        '<div><button class="btn btn-sm btn-outline-secondary me-1" onclick="wfBackfillForm()"><i class="bi bi-database-up"></i> Backfill คำขอเดิม</button>' +
+        '<button class="btn btn-sm btn-primary" onclick="wfDefinitionForm()"><i class="bi bi-plus-lg"></i> สร้างแบบ</button></div></div>' +
+        wfDefinitionTable_(data.definitions) + '</div>';
+    } else {
+      html += '<div class="col-12"><div class="alert alert-light border mb-0"><i class="bi bi-shield-lock me-2"></i>' +
+        'เฉพาะผู้ดูแล Workflow เท่านั้นที่แก้ไขแบบกระบวนการได้</div></div>';
+    }
+    html += '<div class="col-12"><div class="d-flex justify-content-between align-items-center mb-2">' +
+      '<div><h5 class="mb-0">ช่วงมอบหมายงานแทน</h5><div class="small text-muted">กำหนดผู้รับงานอนุมัติแทนตามช่วงเวลาและขอบเขต</div></div>' +
+      '<button class="btn btn-sm btn-outline-primary" onclick="wfDelegationForm()"><i class="bi bi-person-plus"></i> เพิ่มช่วงเวลา</button></div>' +
+      wfDelegationTable_(data.delegations) + '</div></div>';
+    return html;
+  }
+
+  function wfDefinitionTable_(rows) {
+    return dataTable({
+      id: 'wf-definition-table', rows: rows, empty: 'ยังไม่มี Workflow Definition',
+      columns: [
+        { key: 'code', label: 'รหัส/ชื่อ', value: function (row) {
+          return '<b>' + escapeHtmlJs(row.code) + '</b><br><small class="text-muted">' + escapeHtmlJs(row.name || '') + '</small>';
+        }, raw: function (row) { return [row.code, row.name].join(' '); } },
+        { key: 'module', label: 'โมดูล', value: function (row) { return escapeHtmlJs(row.moduleKey || '-'); } },
+        { key: 'version', label: 'เวอร์ชัน', value: function (row) {
+          return 'v' + escapeHtmlJs(row.version || 1) + '<br><small class="text-muted">' + escapeHtmlJs((row.steps || []).length) + ' ขั้น</small>';
+        }, raw: function (row) { return row.version || 1; } },
+        { key: 'sla', label: 'SLA', value: function (row) { return escapeHtmlJs(row.slaHours || 0) + ' ชม.'; }, raw: function (row) { return row.slaHours || 0; } },
+        { key: 'status', label: 'สถานะ', value: function (row) {
+          return wfStatusBadge_(row.status) + (row.isDefault ? '<br><span class="badge bg-light text-dark border mt-1">ค่าเริ่มต้น</span>' : '');
+        }, raw: function (row) { return row.status || ''; } }
+      ],
+      filters: [
+        { key: 'module', label: 'โมดูล', value: function (row) { return row.moduleKey || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (row) { return row.status || ''; } }
+      ],
+      actionsLabel: 'จัดการ',
+      actions: function (row) {
+        var id = wfJsArg_(row.id);
+        var html = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="wfDefinitionForm(\'' + id + '\')">แก้ไข</button>';
+        if (row.status === 'ร่าง' || row.status === 'ระงับ') {
+          html += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="wfDefinitionStatus(\'' + id + '\',\'ใช้งาน\')">เปิดใช้</button>';
+        }
+        if (row.status === 'ใช้งาน') {
+          html += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="wfDefinitionStatus(\'' + id + '\',\'ระงับ\')">ระงับ</button>';
+        }
+        if (row.status !== 'ยกเลิก') {
+          html += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="wfDefinitionStatus(\'' + id + '\',\'ยกเลิก\')">ยกเลิก</button>';
+        }
+        return html;
+      }
+    });
+  }
+
+  function wfDelegationTable_(rows) {
+    return dataTable({
+      id: 'wf-delegation-table', rows: rows, empty: 'ยังไม่มีช่วงมอบหมายงานแทน',
+      columns: [
+        { key: 'route', label: 'ผู้มอบหมาย → ผู้รับแทน', value: function (row) {
+          return '<b>' + escapeHtmlJs(row.delegatorEmail || '-') + '</b><br><i class="bi bi-arrow-down-short text-muted"></i> ' +
+            escapeHtmlJs(row.delegateEmail || '-');
+        }, raw: function (row) { return [row.delegatorEmail, row.delegateEmail].join(' '); } },
+        { key: 'scope', label: 'ขอบเขต', value: function (row) {
+          return escapeHtmlJs(row.moduleKey || '*') + (row.definitionId ? '<br><small class="text-muted">' + escapeHtmlJs(row.definitionId) + '</small>' : '');
+        }, raw: function (row) { return [row.moduleKey, row.definitionId].join(' '); } },
+        { key: 'period', label: 'ช่วงเวลา', value: function (row) {
+          return escapeHtmlJs(row.startAt || '-') + '<br><small class="text-muted">ถึง ' + escapeHtmlJs(row.endAt || '-') + '</small>';
+        }, raw: function (row) { return [row.startAt, row.endAt].join(' '); } },
+        { key: 'reason', label: 'เหตุผล', value: function (row) { return escapeHtmlJs(row.reason || '-'); }, default: false },
+        { key: 'status', label: 'สถานะ', value: function (row) { return wfStatusBadge_(row.status); }, raw: function (row) { return row.status || ''; } }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (row) { return row.status || ''; } },
+        { key: 'module', label: 'โมดูล', value: function (row) { return row.moduleKey || ''; } }
+      ],
+      actionsLabel: 'จัดการ',
+      actions: function (row) {
+        if (row.status !== 'Active') return '';
+        return '<button class="btn btn-sm btn-outline-danger" onclick="wfRevokeDelegation(\'' + wfJsArg_(row.id) + '\')">ยกเลิก</button>';
+      }
+    });
+  }
+
+  function wfOpenDetail(instanceId) {
+    instanceId = wfJsArg_(instanceId);
+    Promise.all([
+      callServer('getWorkflowInstanceDetail', instanceId),
+      callServer('listRecordAttachments', 'workflow', instanceId, 'WorkflowInstance')
+        .catch(function () { return { attachments: [], unavailable: true }; })
+    ]).then(function (results) {
+      wfShowDetail_(results[0] || {}, results[1] || {}, instanceId);
+    });
+  }
+
+  function wfShowDetail_(detail, attachmentData, instanceId) {
+    var instance = detail.instance || {};
+    var approvals = Array.isArray(detail.approvals) ? detail.approvals : [];
+    var history = Array.isArray(detail.history) ? detail.history : [];
+    var attachments = Array.isArray(attachmentData.attachments) ? attachmentData.attachments : [];
+    var actions = detail.allowedActions || instance.allowedActions || {};
+    var actionHtml = '';
+    if (actions.canUpload) {
+      actionHtml += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="wfUploadForm(\'' + wfJsArg_(instanceId) + '\')">' +
+        '<i class="bi bi-paperclip"></i> แนบไฟล์</button>';
+    }
+    if (actions.canCancel) {
+      actionHtml += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="wfCancelInstance(\'' + wfJsArg_(instanceId) + '\')">' +
+        '<i class="bi bi-x-circle"></i> ยกเลิก Workflow</button>';
+    }
+
+    var approvalHtml = approvals.map(function (row) {
+      var buttons = '';
+      if (row.canApprove) {
+        buttons += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="wfDecision(\'' + wfJsArg_(row.id) + '\',\'APPROVE\',\'' + wfJsArg_(instanceId) + '\')">อนุมัติ</button>' +
+          '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="wfDecision(\'' + wfJsArg_(row.id) + '\',\'REJECT\',\'' + wfJsArg_(instanceId) + '\')">ปฏิเสธ</button>';
+      }
+      if (row.canDelegate) {
+        buttons += '<button class="btn btn-sm btn-outline-primary mb-1" onclick="wfDelegateApproval(\'' + wfJsArg_(row.id) + '\')">มอบหมายแทน</button>';
+      }
+      return '<div class="list-group-item"><div class="d-flex flex-wrap justify-content-between gap-2">' +
+        '<div><span class="badge rounded-pill bg-primary me-2">ขั้น ' + escapeHtmlJs(row.stepOrder || '-') + '</span>' +
+        '<b>' + escapeHtmlJs(row.approverEmail || '-') + '</b>' +
+        (row.originalApproverEmail && row.originalApproverEmail !== row.approverEmail ? '<div class="small text-muted mt-1">ผู้รับเดิม: ' + escapeHtmlJs(row.originalApproverEmail) + '</div>' : '') +
+        (row.comment ? '<div class="small mt-1">' + escapeHtmlJs(row.comment) + '</div>' : '') + '</div>' +
+        '<div class="text-end">' + wfStatusBadge_(row.status) + '<div class="small text-muted mt-1">' + escapeHtmlJs(row.dueAt || '') + '</div>' +
+        (buttons ? '<div class="mt-2">' + buttons + '</div>' : '') + '</div></div></div>';
+    }).join('') || '<div class="list-group-item text-muted">ยังไม่มีรายการผู้อนุมัติ</div>';
+
+    var historyHtml = history.map(function (row) {
+      return '<div class="wf-timeline-item"><div class="d-flex flex-wrap justify-content-between gap-2">' +
+        '<b>' + escapeHtmlJs(wfActionLabel_(row.action)) + '</b><small class="text-muted">' + escapeHtmlJs(row.actionAt || '') + '</small></div>' +
+        '<div class="small text-muted">' + escapeHtmlJs(row.actorEmail || 'ระบบ') +
+        (row.stepOrder ? ' · ขั้น ' + escapeHtmlJs(row.stepOrder) : '') + '</div>' +
+        (row.statusTo ? '<div class="mt-1">' + wfStatusBadge_(row.statusTo) + '</div>' : '') +
+        (row.comment ? '<div class="mt-1">' + escapeHtmlJs(row.comment) + '</div>' : '') + '</div>';
+    }).join('') || '<div class="text-muted">ยังไม่มี Timeline</div>';
+
+    var attachmentHtml = wfAttachmentListHtml_(attachments, attachmentData.unavailable);
+    var contextHtml = instance.context && Object.keys(instance.context).length ?
+      '<pre class="wf-json bg-light border rounded p-3 mb-0">' + escapeHtmlJs(JSON.stringify(instance.context, null, 2)) + '</pre>' :
+      '<div class="text-muted">ไม่มีบริบทเพิ่มเติม</div>';
+
+    var body = '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">' +
+      '<div><h5 class="mb-1">' + escapeHtmlJs(instance.recordLabel || instance.recordId || instance.id) + '</h5>' +
+      '<div class="text-muted small">' + escapeHtmlJs(instance.moduleKey || '-') + ' / ' + escapeHtmlJs(instance.recordId || '-') +
+      ' · Workflow ' + escapeHtmlJs(instance.id || instanceId) + '</div></div>' +
+      '<div class="text-end">' + wfStatusBadge_(instance.status) + '<div class="small mt-1 ' + (instance.overdue ? 'wf-overdue' : 'text-muted') + '">' +
+      (instance.overdue ? 'เกินกำหนด · ' : '') + escapeHtmlJs(instance.dueAt || 'ไม่ระบุกำหนด') + '</div></div></div>' +
+      (actionHtml ? '<div class="mb-3">' + actionHtml + '</div>' : '') +
+      '<div class="row g-3 mb-4"><div class="col-md-4"><div class="small text-muted">ผู้ขอ</div>' + escapeHtmlJs(instance.requesterEmail || '-') + '</div>' +
+      '<div class="col-md-4"><div class="small text-muted">หน่วยงาน</div>' + escapeHtmlJs(instance.requesterDepartment || '-') + '</div>' +
+      '<div class="col-md-4"><div class="small text-muted">ขั้นปัจจุบัน</div>' + escapeHtmlJs(instance.currentStepOrder || '-') + '</div>' +
+      '<div class="col-md-6"><div class="small text-muted">เริ่มเมื่อ</div>' + escapeHtmlJs(instance.startedAt || '-') + '</div>' +
+      '<div class="col-md-6"><div class="small text-muted">เสร็จเมื่อ</div>' + escapeHtmlJs(instance.completedAt || '-') + '</div></div>' +
+      '<div class="row g-4"><div class="col-lg-7"><h6><i class="bi bi-person-check me-1"></i> ขั้นอนุมัติ</h6>' +
+      '<div class="list-group mb-4">' + approvalHtml + '</div><h6><i class="bi bi-clock-history me-1"></i> Timeline</h6>' +
+      '<div class="wf-timeline mb-4">' + historyHtml + '</div></div>' +
+      '<div class="col-lg-5"><h6><i class="bi bi-paperclip me-1"></i> เอกสารแนบ</h6>' + attachmentHtml +
+      '<h6 class="mt-4"><i class="bi bi-braces me-1"></i> บริบทคำขอ</h6>' + contextHtml + '</div></div>';
+    showInfoModal((instance.id || instanceId) + ' · รายละเอียด Workflow', body, 'xl');
+  }
+
+  function wfDecision(approvalId, decision, instanceId) {
+    var labels = { APPROVE: 'อนุมัติ', REJECT: 'ปฏิเสธ', RETURN: 'ส่งกลับให้แก้ไข' };
+    var needsReason = decision !== 'APPROVE';
+    showFormModal({
+      title: (labels[decision] || 'พิจารณา') + 'งานอนุมัติ', submitLabel: labels[decision] || 'บันทึก', size: 'lg',
+      fields: [
+        { id: 'comment', label: needsReason ? 'เหตุผลประกอบ' : 'ความเห็นประกอบ', type: 'textarea', rows: 4, required: needsReason, col: 'col-12' },
+        { id: 'attachment', label: 'เอกสารประกอบ (ถ้ามี)', type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.txt,.csv,.doc,.docx,.xls,.xlsx', col: 'col-12', help: 'ไฟล์ไม่เกิน 15 MB และระบบจะตรวจชนิดไฟล์จริง' }
+      ],
+      onSubmit: function (values) {
+        var file = values.attachment && values.attachment.files && values.attachment.files[0];
+        var upload = file ? wfUploadAttachment_(file, instanceId, 'APPROVAL_EVIDENCE', 'Confidential', true) : Promise.resolve(null);
+        return upload.then(function (attachment) {
+          var ids = attachment && attachment.attachmentId ? [attachment.attachmentId] : [];
+          return callServer('decideWorkflowApproval', approvalId, decision, values.comment || '', ids);
+        }).then(function () {
+          toast((labels[decision] || 'บันทึกผล') + 'เรียบร้อยแล้ว', 'success');
+          return wfReload_('approvals');
+        });
+      }
+    });
+  }
+
+  function wfDelegateApproval(approvalId) {
+    showFormModal({
+      title: 'มอบหมายงานอนุมัติแทน', submitLabel: 'มอบหมาย', size: 'md',
+      fields: [
+        { id: 'delegateEmail', label: 'อีเมลผู้รับมอบหมาย', type: 'email', required: true, col: 'col-12' },
+        { id: 'reason', label: 'เหตุผล', type: 'textarea', rows: 3, required: true, col: 'col-12' }
+      ],
+      onSubmit: function (values) {
+        return callServer('delegateWorkflowApproval', approvalId, values.delegateEmail, values.reason).then(function () {
+          toast('มอบหมายงานอนุมัติแล้ว', 'success');
+          return wfReload_('approvals');
+        });
+      }
+    });
+  }
+
+  function wfCancelInstance(instanceId) {
+    showFormModal({
+      title: 'ยกเลิก Workflow ' + instanceId, submitLabel: 'ยืนยันการยกเลิก', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผลการยกเลิก', type: 'textarea', rows: 4, required: true, col: 'col-12' }],
+      onSubmit: function (values) {
+        return callServer('cancelWorkflowInstance', instanceId, values.reason).then(function () {
+          toast('ยกเลิก Workflow แล้ว', 'success');
+          return wfReload_(WF_ACTIVE_TAB);
+        });
+      }
+    });
+  }
+
+  function wfUploadForm(instanceId) {
+    showFormModal({
+      title: 'แนบไฟล์กับ Workflow ' + instanceId, submitLabel: 'อัปโหลด', size: 'md',
+      fields: [
+        { id: 'attachment', label: 'ไฟล์', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.txt,.csv,.doc,.docx,.xls,.xlsx', col: 'col-12', help: 'ไฟล์ไม่เกิน 15 MB' },
+        { id: 'attachmentRole', label: 'ประเภทเอกสาร', value: 'GENERAL', col: 'col-md-7' },
+        { id: 'classification', label: 'ระดับข้อมูล', type: 'select', placeholder: false, options: ['Confidential', 'Restricted'], value: 'Confidential', col: 'col-md-5' },
+        { id: 'isEvidence', label: 'ใช้เป็นหลักฐานการอนุมัติ', type: 'checkbox', value: true, col: 'col-12' }
+      ],
+      onSubmit: function (values) {
+        var file = values.attachment && values.attachment.files && values.attachment.files[0];
+        if (!file) { toast('กรุณาเลือกไฟล์', 'warning'); return Promise.resolve(false); }
+        return wfUploadAttachment_(file, instanceId, values.attachmentRole || 'GENERAL', values.classification, values.isEvidence).then(function () {
+          toast('แนบไฟล์กับ Workflow แล้ว', 'success');
+          return wfReload_(WF_ACTIVE_TAB);
+        });
+      }
+    });
+  }
+
+  function wfUploadAttachment_(file, instanceId, role, classification, isEvidence) {
+    if (!file) return Promise.resolve(null);
+    if (file.size > 15 * 1024 * 1024) return Promise.reject(wfToastError_('ไฟล์ต้องไม่เกิน 15 MB'));
+    return wfReadFile_(file).then(function (base64) {
+      return callServer('uploadRegisteredAttachment', {
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        base64: base64,
+        moduleKey: 'workflow',
+        recordId: instanceId,
+        recordType: 'WorkflowInstance',
+        fieldName: 'WorkflowAttachments',
+        attachmentRole: 'APPROVAL_EVIDENCE',
+        classification: classification || 'Confidential',
+        isEvidence: !!isEvidence
+      });
+    });
+  }
+
+  function wfReadFile_(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || '').split(',')[1] || ''); };
+      reader.onerror = function () { reject(new Error('อ่านไฟล์ไม่สำเร็จ')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function wfAttachmentListHtml_(attachments, unavailable) {
+    if (unavailable) return '<div class="alert alert-warning py-2 small">ไม่สามารถโหลดรายการไฟล์แนบได้</div>';
+    if (!attachments.length) return '<div class="border rounded p-3 text-muted small">ยังไม่มีเอกสารแนบ</div>';
+    return '<div class="border rounded">' + attachments.map(function (row) {
+      return '<div class="wf-attachment-row p-2 d-flex align-items-center justify-content-between gap-2">' +
+        '<div class="text-truncate"><i class="bi bi-file-earmark me-1 text-primary"></i><b>' + escapeHtmlJs(row.filename || row.attachmentId) + '</b>' +
+        '<div class="small text-muted">' + escapeHtmlJs(wfFileSize_(row.sizeBytes)) + ' · ' + escapeHtmlJs(row.classification || '') +
+        (row.isEvidence ? ' · หลักฐาน' : '') + '<br>' + escapeHtmlJs(row.uploadedAt || '') + '</div></div>' +
+        (row.canDownload ? '<button class="btn btn-sm btn-outline-primary flex-shrink-0" onclick="wfDownloadAttachment(\'' + wfJsArg_(row.attachmentId) + '\')" title="ดาวน์โหลดผ่านระบบ"><i class="bi bi-download"></i></button>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function wfDownloadAttachment(attachmentId) {
+    callServer('downloadRegisteredAttachment', attachmentId).then(function (data) {
+      if (!data || !data.base64) { toast('ไม่พบข้อมูลไฟล์สำหรับดาวน์โหลด', 'warning'); return; }
+      var binary = atob(data.base64), bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: data.mimeType || 'application/octet-stream' }));
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = data.filename || 'attachment';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast('เตรียมดาวน์โหลดไฟล์แล้ว', 'success');
+    });
+  }
+
+  function wfDefinitionForm(definitionId) {
+    var definition = wfFindDefinition_(definitionId);
+    var steps = definition.id ? (definition.steps || []).map(wfStepForEditor_) : [wfDefaultStep_()];
+    var statusOptions = (WF_DATA && WF_DATA.definitionStatuses) || ['ร่าง', 'ใช้งาน', 'ระงับ', 'ยกเลิก'];
+    var fields = [
+      { id: 'workflowCode', label: 'Workflow Code', value: definition.code || '', required: true, col: 'col-md-4', help: 'A-Z, 0-9, _ หรือ -' },
+      { id: 'workflowName', label: 'ชื่อ Workflow', value: definition.name || '', required: true, col: 'col-md-8' },
+      { id: 'moduleKey', label: 'โมดูลต้นทาง', type: 'select', options: wfModuleOptions_(), value: definition.moduleKey || 'serviceCatalog', required: true, col: 'col-md-4' },
+      { id: 'triggerEvent', label: 'Trigger Event', value: definition.triggerEvent || 'MANUAL', required: true, col: 'col-md-4' },
+      { id: 'mode', label: 'โหมดกระบวนการ', type: 'select', placeholder: false, options: ['SEQUENTIAL'], value: 'SEQUENTIAL', col: 'col-md-4', help: 'ทำงานตาม StepOrder; แต่ละขั้นรองรับ ANY, ALL และ QUORUM' },
+      { id: 'description', label: 'คำอธิบาย', type: 'textarea', rows: 2, value: definition.description || '', col: 'col-12' },
+      { id: 'slaHours', label: 'SLA รวม (ชม.)', type: 'number', value: definition.slaHours || 24, required: true, col: 'col-md-3' },
+      { id: 'reminderHours', label: 'เตือนก่อนกำหนด (ชม.)', type: 'number', value: definition.reminderHours === 0 ? 0 : (definition.reminderHours || 4), col: 'col-md-3' },
+      { id: 'escalationHours', label: 'Escalate หลังกำหนด (ชม.)', type: 'number', value: definition.escalationHours === 0 ? 0 : (definition.escalationHours || 8), col: 'col-md-3' },
+      { id: 'escalationRole', label: 'บทบาท Escalation', value: definition.escalationRole || 'ITAdmin', col: 'col-md-3' },
+      { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: statusOptions, value: definition.status || 'ร่าง', col: 'col-md-4' },
+      { id: 'activeFrom', label: 'เริ่มใช้', type: 'date', value: wfInputDate_(definition.activeFrom), col: 'col-md-4' },
+      { id: 'activeTo', label: 'สิ้นสุด', type: 'date', value: wfInputDate_(definition.activeTo), col: 'col-md-4' },
+      { id: 'isDefault', label: 'ใช้เป็น Workflow ค่าเริ่มต้นของโมดูลนี้', type: 'checkbox', value: !!definition.isDefault, col: 'col-12' },
+      { id: 'conditionsJSON', label: 'เงื่อนไขระดับ Workflow (JSON object)', type: 'textarea', rows: 4, value: JSON.stringify(definition.conditions || {}, null, 2), required: true, col: 'col-12', help: 'เว้นเป็น {} หากใช้กับทุกคำขอ' },
+      { id: 'stepsJSON', label: 'ขั้นตอนอนุมัติ (JSON array)', type: 'textarea', rows: 15, value: JSON.stringify(steps, null, 2), required: true, col: 'col-12', help: 'ApprovalType: USER, SUPERVISOR, REQUESTER_SUPERVISOR, ROLE, DEPARTMENT_APPROVER, GROUP หรือ CONTEXT · Mode: ANY, ALL, QUORUM' },
+      { id: 'notes', label: 'หมายเหตุผู้ดูแล', type: 'textarea', rows: 2, value: definition.notes || '', col: 'col-12' }
+    ];
+    showFormModal({
+      title: definition.id ? 'แก้ไข Workflow ' + definition.code : 'สร้าง Workflow Definition',
+      submitLabel: definition.id ? 'บันทึกเวอร์ชันใหม่' : 'สร้าง Workflow', size: 'xl', fields: fields,
+      onSubmit: function (values) {
+        var parsed;
+        try {
+          parsed = wfParseDefinitionJson_(values.conditionsJSON, values.stepsJSON);
+        } catch (error) {
+          toast(error.message, 'warning');
+          return Promise.resolve(false);
+        }
+        return callServer('saveWorkflowDefinition', {
+          definitionId: definition.id || '',
+          workflowCode: values.workflowCode,
+          workflowName: values.workflowName,
+          moduleKey: values.moduleKey,
+          description: values.description,
+          triggerEvent: values.triggerEvent,
+          mode: values.mode,
+          slaHours: values.slaHours,
+          reminderHours: values.reminderHours,
+          escalationHours: values.escalationHours,
+          escalationRole: values.escalationRole,
+          status: values.status,
+          activeFrom: values.activeFrom,
+          activeTo: values.activeTo,
+          isDefault: values.isDefault,
+          conditions: parsed.conditions,
+          steps: parsed.steps,
+          notes: values.notes
+        }).then(function () {
+          toast(definition.id ? 'บันทึก Workflow เวอร์ชันใหม่แล้ว' : 'สร้าง Workflow แล้ว', 'success');
+          return wfReload_('settings');
+        });
+      }
+    });
+  }
+
+  function wfDefinitionStatus(definitionId, status) {
+    showConfirm('ต้องการเปลี่ยนสถานะ Workflow เป็น “' + status + '” หรือไม่?', function () {
+      return callServer('setWorkflowDefinitionStatus', definitionId, status).then(function () {
+        toast('อัปเดตสถานะ Workflow แล้ว', 'success');
+        return wfReload_('settings');
+      });
+    }, { title: 'ยืนยันสถานะ Workflow', okLabel: 'เปลี่ยนสถานะ', danger: status === 'ยกเลิก' });
+  }
+
+  function wfDelegationForm() {
+    var canManage = !!(WF_DATA && WF_DATA.canManage);
+    var now = new Date(), end = new Date(now.getTime() + 7 * 86400000);
+    var fields = [];
+    if (canManage) fields.push({ id: 'delegatorEmail', label: 'อีเมลผู้มอบหมาย (เว้นว่าง = ตนเอง)', type: 'email', col: 'col-12' });
+    fields = fields.concat([
+      { id: 'delegateEmail', label: 'อีเมลผู้รับมอบหมาย', type: 'email', required: true, col: 'col-12' },
+      { id: 'moduleKey', label: 'ขอบเขตโมดูล', type: 'select', options: [{ value: '*', label: 'ทุกโมดูล' }].concat(wfModuleOptions_()), value: '*', required: true, col: 'col-md-6' },
+      { id: 'definitionId', label: 'Workflow เฉพาะแบบ (ถ้ามี)', type: 'select', options: wfDefinitionOptions_(), col: 'col-md-6' },
+      { id: 'startAt', label: 'เริ่มมอบหมาย', type: 'datetime-local', value: wfLocalDateTime_(now), required: true, col: 'col-md-6' },
+      { id: 'endAt', label: 'สิ้นสุดการมอบหมาย', type: 'datetime-local', value: wfLocalDateTime_(end), required: true, col: 'col-md-6' },
+      { id: 'reason', label: 'เหตุผล', type: 'textarea', rows: 3, required: true, col: 'col-12' }
+    ]);
+    showFormModal({
+      title: 'ตั้งช่วงมอบหมายงานอนุมัติแทน', submitLabel: 'บันทึกการมอบหมาย', size: 'lg', fields: fields,
+      onSubmit: function (values) {
+        return callServer('createWorkflowDelegation', {
+          delegatorEmail: values.delegatorEmail || '',
+          delegateEmail: values.delegateEmail,
+          moduleKey: values.moduleKey,
+          definitionId: values.definitionId,
+          startAt: values.startAt,
+          endAt: values.endAt,
+          reason: values.reason
+        }).then(function () {
+          toast('ตั้งช่วงมอบหมายงานแทนแล้ว', 'success');
+          return wfReload_('settings');
+        });
+      }
+    });
+  }
+
+  function wfRevokeDelegation(delegationId) {
+    showFormModal({
+      title: 'ยกเลิกช่วงมอบหมายงานแทน', submitLabel: 'ยืนยันการยกเลิก', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผลการยกเลิก', type: 'textarea', rows: 3, required: true, col: 'col-12' }],
+      onSubmit: function (values) {
+        return callServer('revokeWorkflowDelegation', delegationId, values.reason).then(function () {
+          toast('ยกเลิกช่วงมอบหมายงานแทนแล้ว', 'success');
+          return wfReload_('settings');
+        });
+      }
+    });
+  }
+
+  function wfAutomationForm() {
+    showFormModal({
+      title: 'ประมวลผล Reminder / Escalation / Integration', submitLabel: 'เริ่มประมวลผล', size: 'md',
+      fields: [{ id: 'limit', label: 'จำนวนรายการสูงสุด', type: 'number', value: 50, required: true, col: 'col-12', help: '1–200 รายการต่อรอบ' }],
+      onSubmit: function (values) {
+        return callServer('runWorkflowAutomationNow', values.limit).then(function (result) {
+          result = result || {};
+          toast('ประมวลผลแล้ว: เตือน ' + (result.reminded || 0) + ' · Escalate ' + (result.escalated || 0) +
+            ' · ผิดพลาด ' + ((result.errors || []).length), (result.errors || []).length ? 'warning' : 'success');
+          return wfReload_(WF_ACTIVE_TAB);
+        });
+      }
+    });
+  }
+
+  function wfBackfillForm() {
+    showFormModal({
+      title: 'Backfill คำขอเดิมเข้า Workflow', submitLabel: 'เริ่ม Backfill', size: 'md',
+      fields: [{ id: 'limit', label: 'จำนวนคำขอสูงสุด', type: 'number', value: 100, required: true, col: 'col-12', help: 'ระบบเลือกเฉพาะคำขอรออนุมัติที่ยังไม่มี Workflow' }],
+      onSubmit: function (values) {
+        return callServer('backfillWorkflowTransactions', values.limit).then(function (result) {
+          result = result || {};
+          toast('Backfill แล้ว: สร้าง ' + (result.created || 0) + ' · มีอยู่เดิม ' + (result.existing || 0) +
+            ' · ผิดพลาด ' + ((result.errors || []).length), (result.errors || []).length ? 'warning' : 'success');
+          return wfReload_('settings');
+        });
+      }
+    });
+  }
+
+  function wfParseDefinitionJson_(conditionsText, stepsText) {
+    var conditions, steps;
+    try { conditions = JSON.parse(conditionsText || '{}'); }
+    catch (error) { throw new Error('เงื่อนไข Workflow เป็น JSON ไม่ถูกต้อง'); }
+    if (!conditions || typeof conditions !== 'object' || Array.isArray(conditions)) throw new Error('เงื่อนไข Workflow ต้องเป็น JSON object');
+    try { steps = JSON.parse(stepsText || '[]'); }
+    catch (error2) { throw new Error('ขั้นตอนอนุมัติเป็น JSON ไม่ถูกต้อง'); }
+    if (!Array.isArray(steps) || !steps.length) throw new Error('ต้องมีขั้นตอนอนุมัติอย่างน้อย 1 ขั้น');
+    if (steps.length > 50) throw new Error('ขั้นตอนอนุมัติต้องไม่เกิน 50 ขั้น');
+    return { conditions: conditions, steps: steps };
+  }
+
+  function wfDefaultStep_() {
+    return {
+      stepOrder: 1,
+      stepCode: 'APPROVAL_1',
+      stepName: 'พิจารณาคำขอ',
+      approvalType: 'CONTEXT',
+      approverValue: 'approverEmail',
+      mode: 'ANY',
+      minApprovals: 1,
+      condition: {},
+      slaHours: 24,
+      reminderHours: 4,
+      escalationHours: 8,
+      escalationApprover: 'ROLE:ITAdmin',
+      allowDelegation: true,
+      allowReturn: false,
+      notes: ''
+    };
+  }
+
+  function wfStepForEditor_(step) {
+    var condition = {};
+    try { condition = typeof step.ConditionJSON === 'string' ? JSON.parse(step.ConditionJSON || '{}') : (step.ConditionJSON || {}); }
+    catch (error) { condition = {}; }
+    return {
+      stepOrder: Number(step.StepOrder || 1),
+      stepCode: step.StepCode || '',
+      stepName: step.StepName || '',
+      approvalType: step.ApprovalType || 'CONTEXT',
+      approverValue: step.ApproverValue || '',
+      mode: step.Mode || 'ANY',
+      minApprovals: Number(step.MinApprovals || 1),
+      condition: condition,
+      slaHours: Number(step.SLAHours || 24),
+      reminderHours: Number(step.ReminderHours || 0),
+      escalationHours: Number(step.EscalationHours || 0),
+      escalationApprover: step.EscalationApprover || '',
+      allowDelegation: String(step.AllowDelegation || 'Yes') === 'Yes',
+      allowReturn: String(step.AllowReturn || 'No') === 'Yes',
+      notes: step.Notes || ''
+    };
+  }
+
+  function wfFindDefinition_(id) {
+    return (((WF_DATA || {}).definitions) || []).filter(function (row) { return String(row.id) === String(id || ''); })[0] || {};
+  }
+
+  function wfDefinitionOptions_() {
+    return (((WF_DATA || {}).definitions) || []).map(function (row) {
+      return { value: row.id, label: (row.code || row.id) + ' · ' + (row.name || '') };
+    });
+  }
+
+  function wfModuleOptions_() {
+    return [
+      { value: 'serviceCatalog', label: 'Service Catalog' },
+      { value: 'access', label: 'Access Control' },
+      { value: 'change', label: 'Change Management' },
+      { value: 'ticket', label: 'Ticket' },
+      { value: 'asset', label: 'IT Asset' },
+      { value: 'privacy', label: 'Privacy / PDPA' },
+      { value: 'incident', label: 'Incident' },
+      { value: 'risk', label: 'Risk' },
+      { value: 'compliance', label: 'Compliance' },
+      { value: 'task', label: 'Task' }
+    ];
+  }
+
+  function wfReload_(tab) {
+    WF_ACTIVE_TAB = tab || WF_ACTIVE_TAB || 'approvals';
+    return renderWorkflow(WF_CONTAINER);
+  }
+
+  function wfStatusBadge_(status) {
+    return '<span class="badge ' + wfStatusTone_(status) + '">' + escapeHtmlJs(status || '-') + '</span>';
+  }
+
+  function wfStatusTone_(status) {
+    status = String(status || '');
+    if (['อนุมัติ', 'อนุมัติแล้ว', 'เสร็จสิ้น', 'ใช้งาน', 'Active'].indexOf(status) > -1) return 'bg-success';
+    if (['ปฏิเสธ', 'ผิดพลาด'].indexOf(status) > -1) return 'bg-danger';
+    if (['ยกเลิก', 'ข้าม', 'Revoked', 'Expired'].indexOf(status) > -1) return 'bg-secondary';
+    if (['รอพิจารณา', 'กำลังดำเนินการ', 'ร่าง'].indexOf(status) > -1) return 'bg-warning text-dark';
+    if (['ส่งกลับแก้ไข', 'มอบหมายแทน', 'ระงับ'].indexOf(status) > -1) return 'bg-info text-dark';
+    return 'bg-primary';
+  }
+
+  function wfDueHtml_(row) {
+    if (!row.dueAt) return '<span class="text-muted">ไม่ระบุ</span>';
+    return '<span class="' + (row.overdue ? 'wf-overdue' : 'text-muted') + '">' +
+      (row.overdue ? '<i class="bi bi-exclamation-triangle me-1"></i>' : '') + escapeHtmlJs(row.dueAt) + '</span>';
+  }
+
+  function wfActionLabel_(action) {
+    var labels = {
+      START: 'เริ่ม Workflow', ACTIVATE_STEP: 'เปิดขั้นอนุมัติ', APPROVE: 'อนุมัติ', REJECT: 'ปฏิเสธ',
+      RETURN: 'ส่งกลับให้แก้ไข', DELEGATE: 'มอบหมายแทน', REMINDER: 'แจ้งเตือน', ESCALATE: 'Escalate',
+      COMPLETE: 'เสร็จสิ้น', CANCEL: 'ยกเลิก', ERROR: 'เกิดข้อผิดพลาด'
+    };
+    return labels[action] || action || 'อัปเดต';
+  }
+
+  function wfFileSize_(bytes) {
+    bytes = Number(bytes || 0);
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function wfInputDate_(value) {
+    var match = String(value || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    return match ? match[3] + '-' + match[2] + '-' + match[1] : (/^\d{4}-\d{2}-\d{2}/.test(String(value || '')) ? String(value).slice(0, 10) : '');
+  }
+
+  function wfLocalDateTime_(date) {
+    function pad(value) { return String(value).padStart(2, '0'); }
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+  }
+
+  function wfJsArg_(value) {
+    return String(value == null ? '' : value).replace(/[\\'"<>]/g, ' ').trim();
+  }
+
+  function wfToastError_(message) {
+    toast(message, 'warning');
+    return new Error(message);
+  }
+</script>

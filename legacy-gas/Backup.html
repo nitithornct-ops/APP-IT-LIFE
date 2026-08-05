@@ -1,0 +1,311 @@
+﻿<!-- Backup.html — การสำรองข้อมูลและแผนฉุกเฉิน (include_ ใน Index) -->
+<script>
+  var BK_DATA = null;
+
+  function renderBackup(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getBackupModuleData').then(function (d) {
+      BK_DATA = d;
+      var e = d.canEdit;
+      var html = '<div class="d-flex align-items-center mb-3"><h3 class="text-primary mb-0">การสำรองข้อมูลและแผนฉุกเฉิน</h3>' +
+        (e ? '<button class="btn btn-success ms-auto" onclick="bkCreateSnapshot()"><i class="bi bi-database-check"></i> สร้าง System Snapshot</button>' : '') +
+        '</div>';
+      html += bkDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3">' +
+        bkTab('bk', 'บันทึกการสำรอง (' + d.backups.length + ')', true) +
+        bkTab('rcv', 'ทดสอบกู้คืน (' + d.recovery.length + ')', false) +
+        bkTab('bcp', 'แผนฉุกเฉิน (' + d.bcp.length + ')', false) +
+        bkTab('ops', 'Automation / Retention', false) + '</ul>';
+      html += '<div class="tab-content">';
+      html += '<div class="tab-pane fade show active" id="t-bk">' + (e ? bkFormHtml(d) : '') + bkTable(d.backups, e) + '</div>';
+      html += '<div class="tab-pane fade" id="t-rcv">' + (e ? rcvFormHtml() : '') + rcvTable(d.recovery, e) + '</div>';
+      html += '<div class="tab-pane fade" id="t-bcp">' + (e ? bcpFormHtml() : '') + bcpTable(d.bcp, e) + '</div>';
+      html += '<div class="tab-pane fade" id="t-ops">' + bkOpsHtml(d.automation || {}, d.retention || {}, e) + '</div>';
+      html += '</div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function bkDashboard(d) {
+    var failed = d.backups.filter(function (r) { return r.result === 'ล้มเหลว' || r.result === 'สำเร็จบางส่วน'; }).length;
+    var bcpDue = d.bcp.filter(function (r) { return r.reviewDays !== null && r.reviewDays <= 30; }).length;
+    return moduleDashboard([
+      mdStat('บันทึกสำรอง', d.backups.length, 'bi-cloud-arrow-up', 'blue'),
+      mdStat('สำรองมีปัญหา', failed, 'bi-x-octagon', failed ? 'danger' : 'teal'),
+      mdStat('ทดสอบกู้คืน', d.recovery.length, 'bi-arrow-counterclockwise', 'blue'),
+      mdStat('BCP ถึงรอบทบทวน', bcpDue, 'bi-calendar-check', bcpDue ? 'amber' : 'gray')
+    ]);
+  }
+
+  function bkTab(k, label, a) {
+    return '<li class="nav-item"><button class="nav-link' + (a ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#t-' + k + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+
+  // ---------- สำรองข้อมูล ----------
+  function bkFormHtml(d) {
+    var types = d.types.map(function (t) { return '<option>' + t + '</option>'; }).join('');
+    var res = d.results.map(function (r) { return '<option>' + r + '</option>'; }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>บันทึกผลการสำรองข้อมูล</h6>' +
+      '<div class="row g-2">' +
+      fld('bk-system', 'ระบบงาน *', 'text', 'col-md-4') +
+      sel('bk-type', 'ประเภท', types, 'col-md-2') +
+      fld('bk-date', 'วันที่สำรอง *', 'date', 'col-md-3') +
+      sel('bk-result', 'ผล *', res, 'col-md-3') +
+      fld('bk-size', 'ขนาดข้อมูล', 'text', 'col-md-3') +
+      fld('bk-location', 'ที่จัดเก็บ', 'text', 'col-md-5') +
+      fld('bk-next', 'กำหนดครั้งถัดไป', 'date', 'col-md-4') +
+      fileFld('bk-file', 'หลักฐาน', 'col-md-6') +
+      fld('bk-notes', 'หมายเหตุ', 'text', 'col-md-6') +
+      '</div><button class="btn btn-primary mt-3" onclick="bkSave()">บันทึก</button></div></div>';
+  }
+  function bkSave() {
+    uploadIfAny('bk-file', 'backup').then(function (url) {
+      var form = {
+        system: val('bk-system'), type: val('bk-type'), date: val('bk-date'), result: val('bk-result'),
+        size: val('bk-size'), location: val('bk-location'), nextDue: val('bk-next'),
+        notes: val('bk-notes'), evidence: url
+      };
+      callServer('addBackupLog', form).then(function (m) { toast(m); loadModule('backup'); });
+    });
+  }
+  function bkTable(rows, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีบันทึก</div>';
+    var body = rows.map(function (r) {
+      var rc = r.result === 'ล้มเหลว' ? 'overdue' : (r.result === 'สำเร็จบางส่วน' ? 'soon' : '');
+      var integrity = r.isSnapshot
+        ? '<small class="text-muted d-block">SHA-256: ' + escapeHtmlJs(String(r.checksum || '').substring(0, 16)) + '…</small>'
+        : '';
+      var actions = '';
+      if (canEdit && r.isSnapshot) {
+        actions = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="bkVerifySnapshot(\'' + r.id + '\')">ตรวจ checksum</button>' +
+          '<button class="btn btn-sm btn-outline-success mb-1" onclick="bkRestoreSandbox(\'' + r.id + '\')">ทดสอบ Restore</button>';
+      }
+      if (canEdit) actions += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="bkEdit(\'' + r.id + '\')">แก้ไข</button>' +
+        deleteBtn('backup', r.id, r.system || r.id);
+      return '<tr><td>' + escapeHtmlJs(r.date) + '</td><td>' + escapeHtmlJs(r.system) + '</td>' +
+        '<td>' + escapeHtmlJs(r.type) + '</td><td class="' + rc + '">' + escapeHtmlJs(r.result) + '</td>' +
+        '<td>' + (r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">เปิดไฟล์</a>' : escapeHtmlJs(r.location)) +
+        integrity + '</td><td>' + escapeHtmlJs(r.nextDue) + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>วันที่</th><th>ระบบ</th><th>ประเภท</th><th>ผล</th><th>ไฟล์/ความถูกต้อง</th><th>ครั้งถัดไป</th><th>ทดสอบ</th></tr>', body);
+  }
+
+  function bkCreateSnapshot() {
+    showFormModal({
+      title: 'สร้าง System Snapshot',
+      submitLabel: 'สร้าง Snapshot',
+      size: 'md',
+      fields: [
+        { id: 'label', label: 'ชื่อกำกับ (ไม่บังคับ)', placeholder: 'เช่น ก่อนปรับปรุงระบบ',
+          help: 'ระบบจะสร้าง Google Sheets แยกจากฐาน Production และตรวจ SHA-256 ทันที', col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('createSystemSnapshot', v.label).then(function (r) {
+          toast('สร้าง Snapshot ' + r.id + ' เรียบร้อย · ' + r.rowCount + ' แถว', 'success');
+          loadModule('backup');
+        });
+      }
+    });
+  }
+  function bkEdit(id) {
+    var r = (BK_DATA.backups || []).filter(function (x) { return x.id === id; })[0]; if (!r) return;
+    showFormModal({ title: 'แก้ไขบันทึกสำรอง: ' + r.id, submitLabel: 'อัปเดต', fields: [
+      {id:'system',label:'ระบบงาน',value:r.system,required:true,col:'col-md-6'},
+      {id:'type',label:'ประเภท',type:'select',options:BK_DATA.types,value:r.type,placeholder:false,col:'col-md-3'},
+      {id:'date',label:'วันที่สำรอง',type:'date',value:dmyToInput(r.date),required:true,col:'col-md-3'},
+      {id:'result',label:'ผล',type:'select',options:BK_DATA.results,value:r.result,placeholder:false,required:true,col:'col-md-4'},
+      {id:'size',label:'ขนาดข้อมูล',value:r.size,col:'col-md-4'},{id:'location',label:'ที่จัดเก็บ',value:r.location,col:'col-md-4'},
+      {id:'nextDue',label:'กำหนดครั้งถัดไป',type:'date',value:dmyToInput(r.nextDue),col:'col-md-4'},
+      {id:'evidence',label:'ลิงก์หลักฐาน',value:r.evidence,col:'col-md-8'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',value:r.notes,rows:2,col:'col-12'}
+    ], onSubmit:function(v){ return callServer('updateBackupLog', id, v).then(function(m){toast(m,'success');loadModule('backup');}); }});
+  }
+  function bkVerifySnapshot(id) {
+    callServer('verifySystemSnapshot', id).then(function (r) {
+      toast(r.matched ? 'Checksum ตรงกัน Snapshot สมบูรณ์' : 'Checksum ไม่ตรงกัน กรุณาหยุดใช้ Snapshot นี้',
+        r.matched ? 'success' : 'danger');
+      loadModule('backup');
+    });
+  }
+  function bkRestoreSandbox(id) {
+    showConfirm('ระบบจะสร้างไฟล์สำเนาใหม่สำหรับทดสอบ โดยไม่เขียนทับฐาน Production', function () {
+        return callServer('restoreSnapshotToSandbox', id).then(function (r) {
+          toast(r.matched ? 'Restore ผ่าน · RTO ' + r.rtoSeconds + ' วินาที' : 'Restore สำเร็จแต่ checksum ไม่ตรง',
+            r.matched ? 'success' : 'danger');
+          if (r.url) window.open(r.url, '_blank');
+          loadModule('backup');
+        });
+      }, {
+        title: 'ทดสอบ Restore ไปยัง Sandbox',
+        okLabel: 'เริ่มทดสอบ Restore'
+    });
+  }
+
+  // ---------- ทดสอบกู้คืน ----------
+  function rcvFormHtml() {
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>บันทึกผลทดสอบกู้คืนข้อมูล</h6>' +
+      '<div class="row g-2">' +
+      fld('rcv-system', 'ระบบงาน *', 'text', 'col-md-4') +
+      fld('rcv-date', 'วันที่ทดสอบ *', 'date', 'col-md-3') +
+      fld('rcv-result', 'ผล *', 'text', 'col-md-5') +
+      fld('rcv-scenario', 'สถานการณ์ทดสอบ', 'text', 'col-md-12') +
+      fld('rcv-rto', 'RTO จริง', 'text', 'col-md-3') +
+      fld('rcv-rpo', 'RPO จริง', 'text', 'col-md-3') +
+      fld('rcv-next', 'ทดสอบครั้งถัดไป', 'date', 'col-md-3') +
+      fileFld('rcv-file', 'หลักฐาน', 'col-md-3') +
+      fld('rcv-findings', 'ข้อค้นพบ/ปรับปรุง', 'text', 'col-md-12') +
+      '</div><button class="btn btn-primary mt-3" onclick="rcvSave()">บันทึก</button></div></div>';
+  }
+  function rcvSave() {
+    uploadIfAny('rcv-file', 'backup').then(function (url) {
+      var form = {
+        system: val('rcv-system'), date: val('rcv-date'), result: val('rcv-result'),
+        scenario: val('rcv-scenario'), rto: val('rcv-rto'), rpo: val('rcv-rpo'),
+        nextDue: val('rcv-next'), findings: val('rcv-findings'), evidence: url
+      };
+      callServer('addRecoveryTest', form).then(function (m) { toast(m); loadModule('backup'); });
+    });
+  }
+  function rcvTable(rows, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีบันทึก</div>';
+    var body = rows.map(function (r) {
+      return '<tr><td>' + escapeHtmlJs(r.date) + '</td><td>' + escapeHtmlJs(r.system) + '</td>' +
+        '<td>' + escapeHtmlJs(r.result) + '</td><td>' + escapeHtmlJs(r.rto) + ' / ' + escapeHtmlJs(r.rpo) + '</td>' +
+        '<td>' + escapeHtmlJs(r.nextDue) + '</td>' +
+        '<td>' + (r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : '') + '</td>' +
+        '<td>' + (canEdit ? '<button class="btn btn-sm btn-outline-primary me-1" onclick="rcvEdit(\'' + r.id + '\')">แก้ไข</button>' + deleteBtn('recovery', r.id, r.system || r.id) : '') + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>วันที่</th><th>ระบบ</th><th>ผล</th><th>RTO/RPO</th><th>ครั้งถัดไป</th><th>หลักฐาน</th><th></th></tr>', body);
+  }
+  function rcvEdit(id) {
+    var r=(BK_DATA.recovery||[]).filter(function(x){return x.id===id;})[0]; if(!r)return;
+    showFormModal({title:'แก้ไขผลทดสอบกู้คืน: '+r.id,submitLabel:'อัปเดต',fields:[
+      {id:'system',label:'ระบบงาน',value:r.system,required:true,col:'col-md-6'},
+      {id:'date',label:'วันที่ทดสอบ',type:'date',value:dmyToInput(r.date),required:true,col:'col-md-3'},
+      {id:'result',label:'ผล',value:r.result,required:true,col:'col-md-3'},
+      {id:'scenario',label:'สถานการณ์ทดสอบ',value:r.scenario,col:'col-12'},
+      {id:'rto',label:'RTO จริง',value:r.rto,col:'col-md-3'},{id:'rpo',label:'RPO จริง',value:r.rpo,col:'col-md-3'},
+      {id:'nextDue',label:'กำหนดทดสอบครั้งถัดไป',type:'date',value:dmyToInput(r.nextDue),col:'col-md-3'},
+      {id:'evidence',label:'ลิงก์หลักฐาน',value:r.evidence,col:'col-md-3'},
+      {id:'findings',label:'ข้อค้นพบ/ปรับปรุง',type:'textarea',value:r.findings,rows:2,col:'col-12'}
+    ],onSubmit:function(v){return callServer('updateRecoveryTest',id,v).then(function(m){toast(m,'success');loadModule('backup');});}});
+  }
+
+  // ---------- แผนฉุกเฉิน ----------
+  function bcpFormHtml() {
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มแผนฉุกเฉิน (BCP/DR)</h6>' +
+      '<div class="row g-2">' +
+      fld('bcp-name', 'ชื่อแผน *', 'text', 'col-md-6') +
+      fld('bcp-owner', 'ผู้รับผิดชอบ', 'text', 'col-md-6') +
+      fld('bcp-scope', 'ขอบเขต', 'text', 'col-md-12') +
+      fld('bcp-next', 'ทบทวนครั้งถัดไป', 'date', 'col-md-4') +
+      fld('bcp-doc', 'ลิงก์เอกสารแผน', 'text', 'col-md-8') +
+      '</div><button class="btn btn-primary mt-3" onclick="bcpSave()">บันทึก</button></div></div>';
+  }
+  function bcpSave() {
+    var form = { name: val('bcp-name'), owner: val('bcp-owner'), scope: val('bcp-scope'),
+      nextReview: val('bcp-next'), docLink: val('bcp-doc') };
+    callServer('addBCPPlan', form).then(function (m) { toast(m); loadModule('backup'); });
+  }
+  function bcpTable(rows, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีแผน</div>';
+    var body = rows.map(function (r) {
+      var due = r.reviewDays === null ? '-' : (r.reviewDays < 0 ?
+        '<span class="overdue">เลย ' + Math.abs(r.reviewDays) + ' วัน</span>' :
+        (r.reviewDays <= 30 ? '<span class="soon">' + r.reviewDays + ' วัน</span>' : r.reviewDays + ' วัน'));
+      var act = canEdit ? ('<button class="btn btn-sm btn-outline-success me-1" onclick="bcpReview(\'' + r.id + '\')">ทบทวน</button>' +
+        '<button class="btn btn-sm btn-outline-danger me-1" onclick="bcpInvoke(\'' + r.id + '\')">บันทึกการใช้จริง</button>' +
+        '<button class="btn btn-sm btn-outline-primary me-1" onclick="bcpEdit(\'' + r.id + '\')">แก้ไข</button>' +
+        deleteBtn('bcp', r.id, r.name || r.id)) : '';
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.owner) + '</td>' +
+        '<td>' + escapeHtmlJs(r.nextReview) + ' ' + due + '</td>' +
+        '<td>' + escapeHtmlJs(r.lastInvoked || '-') + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>ชื่อแผน</th><th>ผู้รับผิดชอบ</th><th>ทบทวนถัดไป</th><th>ใช้งานจริงล่าสุด</th><th></th></tr>', body);
+  }
+  function bcpReview(id) { callServer('reviewBCPPlan', id).then(function (m) { toast(m); loadModule('backup'); }); }
+  function bcpEdit(id) {
+    var r=(BK_DATA.bcp||[]).filter(function(x){return x.id===id;})[0]; if(!r)return;
+    showFormModal({title:'แก้ไขแผนฉุกเฉิน: '+r.name,submitLabel:'อัปเดต',fields:[
+      {id:'name',label:'ชื่อแผน',value:r.name,required:true,col:'col-md-6'},
+      {id:'owner',label:'ผู้รับผิดชอบ',value:r.owner,col:'col-md-6'},
+      {id:'scope',label:'ขอบเขต',type:'textarea',value:r.scope,rows:2,col:'col-12'},
+      {id:'nextReview',label:'กำหนดทบทวนครั้งถัดไป',type:'date',value:dmyToInput(r.nextReview),col:'col-md-4'},
+      {id:'status',label:'สถานะ',value:r.status,col:'col-md-4'},
+      {id:'docLink',label:'ลิงก์เอกสารแผน',value:r.docLink,col:'col-md-8'}
+    ],onSubmit:function(v){return callServer('updateBCPPlan',id,v).then(function(m){toast(m,'success');loadModule('backup');});}});
+  }
+  function bcpInvoke(id) {
+    showFormModal({
+      title: 'บันทึกการใช้แผนฉุกเฉินจริง',
+      submitLabel: 'บันทึก',
+      fields: [{ id: 'reason', label: 'เหตุการณ์/เหตุผลที่ใช้แผนฉุกเฉิน', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('recordBCPInvocation', id, v.reason)
+          .then(function (m) { toast(m); loadModule('backup'); });
+      }
+    });
+  }
+
+  function bkOpsHtml(automation, retention, canEdit) {
+    var triggers = [
+      ['Snapshot รายวัน', automation.dailyTrigger],
+      ['Restore drill รายเดือน', automation.restoreTrigger],
+      ['LINE retry ทุก 15 นาที', automation.queueTrigger],
+      ['Retention รายวัน', automation.retentionTrigger],
+      ['Live health รายชั่วโมง', automation.healthTrigger]
+    ];
+    var html = '<div class="card stat-card mb-3"><div class="card-body">' +
+      '<h5 class="text-primary"><i class="bi bi-robot"></i> Production Automation</h5>' +
+      '<div class="row g-2 mt-1">' + triggers.map(function (item) {
+        return '<div class="col-md-4"><div class="border rounded p-2">' +
+          '<span class="badge bg-' + (item[1] ? 'success' : 'danger') + '">' + (item[1] ? 'พร้อม' : 'ขาด') + '</span> ' +
+          escapeHtmlJs(item[0]) + '</div></div>';
+      }).join('') + '</div><div class="small text-muted mt-3">เก็บ Snapshot ' +
+      escapeHtmlJs(automation.retentionDays || 90) + ' วัน · การลบไฟล์เก่าจะเก็บ Log เดิมไว้</div></div></div>';
+
+    var recent = Array.isArray(retention.recent) ? retention.recent : [];
+    html += '<div class="card stat-card"><div class="card-body">' +
+      '<div class="d-flex flex-wrap gap-2 align-items-center"><div><h5 class="text-primary mb-1">' +
+      '<i class="bi bi-shield-check"></i> Retention / PDPA</h5>' +
+      '<div class="small text-muted">Ticket PII ' + escapeHtmlJs(retention.ticketDays || 730) +
+      ' วัน · ถังขยะ ' + escapeHtmlJs(retention.softDeleteDays || 365) +
+      ' วัน · LINE session ' + escapeHtmlJs(retention.lineSessionDays || 30) + ' วัน</div></div>' +
+      '<span class="badge ms-auto bg-' + (retention.mode === 'ENFORCE' ? 'danger' : 'warning text-dark') + '">' +
+      escapeHtmlJs(retention.mode || 'DRY_RUN') + '</span></div>';
+    if (canEdit) {
+      html += '<div class="alert alert-warning small mt-3">เริ่มจาก Preview ก่อนเสมอ การกด Enforce จะลบ session/log ที่หมดอายุ ' +
+        'anonymize Ticket เก่า และลบถาวรรายการในถังขยะที่พ้นกำหนด</div>' +
+        '<button class="btn btn-outline-primary me-2" onclick="bkRunRetention(\'DRY_RUN\')">' +
+        '<i class="bi bi-search"></i> Preview ตอนนี้</button>' +
+        '<button class="btn btn-outline-danger" onclick="bkConfirmRetention()">' +
+        '<i class="bi bi-trash3"></i> Enforce ตอนนี้</button>';
+    }
+    if (recent.length) {
+      html += '<div class="table-responsive mt-3"><table class="table table-sm"><thead><tr>' +
+        '<th>เวลา</th><th>Policy</th><th>Mode</th><th>พบ/ดำเนินการ</th><th>สถานะ</th></tr></thead><tbody>' +
+        recent.map(function (r) {
+          return '<tr><td><small>' + escapeHtmlJs(r.runAt) + '</small></td><td>' + escapeHtmlJs(r.policy) +
+            '</td><td>' + escapeHtmlJs(r.mode) + '</td><td>' + escapeHtmlJs(r.matched) + ' / ' +
+            escapeHtmlJs(r.affected) + '</td><td>' + escapeHtmlJs(r.status) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    return html + '</div></div>';
+  }
+
+  function bkRunRetention(mode) {
+    return callServer('runRetentionNow', mode).then(function (r) {
+      toast((mode === 'ENFORCE' ? 'ดำเนินการ' : 'Preview') + ' ' + r.runId +
+        ' · พบ ' + r.matched + ' · เปลี่ยนแปลง ' + r.affected,
+        mode === 'ENFORCE' ? 'warning' : 'success');
+      loadModule('backup');
+    });
+  }
+
+  function bkConfirmRetention() {
+    showConfirm('ยืนยัน Enforce นโยบาย Retention ตอนนี้? รายการที่พ้นกำหนดจะถูกลบ/anonymize ตาม Policy และย้อนกลับไม่ได้',
+      function () { return bkRunRetention('ENFORCE'); },
+      { title: 'ยืนยัน Retention Enforcement', okLabel: 'Enforce นโยบาย' });
+  }
+</script>

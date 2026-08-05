@@ -1,0 +1,342 @@
+﻿<!-- Incident.html — หน้าจอบริหารจัดการเหตุการณ์ (include_ ใน Index) -->
+<script>
+  var INC_DATA = null;
+  var INC_EVIDENCE = '';
+
+  function renderIncident(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getIncidentModuleData').then(function (d) {
+      INC_DATA = d; INC_EVIDENCE = '';
+      var html = pageHeader(
+        'การบริหารจัดการเหตุการณ์ (Incident)',
+        'แจ้งเหตุ ประเมินความรุนแรง ติดตาม PDPA และบันทึกการตอบสนองอย่างเป็นลำดับ',
+        '',
+        'bi-exclamation-octagon'
+      );
+      html += incDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3"><li class="nav-item">' +
+        '<button class="nav-link active" data-bs-toggle="tab" data-bs-target="#inc-new" type="button">แจ้งเหตุการณ์</button></li>' +
+        '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inc-list" type="button">' +
+        'รายการเหตุการณ์ (' + d.incidents.length + ')</button></li>' +
+        '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inc-regulatory" type="button">' +
+        '<i class="bi bi-bank"></i> การแจ้งหน่วยงานกำกับ (' + (d.regulatoryNotifications || []).length + ')</button></li>' +
+        '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inc-matrix" type="button">' +
+        '<i class="bi bi-grid-3x3-gap"></i> เมทริกซ์ความเสี่ยง</button></li></ul>';
+      html += '<div class="tab-content">';
+      html += '<div class="tab-pane fade show active" id="inc-new">' + incFormHtml(d) + '</div>';
+      html += '<div class="tab-pane fade" id="inc-list">' + incListHtml(d) + '</div>';
+      html += '<div class="tab-pane fade" id="inc-regulatory">' + incRegulatoryHtml(d) + '</div>';
+      html += '<div class="tab-pane fade" id="inc-matrix">' + incMatrixHtml(d) + '</div>';
+      html += '</div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function incDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.incidents)) d.incidents = [];
+    var open = 0, severe = 0, pdpa = 0, regulatoryPending = 0;
+    d.incidents.forEach(function (r) {
+      if (r.status !== 'ปิดเคส') open++;
+      if (r.severity === 'สูง' || r.severity === 'วิกฤต') severe++;
+      if (r.personalData === 'Yes' && r.dpoNotified !== 'Yes' && r.status !== 'ปิดเคส') pdpa++;
+      if (r.status !== 'ปิดเคส' && r.regulatoryAssessmentStatus !== 'ประเมินแล้ว') regulatoryPending++;
+    });
+    return moduleDashboard([
+      mdStat('Incident เปิดอยู่', open, 'bi-exclamation-octagon', open ? 'danger' : 'teal'),
+      mdStat('สูง/วิกฤต', severe, 'bi-fire', severe ? 'danger' : 'gray'),
+      mdStat('DPO ภายในยังไม่รับทราบ', pdpa, 'bi-stopwatch', pdpa ? 'danger' : 'gray'),
+      mdStat('รอประเมินการแจ้งภายนอก', regulatoryPending, 'bi-bank', regulatoryPending ? 'amber' : 'gray')
+    ]);
+  }
+
+  function incFormHtml(d) {
+    var cats = d.categories.map(function (c) { return '<option>' + escapeHtmlJs(c) + '</option>'; }).join('');
+    return '<div class="card stat-card"><div class="card-body" style="max-width:720px">' +
+      '<div class="mb-3"><label class="form-label">หัวข้อเหตุการณ์ *</label><input id="inc-title" class="form-control"></div>' +
+      '<div class="mb-3"><label class="form-label">ประเภท *</label><select id="inc-cat" class="form-select">' +
+      '<option value="">-- เลือกประเภท --</option>' + cats + '</select></div>' +
+      '<div class="mb-3"><label class="form-label">ระบบ/ทรัพย์สินที่ได้รับผลกระทบ</label><input id="inc-affected" class="form-control"></div>' +
+      '<div class="mb-3"><label class="form-label">รายละเอียด *</label><textarea id="inc-desc" class="form-control" rows="4"></textarea></div>' +
+      '<div class="mb-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="inc-pii">' +
+      '<label class="form-check-label text-danger" for="inc-pii">เกี่ยวข้องกับข้อมูลส่วนบุคคล — ส่ง DPO ประเมินหน้าที่แจ้ง สคส./เจ้าของข้อมูลโดยเร็ว</label></div></div>' +
+      '<div class="mb-3"><label class="form-label">แนบหลักฐาน (ไม่บังคับ)</label>' +
+      '<input id="inc-file" type="file" class="form-control" onchange="incUpload()">' +
+      '<div id="inc-file-status" class="small text-muted mt-1"></div></div>' +
+      '<button class="btn btn-primary" onclick="incSubmit()">ส่งแจ้งเหตุ</button></div></div>';
+  }
+
+  function incUpload() {
+    var f = document.getElementById('inc-file').files[0];
+    if (!f) return;
+    var status = document.getElementById('inc-file-status');
+    status.textContent = 'กำลังอัปโหลด...';
+    var reader = new FileReader();
+    reader.onload = function () {
+      var base64 = reader.result.split(',')[1];
+      callServer('uploadEvidence', { base64: base64, filename: f.name, mimeType: f.type, module: 'incident' })
+        .then(function (res) {
+          INC_EVIDENCE = res.url;
+          status.innerHTML = '✓ แนบไฟล์แล้ว: <a href="' + res.url + '" target="_blank">' + escapeHtmlJs(res.name) + '</a>';
+        }).catch(function () { status.textContent = 'อัปโหลดไม่สำเร็จ'; });
+    };
+    reader.readAsDataURL(f);
+  }
+
+  function incSubmit() {
+    var form = {
+      title: document.getElementById('inc-title').value,
+      category: document.getElementById('inc-cat').value,
+      affectedSystem: document.getElementById('inc-affected').value,
+      description: document.getElementById('inc-desc').value,
+      personalData: document.getElementById('inc-pii').checked ? 'yes' : 'no',
+      evidence: INC_EVIDENCE
+    };
+    callServer('reportIncident', form).then(function (m) { toast(m, 'success'); loadModule('incident'); });
+  }
+
+  // ----- เมทริกซ์ความเสี่ยง -----
+  function incRiskInfo(score) {
+    score = Number(score) || 0;
+    if (score <= 0) return { level: 'ยังไม่ประเมิน', cls: 'risk-gray' };
+    if (score <= 4) return { level: 'ต่ำ', cls: 'risk-green' };
+    if (score <= 9) return { level: 'ปานกลาง', cls: 'risk-yellow' };
+    if (score <= 14) return { level: 'สูง', cls: 'risk-orange' };
+    return { level: 'วิกฤต', cls: 'risk-red' };
+  }
+  function incRiskBadge(r) {
+    if (!r.riskScore) return '<span class="text-muted small">ยังไม่ประเมิน</span>';
+    var info = incRiskInfo(r.riskScore);
+    return '<span class="risk-badge ' + info.cls + '" title="โอกาส ' + r.likelihood + ' × ผลกระทบ ' + r.impact + '">' +
+      info.level + ' (' + r.riskScore + ')</span>';
+  }
+  function incMatrixHtml(d) {
+    d = d || {}; if (!Array.isArray(d.incidents)) d.incidents = [];
+    // นับเหตุการณ์ที่ยังเปิดอยู่ตามช่อง โอกาส(L) × ผลกระทบ(I)
+    var grid = {};
+    var assessed = 0;
+    d.incidents.forEach(function (r) {
+      if (r.status === 'ปิดเคส') return;
+      if (!r.likelihood || !r.impact) return;
+      var k = r.likelihood + 'x' + r.impact;
+      grid[k] = (grid[k] || 0) + 1;
+      assessed++;
+    });
+    var Ls = (d.likelihoodScale || []).map(function (x) { return x; });
+    var Is = (d.impactScale || []).map(function (x) { return x; });
+    var head = '<tr><th></th><th></th><th colspan="' + Ls.length + '">โอกาสเกิด (Likelihood) →</th></tr><tr><th></th><th></th>';
+    Ls.forEach(function (l) { head += '<th>' + l.value + '<br><span class="text-muted" style="font-weight:500">' + escapeHtmlJs(l.label) + '</span></th>'; });
+    head += '</tr>';
+    var rows = '';
+    // ผลกระทบจากมาก (บน) ไปน้อย (ล่าง)
+    for (var ii = Is.length - 1; ii >= 0; ii--) {
+      var imp = Is[ii];
+      rows += '<tr>';
+      if (ii === Is.length - 1) rows += '<th class="axis-y" rowspan="' + Is.length + '">ผลกระทบ (Impact) →</th>';
+      rows += '<th>' + imp.value + '<br><span class="text-muted" style="font-weight:500">' + escapeHtmlJs(imp.label) + '</span></th>';
+      Ls.forEach(function (l) {
+        var score = l.value * imp.value;
+        var info = incRiskInfo(score);
+        var cnt = grid[l.value + 'x' + imp.value] || 0;
+        rows += '<td class="cell ' + info.cls + (cnt ? '' : ' empty') + '">' +
+          '<span class="rc-count">' + cnt + '</span><span class="rc-score">คะแนน ' + score + '</span></td>';
+      });
+      rows += '</tr>';
+    }
+    var legend = '<div class="risk-legend">' +
+      '<span><i class="risk-green"></i> ต่ำ (1-4)</span><span><i class="risk-yellow"></i> ปานกลาง (5-9)</span>' +
+      '<span><i class="risk-orange"></i> สูง (10-14)</span><span><i class="risk-red"></i> วิกฤต (15-25)</span></div>';
+    return '<div class="card stat-card"><div class="card-body">' +
+      '<h6 class="text-primary mb-1"><i class="bi bi-grid-3x3-gap-fill"></i> เมทริกซ์ความเสี่ยงเหตุการณ์ที่ยังเปิดอยู่</h6>' +
+      '<p class="text-muted small mb-3">ตัวเลขในช่อง = จำนวนเหตุการณ์ที่ประเมินความเสี่ยงไว้ (เปิดอยู่) ' +
+      (assessed ? 'รวม ' + assessed + ' รายการ' : '· ยังไม่มีเหตุการณ์ที่ประเมิน — ประเมินได้ที่ปุ่ม “จำแนก/มอบหมาย”') + '</p>' +
+      '<div class="risk-matrix-wrap"><table class="risk-matrix"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +
+      legend + '</div></div>';
+  }
+
+  function incListHtml(d) {
+    if (!d.incidents.length) return '<div class="alert alert-secondary">ไม่มีเหตุการณ์</div>';
+    var sevBadge = { 'วิกฤต': 'danger', 'สูง': 'warning', 'ปานกลาง': 'info', 'ต่ำ': 'secondary' };
+    var body = d.incidents.map(function (r) {
+      var pdpa = '';
+      if (r.personalData === 'Yes' && r.dpoNotified !== 'Yes') {
+        var cls = (r.dpoHoursLeft !== null && r.dpoHoursLeft < 0) ? 'overdue' : 'soon';
+        pdpa = '<br><span class="' + cls + '">PDPA: ' + (r.dpoHoursLeft !== null ?
+          (r.dpoHoursLeft < 0 ? 'เลย ' + Math.abs(r.dpoHoursLeft) + ' ชม.' : 'เหลือ ' + r.dpoHoursLeft + ' ชม.') : '-') + '</span>';
+      }
+      var sev = r.severity ? '<span class="badge bg-' + (sevBadge[r.severity] || 'secondary') + '">' + escapeHtmlJs(r.severity) + '</span>' : '<span class="text-muted">ยังไม่จำแนก</span>';
+      var source = r.sourceTicketId ? '<br><small class="text-danger">จาก Ticket: ' + escapeHtmlJs(r.sourceTicketId) + '</small>' : '';
+      var actions = '';
+      if (d.canManage) {
+        actions += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="incClassify(\'' + r.id + '\')">จำแนก/มอบหมาย</button>';
+        if (r.status !== 'ปิดเคส') actions += '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="incClose(\'' + r.id + '\')">ปิดเคส</button>';
+      }
+      if (d.canDPO && r.personalData === 'Yes' && r.dpoNotified !== 'Yes') {
+        actions += '<button class="btn btn-sm btn-danger mb-1" onclick="incDPO(\'' + r.id + '\')">บันทึกแจ้ง DPO</button>';
+      }
+      if (d.canDPO) {
+        actions += '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="incRegulatoryAssess(\'' + r.id + '\')">ประเมินการแจ้งภายนอก</button>';
+        actions += '<button class="btn btn-sm btn-outline-dark mb-1" onclick="incRegulatoryNotify(\'' + r.id + '\')">บันทึกการแจ้ง</button>';
+      }
+      var ev = r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : '';
+      var regulatory = r.regulatoryAssessmentStatus === 'ประเมินแล้ว'
+        ? '<br><small class="text-primary">ประเมินการแจ้งแล้ว · ' + escapeHtmlJs(r.regulatoryAssessedBy || '') + '</small>'
+        : '<br><small class="text-warning">รอประเมินการแจ้งภายนอก</small>';
+      return '<tr><td>' + escapeHtmlJs(r.id) + '</td><td>' + escapeHtmlJs(r.title) +
+        '<br><small class="text-muted">' + escapeHtmlJs(r.category) + '</small>' + source + (ev ? '<br>' + ev : '') + '</td>' +
+        '<td>' + sev + '</td><td>' + incRiskBadge(r) + '</td><td>' + escapeHtmlJs(r.status) + pdpa + regulatory + '</td>' +
+        '<td>' + escapeHtmlJs(r.reportDate) + '<br><small>' + escapeHtmlJs(r.assignee || '') + '</small></td>' +
+        '<td>' + (actions || '-') + '</td></tr>';
+    }).join('');
+    return '<div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead>' +
+      '<tr><th>เลขที่</th><th>เรื่อง</th><th>ความรุนแรง</th><th>ความเสี่ยง</th><th>สถานะ</th><th>แจ้งเมื่อ/ผู้รับผิดชอบ</th><th>ดำเนินการ</th></tr>' +
+      '</thead><tbody>' + body + '</tbody></table></div></div>';
+  }
+
+  function incRegulatoryHtml(d) {
+    d = d || {};
+    var list = Array.isArray(d.regulatoryNotifications) ? d.regulatoryNotifications : [];
+    if (!list.length) {
+      return '<div class="alert alert-secondary">ยังไม่มีบันทึกการแจ้งหน่วยงานกำกับหรือเหตุผลการไม่แจ้ง ' +
+        'ให้เปิดจากปุ่ม “บันทึกการแจ้ง” ในรายการ Incident</div>';
+    }
+    var rows = list.map(function (r) {
+      var deadline = r.deadline || '-';
+      if (r.status !== 'แจ้งแล้ว' && r.deadlineHoursLeft !== null) {
+        deadline = '<span class="' + (r.deadlineHoursLeft < 0 ? 'overdue' : 'soon') + '">' +
+          escapeHtmlJs(r.deadline) + ' (' + (r.deadlineHoursLeft < 0 ? 'เลยกำหนด' : 'เหลือ ' + r.deadlineHoursLeft + ' ชม.') + ')</span>';
+      } else deadline = escapeHtmlJs(deadline);
+      var evidence = r.evidence
+        ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank" rel="noopener">หลักฐาน</a>' : '-';
+      return '<tr><td>' + escapeHtmlJs(r.incidentId) + '</td><td><b>' + escapeHtmlJs(r.agency) +
+        '</b><br><small>' + escapeHtmlJs(r.type || '') + '</small></td>' +
+        '<td>' + (r.required === 'Yes' ? '<span class="badge bg-danger">ต้องแจ้ง</span>' :
+          '<span class="badge bg-secondary">ไม่ต้องแจ้ง</span>') +
+        (r.reasonNotRequired ? '<br><small>' + escapeHtmlJs(r.reasonNotRequired) + '</small>' : '') + '</td>' +
+        '<td>' + deadline + '</td><td>' + itStatusBadge(r.status) +
+        (r.notifiedAt ? '<br><small>' + escapeHtmlJs(r.notifiedAt) + '</small>' : '') + '</td>' +
+        '<td>' + escapeHtmlJs(r.referenceNo || '-') + '</td><td>' + evidence + '</td></tr>';
+    }).join('');
+    return '<div class="alert alert-light border small"><b>หมายเหตุ:</b> การแจ้ง DPO ภายในไม่ใช่หลักฐานว่าได้แจ้ง ' +
+      'สคส., สกมช. หรือหน่วยงานกำกับแล้ว ตารางนี้เก็บการตัดสินใจและหลักฐานแยกต่างหาก</div>' +
+      '<div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr>' +
+      '<th>Incident</th><th>ผู้รับแจ้ง</th><th>หน้าที่</th><th>กำหนด</th><th>สถานะ</th><th>เลขรับเรื่อง</th><th>หลักฐาน</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+
+  function incClassify(id) {
+    var cur = (INC_DATA && INC_DATA.incidents || []).filter(function (x) { return x.id === id; })[0] || {};
+    var lOpts = (INC_DATA.likelihoodScale || []).map(function (o) { return { value: o.value, label: o.value + ' — ' + o.label }; });
+    var iOpts = (INC_DATA.impactScale || []).map(function (o) { return { value: o.value, label: o.value + ' — ' + o.label }; });
+    showFormModal({
+      title: 'จำแนก / ประเมินความเสี่ยง / มอบหมาย',
+      submitLabel: 'บันทึก',
+      fields: [
+        { id: 'severity', label: 'ระดับความรุนแรง', type: 'select', value: cur.severity || 'ปานกลาง', required: true, options: ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'] },
+        { id: 'likelihood', label: 'โอกาสเกิด (Likelihood)', type: 'select', value: cur.likelihood || '', options: lOpts, col: 'col-md-6' },
+        { id: 'impact', label: 'ผลกระทบ (Impact)', type: 'select', value: cur.impact || '', options: iOpts, col: 'col-md-6' },
+        { id: 'assignee', label: 'มอบหมายให้ (อีเมล)', type: 'email' },
+        { id: 'status', label: 'สถานะ', type: 'select', value: cur.status === 'ปิดเคส' ? 'กำลังดำเนินการ' : (cur.status || 'กำลังดำเนินการ'), required: true, options: ['เปิด', 'กำลังดำเนินการ'] }
+      ],
+      onSubmit: function (v) {
+        return callServer('updateIncident', id, {
+          severity: v.severity, likelihood: v.likelihood || '', impact: v.impact || '',
+          assignee: v.assignee || '', status: v.status
+        }).then(function (m) { toast(m); loadModule('incident'); });
+      }
+    });
+  }
+  function incClose(id) {
+    showFormModal({
+      title: 'ปิดเคส Incident',
+      submitLabel: 'ปิดเคส',
+      fields: [
+        { id: 'rootCause', label: 'สาเหตุที่แท้จริง (Root Cause)', type: 'textarea', rows: 3, required: true },
+        { id: 'resolution', label: 'การแก้ไข/ดำเนินการ', type: 'textarea', rows: 3, required: true },
+        { id: 'lessons', label: 'บทเรียนที่ได้รับ (ถ้ามี)', type: 'textarea', rows: 3 }
+      ],
+      onSubmit: function (v) {
+        return callServer('closeIncident', id, v.rootCause, v.resolution, v.lessons || '')
+          .then(function (m) { toast(m); loadModule('incident'); });
+      }
+    });
+  }
+  function incDPO(id) {
+    showFormModal({
+      title: 'บันทึกแจ้ง DPO',
+      submitLabel: 'บันทึก',
+      fields: [{ id: 'note', label: 'รายละเอียดการแจ้ง DPO/ดำเนินการตาม PDPA', type: 'textarea', rows: 3 }],
+      onSubmit: function (v) {
+        return callServer('markDPONotified', id, v.note || '')
+          .then(function (m) { toast(m); loadModule('incident'); });
+      }
+    });
+  }
+
+  function incDecisionOptions() {
+    return [
+      { value: 'Pending', label: 'รอพิจารณา' },
+      { value: 'Yes', label: 'ต้องแจ้ง' },
+      { value: 'No', label: 'ไม่ต้องแจ้ง (ต้องมีเหตุผล)' }
+    ];
+  }
+
+  function incRegulatoryAssess(id) {
+    var r = (INC_DATA.incidents || []).filter(function (x) { return x.id === id; })[0] || {};
+    showFormModal({
+      title: 'ประเมินหน้าที่แจ้งภายนอก: ' + id,
+      submitLabel: 'บันทึกการประเมิน', size: 'xl',
+      fields: [
+        { id: 'breachRiskLevel', label: 'ระดับความเสี่ยงต่อสิทธิและเสรีภาพของเจ้าของข้อมูล',
+          type: 'select', options: INC_DATA.breachRiskLevels || [], value: r.breachRiskLevel, col: 'col-md-4' },
+        { id: 'pdpcRequired', label: 'แจ้ง สคส. (PDPC)', type: 'select', options: incDecisionOptions(),
+          value: r.pdpcNotifyRequired || 'Pending', placeholder: false, col: 'col-md-4' },
+        { id: 'dataSubjectRequired', label: 'แจ้งเจ้าของข้อมูล', type: 'select', options: incDecisionOptions(),
+          value: r.dataSubjectNotifyRequired || 'Pending', placeholder: false, col: 'col-md-4' },
+        { id: 'ncsaRequired', label: 'แจ้ง สกมช./ThaiCERT', type: 'select', options: incDecisionOptions(),
+          value: r.ncsaReportRequired || 'Pending', placeholder: false, col: 'col-md-4' },
+        { id: 'otherRegulatorRequired', label: 'แจ้งหน่วยงานกำกับอื่น', type: 'select', options: incDecisionOptions(),
+          value: r.otherRegulatorRequired || 'Pending', placeholder: false, col: 'col-md-4' },
+        { id: 'assessment', label: 'เหตุผล ข้อเท็จจริง ฐานกฎหมาย และผู้อนุมัติการตัดสินใจ',
+          type: 'textarea', rows: 5, value: r.regulatoryAssessment, required: true, col: 'col-12',
+          help: 'บันทึกเหตุผลแม้ผลเป็น “ไม่ต้องแจ้ง” หรือ “รอพิจารณา” เพื่อให้ตรวจสอบย้อนหลังได้' }
+      ],
+      onSubmit: function (v) {
+        return callServer('assessIncidentRegulatory', id, v).then(function (m) {
+          toast(m, 'success'); loadModule('incident');
+        });
+      }
+    });
+  }
+
+  function incRegulatoryNotify(id) {
+    showFormModal({
+      title: 'บันทึกการแจ้งหน่วยงานกำกับ/เจ้าของข้อมูล: ' + id,
+      submitLabel: 'บันทึกหลักฐาน', size: 'xl',
+      fields: [
+        { id: 'agency', label: 'หน่วยงาน/ผู้รับแจ้ง', type: 'select', required: true,
+          options: ['สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล (สคส.)',
+            'สำนักงานคณะกรรมการการรักษาความมั่นคงปลอดภัยไซเบอร์แห่งชาติ (สกมช./ThaiCERT)',
+            'เจ้าของข้อมูลส่วนบุคคล', 'สำนักงาน คปภ.', 'หน่วยงานกำกับอื่น'], col: 'col-md-7' },
+        { id: 'type', label: 'ประเภทการแจ้ง', value: 'รายงานเหตุ/บันทึกการตัดสินใจ', required: true, col: 'col-md-5' },
+        { id: 'required', label: 'หน้าที่ต้องแจ้ง', type: 'select',
+          options: [{ value: 'Yes', label: 'ต้องแจ้ง' }, { value: 'No', label: 'ไม่ต้องแจ้ง' }],
+          value: 'Yes', placeholder: false, col: 'col-md-3' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: INC_DATA.regulatoryStatuses || [],
+          value: 'รอแจ้ง', placeholder: false, col: 'col-md-3' },
+        { id: 'deadline', label: 'กำหนดแจ้ง', type: 'datetime-local', col: 'col-md-3' },
+        { id: 'notifiedAt', label: 'วันที่/เวลาแจ้งจริง', type: 'datetime-local', col: 'col-md-3' },
+        { id: 'legalBasis', label: 'ฐานกฎหมาย/หลักเกณฑ์', type: 'textarea', rows: 2, col: 'col-md-6' },
+        { id: 'reasonNotRequired', label: 'เหตุผลกรณีไม่ต้องแจ้ง', type: 'textarea', rows: 2, col: 'col-md-6' },
+        { id: 'referenceNo', label: 'เลขรับเรื่อง/เลขอ้างอิง', col: 'col-md-4' },
+        { id: 'approvedBy', label: 'ผู้อนุมัติ', col: 'col-md-4' },
+        { id: 'evidence', label: 'ลิงก์หลักฐาน', type: 'url', col: 'col-md-4' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveIncidentRegulatoryNotification', id, v).then(function (m) {
+          toast(m, 'success'); loadModule('incident');
+        });
+      }
+    });
+  }
+</script>

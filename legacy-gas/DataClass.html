@@ -1,0 +1,131 @@
+﻿<!-- DataClass.html — การจัดประเภทและคุ้มครองข้อมูล + workflow ทำลายข้อมูล -->
+<script>
+  function renderDataClass(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getDataClassModuleData').then(function (d) {
+      var html = '<h3 class="text-primary mb-3">การจัดประเภทและคุ้มครองข้อมูล</h3>';
+      html += dcDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3">' +
+        dcTab('ds', 'ทะเบียนชุดข้อมูล (' + d.datasets.length + ')', true) +
+        dcTab('dd', 'คำขอทำลายข้อมูล (' + d.destructions.length + ')', false) + '</ul>';
+      html += '<div class="tab-content">';
+      html += '<div class="tab-pane fade show active" id="dc-ds">' + (d.canEdit ? dsForm(d) : '') + dsTable(d) + '</div>';
+      html += '<div class="tab-pane fade" id="dc-dd">' + ddTable(d) + '</div>';
+      html += '</div>';
+      container.innerHTML = html;
+    });
+  }
+  function dcDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.datasets)) d.datasets = []; if (!Array.isArray(d.destructions)) d.destructions = [];
+    var high = 0, pending = 0, overdue = 0;
+    d.datasets.forEach(function (r) {
+      if (r.classification === 'ลับมาก') high++;
+      if (r.destructionDays !== null && r.destructionDays < 0 && r.status !== 'ทำลายแล้ว') overdue++;
+    });
+    d.destructions.forEach(function (r) { if (r.status === 'รออนุมัติ') pending++; });
+    return moduleDashboard([
+      mdStat('ชุดข้อมูลทั้งหมด', d.datasets.length, 'bi-database-lock', 'blue'),
+      mdStat('ลับมาก', high, 'bi-shield-lock', high ? 'danger' : 'gray'),
+      mdStat('รออนุมัติทำลาย', pending, 'bi-hourglass-split', pending ? 'amber' : 'gray'),
+      mdStat('เลยกำหนดทำลาย', overdue, 'bi-calendar-x', overdue ? 'danger' : 'teal')
+    ]);
+  }
+  function dcTab(k, label, a) {
+    return '<li class="nav-item"><button class="nav-link' + (a ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#dc-' + k + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+  function dsForm(d) {
+    var cls = d.classifications.map(function (c) { return '<option>' + c + '</option>'; }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มชุดข้อมูล</h6><div class="row g-2">' +
+      fld('ds-name', 'ชื่อชุดข้อมูล *', 'text', 'col-md-4') +
+      fld('ds-system', 'ระบบงาน', 'text', 'col-md-4') +
+      sel('ds-class', 'ชั้นความลับ *', cls, 'col-md-4') +
+      fld('ds-owner', 'เจ้าของข้อมูล', 'text', 'col-md-4') +
+      fld('ds-storage', 'วิธีจัดเก็บ', 'text', 'col-md-4') +
+      fld('ds-retention', 'ระยะเก็บรักษา', 'text', 'col-md-2') +
+      fld('ds-due', 'กำหนดทำลาย', 'date', 'col-md-2') +
+      '<div class="col-md-3"><label class="form-label">ข้อมูลส่วนบุคคล?</label>' +
+      '<select id="ds-pii" class="form-select"><option value="no">ไม่ใช่</option><option value="yes">ใช่</option></select></div>' +
+      '</div><button class="btn btn-primary mt-3" onclick="dsSave()">บันทึก</button></div></div>';
+  }
+  function dsSave() {
+    var form = { name: val('ds-name'), system: val('ds-system'), classification: val('ds-class'),
+      owner: val('ds-owner'), storage: val('ds-storage'), retention: val('ds-retention'),
+      destructionDue: val('ds-due'), pii: val('ds-pii') };
+    callServer('addDataset', form).then(function (m) { toast(m); loadModule('dataClass'); });
+  }
+  function dsTable(d) {
+    if (!d.datasets.length) return '<div class="alert alert-secondary">ยังไม่มีชุดข้อมูล</div>';
+    var clsBadge = { 'ลับมาก': 'danger', 'ลับ': 'warning', 'ไม่ลับ': 'secondary' };
+    var body = d.datasets.map(function (r) {
+      var due = r.destructionDue ? (r.destructionDays !== null && r.destructionDays < 0 ?
+        '<span class="overdue">' + r.destructionDue + '</span>' : r.destructionDue) : '-';
+      var act = (d.canEdit && r.status !== 'ทำลายแล้ว') ?
+        '<button class="btn btn-sm btn-outline-danger" onclick="ddRequest(\'' + r.id + '\')">ขอทำลาย</button>' : '';
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.system || '') + '</td>' +
+        '<td><span class="badge bg-' + (clsBadge[r.classification] || 'secondary') + '">' + escapeHtmlJs(r.classification) + '</span></td>' +
+        '<td>' + escapeHtmlJs(r.owner || '') + '</td><td>' + escapeHtmlJs(r.pii) + '</td>' +
+        '<td>' + due + '</td><td>' + escapeHtmlJs(r.status) + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>ชื่อ</th><th>ระบบ</th><th>ชั้นความลับ</th><th>เจ้าของ</th><th>PII</th><th>กำหนดทำลาย</th><th>สถานะ</th><th></th></tr>', body);
+  }
+  function ddRequest(dataId) {
+    showFormModal({
+      title: 'ขอทำลายข้อมูล',
+      submitLabel: 'ส่งคำขอ',
+      fields: [{ id: 'reason', label: 'เหตุผลในการทำลายข้อมูล', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('requestDestruction', dataId, v.reason)
+          .then(function (m) { toast(m); loadModule('dataClass'); });
+      }
+    });
+  }
+  function ddTable(d) {
+    if (!d.destructions.length) return '<div class="alert alert-secondary">ไม่มีคำขอ</div>';
+    var body = d.destructions.map(function (r) {
+      var act = '';
+      if (r.status === 'รออนุมัติ') {
+        var canApprove = (r.classification === 'ลับมาก') ? d.isExecutive : d.isIT;
+        if (canApprove) act = '<button class="btn btn-sm btn-success me-1" onclick="ddApprove(\'' + r.reqId + '\',true)">อนุมัติ</button>' +
+          '<button class="btn btn-sm btn-outline-danger" onclick="ddApprove(\'' + r.reqId + '\',false)">ปฏิเสธ</button>';
+      } else if (r.status.indexOf('อนุมัติ') > -1 && d.isIT) {
+        act = '<button class="btn btn-sm btn-primary" onclick="ddDestroy(\'' + r.reqId + '\')">ยืนยันทำลายแล้ว</button>';
+      }
+      return '<tr><td>' + escapeHtmlJs(r.reqId) + '</td><td>' + escapeHtmlJs(r.dataName) + '</td>' +
+        '<td>' + escapeHtmlJs(r.classification) + '</td><td>' + escapeHtmlJs(r.requester) + '</td>' +
+        '<td>' + escapeHtmlJs(r.approverRequired) + '</td><td>' + escapeHtmlJs(r.status) + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>เลขที่</th><th>ข้อมูล</th><th>ชั้น</th><th>ผู้ขอ</th><th>ผู้อนุมัติ</th><th>สถานะ</th><th></th></tr>', body);
+  }
+  function ddApprove(reqId, ok) {
+    if (ok) {
+      showConfirm('ยืนยันอนุมัติคำขอทำลายข้อมูล ' + reqId + '?', function () {
+        callServer('approveDestruction', reqId, true, '').then(function (m) { toast(m); loadModule('dataClass'); });
+      }, { title: 'อนุมัติทำลายข้อมูล', okLabel: 'อนุมัติ' });
+      return;
+    }
+    showFormModal({
+      title: 'ปฏิเสธคำขอทำลายข้อมูล',
+      submitLabel: 'บันทึกการปฏิเสธ',
+      fields: [{ id: 'comment', label: 'เหตุผลการปฏิเสธ', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('approveDestruction', reqId, false, v.comment)
+          .then(function (m) { toast(m); loadModule('dataClass'); });
+      }
+    });
+  }
+  function ddDestroy(reqId) {
+    showFormModal({
+      title: 'ยืนยันทำลายข้อมูลแล้ว',
+      submitLabel: 'ยืนยันทำลาย',
+      fields: [
+        { id: 'method', label: 'วิธีการทำลายข้อมูล', type: 'textarea', rows: 3, required: true, help: 'เช่น ลบถาวร/ทำลายสื่อ' },
+        { id: 'evidence', label: 'ลิงก์หลักฐาน (ถ้ามี)', type: 'text' }
+      ],
+      onSubmit: function (v) {
+        return callServer('confirmDestroyed', reqId, v.method, v.evidence || '')
+          .then(function (m) { toast(m); loadModule('dataClass'); });
+      }
+    });
+  }
+</script>

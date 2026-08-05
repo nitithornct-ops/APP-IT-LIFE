@@ -1,0 +1,365 @@
+﻿<!-- Asset.html — ทะเบียนทรัพย์สิน IT (include_ ใน Index) -->
+<script>
+  var ASSET_DATA = null;
+  var AS_CONTAINER = null;
+  var AS_CHARTS = [];
+  var AS_CAT_DATA = null;
+  var AS_AUDIT_RESULTS = ['พบ/ตรงตำแหน่ง', 'พบ/ผิดตำแหน่ง', 'ไม่พบ/สูญหาย'];
+  var AS_PALETTE = ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b', '#22c55e', '#eab308'];
+  function asMoney(n) { return Number(n || 0).toLocaleString('th-TH'); }
+
+  function renderAsset(container) {
+    AS_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getAssetModuleData').then(function (d) {
+      ASSET_DATA = d;
+      var actions = '';
+      if (d.canViewAnalytics) actions += '<button class="btn btn-outline-primary" onclick="asShowAnalytics()"><i class="bi bi-graph-up"></i> วิเคราะห์ผล</button>';
+      if (d.canEdit) actions += '<button class="btn btn-outline-success" onclick="asShowStocktake()"><i class="bi bi-clipboard-check"></i> ตรวจนับ</button>';
+      if (d.canManageCategories) actions += '<button class="btn btn-outline-secondary" onclick="asManageCategories()"><i class="bi bi-tags"></i> หมวดหมู่</button>';
+      if (d.canEdit) actions += '<button class="btn btn-primary" onclick="asOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่มทรัพย์สิน</button>';
+      var html = pageHeader(
+        'ทะเบียนทรัพย์สิน IT',
+        'ค้นหาเจ้าของ สถานที่ สถานะ ประกัน และวงจรชีวิตของทรัพย์สิน',
+        actions,
+        'bi-pc-display-horizontal'
+      );
+      html += asDashboard(d);
+      html += dataTable(asTableCfg(d));
+      container.innerHTML = html;
+    });
+  }
+
+  function asRetired(st) { return st === 'จำหน่าย/เลิกใช้' || st === 'สูญหาย'; }
+
+  function asDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.assets)) d.assets = [];
+    var counts = {}, warranty = 0, expiring = 0;
+    d.assets.forEach(function (r) {
+      counts[r.status] = (counts[r.status] || 0) + 1;
+      if (!asRetired(r.status)) {
+        if (r.warrantyDays !== null && r.warrantyDays >= 0 && r.warrantyDays <= 30) warranty++;
+        if (r.expiryDays !== null && r.expiryDays >= 0 && r.expiryDays <= 30) expiring++;
+      }
+    });
+    return moduleDashboard([
+      mdStat('ทรัพย์สินทั้งหมด', d.assets.length, 'bi-pc-display-horizontal', 'blue'),
+      mdStat('พร้อมใช้งาน', counts['พร้อมใช้งาน'] || 0, 'bi-check-circle', 'teal'),
+      mdStat('ซ่อมบำรุง', counts['ซ่อมบำรุง'] || 0, 'bi-tools', (counts['ซ่อมบำรุง'] ? 'amber' : 'gray')),
+      mdStat('ประกัน/License ใกล้หมด', warranty + expiring, 'bi-calendar-event', (warranty + expiring) ? 'amber' : 'gray')
+    ]);
+  }
+
+  function asTone(st) {
+    if (st === 'พร้อมใช้งาน') return 'bg-success';
+    if (st === 'ใช้งานอยู่') return 'bg-primary';
+    if (st === 'ซ่อมบำรุง') return 'bg-warning text-dark';
+    if (st === 'สูญหาย') return 'bg-danger';
+    return 'bg-secondary';
+  }
+  function asWarrHtml(r) {
+    if (!r.warrantyExpire) return '-';
+    if (r.warrantyDays !== null && r.warrantyDays < 0) return '<span class="overdue">' + escapeHtmlJs(r.warrantyExpire) + '</span>';
+    if (r.warrantyDays !== null && r.warrantyDays <= 30) return '<span class="soon">' + escapeHtmlJs(r.warrantyExpire) + '</span>';
+    return escapeHtmlJs(r.warrantyExpire);
+  }
+
+  function asTableCfg(d) {
+    return {
+      id: 'asset', rows: d.assets, empty: 'ยังไม่มีทรัพย์สิน',
+      columns: [
+        { key: 'code', label: 'รหัส/Serial', value: function (r) { return escapeHtmlJs(r.code || r.id) + '<br><small class="text-muted">' + escapeHtmlJs(r.serial || '') + '</small>'; }, raw: function (r) { return (r.code || '') + ' ' + (r.serial || ''); } },
+        { key: 'name', label: 'ชื่อ', value: function (r) { return '<b>' + escapeHtmlJs(r.name) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.brand || '') + ' ' + escapeHtmlJs(r.model || '') + '</small>'; }, raw: function (r) { return (r.name || '') + ' ' + (r.brand || '') + ' ' + (r.model || ''); } },
+        { key: 'category', label: 'หมวด', value: function (r) { return escapeHtmlJs(r.category || r.type || '-'); } },
+        { key: 'owner', label: 'เจ้าของ/สถานที่', value: function (r) { return escapeHtmlJs(r.ownerName || r.owner || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.location || '') + '</small>'; }, raw: function (r) { return (r.ownerName || r.owner || '') + ' ' + (r.location || ''); } },
+        { key: 'department', label: 'แผนก', value: function (r) { return escapeHtmlJs(r.department || '-'); }, default: false },
+        { key: 'warranty', label: 'หมดประกัน', value: asWarrHtml, raw: function (r) { return r.warrantyExpire || ''; } },
+        { key: 'price', label: 'ราคา', value: function (r) { return r.price ? escapeHtmlJs(r.price) : '-'; }, default: false },
+        { key: 'status', label: 'สถานะ', value: function (r) { return '<span class="badge ' + asTone(r.status) + '">' + escapeHtmlJs(r.status) + '</span>'; } }
+      ],
+      filters: [
+        { key: 'category', label: 'หมวด', value: function (r) { return r.category || r.type || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        var a = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="asDetail(\'' + r.id + '\')">รายละเอียด</button>';
+        a += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="asOpenForm(\'' + r.id + '\')">แก้ไข</button>';
+        a += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="asStatus(\'' + r.id + '\')">สถานะ</button>';
+        if (!asRetired(r.status)) a += '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="asRetire(\'' + r.id + '\')">ปิดใช้งาน</button>';
+        a += deleteBtn('asset', r.id, r.name || r.code || r.id);
+        return a;
+      } : function (r) { return '<button class="btn btn-sm btn-outline-dark" onclick="asDetail(\'' + r.id + '\')">รายละเอียด</button>'; },
+      actionsLabel: ''
+    };
+  }
+
+  function asFindRow(id) { return (ASSET_DATA.assets || []).filter(function (x) { return x.id === id; })[0]; }
+
+  function asOpenForm(id) {
+    var d = ASSET_DATA, r = id ? asFindRow(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไขทรัพย์สิน: ' + (r.code || r.id)) : 'เพิ่มทรัพย์สิน',
+      submitLabel: id ? 'อัปเดต' : 'บันทึก',
+      fields: [
+        { id: 'code', label: 'รหัสทรัพย์สิน (เว้นว่าง = สร้างอัตโนมัติ)', value: r.code, col: 'col-md-4' },
+        { id: 'name', label: 'ชื่อทรัพย์สิน', value: r.name, required: true, col: 'col-md-8' },
+        { id: 'category', label: 'หมวดหมู่', type: 'select', options: d.categories, value: r.category, col: 'col-md-4' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: d.statuses, value: r.status, placeholder: false, col: 'col-md-4' },
+        { id: 'brand', label: 'ยี่ห้อ/Brand', value: r.brand, col: 'col-md-4' },
+        { id: 'model', label: 'รุ่น/Model', value: r.model, col: 'col-md-4' },
+        { id: 'serial', label: 'Serial Number', value: r.serial, col: 'col-md-4' },
+        { id: 'price', label: 'ราคา (บาท)', type: 'number', value: r.price, col: 'col-md-4' },
+        { id: 'usefulLife', label: 'อายุการใช้งาน (ปี)', type: 'number', value: r.usefulLife, col: 'col-md-4', help: 'สำหรับคำนวณค่าเสื่อม (เว้นว่าง = 5 ปี)' },
+        { id: 'ownerName', label: 'ผู้ใช้งาน/เจ้าของ', value: r.ownerName || r.owner, col: 'col-md-4' },
+        { id: 'ownerEmail', label: 'อีเมลเจ้าของ', type: 'email', value: r.ownerEmail, col: 'col-md-4' },
+        { id: 'department', label: 'แผนก', value: r.department, col: 'col-md-4' },
+        { id: 'location', label: 'สถานที่', value: r.location, col: 'col-md-6' },
+        { id: 'vendorId', label: 'Vendor', type: 'select', options: (d.vendors || []).map(function (v) { return { value: v.id, label: v.name || v.id }; }), value: r.vendorId, col: 'col-md-6' },
+        { id: 'purchaseDate', label: 'วันที่ซื้อ', type: 'date', value: dmyToInput(r.purchaseDate), col: 'col-md-4' },
+        { id: 'warrantyExpire', label: 'หมดประกัน', type: 'date', value: dmyToInput(r.warrantyExpire), col: 'col-md-4' },
+        { id: 'expiry', label: 'License หมดอายุ', type: 'date', value: dmyToInput(r.expiry), col: 'col-md-4' },
+        { id: 'license', label: 'เลข License', value: r.license, col: 'col-md-4' },
+        { id: 'remark', label: 'หมายเหตุ', value: r.remark, col: 'col-md-8' }
+      ],
+      onSubmit: function (v) {
+        var fn = id ? callServer('updateAsset', id, v) : callServer('addAsset', v);
+        return fn.then(function (m) { toast(m, 'success'); loadModule('asset'); });
+      }
+    });
+  }
+
+  function asStatus(id) {
+    var r = asFindRow(id);
+    showFormModal({
+      title: 'เปลี่ยนสถานะ: ' + (r.code || r.id), submitLabel: 'บันทึก', size: 'md',
+      fields: [
+        { id: 'status', label: 'สถานะใหม่', type: 'select', options: ASSET_DATA.statuses, value: r.status, placeholder: false, required: true, col: 'col-12' },
+        { id: 'remark', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('setAssetStatus', id, v.status, v.remark).then(function (m) { toast(m); loadModule('asset'); }); }
+    });
+  }
+
+  function asRetire(id) {
+    var r = asFindRow(id);
+    showConfirm('ปิดใช้งาน (จำหน่าย/เลิกใช้) "' + (r.code || r.id) + ' · ' + (r.name || '') + '" ?',
+      function () { callServer('retireAsset', id).then(function (m) { toast(m); loadModule('asset'); }); },
+      { danger: true, okLabel: 'ปิดใช้งาน' });
+  }
+
+  function asDetail(id) {
+    callServer('getAssetDetail', id).then(function (d) {
+      var a = d.asset;
+      var qr = a.qrUrl ? '<img src="' + escapeHtmlJs(a.qrUrl) + '" width="160" height="160" alt="QR">' : '<span class="text-muted">ยังไม่มี QR</span>';
+      var bookVal = (a.bookValue !== null && a.bookValue !== undefined) ? asMoney(a.bookValue) + ' บาท' + (a.depreciationPct !== null ? ' (เสื่อม ' + a.depreciationPct + '%)' : '') : '-';
+      var ageTxt = (a.ageYears !== null && a.ageYears !== undefined) ? a.ageYears + ' ปี' : '-';
+      var auditTxt = a.lastAudit ? (a.lastAudit + (a.auditStatus ? ' · ' + a.auditStatus : '')) : 'ยังไม่ตรวจนับ';
+      var info = [
+        ['รหัส', a.code], ['Serial', a.serial], ['หมวดหมู่', a.category], ['ยี่ห้อ/รุ่น', (a.brand || '') + ' ' + (a.model || '')],
+        ['เจ้าของ', a.ownerName || a.owner], ['อีเมล', a.ownerEmail], ['แผนก', a.department], ['สถานที่', a.location],
+        ['Vendor', a.vendor || a.vendorId], ['ราคา', a.price ? asMoney(a.price) + ' บาท' : '-'], ['มูลค่าคงเหลือ', bookVal], ['อายุใช้งาน', ageTxt],
+        ['วันที่ซื้อ', a.purchaseDate], ['หมดประกัน', a.warrantyExpire], ['License', a.license], ['License หมดอายุ', a.expiry],
+        ['สถานะ', a.status], ['ตรวจนับล่าสุด', auditTxt], ['หมายเหตุ', a.remark || a.notes]
+      ].map(function (kv) { return '<div class="col-md-3 col-6"><small class="text-muted">' + kv[0] + '</small><br>' + escapeHtmlJs(kv[1] || '-') + '</div>'; }).join('');
+      var mv = (d.movements || []).map(function (m) {
+        return '<li class="list-group-item small">' + escapeHtmlJs(m.date) + ' · <b>' + escapeHtmlJs(m.action) + '</b> ' +
+          escapeHtmlJs(m.from || '') + (m.to ? ' → ' + escapeHtmlJs(m.to) : '') + ' ' + escapeHtmlJs(m.notes || '') + '</li>';
+      }).join('') || '<li class="list-group-item small text-muted">ไม่มีประวัติยืม/คืน/โอน</li>';
+      var pm = (d.pm || []).map(function (p) {
+        return '<li class="list-group-item small">' + escapeHtmlJs(p.date) + ' · ' + escapeHtmlJs(p.status) + ' · ' + escapeHtmlJs(p.technician || '') + '</li>';
+      }).join('') || '<li class="list-group-item small text-muted">ไม่มีแผน PM</li>';
+      var body = '<div class="row"><div class="col-md-9"><div class="row g-2">' + info + '</div></div>' +
+        '<div class="col-md-3 text-center">' + qr +
+        (ASSET_DATA.canEdit ? '<br><button class="btn btn-sm btn-outline-primary mt-2" onclick="asGenQR(\'' + a.id + '\')">สร้าง/รีเฟรช QR</button>' +
+          '<br><button class="btn btn-sm btn-outline-dark mt-1" onclick="asPrintLabel(\'' + a.id + '\')"><i class="bi bi-printer"></i> พิมพ์ป้าย</button>' +
+          '<br><button class="btn btn-sm btn-outline-success mt-1" onclick="asVerify(\'' + a.id + '\')"><i class="bi bi-clipboard-check"></i> ตรวจนับ</button>' : '') + '</div></div>' +
+        '<div class="row mt-3"><div class="col-md-6"><h6>ประวัติยืม/คืน/โอน</h6><ul class="list-group list-group-flush">' + mv + '</ul></div>' +
+        '<div class="col-md-6"><h6>ประวัติ PM</h6><ul class="list-group list-group-flush">' + pm + '</ul></div></div>';
+      showInfoModal((a.code || a.id) + ' · ' + a.name, body, 'xl');
+    });
+  }
+  function asGenQR(id) { callServer('generateAssetQR', id).then(function () { toast('สร้าง QR เรียบร้อย'); asDetail(id); }); }
+
+  // ================= พิมพ์ป้าย QR ติดเครื่อง =================
+  function asPrintLabel(id) {
+    var r = asFindRow(id); if (!r) return;
+    var qr = r.qrUrl || ('https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent((r.code || r.id) + ' | ' + (r.name || '')));
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[<>&]/g, ' '); };
+    var w = window.open('', '_blank', 'width=420,height=560');
+    if (!w) { toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต popup', 'warning'); return; }
+    var html = '<html><head><meta charset="utf-8"><title>ป้าย ' + esc(r.code || r.id) + '</title>' +
+      '<style>body{font-family:"Sarabun",Arial,sans-serif;text-align:center;padding:16px;margin:0}' +
+      '.label{border:2px solid #000;border-radius:10px;padding:16px;display:inline-block}' +
+      '.code{font-size:20px;font-weight:700;margin:8px 0 2px}.name{font-size:14px;color:#333}' +
+      '.org{font-size:12px;color:#666;margin-top:6px}img{width:200px;height:200px}</style></head>' +
+      '<body onload="window.focus();window.print()"><div class="label">' +
+      '<img src="' + qr + '" alt="QR"><div class="code">' + esc(r.code || r.id) + '</div>' +
+      '<div class="name">' + esc(r.name) + '</div>' +
+      (r.serial ? '<div class="org">S/N: ' + esc(r.serial) + '</div>' : '') +
+      '<div class="org">' + esc((typeof ORG_NAME !== 'undefined' ? ORG_NAME : '')) + '</div>' +
+      '</div></body></html>';
+    w.document.write(html); w.document.close();
+  }
+
+  // ================= ตรวจนับทรัพย์สิน (Stock-take) =================
+  function asVerify(id) {
+    var r = asFindRow(id) || {};
+    showFormModal({
+      title: 'ตรวจนับ: ' + (r.code || id), submitLabel: 'บันทึกผล', size: 'md',
+      fields: [
+        { id: 'result', label: 'ผลการตรวจนับ', type: 'select', placeholder: false, options: AS_AUDIT_RESULTS, value: 'พบ/ตรงตำแหน่ง', required: true, col: 'col-12' },
+        { id: 'location', label: 'สถานที่จริง (กรณีพบผิดตำแหน่ง)', value: r.location, col: 'col-12' },
+        { id: 'note', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('verifyAsset', id, v.result, { location: v.location, note: v.note }).then(function (m) { toast(m, 'success'); loadModule('asset'); }); }
+    });
+  }
+  function asAuditState(r, cycle) {
+    if (String(r.auditStatus || '').indexOf('ไม่พบ') > -1) return 'ไม่พบ/สูญหาย';
+    if (r.auditDays !== null && r.auditDays !== undefined && r.auditDays <= cycle) return 'ตรวจแล้ว';
+    return 'ยังไม่ตรวจ/เกินรอบ';
+  }
+  function asShowStocktake() {
+    var c = AS_CONTAINER; if (!c) return;
+    var cycle = ASSET_DATA.auditCycleDays || 180;
+    var list = (ASSET_DATA.assets || []).filter(function (r) { return !asRetired(r.status); });
+    var verified = 0, due = 0, missing = 0;
+    list.forEach(function (r) { var s = asAuditState(r, cycle); if (s === 'ตรวจแล้ว') verified++; else if (s === 'ไม่พบ/สูญหาย') missing++; else due++; });
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3">' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'asset\')"><i class="bi bi-arrow-left"></i> กลับ</button>' +
+      '<h4 class="text-primary mb-0 ms-2">ตรวจนับทรัพย์สิน (Stock-take)</h4></div>' +
+      '<div class="alert alert-info py-2 small mb-3">รอบตรวจนับ <b>' + cycle + '</b> วัน · ตรวจแล้วในรอบ <b class="text-success">' + verified + '</b> · ยังไม่ตรวจ/เกินรอบ <b class="text-warning">' + due + '</b> · ไม่พบ/สูญหาย <b class="text-danger">' + missing + '</b> จาก ' + list.length + ' รายการ</div>';
+    html += dataTable(asStocktakeTableCfg(list, cycle));
+    c.innerHTML = html;
+  }
+  function asStocktakeTableCfg(list, cycle) {
+    return {
+      id: 'assetAudit', rows: list, empty: 'ไม่มีทรัพย์สินที่ต้องตรวจนับ',
+      columns: [
+        { key: 'code', label: 'รหัส/ชื่อ', value: function (r) { return '<b>' + escapeHtmlJs(r.code || r.id) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.name || '') + '</small>'; }, raw: function (r) { return (r.code || '') + ' ' + (r.name || ''); } },
+        { key: 'owner', label: 'เจ้าของ/สถานที่', value: function (r) { return escapeHtmlJs(r.ownerName || r.owner || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.location || '') + '</small>'; }, raw: function (r) { return (r.ownerName || '') + ' ' + (r.location || ''); } },
+        { key: 'lastAudit', label: 'ตรวจนับล่าสุด', value: function (r) { return r.lastAudit ? escapeHtmlJs(r.lastAudit) + '<br><small class="text-muted">' + escapeHtmlJs(r.lastAuditBy || '') + '</small>' : '<span class="text-muted">ยังไม่ตรวจ</span>'; }, raw: function (r) { return r.lastAudit || ''; } },
+        { key: 'state', label: 'สถานะตรวจนับ', value: function (r) { var s = asAuditState(r, cycle); var t = s === 'ตรวจแล้ว' ? 'bg-success' : (s === 'ไม่พบ/สูญหาย' ? 'bg-danger' : 'bg-warning text-dark'); return '<span class="badge ' + t + '">' + escapeHtmlJs(s) + '</span>'; }, raw: function (r) { return asAuditState(r, cycle); } }
+      ],
+      filters: [
+        { key: 'state', label: 'สถานะตรวจนับ', value: function (r) { return asAuditState(r, cycle); } },
+        { key: 'category', label: 'หมวด', value: function (r) { return r.category || ''; } }
+      ],
+      actions: ASSET_DATA.canEdit ? function (r) {
+        return '<button class="btn btn-sm btn-success me-1 mb-1" onclick="asVerify(\'' + r.id + '\')"><i class="bi bi-clipboard-check"></i> ตรวจนับ</button>' +
+          '<button class="btn btn-sm btn-outline-dark mb-1" onclick="asDetail(\'' + r.id + '\')">รายละเอียด</button>';
+      } : null,
+      actionsLabel: ''
+    };
+  }
+
+  // ================= จัดการหมวดหมู่ทรัพย์สิน =================
+  function asManageCategories() {
+    callServer('getAssetCategoriesAdmin').then(function (d) { AS_CAT_DATA = d; asRenderCategoryModal(); })
+      .catch(function (err) { toast((err && err.message) || 'โหลดหมวดหมู่ไม่สำเร็จ', 'danger'); });
+  }
+  function asRenderCategoryModal() {
+    var d = AS_CAT_DATA || { categories: [] };
+    var rows = (d.categories || []).map(function (c) {
+      var active = String(c.status).toLowerCase() === 'active';
+      return '<tr><td><b>' + escapeHtmlJs(c.name) + '</b>' + (c.notes ? '<br><small class="text-muted">' + escapeHtmlJs(c.notes) + '</small>' : '') + '</td>' +
+        '<td><code>' + escapeHtmlJs(c.prefix || '-') + '</code></td>' +
+        '<td><span class="badge ' + (active ? 'bg-success' : 'bg-secondary') + '">' + escapeHtmlJs(c.status) + '</span></td>' +
+        '<td class="text-nowrap"><button class="btn btn-sm btn-outline-primary me-1" onclick="asCatForm(\'' + c.id + '\')">แก้ไข</button>' +
+        '<button class="btn btn-sm btn-outline-warning" onclick="asCatToggle(\'' + c.id + '\',\'' + (active ? 'Inactive' : 'Active') + '\')">' + (active ? 'ปิดใช้' : 'เปิดใช้') + '</button></td></tr>';
+    }).join('');
+    var body = '<div class="d-flex mb-2"><button class="btn btn-sm btn-primary ms-auto" onclick="asCatForm()"><i class="bi bi-plus-lg"></i> เพิ่มหมวดหมู่</button></div>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>หมวดหมู่</th><th>รหัสนำหน้า</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4" class="text-muted">ยังไม่มีหมวดหมู่</td></tr>') + '</tbody></table></div>';
+    showInfoModal('จัดการหมวดหมู่ทรัพย์สิน', body, 'lg');
+  }
+  function asCatFind(id) { return (AS_CAT_DATA.categories || []).filter(function (c) { return c.id === id; })[0] || {}; }
+  function asCatForm(id) {
+    var c = id ? asCatFind(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไขหมวดหมู่: ' + c.name) : 'เพิ่มหมวดหมู่', submitLabel: id ? 'อัปเดต' : 'บันทึก', size: 'md',
+      fields: [
+        { id: 'name', label: 'ชื่อหมวดหมู่', value: c.name, required: true, col: 'col-md-8' },
+        { id: 'prefix', label: 'รหัสนำหน้า (เช่น PC)', value: c.prefix, col: 'col-md-4', help: 'ใช้สร้างรหัส AS-<prefix>-...' },
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: ['Active', 'Inactive'], value: c.status || 'Active', col: 'col-md-4' },
+        { id: 'notes', label: 'คำอธิบาย', type: 'textarea', rows: 2, value: c.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var form = { id: id || '', name: v.name, prefix: v.prefix, status: v.status, notes: v.notes };
+        return callServer('saveAssetCategory', form).then(function (m) { toast(m, 'success'); asManageCategories(); });
+      }
+    });
+  }
+  function asCatToggle(id, status) { callServer('setAssetCategoryStatus', id, status).then(function (m) { toast(m); asManageCategories(); }); }
+
+  // ================= รายงานวิเคราะห์ทรัพย์สิน =================
+  function asShowAnalytics() {
+    var c = AS_CONTAINER; if (!c) return;
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังคำนวณรายงาน...</div></div>';
+    callServer('getAssetAnalytics').then(function (a) { asRenderAnalytics(c, a); })
+      .catch(function (err) { c.innerHTML = '<div class="alert alert-danger">โหลดรายงานไม่สำเร็จ: ' + escapeHtmlJs((err && err.message) || String(err)) + '</div><button class="btn btn-outline-secondary" onclick="loadModule(\'asset\')">กลับ</button>'; });
+  }
+  function asChart(id, cfg) { var el = document.getElementById(id); if (!el || typeof Chart === 'undefined') return; AS_CHARTS.push(new Chart(el, cfg)); }
+  function asRenderAnalytics(c, a) {
+    AS_CHARTS.forEach(function (ch) { try { ch.destroy(); } catch (e) {} });
+    AS_CHARTS = [];
+    var kpi = function (label, value, sub, tone) {
+      return '<div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-3"><div class="text-muted small">' + label + '</div>' +
+        '<div class="fs-5 fw-bold text-' + (tone || 'primary') + '">' + value + '</div>' + (sub ? '<div class="text-muted" style="font-size:.75rem">' + sub + '</div>' : '') + '</div></div></div>';
+    };
+    var depPct = a.totalValue ? Math.round((1 - a.totalBookValue / a.totalValue) * 100) : 0;
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3">' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'asset\')"><i class="bi bi-arrow-left"></i> กลับรายการ</button>' +
+      '<h4 class="text-primary mb-0 ms-2">รายงานวิเคราะห์ทรัพย์สิน</h4></div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('ทรัพย์สินใช้งาน', a.active + ' / ' + a.total, 'รายการ (ใช้งาน/ทั้งหมด)', 'primary') +
+      kpi('มูลค่าซื้อรวม', asMoney(a.totalValue), 'บาท', 'info') +
+      kpi('มูลค่าคงเหลือ', asMoney(a.totalBookValue), 'บาท (เสื่อม ' + depPct + '%)', 'teal') +
+      kpi('ตรวจนับแล้วในรอบ', a.audit.verified, 'ค้างตรวจ ' + a.audit.due + ' · หาย ' + a.audit.missing, a.audit.missing ? 'danger' : 'success') +
+      '</div>';
+    html += '<div class="row g-3">' +
+      '<div class="col-lg-7"><div class="card"><div class="card-body"><h6 class="text-muted">มูลค่าตามหมวดหมู่ (บาท)</h6><div class="analytics-chart-frame"><canvas id="asChartCatVal"></canvas></div></div></div></div>' +
+      '<div class="col-lg-5"><div class="card h-100"><div class="card-body"><h6 class="text-muted">ตามสถานะ</h6><div class="analytics-chart-frame"><canvas id="asChartStatus"></canvas></div></div></div></div>' +
+      '<div class="col-lg-4"><div class="card h-100"><div class="card-body"><h6 class="text-muted">ประกันคงเหลือ</h6><div class="analytics-chart-frame"><canvas id="asChartWarr"></canvas></div></div></div></div>' +
+      '<div class="col-lg-4"><div class="card h-100"><div class="card-body"><h6 class="text-muted">อายุการใช้งาน</h6><div class="analytics-chart-frame"><canvas id="asChartAge"></canvas></div></div></div></div>' +
+      '<div class="col-lg-4"><div class="card h-100"><div class="card-body"><h6 class="text-muted">การตรวจนับ</h6><div class="analytics-chart-frame"><canvas id="asChartAudit"></canvas></div></div></div></div>' +
+      '<div class="col-lg-12"><div class="card"><div class="card-body"><h6 class="text-muted">จำนวนตามแผนก</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="asChartDept"></canvas></div></div></div></div>' +
+      '</div>';
+    c.innerHTML = html;
+    asDrawCharts(a);
+  }
+  function asDrawCharts(a) {
+    var noLegend = { plugins: { legend: { display: false } }, maintainAspectRatio: false };
+    var legendBottom = { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } } };
+    asChart('asChartCatVal', {
+      type: 'bar',
+      data: { labels: a.byCategory.map(function (x) { return x.label; }), datasets: [{ data: a.byCategory.map(function (x) { return x.value; }), backgroundColor: '#2563eb' }] },
+      options: Object.assign({ indexAxis: 'y' }, noLegend)
+    });
+    asChart('asChartStatus', {
+      type: 'doughnut',
+      data: { labels: a.byStatus.map(function (x) { return x.label; }), datasets: [{ data: a.byStatus.map(function (x) { return x.value; }), backgroundColor: AS_PALETTE }] },
+      options: legendBottom
+    });
+    asChart('asChartWarr', {
+      type: 'doughnut',
+      data: { labels: ['หมดแล้ว', '≤30 วัน', '31-90 วัน', '>90 วัน'], datasets: [{ data: [a.warranty.expired, a.warranty.soon30, a.warranty.soon90, a.warranty.later], backgroundColor: ['#ef4444', '#f59e0b', '#eab308', '#22c55e'] }] },
+      options: legendBottom
+    });
+    asChart('asChartAge', {
+      type: 'doughnut',
+      data: { labels: ['<1 ปี', '1-3 ปี', '3-5 ปี', '>5 ปี'], datasets: [{ data: [a.age.y0, a.age.y1, a.age.y3, a.age.y5], backgroundColor: ['#22c55e', '#0ea5e9', '#f59e0b', '#ef4444'] }] },
+      options: legendBottom
+    });
+    asChart('asChartAudit', {
+      type: 'doughnut',
+      data: { labels: ['ตรวจแล้ว', 'ค้างตรวจ', 'ไม่พบ/หาย'], datasets: [{ data: [a.audit.verified, a.audit.due, a.audit.missing], backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'] }] },
+      options: legendBottom
+    });
+    asChart('asChartDept', {
+      type: 'bar',
+      data: { labels: a.byDepartment.map(function (x) { return x.label; }), datasets: [{ data: a.byDepartment.map(function (x) { return x.value; }), backgroundColor: '#14b8a6' }] },
+      options: noLegend
+    });
+  }
+</script>

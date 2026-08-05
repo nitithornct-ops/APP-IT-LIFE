@@ -1,0 +1,133 @@
+<!-- Calendar.html — ปฏิทินรวมกำหนดการทั้งระบบ (FullCalendar) -->
+<style>
+  .cal-legend { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cal-chip {
+    display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); border-radius: 20px; padding: 5px 13px;
+    font-size: .82rem; font-weight: 600; cursor: pointer; transition: opacity .12s, background .12s, box-shadow .12s;
+  }
+  .cal-chip:hover { box-shadow: var(--shadow-sm); }
+  .cal-chip .cal-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--c, var(--primary)); flex: none; }
+  .cal-chip.off { opacity: .45; background: var(--surface-subtle); text-decoration: line-through; }
+  #cal-fc { --fc-border-color: var(--line); --fc-today-bg-color: rgba(37,99,235,.08); --fc-page-bg-color: var(--surface); font-size: .9rem; }
+  #cal-fc .fc .fc-toolbar-title { font-size: 1.2rem; font-weight: 800; color: var(--ink); }
+  #cal-fc .fc .fc-button { text-transform: none; box-shadow: none; }
+  #cal-fc .fc .fc-col-header-cell-cushion,
+  #cal-fc .fc .fc-daygrid-day-number { color: var(--ink); text-decoration: none; }
+  #cal-fc .fc .fc-col-header-cell-cushion { color: var(--muted); font-weight: 700; font-size: .78rem; }
+  #cal-fc .fc-daygrid-event, #cal-fc .fc-list-event { cursor: pointer; font-weight: 600; }
+  #cal-fc .fc-daygrid-event { padding: 1px 5px; border-radius: 5px; }
+  #cal-fc .fc .fc-daygrid-day.fc-day-today { background: var(--fc-today-bg-color); }
+  @media (max-width: 640px) {
+    #cal-fc .fc-toolbar.fc-header-toolbar { flex-direction: column; gap: 8px; align-items: stretch; }
+  }
+  html[data-theme="dark"] #cal-fc { --fc-page-bg-color: #14223a; --fc-neutral-bg-color: #1a2b47; }
+  html[data-theme="dark"] .cal-chip { background: #14223a; }
+</style>
+<script>
+  var CAL_FC = null;
+  var CAL_ENABLED = null;        // { moduleKey: true|false }
+  var CAL_SOURCES_META = [];
+
+  function renderCalendar(container) {
+    container.innerHTML = skeletonCards(1);
+    return callServer('getCalendarMeta').then(function (meta) {
+      CAL_SOURCES_META = (meta && meta.sources) || [];
+      if (!CAL_ENABLED) {
+        CAL_ENABLED = {};
+        CAL_SOURCES_META.forEach(function (s) { CAL_ENABLED[s.module] = true; });
+      }
+      container.innerHTML =
+        pageHeader('ปฏิทินรวม', 'กำหนดการและวันครบกำหนดจากทุกโมดูลที่คุณเข้าถึงได้ ในปฏิทินเดียว', '', 'bi-calendar-week') +
+        '<div class="card stat-card"><div class="card-body">' +
+        '<div class="text-muted small mb-2"><i class="bi bi-funnel"></i> คลิกป้ายสีเพื่อซ่อน/แสดงแต่ละประเภท · คลิกกำหนดการเพื่อเปิดโมดูลต้นทาง</div>' +
+        '<div id="cal-legend" class="cal-legend mb-3"></div>' +
+        '<div id="cal-fc"></div>' +
+        '</div></div>';
+      calRenderLegend();
+      calMount();
+    });
+  }
+
+  function calRenderLegend() {
+    var el = document.getElementById('cal-legend');
+    if (!el) return;
+    if (!CAL_SOURCES_META.length) { el.innerHTML = '<span class="text-muted small">ไม่มีแหล่งข้อมูลกำหนดการสำหรับบัญชีนี้</span>'; return; }
+    el.innerHTML = CAL_SOURCES_META.map(function (s) {
+      return '<button type="button" class="cal-chip' + (CAL_ENABLED[s.module] ? '' : ' off') + '" style="--c:' +
+        escapeHtmlJs(s.color) + '" onclick="calToggle(\'' + s.module + '\')">' +
+        '<span class="cal-dot"></span>' + escapeHtmlJs(s.label) + '</button>';
+    }).join('');
+  }
+
+  function calToggle(module) {
+    CAL_ENABLED[module] = !CAL_ENABLED[module];
+    calRenderLegend();
+    if (CAL_FC) CAL_FC.refetchEvents();
+  }
+
+  function calMount() {
+    var el = document.getElementById('cal-fc');
+    if (!el) return;
+    if (CAL_FC) { try { CAL_FC.destroy(); } catch (e) {} CAL_FC = null; }
+    if (!window.FullCalendar) {
+      el.innerHTML = '<div class="alert alert-warning mb-0">โหลดปฏิทินไม่สำเร็จ (ตรวจการเชื่อมต่ออินเทอร์เน็ต)</div>';
+      return;
+    }
+    var hasTh = !!(window.FullCalendar && FullCalendar.globalLocales);
+    CAL_FC = new FullCalendar.Calendar(el, {
+      initialView: 'dayGridMonth',
+      locale: hasTh ? 'th' : undefined,
+      height: 'auto',
+      firstDay: 0,
+      headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' },
+      buttonText: { today: 'วันนี้', month: 'เดือน', list: 'รายการ' },
+      dayMaxEvents: 4,
+      noEventsContent: 'ไม่มีกำหนดการในช่วงนี้',
+      events: function (info, success, failure) {
+        callServer('getCalendarData', info.startStr.slice(0, 10), info.endStr.slice(0, 10))
+          .then(function (d) {
+            var evs = ((d && d.events) || []).filter(function (e) {
+              return CAL_ENABLED[e.extendedProps.module];
+            });
+            success(evs);
+          })
+          .catch(function (err) {
+            failure(err);
+            toast((err && err.message) || 'โหลดข้อมูลปฏิทินไม่สำเร็จ', 'danger');
+          });
+      },
+      eventClick: function (arg) {
+        arg.jsEvent.preventDefault();
+        calShowEvent(arg.event);
+      }
+    });
+    CAL_FC.render();
+  }
+
+  function calDmy(d) {
+    if (!d) return '';
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear();
+  }
+
+  function calShowEvent(ev) {
+    var p = ev.extendedProps || {};
+    var module = p.module;
+    var label = p.label || '';
+    var name = p.name || ev.title || '';
+    var when = calDmy(ev.start);
+    var hasModule = typeof MODULE_LABELS !== 'undefined' && MODULE_LABELS && MODULE_LABELS[module];
+    var msg = label + ': ' + name + '\nกำหนด: ' + when;
+    if (hasModule) {
+      showConfirm(msg + '\n\nเปิดโมดูล "' + MODULE_LABELS[module] + '" เพื่อดู/จัดการรายการนี้หรือไม่?',
+        function () { loadModule(module); },
+        { okLabel: 'เปิดโมดูล', title: 'รายละเอียดกำหนดการ' });
+    } else {
+      showInfoModal('รายละเอียดกำหนดการ',
+        '<div class="mb-2"><span class="badge" style="background:' + escapeHtmlJs(ev.backgroundColor || '#1d4ed8') + '">' +
+        escapeHtmlJs(label) + '</span></div>' +
+        '<div class="fw-semibold fs-5 mb-1">' + escapeHtmlJs(name) + '</div>' +
+        '<div class="text-muted"><i class="bi bi-calendar-event"></i> ' + escapeHtmlJs(when) + '</div>', 'md');
+    }
+  }
+</script>

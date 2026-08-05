@@ -1,0 +1,203 @@
+<!-- Risk.html — ทะเบียนความเสี่ยงสารสนเทศ (Risk Register) -->
+<script>
+  var RISK_DATA = null;
+  var RISK_SCALE = [
+    { value: 1, label: '1 — น้อยมาก' }, { value: 2, label: '2 — น้อย' },
+    { value: 3, label: '3 — ปานกลาง' }, { value: 4, label: '4 — สูง' },
+    { value: 5, label: '5 — สูงมาก' }
+  ];
+
+  function rkScoreColor(score) {
+    score = Number(score) || 0;
+    if (score >= 15) return '#dc3545';
+    if (score >= 10) return '#fd7e14';
+    if (score >= 5) return '#ffc107';
+    if (score >= 1) return '#198754';
+    return '#adb5bd';
+  }
+  function rkLevelBadge(level, tone) {
+    if (!level) return '<span class="text-muted">-</span>';
+    return '<span class="badge bg-' + (tone || 'secondary') + '">' + escapeHtmlJs(level) + '</span>';
+  }
+
+  function renderRisk(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getRiskModuleData').then(function (d) {
+      RISK_DATA = d;
+      var actions = d.canEdit
+        ? '<button class="btn btn-primary" onclick="rkOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่มความเสี่ยง</button>'
+        : '';
+      var html = pageHeader(
+        'ทะเบียนความเสี่ยง (Risk Register)',
+        'ประเมินโอกาสเกิด ผลกระทบ มาตรการควบคุม และกำหนดรอบทบทวน',
+        actions,
+        'bi-shield-exclamation'
+      );
+      html += rkDashboard(d);
+      html += '<div class="row g-3 mb-4"><div class="col-lg-6">' + rkHeatmap(d) + '</div>'
+        + '<div class="col-lg-6">' + rkTopRisks(d) + '</div></div>';
+      html += dataTable(rkTableCfg(d));
+      container.innerHTML = html;
+    });
+  }
+
+  function rkDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.risks)) d.risks = [];
+    var open = 0, critHigh = 0, review = 0;
+    d.risks.forEach(function (r) {
+      if (String(r.status) !== 'ปิด') open++;
+      if (r.score >= 10) critHigh++;
+      if (r.nextReviewDays !== null && r.nextReviewDays <= 0 && String(r.status) !== 'ปิด') review++;
+    });
+    return moduleDashboard([
+      mdStat('ความเสี่ยงทั้งหมด', d.risks.length, 'bi-shield-exclamation', 'blue'),
+      mdStat('เปิดอยู่', open, 'bi-folder2-open', open ? 'amber' : 'gray'),
+      mdStat('สูง/วิกฤต', critHigh, 'bi-exclamation-octagon', critHigh ? 'danger' : 'gray'),
+      mdStat('ถึงกำหนดทบทวน', review, 'bi-clock-history', review ? 'amber' : 'gray')
+    ]);
+  }
+
+  // เมทริกซ์ความเสี่ยง 5×5 — แกน Y = ผลกระทบ (5 บนสุด), แกน X = โอกาสเกิด (1→5)
+  function rkHeatmap(d) {
+    d = d || {}; if (!Array.isArray(d.risks)) d.risks = [];
+    var counts = {};
+    d.risks.forEach(function (r) {
+      var l = parseInt(r.likelihood, 10), i = parseInt(r.impact, 10);
+      if (l >= 1 && l <= 5 && i >= 1 && i <= 5) { var k = l + 'x' + i; counts[k] = (counts[k] || 0) + 1; }
+    });
+    var html = '<div class="card h-100"><div class="card-body">'
+      + '<h6 class="text-muted mb-3">เมทริกซ์ความเสี่ยง (โอกาสเกิด × ผลกระทบ)</h6>'
+      + '<div style="overflow-x:auto"><table style="border-collapse:separate;border-spacing:3px;margin:0 auto">';
+    for (var imp = 5; imp >= 1; imp--) {
+      html += '<tr><td style="font-size:.7rem;color:#6c757d;text-align:right;padding-right:6px;white-space:nowrap">'
+        + (imp === 5 ? 'ผลกระทบ ' : '') + imp + '</td>';
+      for (var lik = 1; lik <= 5; lik++) {
+        var score = lik * imp, n = counts[lik + 'x' + imp] || 0;
+        html += '<td title="โอกาส ' + lik + ' × ผลกระทบ ' + imp + ' = ' + score + '" '
+          + 'style="width:44px;height:40px;text-align:center;vertical-align:middle;border-radius:6px;'
+          + 'background:' + rkScoreColor(score) + ';color:#fff;font-weight:600;'
+          + (n ? '' : 'opacity:.35;') + '">' + (n || '') + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '<tr><td></td>';
+    for (var x = 1; x <= 5; x++) html += '<td style="font-size:.7rem;color:#6c757d;text-align:center">' + x + '</td>';
+    html += '</tr><tr><td></td><td colspan="5" style="font-size:.7rem;color:#6c757d;text-align:center;padding-top:4px">โอกาสเกิด</td></tr>';
+    html += '</table></div></div></div>';
+    return html;
+  }
+
+  function rkTopRisks(d) {
+    d = d || {}; if (!Array.isArray(d.risks)) d.risks = [];
+    var top = d.risks.filter(function (r) { return String(r.status) !== 'ปิด' && r.score > 0; })
+      .sort(function (a, b) { return b.score - a.score; }).slice(0, 6);
+    var html = '<div class="card h-100"><div class="card-body">'
+      + '<h6 class="text-muted mb-3">ความเสี่ยงสูงสุดที่ยังเปิดอยู่</h6>';
+    if (!top.length) { html += '<div class="text-muted small">ยังไม่มีความเสี่ยงที่เปิดอยู่</div>'; }
+    else {
+      html += '<div class="list-group list-group-flush">';
+      top.forEach(function (r) {
+        html += '<div class="list-group-item d-flex align-items-center px-0 py-2">'
+          + '<span class="badge me-2" style="background:' + rkScoreColor(r.score) + '">' + r.score + '</span>'
+          + '<div class="flex-grow-1"><div class="small fw-semibold">' + escapeHtmlJs(r.title) + '</div>'
+          + '<div class="text-muted" style="font-size:.75rem">' + escapeHtmlJs(r.category || '-')
+          + (r.owner ? ' · ' + escapeHtmlJs(r.owner) : '') + '</div></div>'
+          + rkLevelBadge(r.level, r.tone) + '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
+  function rkReviewHtml(r) {
+    if (!r.nextReview) return '-';
+    if (r.nextReviewDays !== null && r.nextReviewDays < 0) return '<span class="overdue">' + escapeHtmlJs(r.nextReview) + '</span>';
+    if (r.nextReviewDays !== null && r.nextReviewDays <= 30) return '<span class="soon">' + escapeHtmlJs(r.nextReview) + '</span>';
+    return escapeHtmlJs(r.nextReview);
+  }
+
+  function rkTableCfg(d) {
+    return {
+      id: 'risk', rows: d.risks, empty: 'ยังไม่มีความเสี่ยงในทะเบียน',
+      columns: [
+        { key: 'title', label: 'ความเสี่ยง', value: function (r) { return '<b>' + escapeHtmlJs(r.title) + '</b>' + (r.relatedAsset || r.relatedSystem ? '<br><small class="text-muted">' + escapeHtmlJs(r.relatedAsset || r.relatedSystem) + '</small>' : ''); }, raw: function (r) { return (r.title || '') + ' ' + (r.relatedAsset || '') + ' ' + (r.relatedSystem || ''); } },
+        { key: 'category', label: 'หมวด', value: function (r) { return escapeHtmlJs(r.category || '-'); } },
+        { key: 'owner', label: 'ผู้รับผิดชอบ', value: function (r) { return escapeHtmlJs(r.owner || '-'); }, default: false },
+        { key: 'score', label: 'คะแนน', value: function (r) { return r.score ? '<span class="badge" style="background:' + rkScoreColor(r.score) + '">' + r.score + '</span> ' + rkLevelBadge(r.level, r.tone) : '-'; }, raw: function (r) { return r.score; } },
+        { key: 'treatment', label: 'การจัดการ', value: function (r) { return escapeHtmlJs(r.treatment || '-'); }, default: false },
+        { key: 'residualScore', label: 'คงเหลือ', value: function (r) { return r.residualScore ? '<span class="badge" style="background:' + rkScoreColor(r.residualScore) + '">' + r.residualScore + '</span> ' + rkLevelBadge(r.residualLevel, r.residualTone) : '<span class="text-muted">-</span>'; }, raw: function (r) { return r.residualScore; } },
+        { key: 'nextReview', label: 'ทบทวนถัดไป', value: rkReviewHtml, raw: function (r) { return r.nextReview || ''; }, default: false },
+        { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status); } }
+      ],
+      filters: [
+        { key: 'category', label: 'หมวด', value: function (r) { return r.category || ''; } },
+        { key: 'level', label: 'ระดับ', value: function (r) { return r.level || ''; } },
+        { key: 'treatment', label: 'การจัดการ', value: function (r) { return r.treatment || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        var a = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="rkOpenForm(\'' + r.id + '\')">แก้ไข</button>';
+        a += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="rkReview(\'' + r.id + '\')">ทบทวน</button>';
+        if (String(r.status) !== 'ปิด') a += '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="rkStatus(\'' + r.id + '\',\'ปิด\')">ปิด</button>';
+        else a += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="rkStatus(\'' + r.id + '\',\'เปิด\')">เปิดใหม่</button>';
+        a += deleteBtn('risk', r.id, r.title || r.id);
+        return a;
+      } : null
+    };
+  }
+
+  function rkFind(id) { return (RISK_DATA.risks || []).filter(function (x) { return x.id === id; })[0]; }
+
+  function rkOpenForm(id) {
+    var d = RISK_DATA, r = id ? rkFind(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไขความเสี่ยง: ' + r.title) : 'เพิ่มความเสี่ยง', submitLabel: id ? 'อัปเดต' : 'บันทึก',
+      fields: [
+        { id: 'title', label: 'ชื่อความเสี่ยง', value: r.title, required: true, col: 'col-md-8' },
+        { id: 'category', label: 'หมวดความเสี่ยง', type: 'select', options: d.categories, value: r.category, col: 'col-md-4' },
+        { id: 'relatedAsset', label: 'ทรัพย์สินที่เกี่ยวข้อง', value: r.relatedAsset, col: 'col-md-6' },
+        { id: 'relatedSystem', label: 'ระบบ/บริการที่เกี่ยวข้อง', value: r.relatedSystem, col: 'col-md-6' },
+        { id: 'threat', label: 'ภัยคุกคาม (Threat)', type: 'textarea', rows: 2, value: r.threat, col: 'col-md-6' },
+        { id: 'vulnerability', label: 'ช่องโหว่ (Vulnerability)', type: 'textarea', rows: 2, value: r.vulnerability, col: 'col-md-6' },
+        { id: 'likelihood', label: 'โอกาสเกิด (Likelihood)', type: 'select', options: RISK_SCALE, value: r.likelihood, required: true, col: 'col-md-3' },
+        { id: 'impact', label: 'ผลกระทบ (Impact)', type: 'select', options: RISK_SCALE, value: r.impact, required: true, col: 'col-md-3' },
+        { id: 'owner', label: 'ผู้รับผิดชอบความเสี่ยง', value: r.owner, col: 'col-md-6' },
+        { id: 'existingControls', label: 'มาตรการควบคุมที่มีอยู่', type: 'textarea', rows: 2, value: r.existingControls, col: 'col-12' },
+        { id: 'treatment', label: 'วิธีจัดการความเสี่ยง', type: 'select', options: d.treatments, value: r.treatment, col: 'col-md-6' },
+        { id: 'treatmentOwner', label: 'ผู้รับผิดชอบแผนจัดการ', value: r.treatmentOwner, col: 'col-md-3' },
+        { id: 'due', label: 'กำหนดเสร็จ', type: 'date', value: dmyToInput(r.due), col: 'col-md-3' },
+        { id: 'treatmentPlan', label: 'แผนจัดการ/มาตรการเพิ่มเติม', type: 'textarea', rows: 2, value: r.treatmentPlan, col: 'col-12' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: d.statuses, value: r.status || 'เปิด', placeholder: false, col: 'col-md-4' },
+        { id: 'nextReview', label: 'วันทบทวนถัดไป', type: 'date', value: dmyToInput(r.nextReview), col: 'col-md-4' },
+        { id: 'relatedIncident', label: 'อ้างอิงเหตุการณ์ (IncidentID)', value: r.relatedIncident, col: 'col-md-4' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var fn = id ? callServer('updateRisk', id, v) : callServer('addRisk', v);
+        return fn.then(function (m) { toast(m, 'success'); loadModule('risk'); });
+      }
+    });
+  }
+
+  function rkReview(id) {
+    var r = rkFind(id);
+    showFormModal({
+      title: 'ทบทวนความเสี่ยง: ' + r.title, submitLabel: 'บันทึกการทบทวน', size: 'md',
+      fields: [
+        { id: 'residualLikelihood', label: 'โอกาสเกิดคงเหลือ', type: 'select', options: RISK_SCALE, value: r.residualLikelihood, col: 'col-md-6' },
+        { id: 'residualImpact', label: 'ผลกระทบคงเหลือ', type: 'select', options: RISK_SCALE, value: r.residualImpact, col: 'col-md-6' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: RISK_DATA.statuses, value: r.status, placeholder: false, col: 'col-md-6' },
+        { id: 'nextReview', label: 'วันทบทวนถัดไป', type: 'date', value: dmyToInput(r.nextReview), col: 'col-md-6' },
+        { id: 'notes', label: 'บันทึกผลการทบทวน', type: 'textarea', rows: 3, col: 'col-12', help: 'ระบบจะต่อท้ายหมายเหตุเดิมพร้อมวันที่ทบทวน' }
+      ],
+      onSubmit: function (v) { return callServer('reviewRisk', id, v).then(function (m) { toast(m, 'success'); loadModule('risk'); }); }
+    });
+  }
+
+  function rkStatus(id, status) {
+    var r = rkFind(id);
+    showConfirm('ปรับสถานะความเสี่ยง "' + r.title + '" เป็น ' + status + '?',
+      function () { callServer('setRiskStatus', id, status).then(function (m) { toast(m); loadModule('risk'); }); });
+  }
+</script>

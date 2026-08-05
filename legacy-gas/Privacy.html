@@ -1,0 +1,116 @@
+<!-- Privacy.html — RoPA, Consent และคำขอใช้สิทธิ PDPA -->
+<script>
+  var PRIVACY_DATA = null;
+
+  function renderPrivacy(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    return callServer('getPrivacyModuleData').then(function (d) {
+      PRIVACY_DATA = d || { ropa:[], consents:[], requests:[] };
+      var open = PRIVACY_DATA.requests.filter(function (r) { return r.status !== 'เสร็จสิ้น' && r.status !== 'ปฏิเสธ'; });
+      var overdue = open.filter(function (r) { return r.dueDays !== null && r.dueDays < 0; }).length;
+      var dpia = PRIVACY_DATA.ropa.filter(function (r) { return r.dpiaRequired === 'Yes' && r.dpiaStatus !== 'เสร็จสิ้น'; }).length;
+      var html = '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><div><h3 class="text-primary mb-1">Privacy / PDPA</h3><div class="text-muted">RoPA · Consent evidence · Data Subject Request</div></div>' +
+        (PRIVACY_DATA.canEdit ? '<button class="btn btn-primary" onclick="privacyOpenDsr()"><i class="bi bi-plus-lg"></i> รับคำขอใช้สิทธิ</button>' : '') + '</div>';
+      html += moduleDashboard([
+        mdStat('กิจกรรมประมวลผล', PRIVACY_DATA.ropa.length, 'bi-diagram-3', 'blue'),
+        mdStat('Consent evidence', PRIVACY_DATA.consents.length, 'bi-check2-circle', 'teal'),
+        mdStat('คำขอที่ยังเปิด', open.length, 'bi-person-check', open.length ? 'amber' : 'gray'),
+        mdStat('เกินกำหนด', overdue, 'bi-alarm', overdue ? 'danger' : 'gray'),
+        mdStat('DPIA ค้าง', dpia, 'bi-shield-exclamation', dpia ? 'danger' : 'gray')
+      ]);
+      html += '<ul class="nav nav-tabs mb-3">' + privacyTab_('ropa','RoPA ('+PRIVACY_DATA.ropa.length+')',true) +
+        privacyTab_('consent','Consent ('+PRIVACY_DATA.consents.length+')',false) +
+        privacyTab_('dsr','คำขอใช้สิทธิ ('+PRIVACY_DATA.requests.length+')',false) + '</ul>';
+      html += '<div class="tab-content"><div class="tab-pane fade show active" id="pv-ropa">' + privacyRopaPane_() + '</div>' +
+        '<div class="tab-pane fade" id="pv-consent">' + privacyConsentPane_() + '</div>' +
+        '<div class="tab-pane fade" id="pv-dsr">' + privacyDsrPane_() + '</div></div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function privacyTab_(id,label,active) { return '<li class="nav-item"><button class="nav-link'+(active?' active':'')+'" data-bs-toggle="tab" data-bs-target="#pv-'+id+'" type="button">'+escapeHtmlJs(label)+'</button></li>'; }
+
+  function privacyRopaPane_() {
+    var add = PRIVACY_DATA.canEdit ? '<button class="btn btn-sm btn-outline-primary mb-3" onclick="privacyOpenRopa()"><i class="bi bi-plus-lg"></i> เพิ่ม RoPA</button>' : '';
+    if (!PRIVACY_DATA.ropa.length) return add + '<div class="alert alert-secondary">ยังไม่มีรายการกิจกรรมประมวลผล</div>';
+    var body = PRIVACY_DATA.ropa.map(function (r) {
+      var review = r.reviewDate && r.reviewDays < 0 ? '<span class="overdue">'+escapeHtmlJs(r.reviewDate)+'</span>' : escapeHtmlJs(r.reviewDate || '-');
+      var action = PRIVACY_DATA.canEdit ? '<button class="btn btn-sm btn-outline-secondary" onclick="privacyOpenRopa(\''+escapeHtmlJs(r.id)+'\')">แก้ไข</button>' : '';
+      return '<tr><td><b>'+escapeHtmlJs(r.processName)+'</b><div class="small text-muted">'+escapeHtmlJs(r.purpose || '')+'</div></td><td>'+escapeHtmlJs(r.department || '-')+'</td><td>'+escapeHtmlJs(r.lawfulBasis)+'</td><td>'+escapeHtmlJs(r.dataSubjects || '-')+'</td><td>'+escapeHtmlJs(r.dpiaRequired || 'No')+' / '+escapeHtmlJs(r.dpiaStatus || '-')+'</td><td>'+review+'</td><td>'+escapeHtmlJs(r.status || '')+'</td><td>'+action+'</td></tr>';
+    }).join('');
+    return add + tableWrap('<tr><th>กระบวนการ/วัตถุประสงค์</th><th>หน่วยงาน</th><th>ฐานประมวลผล</th><th>กลุ่มเจ้าของข้อมูล</th><th>DPIA</th><th>ทบทวน</th><th>สถานะ</th><th></th></tr>', body);
+  }
+
+  function privacyOpenRopa(id) {
+    var r = (PRIVACY_DATA.ropa || []).filter(function (x) { return x.id === id; })[0] || {};
+    showFormModal({ title: id ? 'แก้ไข RoPA' : 'เพิ่ม RoPA', submitLabel:'บันทึก', fields:[
+      {id:'processName',label:'ชื่อกิจกรรมประมวลผล',value:r.processName||'',required:true,col:'col-md-6'},
+      {id:'department',label:'หน่วยงาน',value:r.department||'',col:'col-md-3'},
+      {id:'dataOwner',label:'Data Owner',value:r.dataOwner||'',col:'col-md-3'},
+      {id:'purpose',label:'วัตถุประสงค์',type:'textarea',rows:2,value:r.purpose||'',required:true,col:'col-md-6'},
+      {id:'lawfulBasis',label:'ฐานการประมวลผล',type:'select',options:PRIVACY_DATA.lawfulBases,value:r.lawfulBasis||'',required:true,col:'col-md-3'},
+      {id:'dataSubjects',label:'กลุ่มเจ้าของข้อมูล',value:r.dataSubjects||'',col:'col-md-3'},
+      {id:'personalData',label:'ข้อมูลส่วนบุคคลที่ใช้',type:'textarea',rows:2,value:r.personalData||'',col:'col-md-6'},
+      {id:'sensitiveData',label:'ข้อมูลอ่อนไหว',type:'textarea',rows:2,value:r.sensitiveData||'',col:'col-md-6'},
+      {id:'recipients',label:'ผู้รับ/ผู้เปิดเผยข้อมูล',value:r.recipients||'',col:'col-md-4'},
+      {id:'crossBorderTransfer',label:'การโอนต่างประเทศ/มาตรการ',value:r.crossBorderTransfer||'',col:'col-md-4'},
+      {id:'retentionPeriod',label:'ระยะเก็บรักษา',value:r.retentionPeriod||'',col:'col-md-4'},
+      {id:'securityMeasures',label:'มาตรการรักษาความมั่นคงปลอดภัย',type:'textarea',rows:2,value:r.securityMeasures||'',col:'col-md-8'},
+      {id:'dpiaRequired',label:'ต้องทำ DPIA',type:'select',options:['No','Yes'],value:r.dpiaRequired||'No',placeholder:false,col:'col-md-2'},
+      {id:'dpiaStatus',label:'สถานะ DPIA',type:'select',options:['ไม่จำเป็น','รอดำเนินการ','กำลังดำเนินการ','เสร็จสิ้น'],value:r.dpiaStatus||'ไม่จำเป็น',placeholder:false,col:'col-md-2'},
+      {id:'reviewDate',label:'วันทบทวน',type:'date',value:r.reviewDateInput||'',col:'col-md-3'},
+      {id:'status',label:'สถานะ',type:'select',options:['ใช้งาน','ระงับ','ยกเลิก'],value:r.status||'ใช้งาน',placeholder:false,col:'col-md-3'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:2,value:r.notes||'',col:'col-md-6'}
+    ], onSubmit:function (v) { v.id=id||''; return callServer('saveRopaRecord',v).then(function (x) { toast((x&&x.message)||'บันทึกแล้ว'); loadModule('privacy'); }); } });
+  }
+
+  function privacyConsentPane_() {
+    var add = PRIVACY_DATA.canEdit ? '<button class="btn btn-sm btn-outline-primary mb-3" onclick="privacyOpenConsent()"><i class="bi bi-plus-lg"></i> บันทึกหลักฐาน Consent</button>' : '';
+    if (!PRIVACY_DATA.consents.length) return add+'<div class="alert alert-secondary">ยังไม่มีหลักฐานความยินยอม</div>';
+    var body=PRIVACY_DATA.consents.map(function(r){return '<tr><td>'+escapeHtmlJs(r.id)+'</td><td>'+escapeHtmlJs(r.dataSubjectRef)+'</td><td>'+escapeHtmlJs(r.purpose)+'</td><td>'+escapeHtmlJs(r.noticeVersion||'-')+'</td><td>'+escapeHtmlJs(r.channel||'-')+'</td><td>'+escapeHtmlJs(r.grantedAt||'-')+'</td><td>'+escapeHtmlJs(r.status)+'</td><td>'+(r.evidenceLink?'<a href="'+escapeHtmlJs(r.evidenceLink)+'" target="_blank" rel="noopener">หลักฐาน</a>':'-')+'</td></tr>';}).join('');
+    return add+tableWrap('<tr><th>ID</th><th>เจ้าของข้อมูล</th><th>วัตถุประสงค์</th><th>Notice</th><th>ช่องทาง</th><th>วันที่</th><th>สถานะ</th><th>หลักฐาน</th></tr>',body);
+  }
+
+  function privacyOpenConsent() {
+    showFormModal({title:'บันทึกหลักฐานความยินยอม',submitLabel:'บันทึก',fields:[
+      {id:'dataSubjectRef',label:'รหัสอ้างอิงเจ้าของข้อมูล',required:true,col:'col-md-4'},
+      {id:'purpose',label:'วัตถุประสงค์',required:true,col:'col-md-8'},
+      {id:'noticeVersion',label:'Privacy Notice Version',col:'col-md-3'},
+      {id:'channel',label:'ช่องทาง',type:'select',options:['Web','เอกสาร','Email','LINE','อื่น ๆ'],value:'Web',placeholder:false,col:'col-md-3'},
+      {id:'grantedAt',label:'วันที่ให้ความยินยอม',type:'date',col:'col-md-3'},
+      {id:'status',label:'สถานะ',type:'select',options:['ให้ความยินยอม','ถอนแล้ว'],value:'ให้ความยินยอม',placeholder:false,col:'col-md-3'},
+      {id:'evidenceLink',label:'ลิงก์หลักฐาน',col:'col-md-6'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:2,col:'col-md-6'}
+    ],onSubmit:function(v){return callServer('recordPrivacyConsent',v).then(function(x){toast((x&&x.message)||'บันทึกแล้ว');loadModule('privacy');});}});
+  }
+
+  function privacyDsrPane_() {
+    if (!PRIVACY_DATA.requests.length) return '<div class="alert alert-secondary">ยังไม่มีคำขอใช้สิทธิ</div>';
+    var body=PRIVACY_DATA.requests.map(function(r){var due=(r.dueDays!==null&&r.dueDays<0&&r.status!=='เสร็จสิ้น'&&r.status!=='ปฏิเสธ')?'<span class="overdue">'+escapeHtmlJs(r.dueDate)+'</span>':escapeHtmlJs(r.dueDate||'-');var a=PRIVACY_DATA.canEdit?'<button class="btn btn-sm btn-outline-primary" onclick="privacyUpdateDsr(\''+escapeHtmlJs(r.id)+'\')">ดำเนินการ</button>':'';return '<tr><td>'+escapeHtmlJs(r.id)+'</td><td>'+escapeHtmlJs(r.requestType)+'</td><td>'+escapeHtmlJs(r.dataSubjectRef)+'</td><td>'+escapeHtmlJs(r.receivedAt||'-')+'</td><td>'+due+'</td><td>'+escapeHtmlJs(r.owner||'-')+'</td><td>'+escapeHtmlJs(r.status)+'</td><td>'+a+'</td></tr>';}).join('');
+    return tableWrap('<tr><th>ID</th><th>สิทธิ</th><th>เจ้าของข้อมูล</th><th>รับเมื่อ</th><th>กำหนด</th><th>ผู้รับผิดชอบ</th><th>สถานะ</th><th></th></tr>',body);
+  }
+
+  function privacyOpenDsr() {
+    showFormModal({title:'รับคำขอใช้สิทธิ',submitLabel:'บันทึกคำขอ',fields:[
+      {id:'requestType',label:'ประเภทสิทธิ',type:'select',options:PRIVACY_DATA.requestTypes,required:true,col:'col-md-4'},
+      {id:'dataSubjectRef',label:'รหัสอ้างอิงเจ้าของข้อมูล',required:true,col:'col-md-4'},
+      {id:'contact',label:'ข้อมูลติดต่อ',col:'col-md-4'},
+      {id:'receivedAt',label:'วันที่รับคำขอ',type:'date',col:'col-md-3'},
+      {id:'dueDate',label:'กำหนดเสร็จ (ว่าง=ตาม SLA)',type:'date',col:'col-md-3'},
+      {id:'owner',label:'ผู้รับผิดชอบ',col:'col-md-3'},
+      {id:'notes',label:'รายละเอียดคำขอ',type:'textarea',rows:3,col:'col-md-12'}
+    ],onSubmit:function(v){return callServer('submitDataSubjectRequest',v).then(function(x){toast((x&&x.message)||'รับคำขอแล้ว');loadModule('privacy');});}});
+  }
+
+  function privacyUpdateDsr(id) {
+    var r=PRIVACY_DATA.requests.filter(function(x){return x.id===id;})[0]||{};
+    showFormModal({title:'ดำเนินการคำขอ '+id,submitLabel:'อัปเดต',fields:[
+      {id:'status',label:'สถานะ',type:'select',options:PRIVACY_DATA.requestStatuses,value:r.status||'กำลังดำเนินการ',placeholder:false,required:true,col:'col-md-4'},
+      {id:'owner',label:'ผู้รับผิดชอบ',value:r.owner||'',col:'col-md-4'},
+      {id:'identityVerified',label:'ยืนยันตัวตนแล้ว',type:'select',options:['No','Yes'],value:r.identityVerifiedAt?'Yes':'No',placeholder:false,col:'col-md-4'},
+      {id:'decision',label:'ผลการพิจารณา/การดำเนินการ',type:'textarea',rows:3,value:r.decision||'',col:'col-md-8'},
+      {id:'evidenceLink',label:'ลิงก์หลักฐาน',value:r.evidenceLink||'',col:'col-md-4'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:2,value:r.notes||'',col:'col-md-12'}
+    ],onSubmit:function(v){return callServer('updateDataSubjectRequest',id,v).then(function(x){toast((x&&x.message)||'อัปเดตแล้ว');loadModule('privacy');});}});
+  }
+</script>

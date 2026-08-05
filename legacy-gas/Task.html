@@ -1,0 +1,1114 @@
+<!-- Task.html — Task / งานของฉัน (isolated workspace UI) -->
+<style>
+  .tk-workspace { --tk-accent:#4f46e5; --tk-accent-soft:#eef2ff; --tk-green:#059669; }
+  .tk-hero { position:relative; overflow:hidden; border:1px solid var(--line); border-radius:20px; padding:22px;
+    margin-bottom:16px; color:#fff; background:linear-gradient(125deg,#172554 0%,#3730a3 58%,#0f766e 125%); box-shadow:var(--shadow); }
+  .tk-hero:after { content:""; position:absolute; width:260px; height:260px; border-radius:50%; right:-95px; top:-150px; background:rgba(255,255,255,.12); }
+  .tk-hero-row { position:relative; z-index:1; display:flex; gap:18px; align-items:center; justify-content:space-between; }
+  .tk-hero h2 { margin:0 0 5px; font-size:1.55rem; font-weight:800; }
+  .tk-hero p { margin:0; color:rgba(255,255,255,.78); }
+  .tk-owner-pill { display:inline-flex; align-items:center; gap:7px; max-width:360px; padding:8px 12px; border-radius:999px;
+    color:#fff; background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.2); font-size:.78rem; }
+  .tk-owner-pill span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tk-panel-backdrop { position:fixed; inset:0; z-index:1055; background:rgba(15,23,42,.48); backdrop-filter:blur(2px); display:flex; justify-content:flex-end; }
+  .tk-panel { width:min(620px,100%); height:100%; overflow:auto; background:var(--surface); color:var(--ink); box-shadow:-20px 0 60px rgba(15,23,42,.22); animation:tkPanelIn .18s ease-out; }
+  @keyframes tkPanelIn { from{transform:translateX(35px);opacity:.65} to{transform:none;opacity:1} }
+  .tk-panel-head { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 20px;
+    border-bottom:1px solid var(--line); background:var(--surface); }
+  .tk-panel-body { padding:22px; }
+  .tk-panel-kicker { color:var(--primary); font-size:.75rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+  .tk-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0; }
+  .tk-detail-box { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--surface-subtle); }
+  .tk-detail-box small { display:block; color:var(--muted); margin-bottom:4px; }
+  .tk-panel-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+  .tk-edit-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:14px; }
+  .tk-edit-field { grid-column:span 6; }
+  .tk-edit-field.full { grid-column:1/-1; }
+  .tk-edit-field.third { grid-column:span 4; }
+  .tk-edit-field label { display:block; margin-bottom:6px; font-size:.82rem; font-weight:700; }
+  .tk-action { position:relative; z-index:1; }
+  body.tk-panel-open { overflow:hidden; }
+  @media(max-width:640px){.tk-hero-row{align-items:flex-start;flex-direction:column}.tk-owner-pill{max-width:100%}.tk-detail-grid{grid-template-columns:1fr}.tk-edit-field,.tk-edit-field.third{grid-column:1/-1}.tk-panel-body{padding:16px}}
+  /* ---------- Task workspace (Slack-like) ---------- */
+  .tk-composer {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow-sm); padding: 12px 14px; margin-bottom: 16px;
+  }
+  .tk-composer-main { display: flex; align-items: center; gap: 10px; }
+  .tk-composer-ic { color: var(--primary); font-size: 1.15rem; }
+  .tk-quick-input {
+    flex: 1 1 auto; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface-subtle); padding: 10px 14px; font-size: .98rem; color: var(--ink);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .tk-quick-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); background: var(--surface); }
+  .tk-send { border-radius: 12px; width: 44px; height: 44px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+  .tk-composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-left: 28px; }
+  .tk-composer-tools .form-select-sm, .tk-composer-tools .form-control-sm { width: auto; min-width: 118px; }
+  .tk-composer-tools .tk-more { margin-left: auto; }
+
+  .tk-viewtabs { display: inline-flex; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 16px; }
+  .tk-viewtabs button {
+    border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: .88rem;
+    padding: 7px 16px; border-radius: 9px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .tk-viewtabs button:hover { color: var(--ink); }
+  .tk-viewtabs button.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-sm); }
+  .tk-filterbar { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-bottom: 14px; }
+  .tk-filterbar .tk-search { flex: 1 1 260px; min-width: 180px; }
+  .tk-filterbar .form-select { flex: 0 1 170px; }
+  .tk-filter-result { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+
+  /* ---------- Feed ---------- */
+  .tk-feed { display: flex; flex-direction: column; gap: 6px; }
+  .tk-section-head {
+    display: flex; align-items: center; gap: 8px; margin: 18px 0 6px; font-weight: 700; font-size: .82rem;
+    text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
+  }
+  .tk-section-head:first-child { margin-top: 4px; }
+  .tk-section-head .tk-count { background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 20px; padding: 1px 9px; font-size: .74rem; color: var(--muted); }
+  .tk-section-head.danger { color: var(--red); }
+  .tk-section-head.amber { color: var(--yellow); }
+
+  .tk-msg {
+    display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 12px;
+    border: 1px solid transparent; transition: background .12s, border-color .12s;
+  }
+  .tk-msg:hover { background: var(--surface-subtle); border-color: var(--line); }
+  .tk-msg:hover .tk-actions { opacity: 1; }
+  .tk-check {
+    flex: none; width: 24px; height: 24px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--gray);
+    background: transparent; color: transparent; cursor: pointer; display: inline-flex; align-items: center;
+    justify-content: center; font-size: .8rem; transition: all .15s;
+  }
+  .tk-check:hover { border-color: var(--green); color: var(--green); }
+  .tk-check.done { background: var(--green); border-color: var(--green); color: #fff; }
+  .tk-body { flex: 1 1 auto; min-width: 0; }
+  .tk-title { font-weight: 600; color: var(--ink); cursor: pointer; word-break: break-word; }
+  .tk-title:hover { color: var(--primary); text-decoration: underline; }
+  .tk-title.done { color: var(--muted); text-decoration: line-through; }
+  .tk-msg-desc { color: var(--muted); font-size: .85rem; margin-top: 2px; word-break: break-word; }
+  .tk-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 5px; font-size: .78rem; color: var(--muted); }
+  .tk-meta .tk-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--gray); }
+  .tk-meta .tk-mini-progress { width: 70px; height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .tk-meta .tk-mini-progress > i { display: block; height: 100%; background: var(--primary); }
+  .tk-msg .tk-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; opacity: .35; transition: opacity .15s; }
+  .tk-msg[data-pri="สูง"] { box-shadow: inset 3px 0 0 var(--yellow); }
+  .tk-msg[data-pri="เร่งด่วน"] { box-shadow: inset 3px 0 0 var(--red); }
+  .tk-empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+  .tk-empty i { font-size: 2.4rem; display: block; margin-bottom: 10px; color: var(--gray); }
+
+  /* ---------- Calendar (FullCalendar overrides) ---------- */
+  #tk-fc { --fc-border-color: var(--line); --fc-today-bg-color: rgba(37,99,235,.08); --fc-page-bg-color: var(--surface); font-size: .9rem; }
+  #tk-fc .fc .fc-toolbar-title { font-size: 1.2rem; font-weight: 800; color: var(--ink); }
+  #tk-fc .fc .fc-button { text-transform: none; box-shadow: none; }
+  #tk-fc .fc .fc-col-header-cell-cushion { color: var(--muted); font-weight: 700; font-size: .78rem; text-decoration: none; }
+  #tk-fc .fc .fc-daygrid-day-number { color: var(--ink); text-decoration: none; font-weight: 600; }
+  #tk-fc .fc-daygrid-event { padding: 1px 5px; border-radius: 5px; font-weight: 600; cursor: pointer; }
+  #tk-fc .tk-fc-done { text-decoration: line-through; opacity: .65; }
+  #tk-fc .fc-daygrid-day { cursor: pointer; }
+  #tk-fc .fc .fc-daygrid-day.fc-day-today { background: var(--fc-today-bg-color); }
+  @media (max-width: 640px) {
+    .tk-composer-tools { padding-left: 0; }
+    .tk-composer-tools .form-select-sm, .tk-composer-tools .form-control-sm { flex: 1 1 auto; min-width: 0; }
+    #tk-fc .fc-toolbar.fc-header-toolbar { flex-direction: column; gap: 8px; align-items: stretch; }
+  }
+  html[data-theme="dark"] .tk-composer,
+  html[data-theme="dark"] .tk-viewtabs button.active { background: #14223a; }
+  html[data-theme="dark"] #tk-fc { --fc-page-bg-color: #14223a; --fc-neutral-bg-color: #1a2b47; }
+  .tk-board { display:grid; grid-template-columns:repeat(4,minmax(240px,1fr)); gap:12px; overflow-x:auto; padding-bottom:8px; }
+  .tk-column { background:var(--surface-subtle); border:1px solid var(--line); border-radius:14px; min-height:260px; }
+  .tk-column-head { padding:11px 12px; display:flex; justify-content:space-between; font-weight:700; border-bottom:1px solid var(--line); }
+  .tk-column-list { padding:9px; min-height:210px; }
+  .tk-card { background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:8px; box-shadow:var(--shadow-sm); cursor:grab; }
+  .tk-card:active { cursor:grabbing; } .tk-card-title { font-weight:650; cursor:pointer; }
+  .tk-card-ghost { opacity:.35; } .tk-card-chosen { box-shadow:0 0 0 2px var(--primary); }
+  .tk-subtasks { list-style:none; margin:0; padding:0; } .tk-subtasks li { display:flex; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); }
+  @media(max-width:900px){.tk-board{grid-template-columns:repeat(4,260px)}}
+
+  /* Task command center v2 */
+  .tk-workspace { max-width:1440px; margin:0 auto; }
+  .tk-hero { padding:28px; border:0; background:linear-gradient(125deg,#172554 0%,#3730a3 56%,#2563eb 100%); box-shadow:0 18px 44px rgba(30,64,175,.22); }
+  .tk-hero-copy { max-width:680px; }
+  .tk-hero-kicker { display:flex; align-items:center; gap:8px; margin-bottom:9px; color:#bfdbfe; font-size:.76rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+  .tk-hero-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:9px; }
+  .tk-primary-add { border:0; border-radius:12px; padding:10px 16px; color:#1e3a8a; background:#fff; font-weight:800; box-shadow:0 8px 22px rgba(15,23,42,.18); }
+  .tk-primary-add:hover { color:#1d4ed8; transform:translateY(-1px); }
+  .tk-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:18px 0; }
+  .tk-summary { position:relative; display:flex; align-items:center; gap:13px; min-height:94px; padding:16px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow-sm); overflow:hidden; }
+  .tk-summary:after { content:""; position:absolute; width:72px; height:72px; border-radius:50%; right:-28px; bottom:-34px; background:var(--tk-summary-soft); }
+  .tk-summary-icon { width:42px; height:42px; display:grid; place-items:center; flex:none; border-radius:13px; color:var(--tk-summary-color); background:var(--tk-summary-soft); font-size:1.1rem; }
+  .tk-summary strong { display:block; font-size:1.55rem; line-height:1; color:var(--ink); }
+  .tk-summary span { display:block; margin-top:6px; color:var(--muted); font-size:.8rem; }
+  .tk-summary.blue{--tk-summary-color:#2563eb;--tk-summary-soft:#dbeafe}.tk-summary.amber{--tk-summary-color:#d97706;--tk-summary-soft:#fef3c7}.tk-summary.red{--tk-summary-color:#dc2626;--tk-summary-soft:#fee2e2}.tk-summary.green{--tk-summary-color:#059669;--tk-summary-soft:#d1fae5}
+  .tk-command { margin:0 0 16px; padding:15px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .tk-command-label { margin-bottom:10px; color:var(--muted); font-size:.76rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+  .tk-focus-row { display:flex; gap:8px; flex-wrap:wrap; }
+  .tk-focus { border:1px solid var(--line); border-radius:999px; padding:7px 12px; color:var(--ink); background:var(--surface-subtle); font-size:.82rem; font-weight:700; }
+  .tk-focus:hover,.tk-focus.active { border-color:#93c5fd; color:#1d4ed8; background:#eff6ff; }
+  .tk-composer { border-radius:16px; box-shadow:var(--shadow-sm); }
+  .tk-viewbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
+  .tk-viewbar-title h5 { margin:0; font-weight:800; color:var(--ink); }.tk-viewbar-title small{color:var(--muted)}
+  .tk-viewtabs { margin:0; }
+  .tk-filterbar { padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--surface-subtle); }
+  .tk-msg { padding:13px 10px; border-radius:12px; }.tk-msg + .tk-msg{border-top-color:transparent}
+  .tk-column { border-radius:16px; }.tk-card{padding:13px;border-radius:13px}
+  .tk-app-layout { display:grid; grid-template-columns:220px minmax(0,1fr); gap:18px; align-items:start; }
+  .tk-side { position:sticky; top:76px; padding:12px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .tk-side-label { padding:8px 10px 6px; color:var(--muted); font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+  .tk-side-nav { display:flex; flex-direction:column; gap:3px; }
+  .tk-side-link { width:100%; display:flex; align-items:center; gap:10px; border:0; border-radius:10px; padding:9px 10px; color:var(--muted); background:transparent; text-align:left; font-size:.86rem; font-weight:650; }
+  .tk-side-link i { width:20px; text-align:center; font-size:1rem; }.tk-side-link span{margin-left:auto;font-size:.72rem}
+  .tk-side-link:hover { color:var(--ink); background:var(--surface-subtle); }.tk-side-link.active{color:#1d4ed8;background:#eff6ff}
+  .tk-side-tip { margin-top:10px; padding:11px; border-radius:11px; color:#475569; background:#f8fafc; font-size:.75rem; line-height:1.5; }
+  .tk-main { min-width:0; }.tk-section-intro{display:flex;justify-content:space-between;gap:12px;align-items:end;margin:2px 0 14px}.tk-section-intro h4{margin:0;color:var(--ink);font-weight:800}.tk-section-intro p{margin:4px 0 0;color:var(--muted);font-size:.82rem}
+  @media(max-width:900px){.tk-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tk-viewbar{align-items:flex-start;flex-direction:column}}
+  @media(max-width:980px){.tk-app-layout{grid-template-columns:1fr}.tk-side{position:static;overflow-x:auto}.tk-side-nav{flex-direction:row;min-width:max-content}.tk-side-label,.tk-side-tip{display:none}.tk-side-link{width:auto;white-space:nowrap}.tk-side-link span{display:none}}
+  @media(max-width:560px){.tk-hero{padding:21px}.tk-hero-actions{justify-content:flex-start}.tk-summary-grid{grid-template-columns:1fr 1fr}.tk-summary{min-height:82px;padding:12px}.tk-summary strong{font-size:1.3rem}.tk-viewtabs{width:100%;overflow-x:auto}.tk-viewtabs button{white-space:nowrap}}
+</style>
+<script>
+  var TASK_DATA = null;
+  var TASK_VIEW = 'feed';                 // feed | calendar | table
+  var TASK_SECTION = 'overview';
+  var TASK_FILTERS = { q: '', status: 'active', priority: '', due: '' };
+
+  function tkNormalizeData(data) {
+    data = (data && typeof data === 'object') ? data : {};
+    return {
+      owner: data.owner == null ? '' : String(data.owner),
+      canEdit: data.canEdit === true,
+      statuses: Array.isArray(data.statuses) ? data.statuses : ['ต้องทำ', 'กำลังทำ', 'เสร็จแล้ว', 'ยกเลิก'],
+      priorities: Array.isArray(data.priorities) ? data.priorities : ['ต่ำ', 'ปกติ', 'สูง', 'เร่งด่วน'],
+      categories: Array.isArray(data.categories) ? data.categories : ['งานทั่วไป', 'ประชุม', 'ติดตาม', 'เอกสาร', 'โครงการ', 'พัฒนาระบบ', 'ส่วนตัว', 'อื่นๆ'],
+      recurrences: Array.isArray(data.recurrences) ? data.recurrences : ['ไม่ทำซ้ำ', 'รายวัน', 'รายสัปดาห์', 'รายเดือน', 'รายไตรมาส', 'รายปี'],
+      tasks: Array.isArray(data.tasks) ? data.tasks.filter(function (task) {
+        return task && typeof task === 'object';
+      }) : []
+    };
+  }
+
+  function renderTask(container) {
+    container.innerHTML = skeletonCards(4) +
+      '<div class="card stat-card"><div class="card-body"><div class="skeleton-line"></div><div class="skeleton-line"></div></div></div>';
+    return callServer('getTaskModuleData').then(function (data) {
+      data = tkNormalizeData(data);
+      TASK_DATA = data;
+      TASK_FILTERS = { q: '', status: 'active', priority: '', due: '' };
+
+      var html = '<div class="tk-workspace"><section class="tk-hero"><div class="tk-hero-row">' +
+        '<div class="tk-hero-copy"><div class="tk-hero-kicker"><i class="bi bi-stars"></i> My work command center</div>' +
+        '<h2><i class="bi bi-check2-square me-2"></i>งานของฉัน</h2>' +
+        '<p>เห็นงานสำคัญก่อน จัดลำดับได้เร็ว และปิดงานได้จากหน้าเดียว</p></div>' +
+        '<div class="tk-hero-actions"><button type="button" class="btn btn-light" onclick="tkExportCsv()"><i class="bi bi-download me-1"></i> CSV</button>' + (data.canEdit ? '<button type="button" class="tk-primary-add" onclick="tkOpenDetailForm()"><i class="bi bi-plus-lg me-1"></i> สร้างงานใหม่</button>' : '') +
+        '<div class="tk-owner-pill" title="พื้นที่ส่วนตัว"><i class="bi bi-person-check"></i><span>' +
+        escapeHtmlJs(data.owner || 'บัญชีของฉัน') + '</span></div></div></div></section>';
+
+      html += '<div class="tk-app-layout"><aside class="tk-side">' + tkSectionNav(data.tasks || []) + '</aside><main class="tk-main">';
+      html += '<div id="tk-section-head">' + tkSectionIntro('overview') + '</div>';
+      html += '<div id="tk-dashboard">' + tkDashboard(data.tasks || []) + '</div>';
+      html += tkFocusBar();
+      if (data.canEdit) html += tkComposer(data);
+      html += '<div class="tk-viewbar"><div class="tk-viewbar-title"><h5>รายการงาน</h5><small>เลือกมุมมองที่เหมาะกับวิธีทำงานของคุณ</small></div>' + tkViewTabs() + '</div>';
+      html += tkFilterBar(data);
+      html += '<div id="tk-view"></div></main></div></div>';
+      container.innerHTML = html;
+      tkBindActions(container);
+      tkRenderView();
+      if (data.canEdit) tkAttachPicker(document.getElementById('tk-quick-due'));
+    });
+  }
+
+  function tkSectionNav(tasks) {
+    tasks = Array.isArray(tasks) ? tasks : [];
+    function count(test) { return tasks.filter(test).length; }
+    function open(t) { return t.status !== 'เสร็จแล้ว' && t.status !== 'ยกเลิก'; }
+    var items = [
+      ['overview','bi-grid-1x2','ภาพรวม',tasks.length],
+      ['today','bi-sun','วันนี้',count(function(t){return open(t) && t.dueDays !== null && t.dueDays <= 0;})],
+      ['all','bi-list-task','งานทั้งหมด',tasks.length],
+      ['doing','bi-play-circle','งานที่กำลังทำ',count(function(t){return t.status === 'กำลังทำ';})],
+      ['calendar','bi-calendar3','ปฏิทินงาน',''],
+      ['recurring','bi-arrow-repeat','งานประจำ',count(function(t){return t.recurrence && t.recurrence !== 'ไม่ทำซ้ำ';})],
+      ['completed','bi-check2-circle','งานที่เสร็จแล้ว',count(function(t){return t.status === 'เสร็จแล้ว';})]
+    ];
+    return '<div class="tk-side-label">พื้นที่งานส่วนตัว</div><nav class="tk-side-nav">' + items.map(function(item){
+      return '<button type="button" class="tk-side-link' + (item[0] === TASK_SECTION ? ' active' : '') + '" data-tk-section="' + item[0] + '" onclick="tkSetSection(\'' + item[0] + '\')"><i class="bi ' + item[1] + '"></i>' + item[2] + (item[3] === '' ? '' : '<span>' + item[3] + '</span>') + '</button>';
+    }).join('') + '</nav><div class="tk-side-tip"><i class="bi bi-lightbulb me-1"></i> เริ่มเช้าวันใหม่ที่เมนู “วันนี้” เพื่อเห็นงานเร่งด่วนและงานค้างก่อน</div>';
+  }
+
+  function tkSectionIntro(section) {
+    var copy = {
+      overview:['ภาพรวมงาน','สิ่งที่ต้องสนใจ สถานะล่าสุด และทางลัดสำหรับเริ่มงาน'],
+      today:['งานวันนี้','รวมงานครบกำหนดวันนี้และงานที่เลยกำหนด'],
+      all:['งานทั้งหมด','ค้นหา กรอง และจัดการงานส่วนตัวทั้งหมด'],
+      doing:['งานที่กำลังทำ','โฟกัสเฉพาะงานที่เริ่มดำเนินการแล้ว'],
+      calendar:['ปฏิทินงาน','ดูและลากงานเพื่อเปลี่ยนวันครบกำหนด'],
+      recurring:['งานประจำ','ติดตามงานที่ตั้งรอบทำซ้ำอัตโนมัติ'],
+      completed:['งานที่เสร็จแล้ว','ประวัติงานที่ปิดแล้วและสามารถเปิดกลับมาทำต่อได้']
+    }[section] || ['งานของฉัน',''];
+    return '<div class="tk-section-intro"><div><h4>' + copy[0] + '</h4><p>' + copy[1] + '</p></div></div>';
+  }
+
+  function tkSetSection(section) {
+    TASK_SECTION = section;
+    document.querySelectorAll('[data-tk-section]').forEach(function(button){button.classList.toggle('active',button.getAttribute('data-tk-section')===section);});
+    var head=document.getElementById('tk-section-head'); if(head) head.innerHTML=tkSectionIntro(section);
+    var dash=document.getElementById('tk-dashboard'); if(dash) dash.style.display=section==='overview'?'':'none';
+    var status=document.getElementById('tk-filter-status'), due=document.getElementById('tk-filter-due');
+    if(status) status.value='active'; if(due) due.value='';
+    if(section==='today' && due) due.value='';
+    if(section==='all' && status) status.value='all';
+    if(section==='doing' && status) status.value='กำลังทำ';
+    if(section==='completed' && status) status.value='เสร็จแล้ว';
+    if(section==='calendar') tkSetView('calendar'); else if(section!=='overview') tkSetView('feed');
+    tkApplyFilters();
+  }
+
+  // ---------- Dashboard ----------
+  function tkDashboard(tasks) {
+    tasks = Array.isArray(tasks) ? tasks : [];
+    var open = 0, dueToday = 0, overdue = 0, done = 0;
+    tasks.forEach(function (task) {
+      if (task.status === 'เสร็จแล้ว') done++;
+      if (task.status !== 'เสร็จแล้ว' && task.status !== 'ยกเลิก') {
+        open++;
+        if (task.dueDays === 0) dueToday++;
+        if (task.dueDays !== null && task.dueDays < 0) overdue++;
+      }
+    });
+    function card(label, value, icon, tone) {
+      return '<div class="tk-summary ' + tone + '"><div class="tk-summary-icon"><i class="bi ' + icon + '"></i></div>' +
+        '<div><strong>' + value + '</strong><span>' + label + '</span></div></div>';
+    }
+    return '<div class="tk-summary-grid">' + card('งานที่ยังเปิด',open,'bi-inbox','blue') +
+      card('ครบกำหนดวันนี้',dueToday,'bi-calendar2-day','amber') + card('เลยกำหนด',overdue,'bi-exclamation-triangle','red') +
+      card('งานที่ปิดแล้ว',done,'bi-check2-circle','green') + '</div>';
+  }
+
+  function tkFocusBar() {
+    return '<section class="tk-command"><div class="tk-command-label"><i class="bi bi-lightning-charge me-1"></i> โฟกัสด่วน</div>' +
+      '<div class="tk-focus-row"><button type="button" class="tk-focus active" data-tk-focus="active" onclick="tkSetFocus(\'active\')">งานที่ต้องทำ</button>' +
+      '<button type="button" class="tk-focus" data-tk-focus="today" onclick="tkSetFocus(\'today\')"><i class="bi bi-sun me-1"></i> วันนี้</button>' +
+      '<button type="button" class="tk-focus" data-tk-focus="overdue" onclick="tkSetFocus(\'overdue\')"><i class="bi bi-exclamation-circle me-1"></i> เลยกำหนด</button>' +
+      '<button type="button" class="tk-focus" data-tk-focus="week" onclick="tkSetFocus(\'week\')"><i class="bi bi-calendar-week me-1"></i> 7 วันข้างหน้า</button>' +
+      '<button type="button" class="tk-focus" data-tk-focus="all" onclick="tkSetFocus(\'all\')">งานทั้งหมด</button></div></section>';
+  }
+
+  function tkSetFocus(focus) {
+    var status = document.getElementById('tk-filter-status');
+    var due = document.getElementById('tk-filter-due');
+    if (status) status.value = focus === 'all' ? 'all' : 'active';
+    if (due) due.value = (focus === 'today' || focus === 'overdue' || focus === 'week') ? focus : '';
+    document.querySelectorAll('[data-tk-focus]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-tk-focus') === focus);
+    });
+    tkApplyFilters();
+  }
+
+  // ---------- Composer (Slack-like quick add) ----------
+  function tkComposer(data) {
+    var cats = data.categories.map(function (c) {
+      return '<option value="' + escapeHtmlJs(c) + '"' + (c === 'งานทั่วไป' ? ' selected' : '') + '>' + escapeHtmlJs(c) + '</option>';
+    }).join('');
+    var pris = data.priorities.map(function (p) {
+      return '<option value="' + escapeHtmlJs(p) + '"' + (p === 'ปกติ' ? ' selected' : '') + '>' + escapeHtmlJs(p) + '</option>';
+    }).join('');
+    return '<div class="tk-composer">' +
+      '<div class="tk-composer-main">' +
+      '<i class="bi bi-pencil-square tk-composer-ic"></i>' +
+      '<input id="tk-quick" class="tk-quick-input" maxlength="300" autocomplete="off" ' +
+      'placeholder="จดงานใหม่ที่นี่…  พิมพ์แล้วกด Enter เพื่อเพิ่ม" onkeydown="tkQuickKey(event)">' +
+      '<button class="btn btn-primary tk-send" onclick="tkQuickAdd()" title="เพิ่มงาน"><i class="bi bi-send"></i></button>' +
+      '</div>' +
+      '<div class="tk-composer-tools">' +
+      '<select id="tk-quick-cat" class="form-select form-select-sm" title="ประเภทงาน">' + cats + '</select>' +
+      '<select id="tk-quick-pri" class="form-select form-select-sm" title="ความสำคัญ">' + pris + '</select>' +
+      '<input id="tk-quick-due" type="date" class="form-control form-control-sm" title="วันครบกำหนด">' +
+      '<button class="btn btn-sm btn-link tk-more text-decoration-none" onclick="tkOpenDetailForm()">' +
+      '<i class="bi bi-sliders"></i> รายละเอียดเพิ่มเติม</button>' +
+      '</div></div>';
+  }
+
+  function tkQuickKey(ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); tkQuickAdd(); }
+  }
+
+  function tkComposerValues() {
+    var q = document.getElementById('tk-quick');
+    var cat = document.getElementById('tk-quick-cat');
+    var pri = document.getElementById('tk-quick-pri');
+    var due = document.getElementById('tk-quick-due');
+    return {
+      title: q ? q.value.trim() : '',
+      category: cat ? cat.value : 'งานทั่วไป',
+      priority: pri ? pri.value : 'ปกติ',
+      dueDate: due ? due.value : ''
+    };
+  }
+
+  function tkQuickAdd() {
+    var v = tkComposerValues();
+    if (!v.title) {
+      var q = document.getElementById('tk-quick');
+      if (q) { q.classList.add('is-invalid'); q.focus(); }
+      toast('พิมพ์ชื่องานก่อนกดเพิ่ม', 'warning');
+      return;
+    }
+    var btn = document.querySelector('.tk-send');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+    callServer('addTask', {
+      title: v.title, category: v.category, priority: v.priority,
+      status: 'ต้องทำ', dueDate: v.dueDate, progress: 0
+    }).then(function (message) {
+      toast(message || 'เพิ่มงานแล้ว', 'success');
+      loadModule('task');
+      if (typeof refreshNotifications === 'function') refreshNotifications();
+    }).catch(function (e) {
+      toast((e && e.message) || 'เพิ่มงานไม่สำเร็จ', 'danger');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-send"></i>'; }
+    });
+  }
+
+  // เปิดฟอร์มเต็มโดยดึงค่าที่พิมพ์ไว้ใน composer มาเติมล่วงหน้า
+  function tkOpenDetailForm() {
+    var v = tkComposerValues();
+    tkOpenForm(null, { title: v.title, category: v.category, priority: v.priority, dueDate: v.dueDate });
+  }
+
+  function tkExportCsv() {
+    var columns = ['TaskID','Title','Category','Priority','Status','StartDate','DueDate','Progress','Tags','CompletedAt'];
+    function csv(value) { var text = String(value == null ? '' : value); return '"' + text.replace(/"/g, '""') + '"'; }
+    var lines = [columns.map(csv).join(',')];
+    (TASK_DATA.tasks || []).forEach(function (task) {
+      lines.push([task.id,task.title,task.category,task.priority,task.status,task.startDate,task.dueDate,task.progress,task.tags,task.completedAt].map(csv).join(','));
+    });
+    var blob = new Blob(['\ufeff' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob), anchor = document.createElement('a');
+    anchor.href = url; anchor.download = 'my-task-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+  }
+
+  // ---------- View tabs ----------
+  function tkViewTabs() {
+    var tabs = [
+      { key: 'feed', icon: 'bi-chat-left-text', label: 'ฟีดงาน' },
+      { key: 'board', icon: 'bi-kanban', label: 'Kanban' },
+      { key: 'calendar', icon: 'bi-calendar3', label: 'ปฏิทิน' },
+      { key: 'table', icon: 'bi-table', label: 'ตาราง' }
+    ];
+    return '<div class="tk-viewtabs">' + tabs.map(function (t) {
+      return '<button data-view="' + t.key + '" class="' + (TASK_VIEW === t.key ? 'active' : '') +
+        '" onclick="tkSetView(\'' + t.key + '\')"><i class="bi ' + t.icon + '"></i> ' + t.label + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function tkSetView(view) {
+    TASK_VIEW = view;
+    document.querySelectorAll('.tk-viewtabs button').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === view);
+    });
+    tkRenderView();
+  }
+
+  function tkFilterBar(data) {
+    var priorities = ['<option value="">ทุกความสำคัญ</option>'].concat((data.priorities || []).map(function (p) {
+      return '<option value="' + escapeHtmlJs(p) + '">' + escapeHtmlJs(p) + '</option>';
+    })).join('');
+    var statuses = ['<option value="active">งานที่ยังเปิด</option><option value="all">ทุกสถานะ</option>'].concat((data.statuses || []).map(function (s) {
+      return '<option value="' + escapeHtmlJs(s) + '">' + escapeHtmlJs(s) + '</option>';
+    })).join('');
+    return '<div class="tk-filterbar" role="search" aria-label="ตัวกรองงาน">' +
+      '<div class="input-group tk-search"><span class="input-group-text"><i class="bi bi-search"></i></span><input id="tk-filter-q" class="form-control" placeholder="ค้นหาชื่องาน รายละเอียด หรือแท็ก" oninput="tkApplyFilters()"></div>' +
+      '<select id="tk-filter-status" class="form-select" onchange="tkApplyFilters()">' + statuses + '</select>' +
+      '<select id="tk-filter-priority" class="form-select" onchange="tkApplyFilters()">' + priorities + '</select>' +
+      '<select id="tk-filter-due" class="form-select" onchange="tkApplyFilters()"><option value="">ทุกกำหนดส่ง</option><option value="overdue">เลยกำหนด</option><option value="today">วันนี้</option><option value="week">ภายใน 7 วัน</option><option value="none">ไม่มีกำหนด</option></select>' +
+      '<button class="btn btn-outline-secondary" type="button" onclick="tkResetFilters()" title="ล้างตัวกรอง"><i class="bi bi-arrow-counterclockwise"></i></button><span class="tk-filter-result" id="tk-filter-result"></span></div>';
+  }
+
+  function tkApplyFilters() {
+    function value(id, fallback) { var el = document.getElementById(id); return el ? el.value : fallback; }
+    TASK_FILTERS = { q: value('tk-filter-q', '').trim().toLowerCase(), status: value('tk-filter-status', 'active'), priority: value('tk-filter-priority', ''), due: value('tk-filter-due', '') };
+    var focus = '';
+    if (!TASK_FILTERS.q && !TASK_FILTERS.priority) {
+      if (TASK_FILTERS.status === 'all' && !TASK_FILTERS.due) focus = 'all';
+      else if (TASK_FILTERS.status === 'active') focus = TASK_FILTERS.due || 'active';
+    }
+    document.querySelectorAll('[data-tk-focus]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-tk-focus') === focus);
+    });
+    tkRenderView();
+  }
+
+  function tkResetFilters() {
+    ['tk-filter-q','tk-filter-priority','tk-filter-due'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+    var status = document.getElementById('tk-filter-status'); if (status) status.value = 'active';
+    tkApplyFilters();
+  }
+
+  function tkFilteredTasks(tasks) {
+    var f = TASK_FILTERS || {};
+    return (tasks || []).filter(function (task) {
+      var terminal = task.status === 'เสร็จแล้ว' || task.status === 'ยกเลิก';
+      if (TASK_SECTION === 'today' && (terminal || task.dueDays === null || task.dueDays > 0)) return false;
+      if (TASK_SECTION === 'recurring' && (!task.recurrence || task.recurrence === 'ไม่ทำซ้ำ')) return false;
+      if (f.status === 'active' && terminal) return false;
+      if (f.status && f.status !== 'all' && f.status !== 'active' && task.status !== f.status) return false;
+      if (f.priority && task.priority !== f.priority) return false;
+      if (f.due === 'overdue' && !(task.dueDays !== null && task.dueDays < 0 && !terminal)) return false;
+      if (f.due === 'today' && task.dueDays !== 0) return false;
+      if (f.due === 'week' && !(task.dueDays !== null && task.dueDays >= 0 && task.dueDays <= 7)) return false;
+      if (f.due === 'none' && task.dueDate) return false;
+      if (f.q && [task.title, task.description, task.category, task.tags, task.notes].join(' ').toLowerCase().indexOf(f.q) < 0) return false;
+      return true;
+    });
+  }
+
+  function tkRenderView() {
+    var host = document.getElementById('tk-view');
+    if (!host) return;
+    var allTasks = (TASK_DATA && TASK_DATA.tasks) || [];
+    var tasks = tkFilteredTasks(allTasks);
+    var result = document.getElementById('tk-filter-result');
+    if (result) result.textContent = 'แสดง ' + tasks.length + ' จาก ' + allTasks.length + ' งาน';
+    // ทำลายอินสแตนซ์ปฏิทินเดิมก่อนเปลี่ยนมุมมอง (กัน memory leak/ซ้อน)
+    if (TK_FC) { try { TK_FC.destroy(); } catch (e) {} TK_FC = null; }
+    if (TASK_VIEW === 'calendar') { host.innerHTML = tkCalShell(); tkMountCalendar(); }
+    else if (TASK_VIEW === 'board') { host.innerHTML = tkBoardHtml(tasks); tkMountBoard(); }
+    else if (TASK_VIEW === 'table') host.innerHTML = dataTable(tkTableConfig(Object.assign({}, TASK_DATA, { tasks: tasks })));
+    else host.innerHTML = tkFeedHtml(tasks);
+  }
+
+  function tkBoardHtml(tasks) {
+    var statuses = (TASK_DATA && TASK_DATA.statuses) || [];
+    return '<div class="tk-board">' + statuses.map(function (status) {
+      var items = tasks.filter(function (t) { return t.status === status; }).sort(function (a,b) { return (a.sortOrder||0)-(b.sortOrder||0); });
+      return '<section class="tk-column"><div class="tk-column-head"><span>' + escapeHtmlJs(status) + '</span><span class="badge bg-secondary">' + items.length + '</span></div>' +
+        '<div class="tk-column-list" data-status="' + escapeHtmlJs(status) + '">' + items.map(function (t) {
+          var checklist = (t.subtasks || []).length ? '<div class="small text-muted mt-2"><i class="bi bi-list-check"></i> ' + (t.subtaskDone || 0) + '/' + t.subtasks.length + '</div>' : '';
+          return '<article class="tk-card" data-id="' + escapeHtmlJs(t.id) + '"><button class="tk-card-title btn btn-link p-0 text-start text-decoration-none"' + tkActionAttrs('view', t.id) + '>' + escapeHtmlJs(t.title) + '</button>' +
+            '<div class="small mt-2">' + tkPriorityBadge(t.priority) + ' ' + tkDueMetaHtml(t) + '</div>' + checklist + '</article>';
+        }).join('') + '</div></section>';
+    }).join('') + '</div>';
+  }
+
+  function tkMountBoard() {
+    if (!window.Sortable || !(TASK_DATA && TASK_DATA.canEdit)) return;
+    document.querySelectorAll('.tk-column-list').forEach(function (list) {
+      Sortable.create(list, { group:'task-board', animation:150, ghostClass:'tk-card-ghost', chosenClass:'tk-card-chosen',
+        onEnd:function (evt) {
+          var id = evt.item.getAttribute('data-id');
+          var status = evt.to.getAttribute('data-status');
+          callServer('setTaskBoardState', id, status, Date.now() + evt.newIndex).then(function (message) {
+            toast(message || 'ย้ายงานแล้ว', 'success'); loadModule('task');
+          }).catch(function () { loadModule('task'); });
+        }
+      });
+    });
+  }
+
+  // ---------- Feed view ----------
+  function tkFeedHtml(tasks) {
+    if (!tasks.length) {
+      return '<div class="card stat-card"><div class="card-body"><div class="tk-empty">' +
+        '<i class="bi bi-chat-square-dots"></i>ยังไม่มีงาน — พิมพ์งานแรกของคุณในช่องด้านบนแล้วกด Enter</div></div></div>';
+    }
+    function open_(t) { return t.status !== 'เสร็จแล้ว' && t.status !== 'ยกเลิก'; }
+    var buckets = [
+      { key: 'overdue', label: 'เลยกำหนด', tone: 'danger', icon: 'bi-exclamation-octagon',
+        items: tasks.filter(function (t) { return open_(t) && t.dueDays !== null && t.dueDays < 0; }) },
+      { key: 'today', label: 'ครบกำหนดวันนี้', tone: 'amber', icon: 'bi-calendar-day',
+        items: tasks.filter(function (t) { return open_(t) && t.dueDays === 0; }) },
+      { key: 'open', label: 'กำลังทำ / รอทำ', tone: '', icon: 'bi-list-check',
+        items: tasks.filter(function (t) { return open_(t) && (t.dueDays === null || t.dueDays > 0); }) },
+      { key: 'done', label: 'เสร็จแล้ว / ยกเลิก', tone: '', icon: 'bi-check2-all',
+        items: tasks.filter(function (t) { return !open_(t); }) }
+    ];
+    var html = '<div class="card stat-card"><div class="card-body tk-feed">';
+    var any = false;
+    buckets.forEach(function (b) {
+      if (!b.items.length) return;
+      any = true;
+      html += '<div class="tk-section-head ' + b.tone + '"><i class="bi ' + b.icon + '"></i> ' +
+        escapeHtmlJs(b.label) + '<span class="tk-count">' + b.items.length + '</span></div>';
+      html += b.items.map(tkMsgHtml).join('');
+    });
+    if (!any) html += '<div class="tk-empty"><i class="bi bi-emoji-smile"></i>ไม่มีงานที่ต้องแสดง</div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function tkMsgHtml(task) {
+    var done = task.status === 'เสร็จแล้ว';
+    var canceled = task.status === 'ยกเลิก';
+    var progress = Math.max(0, Math.min(100, Number(task.progress) || 0));
+    var desc = task.description
+      ? '<div class="tk-msg-desc">' + escapeHtmlJs(tkShortText(task.description, 120)) + '</div>' : '';
+
+    var meta = [];
+    meta.push('<span><i class="bi bi-folder2"></i> ' + escapeHtmlJs(task.category || '-') + '</span>');
+    if (!done && !canceled) meta.push(tkDueMetaHtml(task));
+    else if (task.dueDate) meta.push('<span><i class="bi bi-calendar-event"></i> ' + escapeHtmlJs(task.dueDate) + '</span>');
+    if (task.priority === 'สูง' || task.priority === 'เร่งด่วน') meta.push(tkPriorityBadge(task.priority));
+    if (task.tags) meta.push('<span class="text-primary"><i class="bi bi-tags"></i> ' + escapeHtmlJs(tkShortText(task.tags, 40)) + '</span>');
+    if (progress > 0 && !canceled) {
+      meta.push('<span class="tk-mini-progress"><i style="width:' + progress + '%"></i></span><span>' + progress + '%</span>');
+    }
+    if (canceled) meta.push('<span class="badge bg-dark">ยกเลิก</span>');
+
+    var titleCls = (done || canceled) ? 'tk-title done' : 'tk-title';
+    return '<div class="tk-msg" data-pri="' + escapeHtmlJs(task.priority || '') + '">' +
+      '<button class="tk-check' + (done ? ' done' : '') + '" title="' + (done ? 'เปิดงานใหม่' : 'ทำเครื่องหมายว่าเสร็จ') +
+      '" onclick="tkToggleDone(\'' + task.id + '\')"><i class="bi bi-check-lg"></i></button>' +
+      '<div class="tk-body">' +
+      '<button class="btn btn-link p-0 text-start text-decoration-none ' + titleCls + '"' + tkActionAttrs('view', task.id) + '>' + escapeHtmlJs(task.title) + '</button>' +
+      desc +
+      '<div class="tk-meta">' + meta.join('<span class="tk-dot"></span>') + '</div>' +
+      (TASK_DATA && TASK_DATA.canEdit ? '<div class="tk-actions">' + tkRowActions(task) + '</div>' : '') +
+      '</div></div>';
+  }
+
+  function tkDueMetaHtml(task) {
+    if (task.dueDays === null || !task.dueDate) return '<span class="text-muted"><i class="bi bi-calendar-x"></i> ไม่กำหนด</span>';
+    if (task.dueDays < 0) return '<span class="text-danger"><i class="bi bi-calendar-event"></i> ' + escapeHtmlJs(task.dueDate) + ' · เลย ' + Math.abs(task.dueDays) + ' วัน</span>';
+    if (task.dueDays === 0) return '<span class="text-warning"><i class="bi bi-calendar-event"></i> วันนี้</span>';
+    if (task.dueDays <= 3) return '<span class="text-warning"><i class="bi bi-calendar-event"></i> ' + escapeHtmlJs(task.dueDate) + ' · อีก ' + task.dueDays + ' วัน</span>';
+    return '<span><i class="bi bi-calendar-event"></i> ' + escapeHtmlJs(task.dueDate) + '</span>';
+  }
+
+  // ปุ่มการทำงานแบบกระชับ (ใช้ทั้ง feed) — จัดชิดสถานะปัจจุบัน
+  function tkRowActions(task) {
+    var b = '<button class="btn btn-sm btn-outline-primary tk-action" title="แก้ไขงาน"' + tkActionAttrs('edit', task.id) + '><i class="bi bi-pencil"></i><span class="ms-1">แก้ไข</span></button>';
+    if (task.status === 'ต้องทำ') {
+      b += ' <button class="btn btn-sm btn-primary" onclick="tkSetStatus(\'' + task.id + '\',\'กำลังทำ\')"><i class="bi bi-play-fill"></i> เริ่ม</button>';
+    } else if (task.status === 'กำลังทำ') {
+      b += ' <button class="btn btn-sm btn-success" onclick="tkSetStatus(\'' + task.id + '\',\'เสร็จแล้ว\')"><i class="bi bi-check-lg"></i> เสร็จ</button>';
+    } else {
+      b += ' <button class="btn btn-sm btn-outline-warning" onclick="tkSetStatus(\'' + task.id + '\',\'ต้องทำ\')"><i class="bi bi-arrow-counterclockwise"></i> เปิดใหม่</button>';
+    }
+    if (task.status === 'ต้องทำ' || task.status === 'กำลังทำ') {
+      b += ' <button class="btn btn-sm btn-outline-danger" onclick="tkCancel(\'' + task.id + '\')"><i class="bi bi-x-lg"></i></button>';
+    }
+    return b;
+  }
+
+  function tkToggleDone(taskId) {
+    var task = tkFind(taskId);
+    if (!task) return;
+    tkSetStatus(taskId, task.status === 'เสร็จแล้ว' ? 'ต้องทำ' : 'เสร็จแล้ว');
+  }
+
+  // ---------- Calendar view (FullCalendar) ----------
+  var TK_FC = null;
+
+  // parse dd/MM/yyyy -> Date (เที่ยงวัน) ใช้ Day.js ถ้ามี ไม่งั้น fallback regex
+  function tkParseDmy(s) {
+    if (!s) return null;
+    if (window.dayjs) {
+      var dj = dayjs(String(s), 'DD/MM/YYYY', true);
+      if (dj.isValid()) return dj.hour(12).minute(0).second(0).millisecond(0).toDate();
+    }
+    var m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!m) return null;
+    return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 12, 0, 0, 0);
+  }
+  function tkPad2(n) { return (n < 10 ? '0' : '') + n; }
+  function tkIsoDate(d) { return d.getFullYear() + '-' + tkPad2(d.getMonth() + 1) + '-' + tkPad2(d.getDate()); }
+  function tkFmtDmy(iso) { var p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+  function tkDaysUntilIso(iso) {
+    var t = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((t - today) / 86400000);
+  }
+
+  function tkCalShell() {
+    var hint = (TASK_DATA && TASK_DATA.canEdit)
+      ? 'คลิกวันที่ว่างเพื่อเพิ่มงาน · ลากงานเพื่อเลื่อนกำหนด · คลิกงานเพื่อดูรายละเอียด'
+      : 'คลิกงานเพื่อดูรายละเอียด';
+    return '<div class="card stat-card"><div class="card-body">' +
+      '<div class="text-muted small mb-2"><i class="bi bi-info-circle"></i> ' + hint + '</div>' +
+      '<div id="tk-fc"></div></div></div>';
+  }
+
+  function tkEventColor(task) {
+    if (task.status === 'เสร็จแล้ว' || task.status === 'ยกเลิก') return { bg: '#94a3b8', fg: '#ffffff' };
+    if (task.dueDays !== null && task.dueDays < 0) return { bg: '#dc2626', fg: '#ffffff' };  // เลยกำหนด
+    if (task.priority === 'เร่งด่วน') return { bg: '#dc2626', fg: '#ffffff' };
+    if (task.priority === 'สูง') return { bg: '#d97706', fg: '#ffffff' };
+    return { bg: '#1d4ed8', fg: '#ffffff' };
+  }
+
+  function tkTaskEvents() {
+    return tkFilteredTasks((TASK_DATA && TASK_DATA.tasks) || []).map(function (t) {
+      var d = tkParseDmy(t.dueDate);
+      if (!d) return null;
+      var c = tkEventColor(t);
+      var terminal = (t.status === 'เสร็จแล้ว' || t.status === 'ยกเลิก');
+      return {
+        id: t.id, title: t.title, start: tkIsoDate(d), allDay: true,
+        backgroundColor: c.bg, borderColor: c.bg, textColor: c.fg,
+        editable: !terminal, classNames: terminal ? ['tk-fc-done'] : []
+      };
+    }).filter(Boolean);
+  }
+
+  function tkMountCalendar() {
+    var el = document.getElementById('tk-fc');
+    if (!el) return;
+    if (!window.FullCalendar) {
+      el.innerHTML = '<div class="alert alert-warning mb-0">โหลดปฏิทินไม่สำเร็จ (ตรวจการเชื่อมต่ออินเทอร์เน็ต) — ' +
+        'ใช้มุมมอง “ตาราง” หรือ “ฟีดงาน” แทนได้ชั่วคราว</div>';
+      return;
+    }
+    var canEdit = !!(TASK_DATA && TASK_DATA.canEdit);
+    var hasTh = !!(window.FullCalendar && FullCalendar.globalLocales);  // locales-all โหลดแล้ว
+    TK_FC = new FullCalendar.Calendar(el, {
+      initialView: 'dayGridMonth',
+      locale: hasTh ? 'th' : undefined,
+      height: 'auto',
+      firstDay: 0,
+      headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
+      buttonText: { today: 'วันนี้' },
+      dayMaxEvents: 4,
+      editable: canEdit,
+      eventStartEditable: canEdit,
+      events: tkTaskEvents(),
+      dateClick: canEdit ? function (info) { tkAddOnDate(info.dateStr); } : null,
+      eventClick: function (info) { info.jsEvent.preventDefault(); tkShowDetail(info.event.id); },
+      eventDrop: function (info) { tkOnEventDrop(info); }
+    });
+    TK_FC.render();
+  }
+
+  // ลากงานบนปฏิทิน -> อัปเดตวันครบกำหนดที่เซิร์ฟเวอร์ (ไม่รีโหลดทั้งหน้าเพื่อคงสถานะปฏิทิน)
+  function tkOnEventDrop(info) {
+    var id = info.event.id;
+    var iso = String(info.event.startStr).slice(0, 10);
+    callServer('setTaskDueDate', id, iso).then(function (message) {
+      toast(message || 'เลื่อนกำหนดแล้ว', 'success');
+      var t = tkFind(id);
+      if (t) { t.dueDate = tkFmtDmy(iso); t.dueDays = tkDaysUntilIso(iso); }
+      if (typeof refreshNotifications === 'function') refreshNotifications();
+    }).catch(function (e) {
+      toast((e && e.message) || 'เลื่อนกำหนดไม่สำเร็จ', 'danger');
+      info.revert();
+    });
+  }
+
+  function tkAddOnDate(iso) {
+    if (!(TASK_DATA && TASK_DATA.canEdit)) return;
+    tkOpenForm(null, { dueDate: iso });
+  }
+
+  // ---------- Date picker (flatpickr) ----------
+  // เปลี่ยน input[type=date] ให้เป็น flatpickr (แสดง dd/mm/yyyy แต่เก็บค่า yyyy-mm-dd)
+  function tkAttachPicker(el) {
+    if (!el || !window.flatpickr || el._flatpickr) return;
+    el.type = 'text';
+    flatpickr(el, {
+      dateFormat: 'Y-m-d', altInput: true, altFormat: 'd/m/Y', allowInput: true, static: true,
+      locale: (flatpickr.l10ns && flatpickr.l10ns.th) ? 'th' : 'default'
+    });
+  }
+
+  // ---------- Shared badges / helpers ----------
+  function tkStatusBadge(status) {
+    var tone = { 'ต้องทำ': 'secondary', 'กำลังทำ': 'primary', 'เสร็จแล้ว': 'success', 'ยกเลิก': 'dark' }[status] || 'secondary';
+    return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(status || '-') + '</span>';
+  }
+
+  function tkPriorityBadge(priority) {
+    var tone = { 'ต่ำ': 'secondary', 'ปกติ': 'info', 'สูง': 'warning text-dark', 'เร่งด่วน': 'danger' }[priority] || 'secondary';
+    return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(priority || '-') + '</span>';
+  }
+
+  function tkDueHtml(task) {
+    if (!task.dueDate) return '<span class="text-muted">ไม่กำหนด</span>';
+    if (task.status === 'เสร็จแล้ว' || task.status === 'ยกเลิก' || task.dueDays === null) {
+      return escapeHtmlJs(task.dueDate);
+    }
+    if (task.dueDays < 0) {
+      return '<span class="overdue">' + escapeHtmlJs(task.dueDate) + '</span>' +
+        '<br><small class="text-danger">เลย ' + Math.abs(task.dueDays) + ' วัน</small>';
+    }
+    if (task.dueDays === 0) {
+      return '<span class="soon">' + escapeHtmlJs(task.dueDate) + '</span>' +
+        '<br><small class="text-warning">วันนี้</small>';
+    }
+    if (task.dueDays <= 3) {
+      return '<span class="soon">' + escapeHtmlJs(task.dueDate) + '</span>' +
+        '<br><small class="text-warning">อีก ' + task.dueDays + ' วัน</small>';
+    }
+    return escapeHtmlJs(task.dueDate);
+  }
+
+  function tkProgressHtml(task) {
+    var value = Math.max(0, Math.min(100, Number(task.progress) || 0));
+    var tone = value >= 100 ? 'success' : (value >= 60 ? 'primary' : (value > 0 ? 'warning' : 'secondary'));
+    return '<div class="d-flex align-items-center gap-2" style="min-width:120px">' +
+      '<div class="progress flex-grow-1" style="height:8px"><div class="progress-bar bg-' + tone +
+      '" style="width:' + value + '%"></div></div><small>' + value + '%</small></div>';
+  }
+
+  function tkShortText(value, limit) {
+    value = String(value || '').replace(/\s+/g, ' ').trim();
+    return value.length > limit ? value.slice(0, limit - 1) + '…' : value;
+  }
+
+  // แปลงค่าวันที่ไปเป็นรูปแบบ input[type=date] (yyyy-MM-dd) — รองรับทั้ง dd/MM/yyyy และ yyyy-MM-dd
+  function tkDateInput(v) {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    return dmyToInput(v);
+  }
+
+  // ---------- Table view (คงเดิม) ----------
+  function tkTableConfig(data) {
+    data = tkNormalizeData(data);
+    return {
+      id: 'personal-task',
+      rows: data.tasks || [],
+      empty: 'ยังไม่มีงานส่วนตัว พิมพ์งานในช่องด้านบนเพื่อเริ่มจดรายการแรก',
+      actionsLabel: 'จัดการ',
+      columns: [
+        {
+          key: 'title',
+          label: 'งาน',
+          value: function (task) {
+            var detail = task.description
+              ? '<br><small class="text-muted">' + escapeHtmlJs(tkShortText(task.description, 90)) + '</small>'
+              : '';
+            var tags = task.tags
+              ? '<br><small class="text-primary"><i class="bi bi-tags"></i> ' + escapeHtmlJs(task.tags) + '</small>'
+              : '';
+            return '<b>' + escapeHtmlJs(task.title) + '</b>' + detail + tags;
+          },
+          raw: function (task) {
+            return [task.title, task.description, task.tags, task.notes].join(' ');
+          }
+        },
+        {
+          key: 'category',
+          label: 'ประเภท',
+          value: function (task) { return escapeHtmlJs(task.category || '-'); },
+          default: false
+        },
+        {
+          key: 'priority',
+          label: 'ความสำคัญ',
+          value: function (task) { return tkPriorityBadge(task.priority); },
+          raw: function (task) { return task.priority || ''; }
+        },
+        {
+          key: 'dueDate',
+          label: 'ครบกำหนด',
+          value: tkDueHtml,
+          raw: function (task) { return task.dueDate || ''; }
+        },
+        {
+          key: 'progress',
+          label: 'ความคืบหน้า',
+          value: tkProgressHtml,
+          raw: function (task) { return Number(task.progress) || 0; }
+        },
+        {
+          key: 'status',
+          label: 'สถานะ',
+          value: function (task) { return tkStatusBadge(task.status); },
+          raw: function (task) { return task.status || ''; }
+        },
+        {
+          key: 'updatedAt',
+          label: 'อัปเดตล่าสุด',
+          value: function (task) { return escapeHtmlJs(task.updatedAt || task.createdAt || '-'); },
+          raw: function (task) { return task.updatedAt || task.createdAt || ''; },
+          default: false
+        }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (task) { return task.status || ''; } },
+        { key: 'priority', label: 'ความสำคัญ', value: function (task) { return task.priority || ''; } },
+        { key: 'category', label: 'ประเภท', value: function (task) { return task.category || ''; } }
+      ],
+      actions: data.canEdit ? function (task) {
+        var buttons = '<button class="btn btn-sm btn-outline-secondary me-1 mb-1 tk-action"' + tkActionAttrs('view', task.id) + '><i class="bi bi-eye"></i> ดู</button>' +
+          '<button class="btn btn-sm btn-outline-primary me-1 mb-1 tk-action"' + tkActionAttrs('edit', task.id) + '><i class="bi bi-pencil"></i> แก้ไข</button>';
+        if (task.status === 'ต้องทำ') {
+          buttons += '<button class="btn btn-sm btn-primary me-1 mb-1" onclick="tkSetStatus(\'' +
+            task.id + '\',\'กำลังทำ\')"><i class="bi bi-play-fill"></i> เริ่ม</button>';
+        } else if (task.status === 'กำลังทำ') {
+          buttons += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="tkSetStatus(\'' +
+            task.id + '\',\'เสร็จแล้ว\')"><i class="bi bi-check-lg"></i> เสร็จ</button>';
+        } else {
+          buttons += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="tkSetStatus(\'' +
+            task.id + '\',\'ต้องทำ\')"><i class="bi bi-arrow-counterclockwise"></i> เปิดใหม่</button>';
+        }
+        if (task.status === 'ต้องทำ' || task.status === 'กำลังทำ') {
+          buttons += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="tkCancel(\'' +
+            task.id + '\')"><i class="bi bi-x-lg"></i> ยกเลิก</button>';
+        }
+        return buttons;
+      } : null
+    };
+  }
+
+  function tkFind(taskId) {
+    return ((TASK_DATA && TASK_DATA.tasks) || []).filter(function (task) {
+      return String(task.id == null ? '' : task.id) === String(taskId == null ? '' : taskId);
+    })[0];
+  }
+
+  function tkBindActions(container) {
+    if (!container || container.__tkActionsBound) return;
+    container.__tkActionsBound = true;
+    container.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-tk-action]');
+      if (!button || !container.contains(button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      var action = button.getAttribute('data-tk-action');
+      var taskId = button.getAttribute('data-task-id') || '';
+      if (action === 'view') tkShowDetail(taskId);
+      if (action === 'edit') tkOpenTaskEditor(taskId);
+    });
+  }
+
+  function tkActionAttrs(action, taskId) {
+    return ' type="button" data-tk-action="' + action + '" data-task-id="' + escapeHtmlJs(taskId || '') + '"';
+  }
+
+  // tkOpenForm(taskId)               → แก้ไขงานเดิม
+  // tkOpenForm(null, prefill)        → เพิ่มงานใหม่โดยเติมค่าเริ่มต้น (เช่น วันครบกำหนดจากปฏิทิน)
+  function tkOpenForm(taskId, prefill) {
+    TASK_DATA = tkNormalizeData(TASK_DATA);
+    if (taskId) {
+      tkOpenTaskEditor(taskId);
+      return;
+    }
+    var task = taskId ? tkFind(taskId) : (prefill || {});
+    if (taskId && !task) {
+      toast('ไม่พบงานที่เลือก กรุณาโหลดหน้าใหม่', 'warning');
+      return;
+    }
+    showFormModal({
+      title: taskId ? ('แก้ไขงาน: ' + task.title) : 'เพิ่มงานใหม่',
+      submitLabel: taskId ? 'บันทึกการแก้ไข' : 'เพิ่มงาน',
+      fields: [
+        { id: 'title', label: 'ชื่องาน', value: task.title, required: true, col: 'col-md-8' },
+        { id: 'category', label: 'ประเภทงาน', type: 'select', options: TASK_DATA.categories, value: task.category || 'งานทั่วไป', placeholder: false, col: 'col-md-4' },
+        { id: 'description', label: 'รายละเอียด / สิ่งที่ต้องทำ', type: 'textarea', rows: 3, value: task.description, col: 'col-12' },
+        { id: 'priority', label: 'ความสำคัญ', type: 'select', options: TASK_DATA.priorities, value: task.priority || 'ปกติ', placeholder: false, col: 'col-md-3' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: TASK_DATA.statuses, value: task.status || 'ต้องทำ', placeholder: false, col: 'col-md-3' },
+        { id: 'startDate', label: 'วันที่เริ่ม', type: 'date', value: tkDateInput(task.startDate), col: 'col-md-3' },
+        { id: 'dueDate', label: 'วันครบกำหนด', type: 'date', value: tkDateInput(task.dueDate), col: 'col-md-3' },
+        { id: 'recurrence', label: 'ทำซ้ำ', type: 'select', options: TASK_DATA.recurrences, value: task.recurrence || 'ไม่ทำซ้ำ', placeholder: false, col: 'col-md-4' },
+        { id: 'recurrenceEndDate', label: 'ทำซ้ำถึงวันที่', type: 'date', value: tkDateInput(task.recurrenceEndDate), col: 'col-md-4' },
+        { id: 'progress', label: 'ความคืบหน้า (%)', type: 'number', value: task.progress == null ? 0 : task.progress, help: 'กรอก 0-100; หากเป็น 100 ระบบจะปิดงานให้อัตโนมัติ', col: 'col-md-4' },
+        { id: 'tags', label: 'แท็ก', value: task.tags, help: 'เช่น ด่วน, ประชุม, รอตอบกลับ (คั่นด้วยจุลภาค)', col: 'col-md-8' },
+        { id: 'notes', label: 'บันทึกเพิ่มเติม', type: 'textarea', rows: 2, value: task.notes, col: 'col-12' }
+      ],
+      onSubmit: function (values) {
+        var request = taskId
+          ? callServer('updateTask', taskId, values)
+          : callServer('addTask', values);
+        return request.then(function (message) {
+          toast(message || 'บันทึกแล้ว', 'success');
+          loadModule('task');
+          if (typeof refreshNotifications === 'function') refreshNotifications();
+        });
+      }
+    });
+    // ยกระดับช่องวันที่ในฟอร์มให้เป็น flatpickr (ทำหลัง modal เรนเดอร์เสร็จ)
+    tkAttachPicker(document.getElementById('mf-startDate'));
+    tkAttachPicker(document.getElementById('mf-dueDate'));
+    tkAttachPicker(document.getElementById('mf-recurrenceEndDate'));
+  }
+
+  function tkSafeMultiline(value) {
+    return escapeHtmlJs(value || '-').replace(/\r?\n/g, '<br>');
+  }
+
+  function tkShowDetail(taskId) {
+    var task = tkFind(taskId);
+    if (!task) {
+      toast('ไม่พบข้อมูลงานที่เลือก กรุณาโหลดโมดูล งานของฉัน ใหม่', 'warning');
+      return;
+    }
+    var canMutate = !!(TASK_DATA && TASK_DATA.canEdit) &&
+      task.status !== 'เสร็จแล้ว' && task.status !== 'ยกเลิก';
+    var body = '<div class="tk-panel-kicker">รายละเอียดงาน</div><h3 class="mt-1 mb-2">' + escapeHtmlJs(task.title) + '</h3>' +
+      '<div class="d-flex gap-2 flex-wrap">' + tkStatusBadge(task.status) + tkPriorityBadge(task.priority) + '</div>' +
+      '<div class="tk-detail-grid"><div class="tk-detail-box"><small>ประเภท</small>' + escapeHtmlJs(task.category || '-') + '</div>' +
+      '<div class="tk-detail-box"><small>ครบกำหนด</small>' + tkDueHtml(task) + '</div>' +
+      '<div class="tk-detail-box"><small>วันที่เริ่ม</small>' + escapeHtmlJs(task.startDate || '-') + '</div>' +
+      '<div class="tk-detail-box"><small>ทำซ้ำ</small>' + escapeHtmlJs(task.recurrence || 'ไม่ทำซ้ำ') + '</div></div>' +
+      '<div class="mb-3"><div class="text-muted small mb-1">รายละเอียด / สิ่งที่ต้องทำ</div>' + tkSafeMultiline(task.description) + '</div>' +
+      '<div class="mb-3"><div class="text-muted small mb-1">ความคืบหน้า</div>' + tkProgressHtml(task) + '</div>' +
+      '<div class="mb-3"><div class="text-muted small mb-1">แท็ก</div>' + escapeHtmlJs(task.tags || '-') + '</div>' +
+      '<div class="mb-3"><div class="text-muted small mb-1">บันทึกเพิ่มเติม</div>' + tkSafeMultiline(task.notes) + '</div>' +
+      '<hr><div class="d-flex justify-content-between align-items-center mb-2"><b>Checklist / งานย่อย</b>' +
+      (canMutate ? '<button type="button" class="btn btn-sm btn-outline-primary" id="tk-panel-add-sub"><i class="bi bi-plus"></i> เพิ่ม</button>' : '') + '</div>' + tkSubtaskHtml(task) +
+      '<hr>' + tkTaskResourcesHtml(task) +
+      (canMutate ? '<div class="tk-panel-actions flex-wrap"><button type="button" class="btn btn-outline-primary" id="tk-panel-progress"><i class="bi bi-graph-up me-1"></i>บันทึกความคืบหน้า</button><button type="button" class="btn btn-outline-primary" id="tk-panel-link"><i class="bi bi-link-45deg me-1"></i>เพิ่มลิงก์</button><button type="button" class="btn btn-outline-primary" id="tk-panel-file"><i class="bi bi-paperclip me-1"></i>แนบไฟล์</button><button type="button" class="btn btn-outline-primary" id="tk-panel-reminder"><i class="bi bi-bell me-1"></i>ตั้งเตือน</button><button type="button" class="btn btn-primary" id="tk-panel-edit"><i class="bi bi-pencil me-1"></i>แก้ไขงาน</button></div>' : '');
+    tkOpenPanel('ดูงาน', body);
+    var edit = document.getElementById('tk-panel-edit');
+    if (edit) edit.onclick = function () { tkOpenTaskEditor(task.id); };
+    var add = document.getElementById('tk-panel-add-sub');
+    if (add) add.onclick = function () { tkClosePanel(); tkAddSubtask(task.id); };
+    // ต้องปิด panel ก่อนเปิด modal — panel (z-index 1055) อยู่ท้าย DOM จึงบัง Bootstrap modal ที่ z-index เท่ากัน
+    var progress = document.getElementById('tk-panel-progress');
+    if (progress) progress.onclick = function () { tkClosePanel(); tkAddProgress(task.id); };
+    var link = document.getElementById('tk-panel-link');
+    if (link) link.onclick = function () { tkClosePanel(); tkAddLink(task.id); };
+    var file = document.getElementById('tk-panel-file');
+    if (file) file.onclick = function () { tkClosePanel(); tkAddFile(task.id); };
+    var reminder = document.getElementById('tk-panel-reminder');
+    if (reminder) reminder.onclick = function () { tkClosePanel(); tkAddReminder(task.id); };
+  }
+
+  function tkOpenPanel(title, bodyHtml) {
+    tkClosePanel();
+    var layer = document.createElement('div');
+    layer.id = 'tk-panel-layer';
+    layer.className = 'tk-panel-backdrop';
+    layer.innerHTML = '<aside class="tk-panel" role="dialog" aria-modal="true" aria-label="' + escapeHtmlJs(title || 'งาน') + '">' +
+      '<div class="tk-panel-head"><div class="fw-bold">' + escapeHtmlJs(title || 'งาน') + '</div>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tk-panel-close" aria-label="ปิด"><i class="bi bi-x-lg"></i></button></div>' +
+      '<div class="tk-panel-body">' + bodyHtml + '</div></aside>';
+    layer.addEventListener('click', function (e) { if (e.target === layer) tkClosePanel(); });
+    document.body.appendChild(layer);
+    document.body.classList.add('tk-panel-open');
+    document.getElementById('tk-panel-close').onclick = tkClosePanel;
+  }
+
+  function tkClosePanel() {
+    var layer = document.getElementById('tk-panel-layer');
+    if (layer) layer.remove();
+    document.body.classList.remove('tk-panel-open');
+  }
+
+  function tkSelectOptions(items, selected) {
+    return (items || []).map(function (item) {
+      return '<option value="' + escapeHtmlJs(item) + '"' + (String(item) === String(selected) ? ' selected' : '') + '>' + escapeHtmlJs(item) + '</option>';
+    }).join('');
+  }
+
+  function tkOpenTaskEditor(taskId) {
+    var task = tkFind(taskId);
+    if (!task) { toast('ไม่พบงานที่เลือก กรุณาโหลดหน้าใหม่', 'warning'); return; }
+    var form = '<form id="tk-edit-form"><div class="tk-panel-kicker">แก้ไขงาน</div><h3 class="mt-1 mb-4">' + escapeHtmlJs(task.title) + '</h3><div class="tk-edit-grid">' +
+      '<div class="tk-edit-field full"><label for="tke-title">ชื่องาน *</label><input class="form-control" id="tke-title" maxlength="300" required value="' + escapeHtmlJs(task.title || '') + '"></div>' +
+      '<div class="tk-edit-field full"><label for="tke-description">รายละเอียด / สิ่งที่ต้องทำ</label><textarea class="form-control" id="tke-description" rows="4">' + escapeHtmlJs(task.description || '') + '</textarea></div>' +
+      '<div class="tk-edit-field third"><label for="tke-category">ประเภท</label><select class="form-select" id="tke-category">' + tkSelectOptions(TASK_DATA.categories, task.category) + '</select></div>' +
+      '<div class="tk-edit-field third"><label for="tke-priority">ความสำคัญ</label><select class="form-select" id="tke-priority">' + tkSelectOptions(TASK_DATA.priorities, task.priority) + '</select></div>' +
+      '<div class="tk-edit-field third"><label for="tke-status">สถานะ</label><select class="form-select" id="tke-status">' + tkSelectOptions(TASK_DATA.statuses, task.status) + '</select></div>' +
+      '<div class="tk-edit-field third"><label for="tke-start">วันที่เริ่ม</label><input class="form-control" type="date" id="tke-start" value="' + escapeHtmlJs(tkDateInput(task.startDate)) + '"></div>' +
+      '<div class="tk-edit-field third"><label for="tke-due">ครบกำหนด</label><input class="form-control" type="date" id="tke-due" value="' + escapeHtmlJs(tkDateInput(task.dueDate)) + '"></div>' +
+      '<div class="tk-edit-field third"><label for="tke-progress">ความคืบหน้า (%)</label><input class="form-control" type="number" min="0" max="100" id="tke-progress" value="' + escapeHtmlJs(task.progress == null ? 0 : task.progress) + '"></div>' +
+      '<div class="tk-edit-field"><label for="tke-recurrence">ทำซ้ำ</label><select class="form-select" id="tke-recurrence">' + tkSelectOptions(TASK_DATA.recurrences, task.recurrence || 'ไม่ทำซ้ำ') + '</select></div>' +
+      '<div class="tk-edit-field"><label for="tke-recurrence-end">ทำซ้ำถึงวันที่</label><input class="form-control" type="date" id="tke-recurrence-end" value="' + escapeHtmlJs(tkDateInput(task.recurrenceEndDate)) + '"></div>' +
+      '<div class="tk-edit-field full"><label for="tke-tags">แท็ก</label><input class="form-control" id="tke-tags" value="' + escapeHtmlJs(task.tags || '') + '"></div>' +
+      '<div class="tk-edit-field full"><label for="tke-notes">บันทึกเพิ่มเติม</label><textarea class="form-control" id="tke-notes" rows="3">' + escapeHtmlJs(task.notes || '') + '</textarea></div></div>' +
+      '<div class="tk-panel-actions"><button class="btn btn-primary" id="tke-save" type="submit"><i class="bi bi-check2 me-1"></i>บันทึกการแก้ไข</button><button class="btn btn-outline-secondary" type="button" id="tke-cancel">ยกเลิก</button></div></form>';
+    tkOpenPanel('แก้ไขงาน', form);
+    document.getElementById('tke-cancel').onclick = function () { tkShowDetail(taskId); };
+    document.getElementById('tk-edit-form').onsubmit = function (event) {
+      event.preventDefault();
+      var title = document.getElementById('tke-title').value.trim();
+      if (!title) { toast('กรุณากรอกชื่องาน', 'warning'); return; }
+      var save = document.getElementById('tke-save'); save.disabled = true; save.innerHTML = '<span class="spinner-border spinner-border-sm"></span> กำลังบันทึก';
+      var values = { title:title, description:document.getElementById('tke-description').value.trim(), category:document.getElementById('tke-category').value,
+        priority:document.getElementById('tke-priority').value, status:document.getElementById('tke-status').value, startDate:document.getElementById('tke-start').value,
+        dueDate:document.getElementById('tke-due').value, progress:document.getElementById('tke-progress').value, recurrence:document.getElementById('tke-recurrence').value,
+        recurrenceEndDate:document.getElementById('tke-recurrence-end').value, tags:document.getElementById('tke-tags').value.trim(), notes:document.getElementById('tke-notes').value.trim() };
+      callServer('updateTask', taskId, values).then(function (message) { tkClosePanel(); toast(message || 'บันทึกแล้ว', 'success'); loadModule('task'); if (typeof refreshNotifications === 'function') refreshNotifications(); })
+        .catch(function () { save.disabled = false; save.innerHTML = '<i class="bi bi-check2 me-1"></i>บันทึกการแก้ไข'; });
+    };
+  }
+
+  function tkSubtaskHtml(task) {
+    var items = (task.subtasks || []).filter(function (s) { return s.status !== 'ยกเลิก'; });
+    if (!items.length) return '<div class="text-muted small">ยังไม่มีรายการย่อย</div>';
+    return '<ul class="tk-subtasks">' + items.map(function (s) {
+      var done = s.status === 'เสร็จแล้ว';
+      return '<li><button class="btn btn-sm ' + (done ? 'btn-success' : 'btn-outline-secondary') + '" onclick="tkToggleSubtask(\'' + s.id + '\',\'' + (done ? 'ต้องทำ' : 'เสร็จแล้ว') + '\')"><i class="bi bi-check"></i></button>' +
+        '<span class="flex-grow-1 ' + (done ? 'text-decoration-line-through text-muted' : '') + '">' + escapeHtmlJs(s.title) + '</span>' +
+        (s.dueDate ? '<small class="text-muted">' + escapeHtmlJs(s.dueDate) + '</small>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function tkAddSubtask(taskId) {
+    showFormModal({ title:'เพิ่ม Checklist / งานย่อย', submitLabel:'เพิ่มรายการ', fields:[
+      {id:'title',label:'รายการที่ต้องทำ',required:true,col:'col-12'},
+      {id:'dueDate',label:'วันครบกำหนด',type:'date',col:'col-md-5'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:2,col:'col-12'}
+    ], onSubmit:function(values){ return callServer('addTaskSubtask',taskId,values).then(function(message){toast(message||'เพิ่มแล้ว','success');loadModule('task');}); }});
+    tkAttachPicker(document.getElementById('mf-dueDate'));
+  }
+
+  function tkTaskResourcesHtml(task) {
+    var logs = (task.progressLogs || []).slice().reverse().slice(0, 5);
+    var links = task.links || [], files = task.attachments || [], reminders = task.reminders || [];
+    return '<div class="row g-3"><div class="col-12"><b>ประวัติความคืบหน้า</b>' + (logs.length ? '<ul class="small mt-2">' + logs.map(function (x) { return '<li><b>' + x.progress + '%</b> ' + escapeHtmlJs(x.note) + ' <span class="text-muted">' + escapeHtmlJs(x.loggedAt) + '</span></li>'; }).join('') + '</ul>' : '<div class="text-muted small mt-1">ยังไม่มีบันทึก</div>') + '</div>' +
+      '<div class="col-md-6"><b>ลิงก์และไฟล์แนบ</b><div class="small mt-2">' + links.map(function (x) { return '<div><a href="' + escapeHtmlJs(x.url) + '" target="_blank" rel="noopener">' + escapeHtmlJs(x.label) + '</a></div>'; }).concat(files.map(function (x) {
+        if (!x.attachmentId || !x.canDownload) {
+          return '<div class="text-muted"><i class="bi bi-file-earmark-lock"></i> ' +
+            escapeHtmlJs(x.fileName || 'ไฟล์แนบเดิม') + ' (รอผู้ดูแลย้ายเข้าทะเบียน)</div>';
+        }
+        return '<div class="mb-1">' + registeredAttachmentButtonHtml(x.attachmentId,
+          x.fileName || 'ไฟล์แนบ', 'btn btn-sm btn-outline-secondary') + '</div>';
+      })).join('') + ((!links.length && !files.length) ? '<span class="text-muted">ยังไม่มีรายการ</span>' : '') + '</div></div>' +
+      '<div class="col-md-6"><b>การแจ้งเตือน</b><div class="small mt-2">' + (reminders.length ? reminders.map(function (x) { return '<div>' + escapeHtmlJs(x.remindAt) + ' · ' + escapeHtmlJs(x.channel) + ' · ' + escapeHtmlJs(x.status) + '</div>'; }).join('') : '<span class="text-muted">ยังไม่ได้ตั้งเตือน</span>') + '</div></div></div>';
+  }
+
+  function tkAddProgress(taskId) {
+    var task = tkFind(taskId); if (!task) return;
+    showFormModal({ title:'บันทึกความคืบหน้า', submitLabel:'บันทึก', fields:[{id:'progress',label:'ความคืบหน้า (%)',type:'number',value:task.progress || 0,required:true,col:'col-md-4'},{id:'note',label:'รายละเอียดที่ดำเนินการ',type:'textarea',rows:3,required:true,col:'col-12'}], onSubmit:function(values){ return callServer('addTaskProgressLog',taskId,values).then(function(message){toast(message||'บันทึกแล้ว','success');loadModule('task');}); } });
+  }
+
+  function tkAddLink(taskId) {
+    showFormModal({ title:'เพิ่มลิงก์ประกอบงาน', submitLabel:'เพิ่มลิงก์', fields:[{id:'label',label:'ชื่อแสดง',col:'col-12'},{id:'url',label:'URL (https://)',required:true,col:'col-12'}], onSubmit:function(values){ return callServer('addTaskLink',taskId,values).then(function(message){toast(message||'เพิ่มแล้ว','success');loadModule('task');}); } });
+  }
+
+  function tkAddFile(taskId) {
+    var input = document.createElement('input'); input.type = 'file';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.txt,.csv,.doc,.docx,.xls,.xlsx';
+    input.onchange = function () {
+      var file = input.files && input.files[0]; if (!file) return;
+      uploadRegisteredFile(file, {
+        moduleKey: 'task', recordType: 'PersonalTask',
+        fieldName: 'Attachments', attachmentRole: 'TASK_ATTACHMENT', classification: 'Internal'
+      }).then(function (uploaded) {
+        return callServer('addTaskAttachment', taskId, {
+          attachmentId: uploaded.attachmentId, name: uploaded.filename, mimeType: uploaded.mimeType
+        });
+      }).then(function () {
+        toast('แนบไฟล์แล้ว', 'success'); loadModule('task');
+      });
+    };
+    input.click();
+  }
+
+  function tkAddReminder(taskId) {
+    showFormModal({ title:'ตั้งการแจ้งเตือน', submitLabel:'ตั้งเตือน', fields:[{id:'remindAt',label:'วันและเวลา',type:'datetime-local',required:true,col:'col-md-7'},{id:'channel',label:'ช่องทาง',type:'select',options:['LINE','EMAIL','CALENDAR'],value:'LINE',placeholder:false,col:'col-md-5'}], onSubmit:function(values){ return callServer('addTaskReminder',taskId,values).then(function(message){toast(message||'ตั้งเตือนแล้ว','success');loadModule('task');}); } });
+  }
+
+  function tkToggleSubtask(subtaskId, status) {
+    return callServer('setTaskSubtaskStatus', subtaskId, status).then(function(message){ toast(message||'อัปเดตแล้ว','success'); loadModule('task'); });
+  }
+
+  function tkSetStatus(taskId, status) {
+    return callServer('setTaskStatus', taskId, status).then(function (message) {
+      toast(message || 'ปรับสถานะแล้ว', 'success');
+      loadModule('task');
+      if (typeof refreshNotifications === 'function') refreshNotifications();
+    });
+  }
+
+  function tkCancel(taskId) {
+    var task = tkFind(taskId);
+    if (!task) return;
+    showConfirm('ยกเลิกงาน "' + task.title + '" หรือไม่? ระบบจะเก็บรายการไว้ในประวัติ',
+      function () { return tkSetStatus(taskId, 'ยกเลิก'); },
+      { danger: true, okLabel: 'ยกเลิกงาน', title: 'ยืนยันการยกเลิกงาน' });
+  }
+</script>

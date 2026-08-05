@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --brand: #2563eb;
+      --brand-dark: #1e40af;
+      --brand-soft: #eff4ff;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f1f5f9;
+      --radius: 18px;
+      --shadow: 0 18px 50px rgba(15, 23, 42, .14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Sarabun', sans-serif;
+      background:
+        radial-gradient(1200px 520px at 50% -10%, rgba(37, 99, 235, .35), transparent 60%),
+        linear-gradient(180deg, #0b1830 0%, #16275180 40%, var(--bg) 75%);
+      min-height: 100vh; margin: 0; padding: 26px 14px 48px;
+      color: var(--ink); -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+
+    /* Brand */
+    .brand { display: flex; align-items: center; gap: 14px; color: #fff; margin-bottom: 20px; }
+    .brand .logo {
+      width: 52px; height: 52px; border-radius: 15px; flex: 0 0 auto;
+      background: linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,.12));
+      border: 1px solid rgba(255,255,255,.3); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.15rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+    .brand .title { font-weight: 800; font-size: 1.18rem; line-height: 1.2; }
+    .brand .sub { opacity: .8; font-size: .85rem; }
+
+    /* Main card */
+    .card-main { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .card-main .body { padding: 22px; }
+    @media (min-width: 576px) { .card-main .body { padding: 30px; } }
+
+    /* Segmented tabs */
+    .seg {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+      background: #fff; padding: 7px; border-radius: 16px;
+      box-shadow: var(--shadow); margin-bottom: 16px;
+    }
+    .seg button {
+      border: 0; background: transparent; color: var(--muted);
+      padding: 11px 6px; border-radius: 11px; font-weight: 600; font-size: .9rem;
+      cursor: pointer; transition: all .18s ease; display: flex; flex-direction: column;
+      align-items: center; gap: 3px; line-height: 1.1; min-width: 0;
+    }
+    .seg button span { max-width: 100%; overflow-wrap: anywhere; }
+    .seg button i { font-size: 1.15rem; }
+    .seg button:hover { background: var(--brand-soft); color: var(--brand-dark); }
+    .seg button.active {
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+      color: #fff; box-shadow: 0 8px 18px rgba(37, 99, 235, .35);
+    }
+    @media (max-width: 380px) { .seg button { font-size: .78rem; } }
+
+    /* Headings */
+    .pane-title { font-weight: 800; font-size: 1.3rem; margin: 0 0 4px; }
+    .pane-sub { color: var(--muted); font-size: .92rem; margin-bottom: 22px; }
+
+    /* Section header inside form */
+    .sec-head {
+      font-weight: 800; font-size: .98rem; color: var(--brand-dark);
+      display: flex; align-items: center; gap: 8px;
+      padding-bottom: 8px; border-bottom: 2px solid var(--brand-soft);
+    }
+    .sec-head i { font-size: 1.1rem; }
+
+    /* Recent tickets list */
+    .recent-item {
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      border: 1px solid var(--line); border-radius: 13px; padding: 13px 15px; background: #fff;
+      cursor: pointer; transition: .15s; margin-bottom: 9px;
+    }
+    .recent-item:hover { border-color: var(--brand); background: var(--brand-soft); transform: translateX(2px); }
+    .recent-item .meta { flex: 1 1 auto; min-width: 0; }
+    .recent-item .rt { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recent-item .rs { font-size: .8rem; color: var(--muted); }
+
+    /* Form controls */
+    .form-label { font-weight: 600; font-size: .88rem; margin-bottom: 5px; color: #334155; }
+    .req { color: #dc2626; }
+    .form-control, .form-select {
+      border-radius: 12px; border: 1.6px solid var(--line); padding: .62rem .85rem;
+      font-size: .96rem; transition: border-color .15s, box-shadow .15s;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--brand); box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+    }
+    .form-control.is-invalid, .form-select.is-invalid { border-color: #dc2626; }
+    .field-err { color: #dc2626; font-size: .8rem; margin-top: 4px; display: none; }
+    .field-err.show { display: block; }
+    .form-text { color: var(--muted); font-size: .8rem; }
+
+    /* New ticket form */
+    .report-intro {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+      padding-bottom: 20px; margin-bottom: 18px; border-bottom: 1px solid var(--line);
+    }
+    .report-intro .pane-sub { margin: 6px 0 0; max-width: 620px; }
+    .time-pill {
+      flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 11px; border-radius: 999px; background: var(--brand-soft);
+      color: var(--brand-dark); font-size: .78rem; font-weight: 700; white-space: nowrap;
+    }
+    .form-stack { display: grid; gap: 14px; }
+    .form-section {
+      border: 1px solid var(--line); border-radius: 16px; padding: 18px;
+      background: #fff; transition: border-color .18s, box-shadow .18s;
+    }
+    .form-section:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 4px rgba(37,99,235,.06); }
+    .form-section.has-error { border-color: #fca5a5; }
+    .form-section-head {
+      display: flex; align-items: flex-start; gap: 11px; margin-bottom: 15px;
+    }
+    .form-section-icon {
+      width: 36px; height: 36px; border-radius: 10px; flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--brand-dark); background: var(--brand-soft); font-size: 1.05rem;
+    }
+    .form-section-title { margin: 0; font-size: 1rem; font-weight: 800; line-height: 1.25; }
+    .form-section-sub { margin-top: 2px; color: var(--muted); font-size: .82rem; }
+    .optional-badge {
+      display: inline-block; margin-left: 5px; padding: 2px 7px; border-radius: 999px;
+      background: #f1f5f9; color: var(--muted); font-size: .7rem; font-weight: 600;
+      vertical-align: 1px;
+    }
+    .field-counter { color: var(--muted); font-size: .74rem; text-align: right; margin-top: 3px; }
+    .advanced-details {
+      border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px;
+    }
+    .advanced-details summary {
+      cursor: pointer; list-style: none; color: #475569; font-size: .86rem; font-weight: 700;
+      display: flex; align-items: center; gap: 7px; user-select: none;
+    }
+    .advanced-details summary::-webkit-details-marker { display: none; }
+    .advanced-details summary::before {
+      content: '\F282'; font-family: 'bootstrap-icons'; color: var(--brand);
+      transition: transform .16s ease;
+    }
+    .advanced-details[open] summary::before { transform: rotate(90deg); }
+    .advanced-details .details-body { padding-top: 13px; }
+    .submit-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 15px 16px; border: 1px solid #bfdbfe; border-radius: 16px;
+      background: #f8fbff;
+    }
+    .submit-note { color: var(--muted); font-size: .82rem; line-height: 1.35; }
+    .submit-note b { color: var(--ink); }
+    .submit-bar .btn { min-width: 190px; }
+
+    /* File dropzone */
+    .dropzone {
+      border: 2px dashed var(--line); border-radius: 14px; padding: 16px; text-align: center;
+      cursor: pointer; transition: .18s; background: #fafbff;
+    }
+    .dropzone:hover, .dropzone.drag { border-color: var(--brand); background: var(--brand-soft); }
+    .dropzone i { font-size: 1.8rem; color: var(--brand); }
+    .file-list { margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: .88rem;
+    }
+    .file-item .name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item .rm { color: #dc2626; cursor: pointer; border: 0; background: none; padding: 0 4px; }
+
+    /* Buttons */
+    .btn { border-radius: 12px; font-weight: 700; }
+    .btn-lg { padding: .72rem 1.1rem; }
+    .btn-primary { background: linear-gradient(135deg, var(--brand), var(--brand-dark)); border: 0; }
+    .btn-primary:hover { filter: brightness(1.06); }
+    .btn-ghost { background: #fff; border: 1.6px solid var(--line); color: #475569; }
+    .btn-ghost:hover { background: var(--bg); }
+    .btn-line { background: #06c755; border: 0; color: #fff; }
+    .btn-line:hover { background: #05b84f; color: #fff; }
+
+    /* LINE identity */
+    .line-auth-card {
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      background: rgba(255,255,255,.96); border-radius: 15px; margin-bottom: 14px;
+      box-shadow: 0 10px 28px rgba(15,23,42,.14);
+    }
+    .line-auth-card .line-meta { flex: 1 1 auto; min-width: 0; }
+    .line-auth-card .line-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .line-auth-card .line-sub { color: var(--muted); font-size: .8rem; }
+    .line-avatar {
+      width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+      background: #dcfce7; border: 2px solid #86efac;
+    }
+    .line-profile-box {
+      display: flex; align-items: center; gap: 12px; padding: 13px 15px;
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 13px;
+    }
+    .line-login-cta { flex-wrap: wrap; }
+    .line-login-cta .btn { margin-left: auto; }
+    @media (max-width: 540px) {
+      .line-auth-card { align-items: flex-start; flex-wrap: wrap; }
+      .line-auth-card .line-actions { width: 100%; display: grid; }
+      .line-login-cta .btn { width: 100%; margin-left: 0; }
+    }
+
+    /* Info / KB nudge */
+    .nudge {
+      display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 13px;
+      background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fde68a; color: #92400e;
+    }
+    .nudge i.lead { font-size: 1.3rem; }
+    .kb-inline {
+      border: 1px solid var(--line); border-radius: 13px; padding: 12px; background: #fafbff;
+    }
+    .kb-sug-item {
+      display: flex; align-items: center; gap: 8px; color: var(--ink); text-decoration: none;
+      padding: 8px 10px; border-radius: 9px; transition: .12s;
+    }
+    .kb-sug-item:hover { background: var(--brand-soft); }
+
+    /* Status progress stepper */
+    .prog { display: flex; align-items: flex-start; margin: 4px 0 20px; overflow-x: auto; padding-bottom: 4px; }
+    .prog .p { flex: 1 1 0; min-width: 64px; text-align: center; position: relative; }
+    .prog .p .c {
+      width: 30px; height: 30px; border-radius: 50%; margin: 0 auto 6px; z-index: 2; position: relative;
+      display: flex; align-items: center; justify-content: center; background: #fff;
+      border: 2px solid var(--line); color: var(--muted); font-size: .85rem;
+    }
+    .prog .p .t { font-size: .74rem; color: var(--muted); line-height: 1.15; }
+    .prog .p::before {
+      content: ''; position: absolute; top: 14px; left: -50%; width: 100%; height: 3px; background: var(--line); z-index: 1;
+    }
+    .prog .p:first-child::before { display: none; }
+    .prog .p.done .c { background: #16a34a; border-color: #16a34a; color: #fff; }
+    .prog .p.done::before { background: #16a34a; }
+    .prog .p.cur .c { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 0 0 5px rgba(37,99,235,.16); }
+    .prog .p.cur .t { color: var(--ink); font-weight: 700; }
+
+    /* Timeline */
+    .timeline { border-left: 2px solid var(--brand-soft); margin-left: 7px; padding-left: 20px; }
+    .timeline .tl-item { position: relative; padding-bottom: 18px; }
+    .timeline .tl-item:last-child { padding-bottom: 0; }
+    .timeline .tl-item::before {
+      content: ''; position: absolute; left: -27px; top: 4px; width: 13px; height: 13px;
+      border-radius: 50%; background: #fff; border: 3px solid var(--brand);
+    }
+
+    .status-badge { font-size: .9rem; padding: .42rem .85rem; border-radius: 999px; font-weight: 700; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+    @media (max-width: 460px) { .info-grid { grid-template-columns: 1fr; } }
+    .info-grid .k { color: var(--muted); font-size: .85rem; }
+    .info-grid .v { font-weight: 600; }
+
+    /* Stars */
+    .star { font-size: 2rem; cursor: pointer; color: #d1d5db; transition: .12s; }
+    .star:hover { transform: scale(1.12); }
+    .star.on { color: #f59e0b; }
+
+    /* KB accordion */
+    .accordion-button { border-radius: 12px !important; font-weight: 600; }
+    .accordion-button:not(.collapsed) { background: var(--brand-soft); color: var(--brand-dark); }
+    .accordion-button:focus { box-shadow: 0 0 0 4px rgba(37,99,235,.12); }
+    .accordion-item { border: 1px solid var(--line); border-radius: 12px !important; margin-bottom: 9px; overflow: hidden; }
+
+    .muted { color: var(--muted); }
+    .footer-link { color: rgba(255,255,255,.85); font-size: .86rem; }
+    .footer-link a { color: #fff; text-decoration: none; font-weight: 600; }
+    .footer-link a:hover { text-decoration: underline; }
+    .link-inline {
+      border: 0; background: transparent; padding: 0; color: var(--brand-dark);
+      font-weight: 700; text-decoration: underline; cursor: pointer;
+    }
+    .privacy-box {
+      border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 13px;
+      padding: 13px 15px; color: #1e3a8a;
+    }
+    .privacy-consent {
+      border: 1px solid var(--line); background: #fff; border-radius: 13px;
+      padding: 12px 14px;
+    }
+
+    @media (max-width: 575.98px) {
+      body { padding: 16px 10px 34px; }
+      .brand { margin: 0 4px 14px; }
+      .brand .logo { width: 44px; height: 44px; border-radius: 13px; }
+      .seg { margin-bottom: 10px; }
+      .card-main .body { padding: 16px 13px; }
+      .report-intro { display: block; padding: 2px 2px 16px; }
+      .time-pill { margin-top: 10px; }
+      .form-section { padding: 15px 13px; border-radius: 14px; }
+      .form-section-head { margin-bottom: 13px; }
+      .submit-bar { align-items: stretch; flex-direction: column; padding: 13px; }
+      .submit-bar .btn { width: 100%; min-width: 0; }
+      .dropzone { padding: 14px 10px; }
+      .privacy-box { padding: 11px 12px; }
+    }
+
+    /* 2026 public helpdesk shell: quieter, clearer, and responsive */
+    body {
+      background: #f4f6f8;
+      padding: 20px;
+    }
+    .wrap { max-width: 1180px; }
+    .skip-link {
+      position: fixed; left: 16px; top: -60px; z-index: 2000;
+      padding: 10px 14px; border-radius: 10px; background: var(--ink); color: #fff;
+      text-decoration: none; font-weight: 700;
+    }
+    .skip-link:focus { top: 12px; }
+    .app-shell {
+      display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 20px;
+      align-items: start;
+    }
+    .app-sidebar {
+      position: sticky; top: 20px; min-height: calc(100vh - 40px);
+      display: flex; flex-direction: column; padding: 20px 16px;
+      background: #fff; border: 1px solid var(--line); border-radius: 20px;
+      box-shadow: 0 10px 35px rgba(15, 23, 42, .06);
+    }
+    .brand { color: var(--ink); margin: 0 4px 28px; }
+    .brand .logo {
+      width: 46px; height: 46px; border-radius: 13px;
+      color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+      border: 0; box-shadow: 0 8px 20px rgba(37, 99, 235, .22);
+    }
+    .brand .title { font-size: 1rem; }
+    .brand .sub { color: var(--muted); opacity: 1; font-size: .78rem; margin-top: 3px; }
+    .nav-label {
+      color: #94a3b8; font-size: .7rem; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; margin: 0 10px 8px;
+    }
+    .seg {
+      display: flex; flex-direction: column; gap: 5px; padding: 0;
+      margin: 0; background: transparent; border-radius: 0; box-shadow: none;
+    }
+    .seg button {
+      flex-direction: row; justify-content: flex-start; gap: 11px;
+      padding: 11px 12px; border-radius: 11px; color: #475569; font-size: .9rem;
+    }
+    .seg button i {
+      width: 21px; font-size: 1.05rem; text-align: center;
+    }
+    .seg button.active {
+      color: var(--brand-dark); background: var(--brand-soft);
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+    .side-guide {
+      margin-top: 28px; padding: 15px 14px; border-radius: 14px;
+      background: #f8fafc; border: 1px solid var(--line);
+    }
+    .side-guide-title { font-size: .82rem; font-weight: 800; margin-bottom: 10px; }
+    .side-step {
+      display: flex; align-items: flex-start; gap: 9px; color: var(--muted);
+      font-size: .78rem; line-height: 1.35; margin-top: 9px;
+    }
+    .side-step span {
+      width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%;
+      display: grid; place-items: center; background: #fff; border: 1px solid #cbd5e1;
+      color: var(--brand-dark); font-size: .7rem; font-weight: 800;
+    }
+    .footer-link {
+      margin: auto 4px 0 !important; padding-top: 18px; text-align: left !important;
+      color: var(--muted); font-size: .75rem;
+    }
+    .footer-link a { display: block; color: #475569; padding: 5px 0; }
+    .footer-link .mx-2 { display: none; }
+    .app-main { min-width: 0; }
+    .mobile-header { display: none; }
+    .page-context {
+      display: flex; align-items: center; gap: 13px; margin-bottom: 14px;
+      padding: 2px 3px;
+    }
+    .page-context-icon {
+      width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center;
+      border-radius: 12px; color: var(--brand-dark); background: var(--brand-soft);
+      font-size: 1.1rem;
+    }
+    .page-context .eyebrow {
+      color: var(--brand); font-size: .7rem; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .page-context h1 { margin: 1px 0 0; font-size: 1.18rem; font-weight: 800; }
+    .page-context p { margin: 2px 0 0; color: var(--muted); font-size: .82rem; }
+    .card-main {
+      border: 1px solid var(--line); border-radius: 20px;
+      box-shadow: 0 12px 35px rgba(15, 23, 42, .07);
+    }
+    .card-main .body { padding: 28px; }
+    .line-auth-card {
+      border: 1px solid var(--line); box-shadow: 0 8px 26px rgba(15,23,42,.06);
+    }
+    .form-section { background: #fff; box-shadow: 0 5px 18px rgba(15, 23, 42, .025); }
+    .submit-bar {
+      position: sticky; bottom: 12px; z-index: 10;
+      box-shadow: 0 10px 28px rgba(37, 99, 235, .12);
+    }
+    .loading-state {
+      display: grid; place-items: center; min-height: 220px; text-align: center; color: var(--muted);
+    }
+    .loading-state .spinner-border { color: var(--brand); }
+
+    /* Personal ticket overview */
+    .ticket-kpis {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+      margin-bottom: 16px;
+    }
+    .ticket-kpi {
+      border: 1px solid var(--line); border-radius: 14px; background: #fff;
+      padding: 13px; text-align: left; color: var(--ink);
+    }
+    button.ticket-kpi { cursor: pointer; transition: .15s ease; }
+    button.ticket-kpi:hover { transform: translateY(-1px); border-color: #bfdbfe; }
+    .ticket-kpi .kpi-icon {
+      width: 29px; height: 29px; border-radius: 9px; display: grid; place-items: center;
+      margin-bottom: 9px; background: #f1f5f9; color: #475569;
+    }
+    .ticket-kpi.pending .kpi-icon { background: #fff7ed; color: #c2410c; }
+    .ticket-kpi.done .kpi-icon { background: #ecfdf5; color: #15803d; }
+    .ticket-kpi.followup .kpi-icon { background: #fef2f2; color: #dc2626; }
+    .ticket-kpi .num { display: block; font-size: 1.35rem; font-weight: 800; line-height: 1; }
+    .ticket-kpi .label { display: block; margin-top: 5px; color: var(--muted); font-size: .76rem; }
+    .ticket-panel { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+    .ticket-toolbar {
+      display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 10px;
+      padding: 13px; background: #f8fafc; border-bottom: 1px solid var(--line);
+    }
+    .ticket-count { padding: 9px 14px 0; color: var(--muted); font-size: .78rem; }
+    .ticket-table-shell { overflow-x: auto; padding: 4px 13px 13px; }
+    .ticket-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .86rem; }
+    .ticket-table th {
+      padding: 10px 9px; color: var(--muted); font-size: .72rem; font-weight: 800;
+      border-bottom: 1px solid var(--line); white-space: nowrap;
+    }
+    .ticket-table td { padding: 12px 9px; border-bottom: 1px solid #eef2f7; vertical-align: middle; }
+    .ticket-table tr:last-child td { border-bottom: 0; }
+    .ticket-title-cell { min-width: 230px; }
+    .ticket-title-cell b { display: block; }
+    .ticket-title-cell small { color: var(--muted); }
+    .ticket-mobile-list { display: none; }
+    .empty-state {
+      text-align: center; padding: 38px 18px; color: var(--muted);
+    }
+    .empty-state i { display: block; color: #94a3b8; font-size: 2rem; margin-bottom: 7px; }
+    .status-badge.bg-primary { background-color: #2563eb !important; }
+    .status-badge.bg-warning { background-color: #fff7ed !important; color: #c2410c !important; }
+    .status-badge.bg-success { background-color: #ecfdf5 !important; color: #15803d !important; }
+    .status-badge.bg-danger { background-color: #fef2f2 !important; color: #dc2626 !important; }
+
+    @media (max-width: 899.98px) {
+      body { padding: 0 0 82px; background: #f4f6f8; }
+      .wrap { max-width: none; }
+      .app-shell { display: block; }
+      .app-sidebar { position: static; min-height: 0; padding: 0; border: 0; box-shadow: none; }
+      .app-sidebar > .brand, .nav-label, .side-guide, .app-sidebar > .footer-link { display: none; }
+      .mobile-header {
+        display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 10px 16px;
+        background: #fff; border-bottom: 1px solid var(--line);
+      }
+      .mobile-header .mobile-logo {
+        width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+        color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+        font-size: .85rem; font-weight: 800; overflow: hidden;
+      }
+      .mobile-header .mobile-logo img { width: 100%; height: 100%; object-fit: contain; }
+      .mobile-header .mobile-title { min-width: 0; font-size: .9rem; font-weight: 800; }
+      .mobile-header .mobile-sub { color: var(--muted); font-size: .7rem; }
+      .seg {
+        position: fixed; z-index: 1060; left: 8px; right: 8px; bottom: 8px;
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;
+        padding: 6px; border: 1px solid var(--line); border-radius: 17px;
+        background: rgba(255,255,255,.96); box-shadow: 0 12px 35px rgba(15,23,42,.2);
+        backdrop-filter: blur(12px);
+      }
+      .seg button { flex-direction: column; justify-content: center; gap: 3px; padding: 8px 4px; font-size: .72rem; }
+      .seg button i { width: auto; font-size: 1rem; }
+      .seg button.active { box-shadow: none; color: #fff; background: var(--brand); }
+      .app-main { padding: 12px; }
+      .page-context { margin: 3px 2px 12px; }
+      .page-context-icon { display: none; }
+      .page-context h1 { font-size: 1.05rem; }
+      .page-context p { font-size: .76rem; }
+      .line-auth-card { margin-bottom: 11px; }
+      .card-main { border-radius: 17px; }
+      .card-main .body { padding: 19px 15px; }
+      .submit-bar { bottom: 2px; }
+    }
+    @media (max-width: 720px) {
+      .ticket-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ticket-toolbar { grid-template-columns: 1fr; }
+      .ticket-table-shell { display: none; }
+      .ticket-mobile-list { display: grid; gap: 9px; padding: 11px; }
+      .ticket-mobile-card {
+        border: 1px solid var(--line); border-radius: 13px; padding: 12px; background: #fff;
+      }
+      .ticket-mobile-card .top { display: flex; align-items: flex-start; gap: 8px; }
+      .ticket-mobile-card .title { flex: 1 1 auto; min-width: 0; font-size: .9rem; font-weight: 800; }
+      .ticket-mobile-card .meta { color: var(--muted); font-size: .75rem; margin: 7px 0 10px; }
+    }
+    @media (max-width: 575.98px) {
+      body { padding: 0 0 82px; }
+      .app-main { padding: 10px; }
+      .form-section { padding: 15px 13px; }
+      .submit-bar { align-items: stretch; flex-direction: column; }
+      .submit-bar .btn { width: 100%; min-width: 0; }
+    }
+
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">ข้ามไปยังเนื้อหาหลัก</a>
+  <div class="wrap">
+    <? var _logoUrl = (typeof logoUrl !== 'undefined' && logoUrl) ? logoUrl : ''; ?>
+    <? var _adminUrl = (typeof adminUrl !== 'undefined' && adminUrl) ? adminUrl : '?page=admin'; ?>
+    <div class="app-shell">
+      <aside class="app-sidebar" aria-label="เมนูระบบแจ้งซ่อม">
+        <div class="brand">
+          <div class="logo">
+            <? if (_logoUrl) { ?>
+              <img src="<?= _logoUrl ?>" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:12px"
+                   onerror="this.style.display='none';this.parentNode.textContent='IT'">
+            <? } else { ?>IT<? } ?>
+          </div>
+          <div>
+            <div class="title"><?= orgName ?></div>
+            <div class="sub">IT Helpdesk</div>
+          </div>
+        </div>
+
+        <div class="nav-label">เมนูหลัก</div>
+        <nav class="seg" id="pubTabs" aria-label="เมนูหลัก">
+          <button data-mode="report" type="button"><i class="bi bi-tools"></i><span>แจ้งซ่อม</span></button>
+          <button data-mode="kb" type="button"><i class="bi bi-lightbulb"></i><span>วิธีแก้เบื้องต้น</span></button>
+          <button data-mode="status" type="button"><i class="bi bi-search"></i><span>ติดตามสถานะ</span></button>
+        </nav>
+
+        <div class="side-guide" aria-label="ขั้นตอนการใช้บริการ">
+          <div class="side-guide-title">แจ้งปัญหาได้ใน 3 ขั้นตอน</div>
+          <div class="side-step"><span>1</span><div>เลือกประเภทและอธิบายอาการ</div></div>
+          <div class="side-step"><span>2</span><div>ส่งคำขอและรับเลข Ticket</div></div>
+          <div class="side-step"><span>3</span><div>ติดตามความคืบหน้าได้ทุกเวลา</div></div>
+        </div>
+
+        <p class="footer-link">
+          <a href="#" onclick="showPrivacyNotice();return false;">
+            <i class="bi bi-shield-check me-1"></i> ข้อมูลส่วนบุคคล
+          </a>
+          <a href="<?= _adminUrl ?>" target="_top">
+            <i class="bi bi-shield-lock me-1"></i> สำหรับเจ้าหน้าที่
+          </a>
+        </p>
+      </aside>
+
+      <main class="app-main" id="main-content">
+        <header class="mobile-header">
+          <div class="mobile-logo">
+            <? if (_logoUrl) { ?>
+              <img src="<?= _logoUrl ?>" alt="" onerror="this.style.display='none';this.parentNode.textContent='IT'">
+            <? } else { ?>IT<? } ?>
+          </div>
+          <div>
+            <div class="mobile-title"><?= orgName ?></div>
+            <div class="mobile-sub">ระบบแจ้งซ่อม · IT Helpdesk</div>
+          </div>
+        </header>
+
+        <div id="line-auth-bar" class="line-auth-card" style="display:none"></div>
+
+        <div class="page-context" aria-live="polite">
+          <div class="page-context-icon"><i id="workspace-icon" class="bi bi-tools"></i></div>
+          <div>
+            <div class="eyebrow">IT Helpdesk</div>
+            <h1 id="workspace-title">แจ้งซ่อม</h1>
+            <p id="workspace-sub">แจ้งอาการที่พบ ทีม IT จะรับเรื่องและอัปเดตสถานะให้คุณ</p>
+          </div>
+        </div>
+
+        <div class="card-main">
+          <div class="body">
+            <div id="pane-report" style="display:none"></div>
+            <div id="pane-kb" style="display:none"></div>
+            <div id="pane-status" style="display:none"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast-area" class="position-fixed top-0 end-0 p-3" style="z-index:1080"></div>
+  <div id="privacy-modal-host"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    var INIT_MODE = '<?= mode ?>' || 'report';
+    var LINE_LOGIN_URL = atob('<?= lineLoginUrlPayload ?>' || '');
+    var LINE_BOOTSTRAP_SESSION = atob('<?= lineBootstrapSessionPayload ?>' || '');
+    var LINE_DEBUG = /(?:[?&])line_debug=1(?:&|$)/.test(window.location.search);
+    var FORM_DATA = null;
+    var LINE_STORAGE_KEY = 'app_life_line_session';
+    var PUBLIC_CLIENT_ID_KEY = 'app_life_public_client_id';
+    var PUBLIC_TICKETS_KEY = 'app_life_public_tickets';
+    var LINE_STATE = {
+      configured: false,
+      authenticated: false,
+      requireEmployeeLink: false,
+      profile: null
+    };
+
+    function esc(s) {
+      if (s === null || s === undefined) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function toast(msg, type) {
+      type = type || 'success';
+      var area = document.getElementById('toast-area');
+      var id = 't' + Date.now();
+      var icon = type === 'danger' ? 'x-circle' : type === 'warning' ? 'exclamation-triangle' : 'check-circle';
+      area.insertAdjacentHTML('beforeend',
+        '<div id="' + id + '" class="toast align-items-center text-bg-' + type + ' border-0 show mb-2" role="alert" style="border-radius:12px">' +
+        '<div class="d-flex"><div class="toast-body"><i class="bi bi-' + icon + ' me-1"></i>' + esc(msg) + '</div>' +
+        '<button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="document.getElementById(\'' + id + '\').remove()"></button>' +
+        '</div></div>');
+      setTimeout(function () { var t = document.getElementById(id); if (t) t.remove(); }, 6000);
+    }
+    function busy(on) {
+      document.querySelectorAll('button[data-busy]').forEach(function (b) {
+        b.disabled = on;
+        if (on) { b.dataset._html = b.innerHTML; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังดำเนินการ...'; }
+        else if (b.dataset._html) { b.innerHTML = b.dataset._html; }
+      });
+    }
+
+    function paneErrorHtml(msg) {
+      return '<div class="alert alert-danger mb-0" style="border-radius:13px"><b>เปิดหน้านี้ไม่สำเร็จ</b><br>' +
+        esc(msg || 'เกิดข้อผิดพลาด') + '</div>';
+    }
+
+    function publicApiResponse_(res) {
+      return !!(res && typeof res === 'object' &&
+        (Object.prototype.hasOwnProperty.call(res, 'success') || Object.prototype.hasOwnProperty.call(res, 'ok')));
+    }
+
+    function publicApiSuccess_(res) {
+      return publicApiResponse_(res) &&
+        (Object.prototype.hasOwnProperty.call(res, 'success') ? res.success === true : res.ok === true);
+    }
+
+    function publicApiMessage_(res, fallback) {
+      return String((res && (res.message || res.error)) || fallback || 'เกิดข้อผิดพลาด');
+    }
+
+    function run(fn) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (publicApiResponse_(res)) {
+              if (publicApiSuccess_(res)) resolve(res.data);
+              else {
+                var message = publicApiMessage_(res, 'เกิดข้อผิดพลาด');
+                toast(message, 'danger');
+                reject(new Error(message));
+              }
+            } else resolve(res);
+          })
+          .withFailureHandler(function (err) {
+            toast('เชื่อมต่อระบบไม่สำเร็จ: ' + (err && err.message ? err.message : err), 'danger');
+            reject(err);
+          })[fn].apply(null, args);
+      });
+    }
+
+    function getPublicClientId() {
+      try {
+        var id = localStorage.getItem(PUBLIC_CLIENT_ID_KEY) || '';
+        if (!/^[A-Za-z0-9_-]{16,120}$/.test(id)) {
+          id = (window.crypto && window.crypto.randomUUID)
+            ? window.crypto.randomUUID().replace(/-/g, '')
+            : 'web_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+          localStorage.setItem(PUBLIC_CLIENT_ID_KEY, id);
+        }
+        return id;
+      } catch (e) {
+        return 'web_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      }
+    }
+
+    function getSavedPublicTickets() {
+      try {
+        var rows = JSON.parse(localStorage.getItem(PUBLIC_TICKETS_KEY) || '[]');
+        return Array.isArray(rows) ? rows.filter(function (r) { return r && r.id && r.token; }).slice(0, 20) : [];
+      } catch (e) { return []; }
+    }
+
+    function rememberPublicTicket(id, token) {
+      if (!id || !token) return;
+      try {
+        var rows = getSavedPublicTickets().filter(function (r) { return r.id !== id; });
+        rows.unshift({ id: String(id), token: String(token), savedAt: new Date().toISOString() });
+        localStorage.setItem(PUBLIC_TICKETS_KEY, JSON.stringify(rows.slice(0, 20)));
+      } catch (e) {}
+    }
+
+    function removeSavedPublicTicket(id) {
+      try {
+        var rows = getSavedPublicTickets().filter(function (r) { return r.id !== id; });
+        localStorage.setItem(PUBLIC_TICKETS_KEY, JSON.stringify(rows));
+      } catch (e) {}
+      renderSavedPublicTickets();
+    }
+
+    // ---------- LINE Login ----------
+    function captureLineSessionFromHash() {
+      if (LINE_BOOTSTRAP_SESSION) {
+        try { localStorage.setItem(LINE_STORAGE_KEY, LINE_BOOTSTRAP_SESSION); } catch (e) {}
+        LINE_BOOTSTRAP_SESSION = '';
+      }
+      var hash = String(window.location.hash || '');
+      var match = hash.match(/(?:^#|&)line_session=([^&]+)/);
+      if (!match) return;
+      try {
+        localStorage.setItem(LINE_STORAGE_KEY, decodeURIComponent(match[1]));
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+        }
+      } catch (e) {}
+    }
+
+    function getLineSessionToken() {
+      try { return localStorage.getItem(LINE_STORAGE_KEY) || ''; }
+      catch (e) { return ''; }
+    }
+
+    function clearLineSessionToken() {
+      try { localStorage.removeItem(LINE_STORAGE_KEY); } catch (e) {}
+    }
+
+    function initLineAuth(refreshViews) {
+      captureLineSessionFromHash();
+      return run('getLineLoginBootstrapPublic', getLineSessionToken()).then(function (state) {
+        LINE_STATE = state || LINE_STATE;
+        if (LINE_STATE.sessionExpired) {
+          clearLineSessionToken();
+          LINE_STATE.authenticated = false;
+          LINE_STATE.profile = null;
+          toast('LINE session หมดอายุ กรุณาเข้าสู่ระบบใหม่', 'warning');
+        }
+        renderLineAuthBar();
+        if (refreshViews) refreshPublicViews();
+        return LINE_STATE;
+      }).catch(function () {
+        LINE_STATE = { configured: false, authenticated: false, requireEmployeeLink: false, profile: null };
+        renderLineAuthBar();
+        if (refreshViews) refreshPublicViews();
+        return LINE_STATE;
+      });
+    }
+
+    function renderLineAuthBar() {
+      var bar = document.getElementById('line-auth-bar');
+      if (!bar) return;
+      if (!LINE_STATE.configured) {
+        if (!LINE_STATE.enabled && !LINE_DEBUG) {
+          bar.style.display = 'none';
+          bar.innerHTML = '';
+          return;
+        }
+        bar.style.display = 'flex';
+        bar.innerHTML =
+          '<div class="line-avatar d-flex align-items-center justify-content-center text-warning fs-5"><i class="bi bi-exclamation-triangle"></i></div>' +
+          '<div class="line-meta"><div class="line-name">LINE Login ยังไม่พร้อมใช้งาน</div>' +
+          '<div class="line-sub">' + esc(LINE_STATE.message || 'กรุณาตรวจค่า LINE Login ใน Script Properties แล้ว Deploy ใหม่') +
+          (LINE_DEBUG ? '<br>ให้รัน diagnoseLineLoginSetup() ใน Apps Script Editor เพื่อตรวจ Callback URL' : '') +
+          '</div></div>';
+        return;
+      }
+      bar.style.display = 'flex';
+      if (!LINE_STATE.authenticated || !LINE_STATE.profile) {
+        bar.innerHTML =
+          '<div class="line-avatar d-flex align-items-center justify-content-center text-success fs-5"><i class="bi bi-line"></i></div>' +
+          '<div class="line-meta"><div class="line-name">เข้าสู่ระบบด้วย LINE</div>' +
+          '<div class="line-sub">แจ้งซ่อมและดูสถานะของคุณโดยไม่ต้องใช้อีเมล · ' +
+          '<button type="button" class="link-inline" onclick="showPrivacyNotice()">ข้อมูลส่วนบุคคล</button></div></div>' +
+          '<div class="line-actions"><button class="btn btn-line" data-busy onclick="startLineLogin()">' +
+          '<i class="bi bi-line me-1"></i> LINE Login</button></div>';
+        return;
+      }
+
+      var p = LINE_STATE.profile;
+      var avatar = p.pictureUrl
+        ? '<img class="line-avatar" src="' + esc(p.pictureUrl) + '" alt="LINE profile">'
+        : '<div class="line-avatar d-flex align-items-center justify-content-center text-success"><i class="bi bi-person-fill"></i></div>';
+      var status = p.linkStatus === 'Active'
+        ? '<span class="badge bg-success-subtle text-success">พร้อมใช้งาน</span>'
+        : p.linkStatus === 'Suspended'
+          ? '<span class="badge bg-danger-subtle text-danger">ถูกระงับ</span>'
+          : '<span class="badge bg-warning-subtle text-warning-emphasis">รอผูกบัญชี</span>';
+      var friend = p.friendStatus === 'NotFriend'
+        ? '<div class="line-sub text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> กรุณาเพิ่ม OA เป็นเพื่อนเพื่อรับแจ้งเตือน</div>'
+        : '';
+      var linkBox = p.linkStatus === 'Pending' && LINE_STATE.requireEmployeeLink
+        ? '<div class="d-flex gap-2 mt-2"><input id="line-employee-code" class="form-control form-control-sm" ' +
+          'placeholder="รหัสพนักงาน"><button class="btn btn-sm btn-success text-nowrap" data-busy onclick="linkLineEmployee()">' +
+          'ผูกบัญชี</button></div>'
+        : '';
+      bar.innerHTML = avatar +
+        '<div class="line-meta"><div class="line-name">' + esc(p.fullName || p.displayName) + ' ' + status + '</div>' +
+        '<div class="line-sub">LINE' + (p.department ? ' · ' + esc(p.department) : '') +
+        ' · ใช้ข้อมูลตามประกาศความเป็นส่วนตัว</div>' +
+        friend + linkBox + '</div>' +
+        '<div class="line-actions"><button class="btn btn-sm btn-ghost" onclick="logoutLine()">' +
+        '<i class="bi bi-box-arrow-right"></i> ออกจากระบบ</button></div>';
+    }
+
+    function getCurrentMode() {
+      var active = document.querySelector('#pubTabs button.active');
+      return active ? active.getAttribute('data-mode') : INIT_MODE;
+    }
+
+    function startLineLogin() {
+      if (LINE_LOGIN_URL) {
+        window.top.location.href = LINE_LOGIN_URL;
+        return;
+      }
+      busy(true);
+      run('createLineLoginUrlPublic', getCurrentMode()).then(function (d) {
+        window.top.location.href = d.url;
+      }).catch(function () { busy(false); });
+    }
+
+    function logoutLine() {
+      var token = getLineSessionToken();
+      busy(true);
+      run('logoutLinePublic', token).then(function () {
+        clearLineSessionToken();
+        busy(false);
+        toast('ออกจากระบบ LINE แล้ว', 'success');
+        return initLineAuth(true);
+      }).catch(function () { busy(false); });
+    }
+
+    function linkLineEmployee() {
+      var code = v('line-employee-code');
+      if (!code) { toast('กรุณากรอกรหัสพนักงาน', 'warning'); return; }
+      busy(true);
+      run('linkLineEmployeePublic', getLineSessionToken(), code).then(function (profile) {
+        busy(false);
+        toast(profile && profile.linkStatus === 'Active'
+          ? 'ผูกบัญชี LINE เรียบร้อย'
+          : 'ส่งคำขอผูกบัญชีแล้ว กรุณารอผู้ดูแลอนุมัติ', profile && profile.linkStatus === 'Active' ? 'success' : 'warning');
+        return initLineAuth(true);
+      }).catch(function () { busy(false); });
+    }
+
+    function refreshPublicViews() {
+      FORM_DATA = null;
+      loadReportForm();
+      loadStatusForm();
+    }
+
+    function lineLoginCtaHtml(text) {
+      if (!LINE_STATE.configured || LINE_STATE.authenticated) return '';
+      return '<div class="alert alert-success line-login-cta d-flex align-items-center gap-2" style="border-radius:13px">' +
+        '<i class="bi bi-line fs-4"></i><div class="flex-grow-1">' +
+        esc(text || 'เข้าสู่ระบบด้วย LINE เพื่อไม่ต้องกรอกอีเมล') + '</div>' +
+        '<button class="btn btn-line btn-sm text-nowrap" data-busy onclick="startLineLogin()">LINE Login</button></div>';
+    }
+
+    function linePendingHtml() {
+      var p = LINE_STATE.profile || {};
+      var detail = p.employeeCode
+        ? 'ส่งคำขอผูกกับรหัสพนักงาน ' + esc(p.employeeCode) + ' แล้ว กรุณารอผู้ดูแลอนุมัติ'
+        : 'ยังไม่ได้ผูกกับทะเบียนผู้ใช้งาน กรุณากรอกรหัสพนักงานด้านบนหรือติดต่อส่วนงาน IT';
+      return '<div class="text-center py-4">' +
+        '<i class="bi bi-person-badge text-warning" style="font-size:3.5rem"></i>' +
+        '<h3 class="fw-bold mt-2">กรุณาผูกบัญชีก่อนใช้งาน</h3>' +
+        '<p class="muted">LINE ของ ' + esc(p.displayName || 'ท่าน') + ' ' + detail + '</p></div>';
+    }
+
+    // ---------- Tabs ----------
+    function setMode(mode) {
+      var meta = {
+        report: {
+          title: 'แจ้งซ่อม',
+          sub: 'แจ้งอาการที่พบ ทีม IT จะรับเรื่องและอัปเดตสถานะให้คุณ',
+          icon: 'bi-tools'
+        },
+        kb: {
+          title: 'วิธีแก้เบื้องต้น',
+          sub: 'ค้นหาวิธีแก้ปัญหาที่พบบ่อยก่อนส่งคำขอ',
+          icon: 'bi-lightbulb'
+        },
+        status: {
+          title: 'ติดตามสถานะ',
+          sub: 'ดูรายการ ความคืบหน้า และผลการดำเนินงานของคุณ',
+          icon: 'bi-search'
+        }
+      };
+      if (!meta[mode]) mode = 'report';
+      document.querySelectorAll('#pubTabs button').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+        b.setAttribute('aria-current', b.getAttribute('data-mode') === mode ? 'page' : 'false');
+      });
+      ['report','kb','status'].forEach(function (m) {
+        document.getElementById('pane-' + m).style.display = (m === mode) ? 'block' : 'none';
+      });
+      document.body.setAttribute('data-mode', mode);
+      var title = document.getElementById('workspace-title');
+      var sub = document.getElementById('workspace-sub');
+      var icon = document.getElementById('workspace-icon');
+      if (title) title.textContent = meta[mode].title;
+      if (sub) sub.textContent = meta[mode].sub;
+      if (icon) icon.className = 'bi ' + meta[mode].icon;
+      if (mode === 'report' && !FORM_DATA) loadReportForm();
+      if (mode === 'kb' && !KB_LOADED) loadKB();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelectorAll('#pubTabs button').forEach(function (b) {
+      b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); });
+    });
+
+    // ---------- Field helpers ----------
+    function inp(id, label, col, req, type, ph) {
+      return '<div class="' + col + '"><label class="form-label" for="' + id + '">' + esc(label) +
+        (req ? ' <span class="req">*</span>' : '') + '</label>' +
+        '<input id="' + id + '" type="' + (type || 'text') + '" class="form-control"' +
+        (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>' +
+        '<div class="field-err" id="err-' + id + '"></div></div>';
+    }
+    function selBox(id, label, opts, col, req) {
+      return '<div class="' + col + '"><label class="form-label" for="' + id + '">' + esc(label) +
+        (req ? ' <span class="req">*</span>' : '') + '</label>' +
+        '<select id="' + id + '" class="form-select"><option value="">-- เลือก --</option>' + opts + '</select>' +
+        '<div class="field-err" id="err-' + id + '"></div></div>';
+    }
+    function txt(id, label, col, req, ph) {
+      return '<div class="' + col + '"><label class="form-label" for="' + id + '">' + esc(label) +
+        (req ? ' <span class="req">*</span>' : '') + '</label>' +
+        '<textarea id="' + id + '" class="form-control" rows="4"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '></textarea>' +
+        '<div class="field-err" id="err-' + id + '"></div></div>';
+    }
+    function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+    function checked(id) { var e = document.getElementById(id); return !!(e && e.checked); }
+
+    function setErr(id, msg) {
+      var el = document.getElementById(id), err = document.getElementById('err-' + id);
+      if (el) el.classList.toggle('is-invalid', !!msg);
+      if (err) { err.textContent = msg || ''; err.classList.toggle('show', !!msg); }
+      if (el) {
+        var section = el.closest('.form-section');
+        if (section) section.classList.toggle('has-error', !!section.querySelector('.is-invalid'));
+      }
+    }
+    function clearErrs(ids) { ids.forEach(function (id) { setErr(id, ''); }); }
+    function validate(rules) {
+      var firstBad = null;
+      rules.forEach(function (r) {
+        var val = v(r.id), bad = '';
+        if (r.req && !val) bad = 'กรุณากรอกข้อมูลนี้';
+        else if (val && r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) bad = 'รูปแบบอีเมลไม่ถูกต้อง';
+        setErr(r.id, bad);
+        if (bad && !firstBad) firstBad = r.id;
+      });
+      if (firstBad) {
+        var el = document.getElementById(firstBad);
+        if (el) { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      }
+      return !firstBad;
+    }
+
+    function getPrivacyData() {
+      return (FORM_DATA && FORM_DATA.privacy) || {
+        required: true,
+        version: '2026-07-08',
+        summary: 'ระบบใช้ข้อมูลผู้แจ้งเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะผ่าน LINE',
+        dpoContact: 'DPO / ส่วนงาน IT',
+        ticketRetentionDays: 730,
+        lineSessionRetentionDays: 30
+      };
+    }
+
+    function privacyNoticeSummaryHtml(p) {
+      p = p || getPrivacyData();
+      var link = p.noticeUrl
+        ? '<a href="' + esc(p.noticeUrl) + '" target="_blank" rel="noopener">อ่านฉบับเต็ม</a>'
+        : '<button type="button" class="link-inline" onclick="showPrivacyNotice()">อ่านรายละเอียด</button>';
+      return '<div class="privacy-box small">' +
+        '<div class="fw-bold mb-1"><i class="bi bi-shield-check"></i> ประกาศการใช้ข้อมูลส่วนบุคคล</div>' +
+        '<div>' + esc(p.summary || '') + '</div>' +
+        '<div class="mt-1 text-primary-emphasis">เวอร์ชัน ' + esc(p.version || '-') +
+        ' · ติดต่อ ' + esc(p.dpoContact || '-') + ' · ' + link + '</div></div>';
+    }
+
+    function privacyConsentHtml(p) {
+      p = p || getPrivacyData();
+      if (!p.required) return privacyNoticeSummaryHtml(p);
+      return privacyNoticeSummaryHtml(p) +
+        '<div class="privacy-consent mt-2">' +
+          '<div class="form-check">' +
+            '<input class="form-check-input" type="checkbox" id="r-privacy-consent">' +
+            '<label class="form-check-label small" for="r-privacy-consent">' +
+              'ข้าพเจ้าอ่านและยอมรับการใช้ข้อมูลเพื่อรับเรื่อง แจ้งสถานะ ดำเนินการแจ้งซ่อม และเก็บหลักฐานตามนโยบายขององค์กร' +
+            '</label>' +
+          '</div>' +
+          '<div class="field-err" id="err-r-privacy-consent"></div>' +
+        '</div>';
+    }
+
+    function validatePrivacyConsent() {
+      var p = getPrivacyData();
+      if (!p.required) return true;
+      var ok = checked('r-privacy-consent');
+      setErr('r-privacy-consent', ok ? '' : 'กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket');
+      return ok;
+    }
+
+    function showPrivacyNotice() {
+      function render(p) {
+        p = p || getPrivacyData();
+        var host = document.getElementById('privacy-modal-host');
+        if (!host) return;
+        var fullLink = p.noticeUrl
+          ? '<p class="mb-0"><a href="' + esc(p.noticeUrl) + '" target="_blank" rel="noopener">เปิดประกาศฉบับเต็ม</a></p>'
+          : '';
+        host.innerHTML =
+          '<div class="modal fade" id="privacy-modal" tabindex="-1" aria-hidden="true">' +
+            '<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content" style="border-radius:16px">' +
+              '<div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-check text-primary"></i> ประกาศการใช้ข้อมูลส่วนบุคคล</h5>' +
+              '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button></div>' +
+              '<div class="modal-body">' +
+                '<p>' + esc(p.summary || '') + '</p>' +
+                '<ul>' +
+                  '<li>ข้อมูลที่ใช้: ชื่อ เบอร์โทร หน่วยงาน สถานที่ รายละเอียดปัญหา ไฟล์แนบ เลข Ticket และ feedback</li>' +
+                  '<li>เมื่อเข้าสู่ระบบด้วย LINE ระบบใช้ LINE userId ชื่อโปรไฟล์ รูปโปรไฟล์ และสถานะการเพิ่มเพื่อน OA เพื่อผูก Ticket และแจ้งสถานะ</li>' +
+                  '<li>วัตถุประสงค์: รับแจ้งปัญหา ติดต่อกลับ ดำเนินงาน Help Desk แจ้งเตือนสถานะ ตรวจสอบคุณภาพบริการ และเก็บหลักฐานด้านความปลอดภัย</li>' +
+                  '<li>การเก็บรักษา: session LINE หมดอายุถูกลบตามรอบประมาณ ' + esc(p.lineSessionRetentionDays) +
+                    ' วัน และข้อมูลผู้แจ้งใน Ticket ที่ปิดแล้วถูก anonymize ตามรอบประมาณ ' + esc(p.ticketRetentionDays) + ' วัน</li>' +
+                  '<li>ห้ามแนบรหัสผ่าน รหัส OTP หรือข้อมูลลับที่ไม่จำเป็นต่อการแก้ปัญหา</li>' +
+                '</ul>' +
+                '<p class="mb-1"><b>ผู้ติดต่อ:</b> ' + esc(p.dpoContact || '-') + '</p>' +
+                '<p class="small text-muted">เวอร์ชันประกาศ: ' + esc(p.version || '-') + '</p>' +
+                fullLink +
+              '</div>' +
+              '<div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">รับทราบ</button></div>' +
+            '</div></div></div>';
+        var modal = new bootstrap.Modal(document.getElementById('privacy-modal'));
+        modal.show();
+      }
+      if (FORM_DATA && FORM_DATA.privacy) { render(FORM_DATA.privacy); return; }
+      run('getPublicTicketFormData').then(function (d) {
+        render((d && d.privacy) || getPrivacyData());
+      }).catch(function () { render(getPrivacyData()); });
+    }
+
+    // ---------- Report form ----------
+    function loadReportForm() {
+      var pane = document.getElementById('pane-report');
+      if (LINE_STATE.authenticated && LINE_STATE.profile &&
+          LINE_STATE.profile.linkStatus !== 'Active') {
+        pane.innerHTML = linePendingHtml();
+        return;
+      }
+      pane.innerHTML = '<div class="loading-state"><div><span class="spinner-border mb-3"></span><div>กำลังเตรียมแบบฟอร์มแจ้งซ่อม...</div></div></div>';
+      run('getPublicTicketFormData').then(function (d) {
+        if (!d || typeof d !== 'object' || !d.limits) {
+          pane.innerHTML = paneErrorHtml('ไม่สามารถโหลดข้อมูลแบบฟอร์มแจ้งซ่อมได้ กรุณารีเฟรชหน้าและลองใหม่อีกครั้ง') +
+            '<div class="mt-3"><button class="btn btn-outline-primary" type="button" onclick="loadReportForm()"><i class="bi bi-arrow-clockwise me-1"></i> ลองใหม่</button></div>';
+          return;
+        }
+        FORM_DATA = d;
+        var limits = d.limits || {};
+        if (limits.enabled === false) {
+          pane.innerHTML = '<div class="alert alert-warning mb-0" style="border-radius:13px"><i class="bi bi-pause-circle me-1"></i> ขณะนี้ปิดรับการแจ้งซ่อมจากหน้าสาธารณะ กรุณาติดต่อส่วนงาน IT โดยตรง</div>';
+          return;
+        }
+        var cats = (d.categories || []).map(function (c) {
+          return '<option value="' + esc(c.name) + '">' + esc(c.name) + ' · SLA ' + esc(c.slaHours || '-') + ' ชม.</option>';
+        }).join('');
+        var pris = (d.priorities || []).map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('');
+        var accessCode = limits.requireCode ? inp('r-code', 'รหัสสำหรับแจ้งซ่อม', 'col-md-6', true) : '';
+        var fileHelp = 'รองรับ PDF/JPG/PNG/WEBP/HEIC/TXT · สูงสุด ' + esc(limits.maxFiles || 5) +
+          ' ไฟล์ · ไฟล์ละไม่เกิน ' + esc(limits.maxFileMb || 10) + ' MB · รวมไม่เกิน ' +
+          esc(limits.maxTotalMb || 20) + ' MB';
+        var lineActive = LINE_STATE.authenticated && LINE_STATE.profile &&
+          LINE_STATE.profile.linkStatus === 'Active';
+        var requesterFields = lineActive
+          ? '<div class="col-12"><div class="line-profile-box">' +
+              (LINE_STATE.profile.pictureUrl
+                ? '<img class="line-avatar" src="' + esc(LINE_STATE.profile.pictureUrl) + '" alt="LINE profile">'
+                : '<div class="line-avatar d-flex align-items-center justify-content-center text-success"><i class="bi bi-person-fill"></i></div>') +
+              '<div><b>' + esc(LINE_STATE.profile.fullName || LINE_STATE.profile.displayName) + '</b>' +
+              '<div class="small text-success"><i class="bi bi-shield-check"></i> ยืนยันตัวตนด้วย LINE แล้ว</div></div>' +
+            '</div></div>' +
+            inp('r-name', 'ชื่อผู้แจ้ง', 'col-md-6', true, 'text') +
+            '<input id="r-email" type="hidden" value="">' +
+            inp('r-phone', 'เบอร์โทร', 'col-md-6', false, 'tel', 'ติดต่อกลับได้สะดวก') +
+            inp('r-dept', 'แผนก/หน่วยงาน', 'col-md-6')
+          : lineLoginCtaHtml('เข้าสู่ระบบด้วย LINE เพื่อระบุตัวบุคคลและรับแจ้งเตือนใน LINE') +
+            inp('r-name', 'ชื่อผู้แจ้ง', 'col-md-6', true, 'text', 'เช่น สมชาย ใจดี') +
+            '<input id="r-email" type="hidden" value="">' +
+            inp('r-phone', 'เบอร์โทร', 'col-md-6', false, 'tel', 'ติดต่อกลับได้สะดวก') +
+            inp('r-dept', 'แผนก/หน่วยงาน', 'col-md-6');
+
+        pane.innerHTML =
+          '<div class="report-intro">' +
+            '<div><h2 class="pane-title">แจ้งปัญหา IT</h2>' +
+            '<p class="pane-sub">' + (lineActive
+              ? 'แจ้งอาการที่พบ แล้วติดตามความคืบหน้าได้จากบัญชี LINE นี้'
+              : 'แจ้งได้ทันทีโดยไม่ต้องใช้อีเมล หลังส่งระบบจะออกเลข Ticket และรหัสติดตามให้') +
+            '</p></div>' +
+            '<div class="time-pill"><i class="bi bi-clock"></i> ใช้เวลาประมาณ 2 นาที</div>' +
+          '</div>' +
+
+          '<input id="r-website" type="text" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true">' +
+
+          '<div class="form-stack fade-in">' +
+            '<section class="form-section" aria-labelledby="problem-section-title">' +
+              '<div class="form-section-head">' +
+                '<div class="form-section-icon"><i class="bi bi-wrench-adjustable-circle"></i></div>' +
+                '<div><h3 class="form-section-title" id="problem-section-title">ปัญหาที่พบ</h3>' +
+                '<div class="form-section-sub">บอกอาการหลักให้ทีม IT เข้าใจและจัดคิวได้เร็วขึ้น</div></div>' +
+              '</div>' +
+              '<div class="row g-3">' +
+                selBox('r-category', 'ประเภทปัญหา', cats, 'col-md-7', true) +
+                selBox('r-priority', 'ความเร่งด่วน', pris, 'col-md-5') +
+                '<div class="col-12" id="kb-nudge"></div>' +
+                inp('r-title', 'สรุปปัญหาสั้น ๆ', 'col-12', true, 'text', 'เช่น เปิดเครื่องไม่ติด มีไฟกระพริบที่หน้าจอ') +
+                '<div class="col-12 mt-0" id="kb-suggest"></div>' +
+                txt('r-desc', 'รายละเอียดเพิ่มเติม', 'col-12', true, 'อธิบายว่าเกิดอะไรขึ้น เริ่มเป็นเมื่อไร และลองแก้อะไรไปแล้ว') +
+                '<div class="col-md-7">' +
+                  '<label class="form-label" for="r-location">จุดที่พบปัญหา <span class="optional-badge">ถ้ามี</span></label>' +
+                  '<input id="r-location" type="text" class="form-control" placeholder="เช่น อาคาร A ชั้น 3 ห้องบัญชี">' +
+                  '<div class="field-err" id="err-r-location"></div>' +
+                '</div>' +
+                inp('r-asset', 'รหัสเครื่อง / Asset', 'col-md-5', false, 'text', 'เช่น NB-0231') +
+              '</div>' +
+              '<details class="advanced-details">' +
+                '<summary>แนบรูปภาพหรือไฟล์ประกอบ <span class="optional-badge">ไม่บังคับ</span></summary>' +
+                '<div class="details-body">' +
+                  '<div class="dropzone" id="r-dropzone" role="button" tabindex="0" aria-controls="r-files">' +
+                    '<i class="bi bi-image"></i>' +
+                    '<div class="mt-1 fw-semibold">เลือกไฟล์ หรือลากมาวางที่นี่</div>' +
+                    '<div class="form-text">' + fileHelp + '</div>' +
+                  '</div>' +
+                  '<input id="r-files" type="file" class="d-none" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,.txt">' +
+                  '<div class="file-list" id="r-filelist" aria-live="polite"></div>' +
+                '</div>' +
+              '</details>' +
+            '</section>' +
+
+            '<section class="form-section" aria-labelledby="contact-section-title">' +
+              '<div class="form-section-head">' +
+                '<div class="form-section-icon"><i class="bi bi-person-check"></i></div>' +
+                '<div><h3 class="form-section-title" id="contact-section-title">ข้อมูลสำหรับติดต่อกลับ</h3>' +
+                '<div class="form-section-sub">ใช้เฉพาะการรับเรื่อง นัดหมาย และแจ้งความคืบหน้า</div></div>' +
+              '</div>' +
+              '<div class="row g-3">' +
+                requesterFields +
+                accessCode +
+              '</div>' +
+            '</section>' +
+
+            '<section class="form-section" aria-labelledby="privacy-section-title">' +
+              '<div class="form-section-head mb-2">' +
+                '<div class="form-section-icon"><i class="bi bi-shield-check"></i></div>' +
+                '<div><h3 class="form-section-title" id="privacy-section-title">ตรวจสอบก่อนส่ง</h3>' +
+                '<div class="form-section-sub">อย่าแนบรหัสผ่าน รหัส OTP หรือข้อมูลลับที่ไม่จำเป็น</div></div>' +
+              '</div>' +
+              privacyConsentHtml(d.privacy) +
+            '</section>' +
+
+            '<div class="submit-bar">' +
+              '<div class="submit-note"><b>พร้อมส่งให้ทีม IT</b><br>ช่องที่มี <span class="req">*</span> จำเป็นต้องกรอก</div>' +
+              '<button class="btn btn-primary btn-lg" type="button" data-busy onclick="submitReport()">' +
+                '<i class="bi bi-send me-1"></i> ส่งแจ้งซ่อม</button>' +
+            '</div>' +
+          '</div>';
+
+        setupDropzone();
+        var catEl = document.getElementById('r-category');
+        if (catEl) catEl.addEventListener('change', kbNudge);
+        var titleEl = document.getElementById('r-title');
+        if (titleEl) titleEl.addEventListener('input', kbSuggest);
+        setupReportEnhancements();
+        if (lineActive) {
+          var nameEl = document.getElementById('r-name');
+          var deptEl = document.getElementById('r-dept');
+          if (nameEl) {
+            nameEl.value = LINE_STATE.profile.fullName || LINE_STATE.profile.displayName || '';
+            nameEl.readOnly = true;
+          }
+          if (deptEl && LINE_STATE.profile.department) {
+            deptEl.value = LINE_STATE.profile.department;
+            deptEl.readOnly = true;
+          }
+        }
+      }).catch(function (err) {
+        pane.innerHTML = paneErrorHtml(err && err.message ? err.message : err);
+      });
+    }
+
+    // ---------- File dropzone ----------
+    function setupDropzone() {
+      var dz = document.getElementById('r-dropzone'), input = document.getElementById('r-files');
+      if (!dz || !input) return;
+      dz.addEventListener('click', function () { input.click(); });
+      dz.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); input.click(); }
+      });
+      ['dragenter','dragover'].forEach(function (e) {
+        dz.addEventListener(e, function (ev) { ev.preventDefault(); dz.classList.add('drag'); });
+      });
+      ['dragleave','drop'].forEach(function (e) {
+        dz.addEventListener(e, function (ev) { ev.preventDefault(); dz.classList.remove('drag'); });
+      });
+      dz.addEventListener('drop', function (ev) {
+        if (ev.dataTransfer && ev.dataTransfer.files) { input.files = ev.dataTransfer.files; renderFileList(); }
+      });
+      input.addEventListener('change', renderFileList);
+    }
+    function setupReportEnhancements() {
+      [
+        { id: 'r-title', max: 120 },
+        { id: 'r-desc', max: 1500 }
+      ].forEach(function (item) {
+        var el = document.getElementById(item.id);
+        if (!el) return;
+        el.maxLength = item.max;
+        var counter = document.createElement('div');
+        counter.className = 'field-counter';
+        counter.id = item.id + '-counter';
+        counter.setAttribute('aria-live', 'polite');
+        el.parentNode.appendChild(counter);
+        var update = function () { counter.textContent = el.value.length + ' / ' + item.max; };
+        el.addEventListener('input', update);
+        update();
+      });
+    }
+    function removeReportFile(index) {
+      var input = document.getElementById('r-files');
+      if (!input || !input.files) return;
+      try {
+        var next = new DataTransfer();
+        Array.prototype.forEach.call(input.files, function (file, i) {
+          if (i !== index) next.items.add(file);
+        });
+        input.files = next.files;
+        renderFileList();
+      } catch (e) {
+        input.value = '';
+        renderFileList();
+      }
+    }
+    function renderFileList() {
+      var input = document.getElementById('r-files'), box = document.getElementById('r-filelist');
+      if (!input || !box) return;
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      box.innerHTML = files.map(function (f, index) {
+        var kb = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.ceil(f.size / 1024) + ' KB';
+        var ico = /image|png|jpg|jpeg|gif|webp|heic/i.test(f.type + f.name) ? 'image' :
+                  /pdf/i.test(f.name) ? 'file-pdf' : 'file-earmark';
+        return '<div class="file-item"><i class="bi bi-' + ico + ' text-primary"></i>' +
+          '<span class="name">' + esc(f.name) + '</span>' +
+          '<span class="muted small">' + kb + '</span>' +
+          '<button class="rm" type="button" aria-label="นำไฟล์ ' + esc(f.name) +
+            ' ออก" onclick="removeReportFile(' + index + ')"><i class="bi bi-x-lg"></i></button></div>';
+      }).join('');
+    }
+
+    // แสดงตัวนำทางไปบทความที่เกี่ยวข้องเมื่อเลือกประเภทปัญหา
+    function kbNudge() {
+      var box = document.getElementById('kb-nudge'); if (!box) return;
+      var cat = v('r-category');
+      if (!cat) { box.innerHTML = ''; return; }
+      run('countPublicKBByCategory', cat).then(function (n) {
+        if (!n) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="nudge">' +
+          '<i class="bi bi-lightbulb-fill lead"></i><div>มี <b>' + n + '</b> บทความวิธีแก้ในหมวด "' + esc(cat) + '" — ลองดูก่อนแจ้งซ่อมอาจช่วยให้แก้ได้เอง</div>' +
+          '<button class="btn btn-sm btn-warning ms-auto text-nowrap" type="button" onclick="openKbForCategory(\'' + esc(cat).replace(/'/g, "\\'") + '\')">ดูวิธีแก้</button></div>';
+      }).catch(function () {});
+    }
+    function openKbForCategory(cat) { setMode('kb'); loadKB(cat); }
+
+    // แนะนำบทความ KB แบบเรียลไทม์ขณะพิมพ์หัวข้อปัญหา (debounce)
+    var __kbSuggestTimer = null;
+    function kbSuggest() {
+      var box = document.getElementById('kb-suggest'); if (!box) return;
+      var q = v('r-title');
+      if (q.length < 3) { box.innerHTML = ''; return; }
+      clearTimeout(__kbSuggestTimer);
+      __kbSuggestTimer = setTimeout(function () {
+        run('getPublicKB', q, v('r-category')).then(function (d) {
+          var items = (d.articles || []).slice(0, 3);
+          if (!items.length) { box.innerHTML = ''; return; }
+          box.innerHTML = '<div class="kb-inline"><div class="small fw-bold text-primary mb-1">' +
+            '<i class="bi bi-lightbulb"></i> อาจแก้ได้เองจากบทความเหล่านี้</div>' +
+            items.map(function (a) {
+              return '<a href="#" class="kb-sug-item" onclick="openKbForQuery(\'' +
+                esc(a.title).replace(/'/g, "\\'") + '\');return false;">' +
+                '<i class="bi bi-journal-text text-primary"></i><span>' + esc(a.title) + '</span>' +
+                (a.category ? ' <span class="badge bg-primary-subtle text-primary ms-1">' + esc(a.category) + '</span>' : '') + '</a>';
+            }).join('') + '</div>';
+        }).catch(function () {});
+      }, 350);
+    }
+    function openKbForQuery(query) {
+      setMode('kb');
+      if (!KB_LOADED) loadKB();
+      var qel = document.getElementById('kb-q');
+      if (qel) { qel.value = query; }
+      kbSearch();
+    }
+
+    function filesToBase64(input) {
+      var limits = (FORM_DATA && FORM_DATA.limits) || {};
+      var maxFiles = limits.maxFiles || 5;
+      var maxFileMb = limits.maxFileMb || 10;
+      var maxTotalMb = limits.maxTotalMb || 20;
+      var files = (input && input.files) ? Array.prototype.slice.call(input.files) : [];
+      var allowedExt = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'webp', 'txt'];
+      if (files.length > maxFiles) {
+        return Promise.reject(new Error('แนบไฟล์ได้สูงสุด ' + maxFiles + ' ไฟล์'));
+      }
+      var totalBytes = files.reduce(function (sum, f) { return sum + (f.size || 0); }, 0);
+      if (totalBytes > maxTotalMb * 1024 * 1024) {
+        return Promise.reject(new Error('ไฟล์แนบรวมใหญ่เกิน ' + maxTotalMb + ' MB'));
+      }
+      return Promise.all(files.map(function (f) {
+        return new Promise(function (resolve, reject) {
+          var ext = String(f.name || '').split('.').pop().toLowerCase();
+          if (allowedExt.indexOf(ext) === -1) {
+            reject(new Error('ชนิดไฟล์ไม่อนุญาต: ' + f.name));
+            return;
+          }
+          if (f.size > maxFileMb * 1024 * 1024) {
+            reject(new Error('ไฟล์ใหญ่เกิน ' + maxFileMb + ' MB: ' + f.name));
+            return;
+          }
+          var rd = new FileReader();
+          rd.onload = function () { resolve({ base64: rd.result.split(',')[1], filename: f.name, mimeType: f.type }); };
+          rd.onerror = reject;
+          rd.readAsDataURL(f);
+        });
+      }));
+    }
+
+    function submitReport() {
+      var lineActive = LINE_STATE.authenticated && LINE_STATE.profile &&
+        LINE_STATE.profile.linkStatus === 'Active';
+      var rules = [
+        { id: 'r-name', req: true },
+        { id: 'r-category', req: true },
+        { id: 'r-title', req: true },
+        { id: 'r-desc', req: true }
+      ];
+      if (FORM_DATA && FORM_DATA.limits && FORM_DATA.limits.requireCode) rules.push({ id: 'r-code', req: true });
+      if (!validate(rules)) { toast('กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบ', 'warning'); return; }
+      if (!validatePrivacyConsent()) { toast('กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket', 'warning'); return; }
+      busy(true);
+      filesToBase64(document.getElementById('r-files')).then(function (attachments) {
+        var privacy = getPrivacyData();
+        var payload = {
+          requesterName: v('r-name'), requesterEmail: v('r-email'), requesterPhone: v('r-phone'),
+          department: v('r-dept'), location: v('r-location'), category: v('r-category'),
+          priority: v('r-priority'), assetId: v('r-asset'), title: v('r-title'),
+          description: v('r-desc'), attachments: attachments,
+          accessCode: v('r-code'), website: v('r-website'),
+          clientId: getPublicClientId(),
+          privacyConsent: !privacy.required || checked('r-privacy-consent'),
+          privacyNoticeVersion: privacy.version || ''
+        };
+        return lineActive
+          ? run('submitTicketLine', getLineSessionToken(), payload)
+          : run('submitTicketPublic', payload);
+      }).then(function (d) {
+        busy(false);
+        if (d.token) rememberPublicTicket(d.id, d.token);
+        var trackingBlock = d.token
+          ? '<div class="d-flex justify-content-between align-items-center"><span class="muted">รหัสติดตามสถานะ</span>' +
+            '<b class="fs-5 text-primary">' + esc(d.token) + '</b></div>'
+          : '<div class="small text-success"><i class="bi bi-line"></i> รายการนี้ผูกกับ LINE ของคุณแล้ว</div>';
+        var trackingHelp = d.token
+          ? 'กรุณาบันทึกเลขที่และรหัสนี้ไว้สำหรับติดตามสถานะ'
+          : 'ดูความคืบหน้าได้จากเมนู “สถานะของฉัน” ผ่าน LINE';
+        document.getElementById('pane-report').innerHTML =
+          '<div class="text-center py-4 fade-in">' +
+          '<div style="font-size:4rem;line-height:1" class="text-success mb-2"><i class="bi bi-check-circle-fill"></i></div>' +
+          '<h3 class="fw-bold">รับแจ้งเรียบร้อยแล้ว</h3>' +
+          '<p class="muted mb-4">ทีมงานได้รับเรื่องของคุณแล้ว และจะดำเนินการโดยเร็วที่สุด</p>' +
+          '<div class="d-inline-block text-start p-4 mb-4" style="background:var(--brand-soft);border-radius:16px;min-width:280px">' +
+            '<div class="d-flex justify-content-between align-items-center mb-2"><span class="muted">เลขที่ Ticket</span><b class="fs-5">' + esc(d.id) + '</b></div>' +
+            trackingBlock +
+          '</div>' +
+          '<p class="muted small mb-3"><i class="bi bi-info-circle"></i> ' + trackingHelp + '</p>' +
+          '<button class="btn btn-primary btn-lg px-4" onclick="prefillStatus(\'' + esc(d.id) + '\',\'' + esc(d.token || '') + '\')">' +
+          '<i class="bi bi-search"></i> ไปหน้าติดตามสถานะ</button></div>';
+      }).catch(function () { busy(false); });
+    }
+
+    function prefillStatus(id, token) {
+      setMode('status');
+      if (LINE_STATE.authenticated && LINE_STATE.profile &&
+          LINE_STATE.profile.linkStatus === 'Active' && !token) {
+        openLineTicket(id);
+        return;
+      }
+      var em = document.getElementById('s-email');
+      if (em) em.value = v('r-email');
+      openTicket(id, token);
+    }
+
+    // ---------- Status / tracking ----------
+    function loadStatusForm() {
+      if (LINE_STATE.authenticated && LINE_STATE.profile &&
+          LINE_STATE.profile.linkStatus !== 'Active') {
+        document.getElementById('pane-status').innerHTML = linePendingHtml();
+        return;
+      }
+      if (LINE_STATE.authenticated && LINE_STATE.profile &&
+          LINE_STATE.profile.linkStatus === 'Active') {
+        document.getElementById('pane-status').innerHTML =
+          '<h2 class="pane-title">สถานะของฉัน</h2>' +
+          '<p class="pane-sub">รายการแจ้งซ่อมที่ผูกกับ LINE ของ ' +
+          esc(LINE_STATE.profile.fullName || LINE_STATE.profile.displayName) + '</p>' +
+          '<div id="s-list"><div class="text-center muted py-4">' +
+          '<span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลดรายการ...</div></div>' +
+          '<div id="s-result" class="mt-4"></div>';
+        setTimeout(loadMyLineTickets, 0);
+        return;
+      }
+      document.getElementById('pane-status').innerHTML =
+        '<h2 class="pane-title">ติดตามสถานะ Ticket</h2>' +
+        '<p class="pane-sub">ใช้เลข Ticket และรหัสติดตามที่ได้รับตอนแจ้งปัญหาได้ทันที โดยไม่ต้องใช้อีเมล</p>' +
+        lineLoginCtaHtml('เข้าสู่ระบบด้วย LINE เพื่อดูรายการทั้งหมดของคุณและรับแจ้งเตือนใน LINE') +
+        '<div id="s-saved" class="mb-3"></div>' +
+        '<div id="s-direct"><div class="row g-2 align-items-end" style="background:var(--bg);padding:14px;border-radius:13px">' +
+          inp('s-id', 'เลขที่ Ticket', 'col-md-5', true, 'text', 'เช่น TCK-20260703-...') +
+          inp('s-secret', 'รหัสติดตาม', 'col-md-5', true) +
+          '<div class="col-md-2 d-grid"><button class="btn btn-primary" data-busy onclick="checkStatus()">ตรวจสอบ</button></div>' +
+        '</div></div>' +
+        '<div class="alert alert-light border mt-3 mb-0 small" style="border-radius:13px">' +
+          '<i class="bi bi-info-circle"></i> ระบบนี้ไม่ส่ง Email OTP แล้ว หากต้องการดูหลายรายการให้เข้าสู่ระบบด้วย LINE</div>' +
+        '<div id="s-list" class="mt-4"></div>' +
+        '<div id="s-result" class="mt-4"></div>';
+      renderSavedPublicTickets();
+    }
+
+    function toggleDirect() {
+      var el = document.getElementById('s-direct');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function renderSavedPublicTickets() {
+      var box = document.getElementById('s-saved');
+      if (!box) return;
+      var rows = getSavedPublicTickets();
+      if (!rows.length) {
+        box.innerHTML = '<div class="alert alert-light border mb-0 small"><i class="bi bi-device-ssd"></i> ยังไม่มี Ticket ที่บันทึกไว้ในอุปกรณ์นี้</div>';
+        return;
+      }
+      box.innerHTML = '<div class="small fw-bold mb-2"><i class="bi bi-device-ssd"></i> Ticket ที่บันทึกไว้ในอุปกรณ์นี้</div>' +
+        rows.map(function (r) {
+          return '<div class="recent-item">' +
+            '<i class="bi bi-ticket-perforated-fill text-primary fs-4"></i>' +
+            '<div class="meta"><div class="rt">' + esc(r.id) + '</div><div class="rs">แตะเพื่อดูสถานะล่าสุด</div></div>' +
+            '<button class="btn btn-sm btn-primary js-open-saved" data-ticket-id="' + esc(r.id) +
+              '" data-ticket-token="' + esc(r.token) + '">เปิด</button>' +
+            '<button class="btn btn-sm btn-outline-secondary ms-1 js-remove-saved" data-ticket-id="' +
+              esc(r.id) + '" title="ลบออกจากอุปกรณ์นี้"><i class="bi bi-x-lg"></i></button>' +
+          '</div>';
+        }).join('');
+      box.querySelectorAll('.js-open-saved').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          openTicket(btn.getAttribute('data-ticket-id') || '', btn.getAttribute('data-ticket-token') || '');
+        });
+      });
+      box.querySelectorAll('.js-remove-saved').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          removeSavedPublicTicket(btn.getAttribute('data-ticket-id') || '');
+        });
+      });
+    }
+
+    function sendTicketOtp() {
+      if (!validate([{ id: 's-email', req: true, email: true }])) return;
+      busy(true);
+      run('requestTicketLookupOtpPublic', v('s-email')).then(function (d) {
+        busy(false);
+        toast(d.message || 'ส่งคำขอ OTP แล้ว', 'success');
+        var otp = document.getElementById('s-otp');
+        if (otp) otp.focus();
+      }).catch(function () { busy(false); });
+    }
+
+    function loadMyTickets() {
+      if (!validate([{ id: 's-email', req: true, email: true }, { id: 's-otp', req: true }])) return;
+      if (!/^\d{6}$/.test(v('s-otp'))) {
+        toast('กรุณากรอก OTP เป็นตัวเลข 6 หลัก', 'warning');
+        return;
+      }
+      document.getElementById('s-result').innerHTML = '';
+      busy(true);
+      run('listMyTicketsPublic', v('s-email'), v('s-otp')).then(function (d) {
+        busy(false);
+        window.__lookupToken = d.lookupToken || '';
+        renderRecentList(d.tickets || [], false);
+        if (d.expiresMinutes) toast('ยืนยันสำเร็จ สิทธิ์ดูรายการมีอายุ ' + d.expiresMinutes + ' นาที', 'success');
+      }).catch(function () { busy(false); });
+    }
+
+    function loadMyLineTickets() {
+      var box = document.getElementById('s-list');
+      if (!box) return;
+      run('listMyTicketsLine', getLineSessionToken()).then(function (d) {
+        renderRecentList(d.tickets || [], true);
+      }).catch(function () {
+        box.innerHTML = paneErrorHtml('ไม่สามารถโหลดรายการจาก LINE session ได้ กรุณาเข้าสู่ระบบใหม่');
+      });
+    }
+
+    function renderRecentList(items, lineMode) {
+      var box = document.getElementById('s-list');
+      if (!items.length) {
+        box.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i>' +
+          '<b class="d-block text-dark mb-1">ยังไม่มีรายการแจ้งซ่อม</b>' +
+          '<span>' + (lineMode ? 'บัญชี LINE นี้ยังไม่มีรายการที่ผูกไว้' : 'ไม่พบรายการที่ตรงกับข้อมูลของคุณ') + '</span>' +
+          '<div class="mt-3"><button type="button" class="btn btn-primary" onclick="setMode(\'report\')">' +
+          '<i class="bi bi-plus-lg me-1"></i> แจ้งซ่อมใหม่</button></div></div>';
+        return;
+      }
+      window.__recentTickets = items.slice();
+      window.__recentLineMode = !!lineMode;
+      var pendingCount = items.filter(function (t) {
+        var g = ticketStateGroup(t);
+        return g === 'pending' || g === 'progress';
+      }).length;
+      var doneCount = items.filter(function (t) { return ticketStateGroup(t) === 'done'; }).length;
+      var followupCount = items.filter(ticketNeedsFollowup).length;
+      box.innerHTML =
+        '<div class="ticket-kpis fade-in" aria-label="ภาพรวมรายการแจ้งซ่อม">' +
+          ticketKpiHtml('ทั้งหมด', items.length, 'ticket-perforated', 'all', '') +
+          ticketKpiHtml('รอดำเนินการ', pendingCount, 'hourglass-split', 'active', 'pending') +
+          ticketKpiHtml('สำเร็จ', doneCount, 'check2-circle', 'done', 'done') +
+          ticketKpiHtml('ต้องติดตาม', followupCount, 'bell', 'followup', 'followup') +
+        '</div>' +
+        '<section class="ticket-panel" aria-label="รายการแจ้งซ่อม">' +
+          '<div class="ticket-toolbar">' +
+            '<div class="input-group"><span class="input-group-text bg-white"><i class="bi bi-search"></i></span>' +
+              '<input id="ticket-search" class="form-control" type="search" placeholder="ค้นหาเลข Ticket หรือหัวข้อ" aria-label="ค้นหารายการแจ้งซ่อม">' +
+            '</div>' +
+            '<select id="ticket-filter" class="form-select" aria-label="กรองตามสถานะ">' +
+              '<option value="all">ทุกสถานะ</option>' +
+              '<option value="active">รอดำเนินการทั้งหมด</option>' +
+              '<option value="pending">รอรับเรื่อง</option>' +
+              '<option value="progress">กำลังดำเนินการ</option>' +
+              '<option value="followup">ต้องติดตาม</option>' +
+              '<option value="done">สำเร็จ</option>' +
+              '<option value="cancel">ยกเลิก/ผิดพลาด</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="ticket-count" id="ticket-count"></div>' +
+          '<div id="ticket-results"></div>' +
+        '</section>';
+      var search = document.getElementById('ticket-search');
+      var filter = document.getElementById('ticket-filter');
+      if (search) search.addEventListener('input', filterRecentTickets);
+      if (filter) filter.addEventListener('change', filterRecentTickets);
+      box.querySelectorAll('[data-ticket-filter]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          if (filter) filter.value = button.getAttribute('data-ticket-filter') || 'all';
+          filterRecentTickets();
+        });
+      });
+      filterRecentTickets();
+    }
+
+    function ticketKpiHtml(label, value, icon, filter, tone) {
+      return '<button type="button" class="ticket-kpi ' + esc(tone) + '" data-ticket-filter="' +
+        esc(filter) + '" aria-label="' + esc(label) + ' ' + esc(value) + ' รายการ">' +
+        '<span class="kpi-icon"><i class="bi bi-' + esc(icon) + '"></i></span>' +
+        '<span class="num">' + esc(value) + '</span><span class="label">' + esc(label) + '</span></button>';
+    }
+
+    function ticketStateGroup(ticket) {
+      var st = String((ticket && ticket.status) || '').trim();
+      if (st === 'เสร็จสิ้น' || st === 'ปิดงาน') return 'done';
+      if (st === 'ยกเลิก' || st === 'ผิดพลาด') return 'cancel';
+      if (st === 'รอผู้ใช้งาน' || st === 'รอข้อมูลเพิ่มเติม') return 'followup';
+      if (st === 'ใหม่' || st === 'รับเรื่อง' || st === 'รับเรื่องแล้ว' || st === 'เปิด') return 'pending';
+      return 'progress';
+    }
+
+    function ticketNeedsFollowup(ticket) {
+      var st = String((ticket && ticket.status) || '').trim();
+      return !!(ticket && ticket.canFeedback) || st === 'รอผู้ใช้งาน' || st === 'รอข้อมูลเพิ่มเติม';
+    }
+
+    function filterRecentTickets() {
+      var items = window.__recentTickets || [];
+      var lineMode = !!window.__recentLineMode;
+      var search = document.getElementById('ticket-search');
+      var filter = document.getElementById('ticket-filter');
+      var q = search ? search.value.trim().toLowerCase() : '';
+      var group = filter ? filter.value : 'all';
+      var filtered = items.filter(function (t) {
+        var haystack = [t.id, t.title, t.category, t.status].join(' ').toLowerCase();
+        if (q && haystack.indexOf(q) === -1) return false;
+        if (group === 'all') return true;
+        if (group === 'active') {
+          var pendingGroup = ticketStateGroup(t);
+          return pendingGroup === 'pending' || pendingGroup === 'progress';
+        }
+        if (group === 'followup') return ticketNeedsFollowup(t);
+        return ticketStateGroup(t) === group;
+      });
+      var count = document.getElementById('ticket-count');
+      if (count) count.textContent = 'แสดง ' + filtered.length + ' จาก ' + items.length + ' รายการ';
+      renderTicketResults(filtered, lineMode);
+    }
+
+    function renderTicketResults(items, lineMode) {
+      var results = document.getElementById('ticket-results');
+      if (!results) return;
+      if (!items.length) {
+        results.innerHTML = '<div class="empty-state"><i class="bi bi-search"></i>' +
+          '<b class="d-block text-dark mb-1">ไม่พบรายการที่ตรงกับเงื่อนไข</b>' +
+          '<span>ลองเปลี่ยนคำค้นหาหรือตัวกรองสถานะ</span></div>';
+        return;
+      }
+      var rows = items.map(function (t) {
+        return '<tr>' +
+          '<td class="ticket-title-cell"><b>' + esc(t.title || '-') + '</b><small>' + esc(t.id) + '</small></td>' +
+          '<td>' + esc(t.category || '-') + '</td>' +
+          '<td><span class="badge ' + statusTone(t.status) + ' status-badge">' + esc(t.status || '-') + '</span></td>' +
+          '<td class="text-nowrap">' + esc(t.createdAt || '-') + '</td>' +
+          '<td class="text-end"><button type="button" class="btn btn-sm btn-ghost js-open-recent" data-ticket-id="' +
+            esc(t.id) + '">รายละเอียด</button></td>' +
+        '</tr>';
+      }).join('');
+      var cards = items.map(function (t) {
+        return '<article class="ticket-mobile-card">' +
+          '<div class="top"><div class="title">' + esc(t.title || '-') + '</div>' +
+            '<span class="badge ' + statusTone(t.status) + ' status-badge">' + esc(t.status || '-') + '</span></div>' +
+          '<div class="meta">' + esc(t.id) + ' · ' + esc(t.category || '-') + '<br>' + esc(t.createdAt || '-') + '</div>' +
+          '<button type="button" class="btn btn-sm btn-ghost w-100 js-open-recent" data-ticket-id="' +
+            esc(t.id) + '">ดูรายละเอียด</button>' +
+        '</article>';
+      }).join('');
+      results.innerHTML =
+        '<div class="ticket-table-shell"><table class="ticket-table">' +
+          '<thead><tr><th>รายการ</th><th>ประเภท</th><th>สถานะ</th><th>วันที่แจ้ง</th><th></th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>' +
+        '<div class="ticket-mobile-list">' + cards + '</div>';
+      results.querySelectorAll('.js-open-recent').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var id = button.getAttribute('data-ticket-id') || '';
+          if (lineMode) openLineTicket(id);
+          else openTicket(id, window.__lookupToken);
+        });
+      });
+    }
+
+    function openTicket(id, token) {
+      window.__secret = token;
+      window.__lineTicketMode = false;
+      busy(true);
+      run('trackTicketPublic', id, token).then(function (t) {
+        busy(false);
+        renderStatus(t);
+        document.getElementById('s-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }).catch(function () { busy(false); });
+    }
+
+    function openLineTicket(id) {
+      window.__secret = '';
+      window.__lineTicketMode = true;
+      busy(true);
+      run('trackTicketLine', getLineSessionToken(), id).then(function (t) {
+        busy(false);
+        renderStatus(t);
+        document.getElementById('s-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }).catch(function () { busy(false); });
+    }
+
+    function checkStatus() {
+      var id = v('s-id'), secret = v('s-secret');
+      var ok = validate([{ id: 's-id', req: true }, { id: 's-secret', req: true }]);
+      if (!ok) return;
+      window.__secret = secret;
+      window.__lineTicketMode = false;
+      busy(true);
+      run('trackTicketPublic', id, secret).then(function (t) {
+        busy(false);
+        renderStatus(t);
+        document.getElementById('s-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }).catch(function () { busy(false); });
+    }
+
+    function statusProgress(status) {
+      var flow = ['รับเรื่อง', 'กำลังดำเนินการ', 'เสร็จสิ้น'];
+      var cur = 0;
+      if (status === 'ยกเลิก') {
+        return '<div class="alert alert-danger py-2" style="border-radius:12px"><i class="bi bi-x-circle"></i> รายการนี้ถูกยกเลิก</div>';
+      }
+      if (status === 'เสร็จสิ้น' || status === 'ปิดงาน') cur = 2;
+      else if (status === 'ใหม่' || status === 'รับเรื่อง' || status === 'รับเรื่องแล้ว' || status === 'เปิด') cur = 0;
+      else cur = 1; // กำลังดำเนินการ / รออะไหล่ / รอผู้ใช้งาน / ยกระดับ ฯลฯ
+      return '<div class="prog">' + flow.map(function (label, i) {
+        var cls = i < cur ? 'done' : i === cur ? 'cur' : '';
+        var ico = i < cur ? '<i class="bi bi-check"></i>' : (i + 1);
+        return '<div class="p ' + cls + '"><div class="c">' + ico + '</div><div class="t">' + esc(label) + '</div></div>';
+      }).join('') + '</div>';
+    }
+
+    function renderStatus(t) {
+      var tone = statusTone(t.status);
+      var wl = (t.worklogs || []).map(function (w) {
+        return '<div class="tl-item"><div class="muted small">' + esc(w.date) + '</div>' +
+          '<b>' + esc(w.action) + '</b>' + (w.statusTo ? ' <span class="badge bg-light text-dark border">' + esc(w.statusTo) + '</span>' : '') +
+          (w.detail ? '<div class="small">' + esc(w.detail) + '</div>' : '') + '</div>';
+      }).join('') || '<div class="muted">ยังไม่มีบันทึกการดำเนินงาน</div>';
+
+      var feedback = '';
+      if (t.canFeedback) {
+        feedback = '<hr><h6 class="fw-bold">ให้คะแนนความพึงพอใจ</h6>' +
+          '<div id="stars" class="mb-2">' + [1,2,3,4,5].map(function (n) {
+            return '<i class="bi bi-star-fill star" data-n="' + n + '" onclick="setStar(' + n + ')"></i>';
+          }).join('') + '</div>' +
+          '<textarea id="fb-comment" class="form-control mb-2" rows="2" placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"></textarea>' +
+          '<button class="btn btn-success" data-busy onclick="sendFeedback(\'' + esc(t.id) + '\')"><i class="bi bi-send"></i> ส่งคะแนน</button>';
+      } else if (t.rating) {
+        feedback = '<hr><div class="muted"><i class="bi bi-star-fill text-warning"></i> ให้คะแนนแล้ว: ' + esc(t.rating) + '/5 ' + (t.feedback ? '— ' + esc(t.feedback) : '') + '</div>';
+      }
+
+      document.getElementById('s-result').innerHTML =
+        '<div class="fade-in" style="border:1px solid var(--line);border-radius:16px;padding:20px">' +
+        '<div class="d-flex align-items-center mb-3 gap-2"><h5 class="mb-0 fw-bold">' + esc(t.title) + '</h5>' +
+        '<span class="badge ' + tone + ' status-badge ms-auto">' + esc(t.status) + '</span></div>' +
+        statusProgress(t.status) +
+        '<div class="info-grid mb-3">' +
+          '<div><div class="k">เลขที่</div><div class="v">' + esc(t.id) + '</div></div>' +
+          '<div><div class="k">ประเภท</div><div class="v">' + esc(t.category) + '</div></div>' +
+          '<div><div class="k">ความเร่งด่วน</div><div class="v">' + esc(t.priority) + '</div></div>' +
+          '<div><div class="k">การมอบหมาย</div><div class="v">' + esc(t.assignState) + '</div></div>' +
+          '<div><div class="k">แจ้งเมื่อ</div><div class="v">' + esc(t.createdAt) + '</div></div>' +
+          '<div><div class="k">ครบกำหนด SLA</div><div class="v">' + esc(t.dueAt) + '</div></div>' +
+        '</div>' +
+        (t.resolution ? '<div class="alert alert-success py-2 mb-3" style="border-radius:12px"><b>ผลการแก้ไข:</b> ' + esc(t.resolution) + '</div>' : '') +
+        '<h6 class="mt-3 fw-bold">ความเคลื่อนไหว</h6><div class="timeline">' + wl + '</div>' +
+        feedback +
+        '</div>';
+      window.__rating = 0;
+    }
+
+    function statusTone(st) {
+      if (st === 'เสร็จสิ้น' || st === 'ปิดงาน') return 'bg-success';
+      if (st === 'ยกเลิก' || st === 'ผิดพลาด') return 'bg-danger';
+      if (st === 'รออะไหล่' || st === 'รอผู้ใช้งาน') return 'bg-warning text-dark';
+      if (st === 'ยกระดับเป็น Incident') return 'bg-danger';
+      if (st === 'ใหม่' || st === 'รับเรื่อง' || st === 'รับเรื่องแล้ว' || st === 'เปิด') return 'bg-warning text-dark';
+      return 'bg-primary';
+    }
+    function setStar(n) {
+      window.__rating = n;
+      document.querySelectorAll('#stars .star').forEach(function (s) {
+        s.classList.toggle('on', parseInt(s.getAttribute('data-n'), 10) <= n);
+      });
+    }
+    function sendFeedback(id) {
+      var r = window.__rating || 0;
+      if (!r) { toast('กรุณาเลือกจำนวนดาว 1-5', 'warning'); return; }
+      var secret = window.__secret || v('s-secret');
+      busy(true);
+      var request = window.__lineTicketMode
+        ? run('submitTicketFeedbackLine', getLineSessionToken(), id, r, v('fb-comment'))
+        : run('submitTicketFeedbackPublic', id, secret, r, v('fb-comment'));
+      request.then(function (m) {
+        busy(false);
+        toast(m, 'success');
+        if (window.__lineTicketMode) openLineTicket(id);
+        else openTicket(id, secret);
+      }).catch(function () { busy(false); });
+    }
+
+    // ---------- Knowledge Base (self-service) ----------
+    var KB_LOADED = false;
+    var KB_CATS = null;
+    function loadKB(prefillCat) {
+      KB_LOADED = true;
+      var pane = document.getElementById('pane-kb');
+      pane.innerHTML =
+        '<h2 class="pane-title">วิธีแก้ปัญหาเบื้องต้นด้วยตนเอง</h2>' +
+        '<p class="pane-sub">ค้นหาวิธีแก้ปัญหาที่พบบ่อย — หากแก้ไม่ได้ค่อยแจ้งซ่อม</p>' +
+        '<div class="row g-2 mb-3">' +
+          '<div class="col-md-7"><div class="input-group"><span class="input-group-text" style="border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span>' +
+          '<input id="kb-q" class="form-control" placeholder="พิมพ์อาการ เช่น พิมพ์ไม่ออก, เน็ตช้า..." oninput="kbSearch()"></div></div>' +
+          '<div class="col-md-5"><select id="kb-cat" class="form-select" onchange="kbSearch()"><option value="">ทุกหมวดหมู่</option></select></div>' +
+        '</div><div id="kb-results"><div class="text-center muted py-4"><span class="spinner-border spinner-border-sm me-2"></span>กำลังโหลด...</div></div>';
+      var sel = document.getElementById('kb-cat');
+      if (KB_CATS && sel) {
+        sel.innerHTML = '<option value="">ทุกหมวดหมู่</option>' +
+          KB_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+      }
+      if (prefillCat) {
+        if (KB_CATS && sel) sel.value = prefillCat;
+        else window.__kbPrefill = prefillCat;
+      }
+      kbSearch();
+    }
+    function kbSearch() {
+      var q = v('kb-q'), cat = v('kb-cat');
+      run('getPublicKB', q, cat).then(function (d) {
+        if (!KB_CATS) {
+          KB_CATS = d.categories || [];
+          var sel = document.getElementById('kb-cat');
+          if (sel) {
+            sel.innerHTML = '<option value="">ทุกหมวดหมู่</option>' +
+              KB_CATS.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+            if (window.__kbPrefill) { sel.value = window.__kbPrefill; window.__kbPrefill = null;
+              if (sel.value) { kbSearch(); return; } }
+          }
+        }
+        renderKBResults(d.articles || []);
+      }).catch(function () {});
+    }
+    function renderKBResults(items) {
+      var box = document.getElementById('kb-results'); if (!box) return;
+      if (!items.length) {
+        box.innerHTML = '<div class="alert alert-light border text-center mb-0" style="border-radius:13px"><i class="bi bi-search me-1"></i>ไม่พบบทความที่ตรงกับคำค้น — ' +
+          '<a href="#" onclick="setMode(\'report\');return false;" class="fw-semibold">แจ้งซ่อมที่นี่</a></div>';
+        return;
+      }
+      box.innerHTML = '<div class="accordion" id="kbAcc">' + items.map(function (a, i) {
+        return '<div class="accordion-item"><h2 class="accordion-header">' +
+          '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#kbi' + i + '" onclick="kbCountView(\'' + esc(a.id) + '\')">' +
+          '<span><b>' + esc(a.title) + '</b>' + (a.category ? ' <span class="badge bg-primary-subtle text-primary ms-1">' + esc(a.category) + '</span>' : '') +
+          '<br><small class="muted">' + esc((a.symptom || '').substring(0, 90)) + '</small></span></button></h2>' +
+          '<div id="kbi' + i + '" class="accordion-collapse collapse" data-bs-parent="#kbAcc"><div class="accordion-body">' +
+          (a.symptom ? '<div class="mb-2"><b class="text-primary">อาการ:</b> ' + nl2br(a.symptom) + '</div>' : '') +
+          '<div><b class="text-primary">วิธีแก้:</b><br>' + nl2br(a.solution) + '</div>' +
+          (a.tags ? '<div class="mt-2">' + a.tags.split(',').map(function (t) { return t.trim() ? '<span class="badge bg-light text-dark border me-1">#' + esc(t.trim()) + '</span>' : ''; }).join('') + '</div>' : '') +
+          '<div class="mt-3 small muted"><i class="bi bi-eye"></i> ' + a.views + ' ครั้ง · ยังแก้ไม่ได้? ' +
+          '<a href="#" onclick="setMode(\'report\');return false;" class="fw-semibold">แจ้งซ่อม</a></div>' +
+          '</div></div></div>';
+      }).join('') + '</div>';
+    }
+    var __kbViewed = {};
+    function kbCountView(id) {
+      if (__kbViewed[id]) return;
+      __kbViewed[id] = true;
+      run('viewPublicKB', id, getPublicClientId()).catch(function () {
+        // ยอดเข้าชมเป็นงานประกอบ ไม่ขัดจังหวะผู้ใช้เมื่อเครือข่ายล้มเหลว
+        delete __kbViewed[id];
+      });
+    }
+    function nl2br(s) { return esc(s).replace(/\n/g, '<br>'); }
+
+    // ---------- init ----------
+    initLineAuth(false).then(function () {
+      loadStatusForm();
+      setMode(INIT_MODE);
+    });
+  </script>
+</body>
+</html>

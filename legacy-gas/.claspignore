@@ -1,0 +1,21 @@
+# ไฟล์/โฟลเดอร์ที่ "ไม่" push ขึ้น Google Apps Script
+# (clasp จะ push เฉพาะ .gs / .html / appsscript.json ที่ไม่ตรงรายการนี้)
+**/node_modules/**
+node_modules/**
+.git/**
+.agents/**
+.codex/**
+docs/**
+scripts/**
+memory/**
+**/*.md
+**/*.json
+!appsscript.json
+package.json
+package-lock.json
+.clasp.json.example
+.gitignore
+.claspignore
+**/*.log
+**/*.tmp
+**/*.bak

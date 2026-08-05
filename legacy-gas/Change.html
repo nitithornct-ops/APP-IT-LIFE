@@ -1,0 +1,105 @@
+﻿<!-- Change.html — การควบคุมการเปลี่ยนแปลงระบบงาน -->
+<script>
+  function renderChange(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getChangeModuleData').then(function (d) {
+      var html = '<h3 class="text-primary mb-3">การควบคุมการเปลี่ยนแปลงระบบงาน</h3>';
+      html += cgDashboard(d);
+      if (d.canEdit) {
+        var risks = d.risks.map(function (r) { return '<option>' + r + '</option>'; }).join('');
+        html += '<div class="card stat-card mb-3"><div class="card-body"><h6>ยื่นคำขอเปลี่ยนแปลง</h6><div class="row g-2">' +
+          fld('cg-title', 'หัวข้อ *', 'text', 'col-md-6') +
+          fld('cg-system', 'ระบบที่กระทบ *', 'text', 'col-md-4') +
+          sel('cg-risk', 'ความเสี่ยง', risks, 'col-md-2') +
+          fld('cg-type', 'ประเภทการเปลี่ยนแปลง', 'text', 'col-md-4') +
+          textareaFld('cg-desc', 'รายละเอียด *', 2, 'col-md-8') +
+          textareaFld('cg-impact', 'การประเมินผลกระทบ', 2, 'col-md-6') +
+          textareaFld('cg-rollback', 'แผนการย้อนกลับ (Rollback)', 2, 'col-md-6') +
+          '</div><button class="btn btn-primary mt-3" onclick="cgSubmit()">ส่งคำขอ</button></div></div>';
+      }
+      html += cgTable(d);
+      container.innerHTML = html;
+    });
+  }
+  function cgDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.changes)) d.changes = [];
+    var requested = 0, tested = 0, approved = 0, deployed = 0;
+    d.changes.forEach(function (r) {
+      if (r.status === 'ยื่นคำขอ') requested++;
+      if (r.status === 'ผ่านการทดสอบ') tested++;
+      if (r.status === 'อนุมัติแล้ว') approved++;
+      if (r.status === 'ติดตั้งใช้งานแล้ว') deployed++;
+    });
+    return moduleDashboard([
+      mdStat('คำขอทั้งหมด', d.changes.length, 'bi-arrow-repeat', 'blue'),
+      mdStat('รอทดสอบ', requested, 'bi-clipboard-pulse', requested ? 'amber' : 'gray'),
+      mdStat('รออนุมัติ/ติดตั้ง', tested + approved, 'bi-hourglass-split', (tested + approved) ? 'amber' : 'gray'),
+      mdStat('ติดตั้งแล้ว', deployed, 'bi-check-circle', 'teal')
+    ]);
+  }
+  function cgSubmit() {
+    var form = { title: val('cg-title'), system: val('cg-system'), risk: val('cg-risk'),
+      type: val('cg-type'), description: val('cg-desc'), impact: val('cg-impact'), rollback: val('cg-rollback') };
+    callServer('submitChange', form).then(function (m) { toast(m); loadModule('change'); });
+  }
+  function cgTable(d) {
+    if (!d.changes.length) return '<div class="alert alert-secondary">ไม่มีคำขอ</div>';
+    var body = d.changes.map(function (r) {
+      var act = '';
+      if (d.isIT && r.status === 'ยื่นคำขอ') act += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="cgTest(\'' + r.id + '\')">บันทึกผลทดสอบ</button>';
+      if (d.isApprover && r.status === 'ผ่านการทดสอบ') act += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="cgApprove(\'' + r.id + '\',true)">อนุมัติ</button>' +
+        '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="cgApprove(\'' + r.id + '\',false)">ปฏิเสธ</button>';
+      if (d.isIT && r.status === 'อนุมัติแล้ว') act += '<button class="btn btn-sm btn-primary mb-1" onclick="cgDeploy(\'' + r.id + '\')">ติดตั้ง</button>';
+      return '<tr><td>' + escapeHtmlJs(r.id) + '</td><td>' + escapeHtmlJs(r.title) +
+        '<br><small class="text-muted">' + escapeHtmlJs(r.system) + '</small></td>' +
+        '<td>' + escapeHtmlJs(r.risk || '-') + '</td><td>' + escapeHtmlJs(r.status) + '</td>' +
+        '<td>' + escapeHtmlJs(r.version || '-') + '</td><td>' + (act || '-') + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>เลขที่</th><th>หัวข้อ</th><th>เสี่ยง</th><th>สถานะ</th><th>เวอร์ชัน</th><th>ดำเนินการ</th></tr>', body);
+  }
+  function cgTest(id) {
+    showFormModal({
+      title: 'บันทึกผลทดสอบ Change',
+      submitLabel: 'บันทึกผลทดสอบ',
+      fields: [
+        { id: 'result', label: 'ผลการทดสอบ', type: 'textarea', rows: 3, required: true },
+        { id: 'passed', label: 'ผ่านการทดสอบ', type: 'checkbox', value: true }
+      ],
+      onSubmit: function (v) {
+        return callServer('signOffTest', id, v.result, v.passed)
+          .then(function (m) { toast(m); loadModule('change'); });
+      }
+    });
+  }
+  function cgApprove(id, ok) {
+    if (ok) {
+      showConfirm('ยืนยันอนุมัติ Change ' + id + '?', function () {
+        callServer('approveChange', id, true, '').then(function (m) { toast(m); loadModule('change'); });
+      }, { title: 'อนุมัติ Change', okLabel: 'อนุมัติ' });
+      return;
+    }
+    showFormModal({
+      title: 'ปฏิเสธ Change',
+      submitLabel: 'บันทึกการปฏิเสธ',
+      fields: [{ id: 'comment', label: 'เหตุผลการปฏิเสธ', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('approveChange', id, false, v.comment)
+          .then(function (m) { toast(m); loadModule('change'); });
+      }
+    });
+  }
+  function cgDeploy(id) {
+    showFormModal({
+      title: 'บันทึกการติดตั้ง Change',
+      submitLabel: 'บันทึกการติดตั้ง',
+      fields: [
+        { id: 'version', label: 'เวอร์ชันที่ติดตั้ง', type: 'text', required: true },
+        { id: 'rollback', label: 'แผน Rollback (ถ้าปรับปรุง)', type: 'textarea', rows: 3 }
+      ],
+      onSubmit: function (v) {
+        return callServer('deployChange', id, v.version, v.rollback || '')
+          .then(function (m) { toast(m); loadModule('change'); });
+      }
+    });
+  }
+</script>

@@ -1,0 +1,82 @@
+﻿<!-- AuditTrail.html — หน้าดู/ค้นหา Audit Trail (read-only) -->
+<script>
+  function renderAuditTrail(container) {
+    container.innerHTML =
+      pageHeader(
+        'Audit Trail ของระบบ',
+        'ค้นหาประวัติผู้กระทำ โมดูล เป้าหมาย และผลลัพธ์เพื่อการตรวจสอบย้อนหลัง',
+        '',
+        'bi-clock-history'
+      ) +
+      '<div class="card stat-card mb-3"><div class="card-body"><div class="row g-2 align-items-end">' +
+      fld('au-from', 'ตั้งแต่วันที่', 'date', 'col-md-2') +
+      fld('au-to', 'ถึงวันที่', 'date', 'col-md-2') +
+      fld('au-actor', 'ผู้กระทำ (อีเมล)', 'text', 'col-md-3') +
+      '<div class="col-md-2"><label class="form-label">การกระทำ</label><select id="au-action" class="form-select"></select></div>' +
+      '<div class="col-md-2"><label class="form-label">โมดูล</label><select id="au-module" class="form-select"></select></div>' +
+      '<div class="col-md-1"><button class="btn btn-primary w-100" onclick="auSearch()"><i class="bi bi-search"></i> ค้นหา</button></div>' +
+      '</div></div></div>' +
+      '<div id="au-result"><div class="text-center text-muted py-4">กำลังโหลด...</div></div>';
+    auSearch(true);
+  }
+
+  function auSearch(initFilters) {
+    var filters = {
+      from: val('au-from'), to: val('au-to'), actor: val('au-actor'),
+      action: val('au-action'), module: val('au-module'), limit: 500
+    };
+    callServer('getAuditTrail', filters).then(function (d) {
+      // เติมตัวเลือก filter ครั้งแรก
+      if (initFilters === true) {
+        fillSelect('au-action', d.actions);
+        fillSelect('au-module', d.modules);
+      }
+      var html = auDashboard(d) + '<div class="small text-muted mb-2">แสดง ' + d.shown + ' จากทั้งหมด ' + d.total + ' รายการ</div>';
+      if (!d.rows.length) { document.getElementById('au-result').innerHTML = html + '<div class="alert alert-secondary">ไม่พบรายการ</div>'; return; }
+      document.getElementById('au-result').innerHTML = html + dataTable({
+        id: 'auditTrail',
+        rows: d.rows,
+        pageSize: 25,
+        columns: [
+          { key: 'time', label: 'เวลา', value: function (r) { return '<small>' + escapeHtmlJs(r.time) + '</small>'; }, raw: function (r) { return r.time || ''; } },
+          { key: 'actor', label: 'ผู้กระทำ', value: function (r) { return escapeHtmlJs(r.actor) + '<br><small class="text-muted">' + escapeHtmlJs(r.role || '') + '</small>'; }, raw: function (r) { return (r.actor || '') + ' ' + (r.role || ''); } },
+          { key: 'action', label: 'การกระทำ', value: function (r) { return escapeHtmlJs(r.action); } },
+          { key: 'module', label: 'โมดูล', value: function (r) { return escapeHtmlJs(r.module || '-'); } },
+          { key: 'target', label: 'เป้าหมาย', value: function (r) { return '<small>' + escapeHtmlJs(r.target || '-') + '</small>'; } },
+          { key: 'detail', label: 'รายละเอียด', value: function (r) { return '<small>' + escapeHtmlJs(r.detail || '-') + '</small>'; }, default: false },
+          { key: 'result', label: 'ผล', value: function (r) {
+            var tone = r.result === 'denied' ? 'danger' : (r.result === 'fail' ? 'warning' : 'success');
+            return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(r.result || '-') + '</span>';
+          } }
+        ],
+        filters: [
+          { key: 'result', label: 'ผล', value: function (r) { return r.result || ''; } }
+        ],
+        empty: 'ไม่พบประวัติการใช้งานตามเงื่อนไข'
+      });
+    });
+  }
+
+  function auDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.rows)) d.rows = [];
+    var denied = 0, fail = 0, modules = {};
+    d.rows.forEach(function (r) {
+      if (r.result === 'denied') denied++;
+      if (r.result === 'fail') fail++;
+      if (r.module) modules[r.module] = true;
+    });
+    return moduleDashboard([
+      mdStat('รายการทั้งหมด', d.total, 'bi-clock-history', 'blue'),
+      mdStat('แสดงผล', d.shown, 'bi-table', 'blue'),
+      mdStat('Denied', denied, 'bi-shield-x', denied ? 'danger' : 'gray'),
+      mdStat('Fail', fail, 'bi-x-octagon', fail ? 'danger' : 'teal')
+    ]);
+  }
+
+  function fillSelect(id, items) {
+    var el = document.getElementById(id);
+    var opts = '<option value="">ทั้งหมด</option>';
+    items.forEach(function (x) { opts += '<option value="' + escapeHtmlJs(x) + '">' + escapeHtmlJs(x) + '</option>'; });
+    el.innerHTML = opts;
+  }
+</script>

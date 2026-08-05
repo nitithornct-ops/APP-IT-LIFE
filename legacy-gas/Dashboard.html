@@ -1,0 +1,338 @@
+﻿<!-- Dashboard.html — มาร์กอัป + ตัวเรนเดอร์แดชบอร์ด (include_ ใน Index) -->
+<script>
+  var _dashData = null;       // เก็บข้อมูลล่าสุดไว้วาดกราฟใหม่เมื่อสลับธีม
+  var _dashCharts = {};
+
+  function renderDashboard(container) {
+    // โครงโหลดแบบ skeleton ให้รู้สึกเร็ว
+    container.innerHTML = pageHeader('แดชบอร์ดภาพรวม', 'กำลังรวบรวมตัวชี้วัดและรายการที่ต้องดำเนินการ', '', 'bi-speedometer2') +
+      (typeof skeletonCards === 'function' ? skeletonCards(6) : '<div class="text-center text-muted py-5">กำลังประมวลผล...</div>');
+    callServer('getDashboardData').then(function (d) {
+      if (!d) return;
+      if (!Array.isArray(d.cards)) d.cards = [];
+      if (!Array.isArray(d.upcoming)) d.upcoming = [];
+      _dashData = d;
+      var html = '';
+      var s = d.summary;
+
+      // หัวรายงานสำหรับพิมพ์/บันทึก PDF (แสดงเฉพาะตอนพิมพ์)
+      html += printHeader_(d);
+
+      // แบนเนอร์มุมมองตามบทบาท
+      html += roleBanner_(d.role, d.roleLabel, s);
+
+      // หัวข้อ + ปุ่มพิมพ์/ส่งรายงาน
+      var sendBtn = (d.role === 'ITAdmin' || d.role === 'Executive')
+        ? '<button class="btn btn-sm btn-outline-success" onclick="sendExecReport(this)"><i class="bi bi-chat-dots"></i> ส่งรายงานผ่าน LINE</button>' : '';
+      html += '<div class="no-print">' + pageHeader(
+        'แดชบอร์ดภาพรวม',
+        'ข้อมูล ณ ' + d.generatedAt + ' · เลือกดูงานสำคัญตามบทบาทของคุณ',
+        sendBtn + '<button class="btn btn-sm btn-outline-secondary" onclick="printDashboardReport()"><i class="bi bi-printer"></i> พิมพ์ / บันทึก PDF</button>',
+        'bi-speedometer2'
+      ) + '</div>';
+
+      // KPI สรุป — เรียงลำดับเน้นตามบทบาท
+      var KPIS = {
+        openTickets:   kpi('blue',   s.openTickets,   'Ticket เปิดอยู่',          'bi-ticket-detailed'),
+        ticketOverdue: kpi('amber',  s.ticketOverdue, 'Ticket เกิน SLA',          'bi-alarm'),
+        upcomingCount: kpi('blue',   s.upcomingCount, 'รายการใกล้/เลยกำหนด',      'bi-calendar-event'),
+        pendingAccess: kpi('amber',  s.pendingAccess, 'คำขอสิทธิ์รออนุมัติ',       'bi-hourglass-split'),
+        openIncidents: kpi('danger', s.openIncidents, 'เหตุการณ์ที่ยังเปิดอยู่',    'bi-exclamation-octagon'),
+        pdpaPending:   kpi('teal',   s.pdpaPending,   'เหตุข้อมูลส่วนบุคคลรอ DPO', 'bi-stopwatch')
+      };
+      var order = kpiOrderForRole_(d.role);
+      html += '<div class="row g-3 mb-4">' + order.map(function (k) { return KPIS[k]; }).join('') + '</div>';
+
+      // ===== ภาพรวมการปฏิบัติตามนโยบาย (Compliance) — โชว์บนจอ + ในรายงานพิมพ์ =====
+      html += complianceSection_(d);
+
+      // กราฟภาพรวม: สัดส่วนสถานะ compliance + รายการใกล้ครบจำแนกตามประเภท
+      html += '<div class="row g-3 mb-4">' +
+        '<div class="col-lg-5"><div class="card stat-card h-100"><div class="card-body">' +
+        '<h6 class="text-primary mb-3"><i class="bi bi-pie-chart-fill"></i> สัดส่วนสถานะมาตรการควบคุม</h6>' +
+        '<div style="position:relative;height:260px"><canvas id="dashCompliance"></canvas></div></div></div></div>' +
+        '<div class="col-lg-7"><div class="card stat-card h-100"><div class="card-body">' +
+        '<h6 class="text-primary mb-3"><i class="bi bi-bar-chart-fill"></i> รายการใกล้ครบ/เลยกำหนด จำแนกตามประเภท</h6>' +
+        '<div style="position:relative;height:260px"><canvas id="dashUpcoming"></canvas></div></div></div></div>' +
+        '</div>';
+
+      // กราฟเชิงปฏิบัติการ: Ticket เปิดตามความเร่งด่วน + Incident เปิดตามความรุนแรง (แสดงเมื่อมีข้อมูล)
+      var an = d.analytics || {};
+      var hasPri = an.ticketByPriority && Object.keys(an.ticketByPriority).length;
+      var hasSev = an.incidentBySeverity && Object.keys(an.incidentBySeverity).length;
+      if (hasPri || hasSev) {
+        html += '<div class="row g-3 mb-4">' +
+          (hasPri ? '<div class="col-lg-6"><div class="card stat-card h-100"><div class="card-body">' +
+            '<h6 class="text-primary mb-3"><i class="bi bi-ticket-detailed"></i> Ticket ที่เปิดอยู่ จำแนกตามความเร่งด่วน</h6>' +
+            '<div style="position:relative;height:240px"><canvas id="dashTicketPri"></canvas></div></div></div></div>' : '') +
+          (hasSev ? '<div class="col-lg-6"><div class="card stat-card h-100"><div class="card-body">' +
+            '<h6 class="text-primary mb-3"><i class="bi bi-exclamation-triangle"></i> เหตุการณ์ที่เปิดอยู่ จำแนกตามความรุนแรง</h6>' +
+            '<div style="position:relative;height:240px"><canvas id="dashIncSev"></canvas></div></div></div></div>' : '') +
+          '</div>';
+      }
+
+      // การ์ดสถานะแต่ละโมดูล
+      html += '<h5 class="text-primary mb-2">สุขภาพมาตรการควบคุมรายโมดูล</h5>';
+      html += '<div class="row g-3 mb-4">';
+      d.cards.forEach(function (c) {
+        html += statusCard(c);
+      });
+      html += '</div>';
+
+      // รายการใกล้ครบกำหนด
+      html += '<h5 class="text-primary mb-2">รายการที่ใกล้ครบกำหนด / เลยกำหนด</h5>';
+      if (!d.upcoming.length) {
+        html += (typeof emptyState === 'function')
+          ? emptyState({ icon: 'bi-calendar-check', title: 'ไม่มีรายการใกล้ครบกำหนด', message: 'ทุกอย่างอยู่ในกำหนดเวลา 👍' })
+          : '<div class="alert alert-success">ไม่มีรายการที่ใกล้ครบกำหนดในขณะนี้</div>';
+      } else {
+        html += '<div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0">' +
+          '<thead><tr><th>ประเภท</th><th>รายการ</th><th>กำหนด</th><th class="text-end">คงเหลือ</th></tr></thead><tbody>';
+        d.upcoming.forEach(function (u) {
+          var cls = u.days < 0 ? 'overdue' : 'soon';
+          var txt = u.days < 0 ? ('เลย ' + Math.abs(u.days) + ' วัน') : (u.days + ' วัน');
+          html += '<tr><td>' + escapeHtmlJs(u.category) + '</td><td>' + escapeHtmlJs(u.name) + '</td>' +
+            '<td>' + escapeHtmlJs(u.due) + '</td><td class="text-end ' + cls + '">' + txt + '</td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+      }
+
+      // ท้ายรายงาน (แสดงเฉพาะตอนพิมพ์)
+      html += '<div class="print-foot print-only"><span>รายงานนี้สร้างโดยระบบ ISMS Governance System</span>' +
+        '<span>หน้าเอกสารสำหรับการตรวจสอบภายใน (IT Audit)</span></div>';
+
+      container.innerHTML = html;
+      drawDashboardCharts_();
+    }).catch(function () {
+      container.innerHTML = '<div class="alert alert-danger">ไม่สามารถโหลดข้อมูลแดชบอร์ดได้</div>';
+    });
+  }
+
+  // วาดกราฟ (เรียกหลังใส่ HTML แล้ว) — ปรับสีตามธีมมืด/สว่างอัตโนมัติ
+  function drawDashboardCharts_() {
+    if (typeof Chart === 'undefined' || !_dashData) return;
+    Object.keys(_dashCharts).forEach(function (k) { try { _dashCharts[k].destroy(); } catch (e) {} });
+    _dashCharts = {};
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var tick = dark ? '#cdd8ee' : '#475569';
+    var grid = dark ? 'rgba(255,255,255,.08)' : 'rgba(15,31,61,.08)';
+
+    // โดนัทสัดส่วนสถานะ
+    var cnt = { green: 0, yellow: 0, red: 0, gray: 0 };
+    (_dashData.cards || []).forEach(function (c) { cnt[c.status] = (cnt[c.status] || 0) + 1; });
+    var el1 = document.getElementById('dashCompliance');
+    if (el1) {
+      _dashCharts.c1 = new Chart(el1, {
+        type: 'doughnut',
+        data: {
+          labels: ['ปกติ', 'เฝ้าระวัง', 'ต้องดำเนินการ', 'ยังไม่มีข้อมูล'],
+          datasets: [{ data: [cnt.green, cnt.yellow, cnt.red, cnt.gray],
+            backgroundColor: ['#16a34a', '#d97706', '#dc2626', '#94a3b8'], borderWidth: 2, borderColor: dark ? '#14223a' : '#fff' }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '62%',
+          plugins: { legend: { position: 'bottom', labels: { color: tick, padding: 14, font: { family: 'Sarabun' } } } } }
+      });
+    }
+
+    // แท่งรายการใกล้ครบจำแนกตามประเภท
+    var byCat = {};
+    (_dashData.upcoming || []).forEach(function (u) { byCat[u.category] = (byCat[u.category] || 0) + 1; });
+    var cats = Object.keys(byCat);
+    var el2 = document.getElementById('dashUpcoming');
+    if (el2) {
+      if (!cats.length) {
+        el2.parentNode.innerHTML = '<div class="text-muted text-center py-5"><i class="bi bi-emoji-smile" style="font-size:2rem"></i><div class="mt-2">ไม่มีรายการใกล้ครบกำหนด</div></div>';
+      } else {
+        _dashCharts.c2 = new Chart(el2, {
+          type: 'bar',
+          data: { labels: cats, datasets: [{ label: 'จำนวนรายการ', data: cats.map(function (c) { return byCat[c]; }),
+            backgroundColor: '#3b82f6', borderRadius: 8, maxBarThickness: 38 }] },
+          options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { precision: 0, color: tick }, grid: { color: grid } },
+              y: { ticks: { color: tick, font: { family: 'Sarabun' } }, grid: { display: false } } } }
+        });
+      }
+    }
+
+    var SEV_COLORS = { 'วิกฤต': '#dc2626', 'สูงมาก': '#dc2626', 'สูง': '#ea580c', 'กลาง': '#d97706', 'ปานกลาง': '#d97706', 'ต่ำ': '#16a34a', 'ไม่ระบุ': '#94a3b8' };
+    function sevColor_(k) { return SEV_COLORS[k] || '#3b82f6'; }
+    function statusColor_(st) { return st === 'green' ? '#16a34a' : (st === 'yellow' ? '#d97706' : (st === 'red' ? '#dc2626' : '#94a3b8')); }
+
+    // เกจวงกลมภาพรวม compliance
+    var oc = _dashData.overallCompliance;
+    var elG = document.getElementById('dashComplianceGauge');
+    if (elG && oc !== null && oc !== undefined) {
+      var gcol = oc >= 90 ? '#16a34a' : (oc >= 70 ? '#d97706' : '#dc2626');
+      _dashCharts.gauge = new Chart(elG, {
+        type: 'doughnut',
+        data: { datasets: [{ data: [oc, Math.max(0, 100 - oc)], backgroundColor: [gcol, dark ? 'rgba(255,255,255,.10)' : '#e5eaf2'], borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '76%',
+          plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+      });
+    }
+
+    // แท่งสุขภาพมาตรการควบคุมรายด้าน
+    var withData = (_dashData.compliance || []).filter(function (r) { return r.hasData; });
+    var elD = document.getElementById('dashComplianceDomain');
+    if (elD && withData.length) {
+      _dashCharts.domain = new Chart(elD, {
+        type: 'bar',
+        data: { labels: withData.map(function (r) { return r.label; }),
+          datasets: [{ label: '%', data: withData.map(function (r) { return r.pct; }),
+            backgroundColor: withData.map(function (r) { return statusColor_(r.status); }), borderRadius: 6, maxBarThickness: 26 }] },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: { legend: { display: false },
+            tooltip: { callbacks: { label: function (ctx) { var r = withData[ctx.dataIndex]; return r.pct + '% (' + r.compliant + '/' + r.total + ')'; } } } },
+          scales: { x: { beginAtZero: true, max: 100, ticks: { color: tick, callback: function (v) { return v + '%'; } }, grid: { color: grid } },
+            y: { ticks: { color: tick, font: { family: 'Sarabun' } }, grid: { display: false } } } }
+      });
+    }
+
+    // Ticket เปิดตามความเร่งด่วน (โดนัท)
+    var pri = (_dashData.analytics && _dashData.analytics.ticketByPriority) || {};
+    var priKeys = Object.keys(pri);
+    var elP = document.getElementById('dashTicketPri');
+    if (elP && priKeys.length) {
+      _dashCharts.pri = new Chart(elP, {
+        type: 'doughnut',
+        data: { labels: priKeys, datasets: [{ data: priKeys.map(function (k) { return pri[k]; }),
+          backgroundColor: priKeys.map(sevColor_), borderWidth: 2, borderColor: dark ? '#14223a' : '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
+          plugins: { legend: { position: 'bottom', labels: { color: tick, padding: 12, font: { family: 'Sarabun' } } } } }
+      });
+    }
+
+    // Incident เปิดตามความรุนแรง (แท่ง)
+    var sev = (_dashData.analytics && _dashData.analytics.incidentBySeverity) || {};
+    var sevKeys = Object.keys(sev);
+    var elS = document.getElementById('dashIncSev');
+    if (elS && sevKeys.length) {
+      _dashCharts.sev = new Chart(elS, {
+        type: 'bar',
+        data: { labels: sevKeys, datasets: [{ label: 'จำนวน', data: sevKeys.map(function (k) { return sev[k]; }),
+          backgroundColor: sevKeys.map(sevColor_), borderRadius: 8, maxBarThickness: 46 }] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { ticks: { color: tick, font: { family: 'Sarabun' } }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { precision: 0, color: tick }, grid: { color: grid } } } }
+      });
+    }
+  }
+
+  // เรียกจากปุ่มสลับธีมเพื่อวาดกราฟใหม่ให้สีเข้ากับธีม
+  function refreshDashboardCharts() {
+    if (_dashData && document.getElementById('dashCompliance')) drawDashboardCharts_();
+  }
+
+  // ===== แดชบอร์ดตามบทบาท =====
+  // ลำดับการเน้น KPI ต่างกันตามบทบาท: ผู้บริหาร/DPO เน้นธรรมาภิบาล, IT เน้นงานปฏิบัติการ
+  function kpiOrderForRole_(role) {
+    if (role === 'Executive')
+      return ['openIncidents', 'pdpaPending', 'ticketOverdue', 'upcomingCount', 'pendingAccess', 'openTickets'];
+    if (role === 'DPO')
+      return ['pdpaPending', 'openIncidents', 'upcomingCount', 'pendingAccess', 'ticketOverdue', 'openTickets'];
+    // ITAdmin / Approver / User — เน้นงานปฏิบัติการก่อน
+    return ['openTickets', 'ticketOverdue', 'pendingAccess', 'upcomingCount', 'openIncidents', 'pdpaPending'];
+  }
+  function roleBanner_(role, roleLabel, s) {
+    var cfg;
+    if (role === 'Executive') cfg = { cls: 'exec', icon: 'bi-briefcase-fill', title: 'มุมมองผู้บริหาร',
+      sub: 'ภาพรวมความเสี่ยงและสุขภาพมาตรการควบคุมของทั้งองค์กร' };
+    else if (role === 'DPO') cfg = { cls: 'dpo', icon: 'bi-shield-lock-fill', title: 'มุมมองผู้คุ้มครองข้อมูล (DPO)',
+      sub: 'เน้นเหตุการณ์ข้อมูลส่วนบุคคลและกำหนดเวลาแจ้งเหตุ PDPA' };
+    else if (role === 'ITAdmin') cfg = { cls: 'it', icon: 'bi-hdd-network-fill', title: 'ศูนย์ปฏิบัติการ IT',
+      sub: 'งานแจ้งซ่อม SLA ทรัพย์สิน และงานที่ใกล้ครบกำหนด' };
+    else cfg = { cls: 'it', icon: 'bi-person-workspace', title: 'ยินดีต้อนรับ',
+      sub: 'ภาพรวมงานและรายการที่เกี่ยวข้องกับคุณ' };
+    var urgent = (s.ticketOverdue || 0) + (s.openIncidents || 0) + (s.pdpaPending || 0);
+    var alert = urgent > 0
+      ? '<span class="badge bg-light text-danger ms-1">เร่งด่วน ' + urgent + ' รายการ</span>'
+      : '<span class="badge bg-light text-success ms-1">ไม่มีงานเร่งด่วน</span>';
+    return '<div class="role-banner ' + cfg.cls + ' no-print">' +
+      '<div class="rb-icon"><i class="bi ' + cfg.icon + '"></i></div>' +
+      '<div><div class="rb-title">' + escapeHtmlJs(cfg.title) + '</div>' +
+      '<div class="rb-sub">' + escapeHtmlJs(cfg.sub) + ' · บทบาท: ' + escapeHtmlJs(roleLabel || role) + ' ' + alert + '</div></div></div>';
+  }
+
+  // ===== หัวรายงานสำหรับพิมพ์/บันทึก PDF =====
+  function printHeader_(d) {
+    var org = (typeof ORG_NAME !== 'undefined' && ORG_NAME) ? ORG_NAME : 'หน่วยงาน';
+    var who = '';
+    var el = document.getElementById('ucName'); if (el) who = el.textContent || '';
+    var logo = (org.trim().charAt(0) || 'ก');
+    return '<div class="print-header print-only">' +
+      '<div class="ph-logo">' + escapeHtmlJs(logo) + '</div>' +
+      '<div style="flex:1"><div class="ph-org">' + escapeHtmlJs(org) + '</div>' +
+      '<div class="ph-meta">รายงานสรุปสถานะความมั่นคงปลอดภัยสารสนเทศ (ISMS Governance) · ข้อมูล ณ ' +
+      escapeHtmlJs(d.generatedAt) + (who ? ' · พิมพ์โดย: ' + escapeHtmlJs(who) : '') + '</div></div></div>';
+  }
+  function printDashboardReport() { window.print(); }
+
+  // ส่งรายงานสรุปรายเดือนผ่าน LINE ทันที (IT/ผู้บริหาร)
+  function sendExecReport(btn) {
+    showConfirm('ส่งรายงานสรุปสถานะ ISMS ประจำเดือนผ่าน LINE ตอนนี้?', function () {
+      callServer('sendExecutiveReportNow').then(function (m) { toast(m, 'success'); });
+    }, { title: 'ส่งรายงานผู้บริหาร', okLabel: 'ส่งเลย' });
+  }
+
+  // ===== ส่วนภาพรวมการปฏิบัติตามนโยบาย (Compliance) — เกจรวม + กราฟรายด้าน =====
+  function complianceSection_(d) {
+    var oc = d.overallCompliance;
+    var rows = d.compliance || [];
+    var withData = rows.filter(function (r) { return r.hasData; });
+    if (oc === null || oc === undefined || !withData.length) {
+      return '<div class="card stat-card mb-4"><div class="card-body d-flex align-items-center gap-3">' +
+        '<i class="bi bi-clipboard-data text-primary" style="font-size:1.8rem"></i>' +
+        '<div><b class="text-primary">ภาพรวมสุขภาพมาตรการควบคุม</b>' +
+        '<div class="text-muted small">ยังไม่มีข้อมูลเพียงพอสำหรับประเมินมาตรการควบคุม — เมื่อเริ่มบันทึกข้อมูลในโมดูลต่าง ๆ ตัวเลขจะปรากฏที่นี่และในรายงานผู้บริหารอัตโนมัติ</div></div></div></div>';
+    }
+    var color = oc >= 90 ? '#16a34a' : (oc >= 70 ? '#d97706' : '#dc2626');
+    var label = oc >= 90 ? 'อยู่ในเกณฑ์ดี' : (oc >= 70 ? 'ควรเฝ้าระวัง' : 'ต้องเร่งปรับปรุง');
+    var redCount = rows.filter(function (r) { return r.status === 'red'; }).length;
+    var redNote = redCount
+      ? '<span class="badge bg-danger">ต้องปรับปรุง ' + redCount + ' ด้าน</span>'
+      : '<span class="badge bg-success">ไม่มีด้านวิกฤต</span>';
+    return '<h5 class="text-primary mb-2"><i class="bi bi-shield-check"></i> ภาพรวมสุขภาพมาตรการควบคุม</h5>' +
+      '<div class="row g-3 mb-4">' +
+        '<div class="col-lg-4"><div class="card stat-card h-100"><div class="card-body text-center">' +
+          '<div style="position:relative;height:200px"><canvas id="dashComplianceGauge"></canvas>' +
+          '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">' +
+          '<div style="font-size:2.6rem;font-weight:800;line-height:1;color:' + color + '">' + oc + '%</div>' +
+          '<div class="text-muted small">' + escapeHtmlJs(label) + '</div></div></div>' +
+          '<div class="mt-2">' + redNote + '</div>' +
+        '</div></div></div>' +
+        '<div class="col-lg-8"><div class="card stat-card h-100"><div class="card-body">' +
+          '<h6 class="text-primary mb-3"><i class="bi bi-bar-chart-steps"></i> %ความครบถ้วนของมาตรการ จำแนกรายด้าน</h6>' +
+          '<div style="position:relative;height:' + Math.max(200, withData.length * 34) + 'px"><canvas id="dashComplianceDomain"></canvas></div>' +
+        '</div></div></div>' +
+      '</div>';
+  }
+
+  function kpi(color, num, label, icon) {
+    return '<div class="col-6 col-lg-3"><div class="kpi ' + color + '">' +
+      '<i class="bi ' + (icon || 'bi-dot') + '" style="position:absolute;right:16px;bottom:12px;font-size:2.6rem;opacity:.22"></i>' +
+      '<div class="num">' + (num || 0) + '</div><div>' + escapeHtmlJs(label) + '</div></div></div>';
+  }
+
+  var DASH_ICONS = {
+    ticket: 'bi-ticket-detailed', asset: 'bi-pc-display-horizontal', vendor: 'bi-buildings', access: 'bi-key', logging: 'bi-journal-text',
+    backup: 'bi-cloud-arrow-up', awareness: 'bi-mortarboard', incident: 'bi-exclamation-triangle',
+    maintenance: 'bi-tools', inventory: 'bi-box-seam', license: 'bi-key'
+  };
+  function statusCard(c) {
+    var map = { green: 'ปกติ', yellow: 'เฝ้าระวัง', red: 'ต้องดำเนินการ', gray: 'ยังไม่มีข้อมูล' };
+    var badgeCls = { green: 'bg-success', yellow: 'bg-warning text-dark', red: 'bg-danger', gray: 'bg-secondary' };
+    var note = c.note ||
+      ('ทั้งหมด ' + c.total + (c.warn ? ' · ใกล้ครบ ' + c.warn : '') + (c.over ? ' · เลย/ล้มเหลว ' + c.over : ''));
+    return '<div class="col-12 col-md-6 col-xl-4">' +
+      '<div class="card stat-card border-top-' + c.status + '"><div class="card-body">' +
+      '<div class="d-flex align-items-center">' +
+      '<i class="bi ' + (DASH_ICONS[c.key] || 'bi-clipboard-check') + ' me-2" style="font-size:1.3rem;color:#3b82f6"></i>' +
+      '<b>' + escapeHtmlJs(c.label) + '</b>' +
+      '<span class="ms-auto badge ' + badgeCls[c.status] + '">' + map[c.status] + '</span></div>' +
+      '<div class="d-flex align-items-center mt-2"><span class="status-dot s-' + c.status + ' me-2"></span>' +
+      '<span class="text-muted small">' + escapeHtmlJs(note) + '</span></div>' +
+      '</div></div></div>';
+  }
+</script>

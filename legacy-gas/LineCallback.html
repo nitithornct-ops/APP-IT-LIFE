@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center;
+      background: #f1f5f9; color: #0f172a;
+      font-family: Arial, "Sarabun", sans-serif;
+    }
+    .card {
+      width: min(460px, calc(100% - 32px)); padding: 28px; border-radius: 18px;
+      background: #fff; box-shadow: 0 18px 50px rgba(15, 23, 42, .14); text-align: center;
+    }
+    .ok { color: #16a34a; }
+    .bad { color: #dc2626; }
+    .muted { color: #64748b; font-size: 14px; line-height: 1.6; }
+    .button {
+      display: inline-block; margin-top: 12px; padding: 10px 18px; border-radius: 10px;
+      background: #06c755; color: #fff; text-decoration: none; font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 id="title">กำลังตรวจสอบ LINE Login...</h2>
+    <p id="message" class="muted">กรุณารอสักครู่ ระบบกำลังนำท่านกลับไปยังหน้าแจ้งซ่อมอย่างปลอดภัย</p>
+    <a id="continue" class="button" href="#" target="_top" style="display:none">กลับไปหน้าแจ้งซ่อม</a>
+  </div>
+  <script>
+    function decodeUtf8Base64(value) {
+      var binary = atob(value || '');
+      var encoded = '';
+      for (var i = 0; i < binary.length; i++) {
+        encoded += '%' + ('00' + binary.charCodeAt(i).toString(16)).slice(-2);
+      }
+      return decodeURIComponent(encoded);
+    }
+
+    var RESULT = {};
+    try {
+      RESULT = JSON.parse(decodeUtf8Base64('<?= lineCallbackPayload ?>'));
+    } catch (e) {
+      RESULT = { ok: false, error: 'อ่านผลลัพธ์ LINE Callback ไม่สำเร็จ: ' + (e && e.message ? e.message : e) };
+    }
+
+    (function () {
+      var title = document.getElementById('title');
+      var message = document.getElementById('message');
+      var continueLink = document.getElementById('continue');
+      var target = (RESULT && RESULT.returnUrl) || './';
+
+      if (!RESULT || !RESULT.ok || !RESULT.handoffToken) {
+        title.className = 'bad';
+        title.textContent = 'LINE Login ไม่สำเร็จ';
+        message.textContent = (RESULT && RESULT.error) ||
+          'ไม่สามารถยืนยันตัวตนกับ LINE ได้ กรุณากลับไปหน้าแจ้งซ่อมแล้วกด LINE Login ใหม่';
+        continueLink.href = target;
+        continueLink.style.display = 'inline-block';
+        return;
+      }
+
+      title.className = 'ok';
+      title.textContent = 'เข้าสู่ระบบสำเร็จ';
+      message.textContent = 'กำลังพากลับไปยังหน้าแจ้งซ่อม';
+      var separator = target.indexOf('?') > -1 ? '&' : '?';
+      var destination = target + separator + 'line_handoff=' + encodeURIComponent(RESULT.handoffToken);
+      continueLink.href = destination;
+      setTimeout(function () {
+        try {
+          window.top.location.replace(destination);
+        } catch (e) {
+          message.textContent = 'ยืนยันตัวตนสำเร็จ กรุณากดปุ่มด้านล่างเพื่อกลับไปยังหน้าแจ้งซ่อม';
+          continueLink.style.display = 'inline-block';
+        }
+      }, 250);
+      setTimeout(function () { continueLink.style.display = 'inline-block'; }, 1400);
+    })();
+  </script>
+</body>
+</html>

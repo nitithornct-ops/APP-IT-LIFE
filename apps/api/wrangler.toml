@@ -1,0 +1,13 @@
+name = "itlife-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+# ค่าที่ไม่ใช่ความลับ ตั้งไว้ตรงนี้ได้ (ไม่ commit ค่าจริงที่เป็นความลับลงไฟล์นี้)
+[vars]
+ENVIRONMENT = "development"
+
+# ค่าต่อไปนี้เป็นความลับ/เฉพาะสภาพแวดล้อม — ห้ามใส่ค่าจริงในไฟล์นี้:
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, ALLOWED_ORIGINS
+# Local dev  : คัดลอก .dev.vars.example เป็น .dev.vars แล้วกรอกค่าจริง (.dev.vars ถูก gitignore แล้ว)
+# Production : ตั้งค่าด้วยคำสั่ง `wrangler secret put <ชื่อตัวแปร>` เท่านั้น

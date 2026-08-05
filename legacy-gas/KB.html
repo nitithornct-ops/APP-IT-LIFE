@@ -1,0 +1,137 @@
+<!-- KB.html — ฐานความรู้ (Knowledge Base) สำหรับ Help Desk -->
+<script>
+  var KB_DATA = null;
+  var KB_VOTED = {};
+
+  function renderKB(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getKBModuleData').then(function (d) {
+      KB_DATA = d;
+      var actions = d.canManage
+        ? '<button class="btn btn-primary" onclick="kbAdd()"><i class="bi bi-plus-lg"></i> เพิ่มบทความ</button>'
+        : '';
+      var html = pageHeader(
+        'ฐานความรู้ (Knowledge Base)',
+        'ค้นหาวิธีแก้ปัญหา คู่มือ และคำตอบมาตรฐานก่อนเปิด Ticket ใหม่',
+        actions,
+        'bi-journal-bookmark'
+      );
+      html += kbDashboard(d);
+      // แถบค้นหา/กรอง
+      var catOpts = d.categories.map(function (c) { return '<option value="' + escapeHtmlJs(c) + '">' + escapeHtmlJs(c) + '</option>'; }).join('');
+      html += '<div class="card stat-card mb-3"><div class="card-body"><div class="d-flex flex-wrap gap-2 align-items-center">' +
+        '<div class="input-group" style="max-width:340px"><span class="input-group-text"><i class="bi bi-search"></i></span>' +
+        '<input id="kb-search" class="form-control" placeholder="ค้นหาอาการ/วิธีแก้/แท็ก..." oninput="kbRenderGrid()"></div>' +
+        '<select id="kb-cat" class="form-select" style="max-width:240px" onchange="kbRenderGrid()"><option value="">ทุกหมวดหมู่</option>' + catOpts + '</select>' +
+        '<span class="badge bg-light text-dark border ms-auto" id="kb-count"></span>' +
+        '</div></div></div>';
+      html += '<div class="row g-3" id="kbGrid"></div>';
+      container.innerHTML = html;
+      kbRenderGrid();
+    });
+  }
+
+  function kbDashboard(d) {
+    var pub = d.articles.filter(function (a) { return a.status === 'เผยแพร่'; }).length;
+    var draft = d.articles.length - pub;
+    var views = d.articles.reduce(function (s, a) { return s + (a.views || 0); }, 0);
+    return moduleDashboard([
+      mdStat('บทความเผยแพร่', pub, 'bi-journal-check', 'teal'),
+      mdStat('ฉบับร่าง', draft, 'bi-pencil-square', draft ? 'amber' : 'gray'),
+      mdStat('การเข้าอ่านรวม', views, 'bi-eye', 'blue'),
+      mdStat('หมวดหมู่', d.categories.length, 'bi-tags', 'blue')
+    ]);
+  }
+
+  function kbRenderGrid() {
+    var d = KB_DATA; if (!d) return;
+    var q = (val('kb-search') || '').toLowerCase().trim();
+    var cat = val('kb-cat') || '';
+    var items = d.articles.filter(function (a) {
+      if (cat && a.category !== cat) return false;
+      if (!q) return true;
+      return (a.title + ' ' + a.symptom + ' ' + a.solution + ' ' + a.tags + ' ' + a.category).toLowerCase().indexOf(q) > -1;
+    });
+    var cnt = document.getElementById('kb-count'); if (cnt) cnt.textContent = items.length + ' บทความ';
+    var grid = document.getElementById('kbGrid');
+    if (!items.length) { grid.innerHTML = '<div class="col-12">' + emptyState({ icon: 'bi-search', title: 'ไม่พบบทความ', message: 'ลองเปลี่ยนคำค้นหรือหมวดหมู่' }) + '</div>'; return; }
+    grid.innerHTML = items.map(kbCard).join('');
+  }
+
+  function kbCard(a) {
+    var draftBadge = a.status === 'ร่าง' ? '<span class="badge bg-warning text-dark ms-1">ร่าง</span>' : '';
+    var manage = '';
+    if (KB_DATA.canManage) {
+      manage = '<button class="btn btn-sm btn-outline-secondary" onclick="kbEdit(\'' + a.id + '\')"><i class="bi bi-pencil"></i></button>' +
+        (a.status === 'เผยแพร่'
+          ? '<button class="btn btn-sm btn-outline-warning" onclick="kbStatus(\'' + a.id + '\',\'ร่าง\')" title="เก็บเป็นร่าง"><i class="bi bi-eye-slash"></i></button>'
+          : '<button class="btn btn-sm btn-outline-success" onclick="kbStatus(\'' + a.id + '\',\'เผยแพร่\')" title="เผยแพร่"><i class="bi bi-send"></i></button>') +
+        deleteBtn('kb', a.id, a.title);
+    }
+    return '<div class="col-md-6 col-xl-4"><div class="card stat-card h-100"><div class="card-body d-flex flex-column">' +
+      '<div class="d-flex align-items-start mb-2"><i class="bi bi-journal-text me-2" style="font-size:1.3rem;color:#3b82f6"></i>' +
+      '<b class="flex-grow-1">' + escapeHtmlJs(a.title) + draftBadge + '</b></div>' +
+      (a.category ? '<div class="mb-2"><span class="badge bg-primary-subtle text-primary border border-primary-subtle">' + escapeHtmlJs(a.category) + '</span></div>' : '') +
+      '<p class="text-muted small mb-3" style="flex-grow:1">' + escapeHtmlJs((a.symptom || a.solution || '').substring(0, 120)) + ((a.symptom || a.solution || '').length > 120 ? '…' : '') + '</p>' +
+      '<div class="d-flex align-items-center gap-2"><small class="text-muted"><i class="bi bi-eye"></i> ' + a.views + ' · <i class="bi bi-hand-thumbs-up"></i> ' + a.helpful + '</small>' +
+      '<div class="ms-auto d-flex gap-1"><button class="btn btn-sm btn-primary" onclick="kbOpen(\'' + a.id + '\')">อ่าน</button>' + manage + '</div></div>' +
+      '</div></div></div>';
+  }
+
+  function kbNl2br_(s) { return escapeHtmlJs(s || '').replace(/\n/g, '<br>'); }
+
+  function kbOpen(id) {
+    callServer('kbView', id).then(function (a) {
+      var voted = KB_VOTED[id];
+      var body = (a.category ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle mb-2">' + escapeHtmlJs(a.category) + '</span>' : '') +
+        (a.symptom ? '<h6 class="text-primary">อาการ / ปัญหา</h6><p>' + kbNl2br_(a.symptom) + '</p>' : '') +
+        '<h6 class="text-primary">วิธีแก้ไข</h6><p>' + kbNl2br_(a.solution) + '</p>' +
+        (a.tags ? '<div class="mt-2">' + a.tags.split(',').map(function (t) { return t.trim() ? '<span class="badge bg-light text-dark border me-1">#' + escapeHtmlJs(t.trim()) + '</span>' : ''; }).join('') + '</div>' : '') +
+        '<hr><div class="d-flex align-items-center"><small class="text-muted"><i class="bi bi-eye"></i> ' + a.views + ' ครั้ง · อัปเดต ' + escapeHtmlJs(a.updatedAt || '-') + '</small>' +
+        '<button id="kb-vote" class="btn btn-sm btn-outline-success ms-auto"' + (voted ? ' disabled' : '') + ' onclick="kbVote(\'' + id + '\')">' +
+        '<i class="bi bi-hand-thumbs-up"></i> มีประโยชน์ (<span id="kb-vote-n">' + a.helpful + '</span>)</button></div>';
+      showInfoModal(a.title, body, 'lg');
+    });
+  }
+  function kbVote(id) {
+    var btn = document.getElementById('kb-vote'); if (btn) btn.disabled = true;
+    KB_VOTED[id] = true;
+    callServer('kbHelpful', id).then(function () {
+      var n = document.getElementById('kb-vote-n'); if (n) n.textContent = (parseInt(n.textContent, 10) || 0) + 1;
+      toast('ขอบคุณสำหรับความคิดเห็น', 'success');
+    }).catch(function () { if (btn) btn.disabled = false; KB_VOTED[id] = false; });
+  }
+
+  function kbFields_(a) {
+    a = a || {};
+    return [
+      { id: 'title', label: 'หัวข้อบทความ', type: 'text', value: a.title || '', required: true },
+      { id: 'category', label: 'หมวดหมู่', type: 'select', value: a.category || '', placeholder: true,
+        options: (KB_DATA.categories || []).map(function (c) { return c; }) },
+      { id: 'symptom', label: 'อาการ / ปัญหา', type: 'textarea', rows: 3, value: a.symptom || '' },
+      { id: 'solution', label: 'วิธีแก้ไข (ขึ้นบรรทัดใหม่ได้)', type: 'textarea', rows: 6, value: a.solution || '', required: true },
+      { id: 'tags', label: 'แท็ก (คั่นด้วย ,)', type: 'text', value: a.tags || '', help: 'เช่น เครื่องพิมพ์, เน็ต, อีเมล' }
+    ];
+  }
+  function kbAdd() {
+    showFormModal({
+      title: 'เพิ่มบทความฐานความรู้', submitLabel: 'บันทึก', size: 'lg',
+      fields: kbFields_().concat([{ id: 'status', label: 'สถานะ', type: 'select', value: 'เผยแพร่', options: ['เผยแพร่', 'ร่าง'] }]),
+      onSubmit: function (v) {
+        return callServer('addArticle', v).then(function (m) { toast(m); loadModule('kb'); });
+      }
+    });
+  }
+  function kbEdit(id) {
+    var a = (KB_DATA.articles || []).filter(function (x) { return x.id === id; })[0] || {};
+    showFormModal({
+      title: 'แก้ไขบทความ', submitLabel: 'บันทึก', size: 'lg', fields: kbFields_(a),
+      onSubmit: function (v) {
+        return callServer('updateArticle', id, v).then(function (m) { toast(m); loadModule('kb'); });
+      }
+    });
+  }
+  function kbStatus(id, status) {
+    callServer('setArticleStatus', id, status).then(function (m) { toast(m); loadModule('kb'); });
+  }
+</script>

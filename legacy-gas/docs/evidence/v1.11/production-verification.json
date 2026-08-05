@@ -1,0 +1,68 @@
+{
+  "release": {
+    "package": "1.11.0",
+    "buildId": "2026.07.21.1-workflow-integration",
+    "schemaVersion": 13,
+    "deploymentId": "AKfycbzfRYprRHYQ5c21_1xH--MMc24Vu3afyr4Kp_d8XG6r63DIJoIw5sVscuP5bQ4jAFRgLA",
+    "previousVersion": 33,
+    "productionVersion": 35,
+    "sourceBackupVersion": 34,
+    "deployedAtLocalDate": "2026-07-21"
+  },
+  "backup": {
+    "spreadsheetId": "1ada1m0Vra6sZh4QW7_wRBUx-es_ET06FiCKb1-__Jxk",
+    "title": "App-Life-It_PRE_v1.11_20260721_140001",
+    "createdAt": "2026-07-21T07:00:12.742Z",
+    "parentId": "0AMO2Okpx94crUk9PVA",
+    "version33SourceSha256": "cc9c905abcf7e6cb740cd8da59a4c7c34cb6fc0e9d9fe82e779d1cf640f96ed5"
+  },
+  "sourceVerification": {
+    "version35RemoteFileCount": 81,
+    "localGsCount": 47,
+    "localHtmlCount": 33,
+    "manifestCount": 1,
+    "contentMismatchCount": 0,
+    "canonicalSha256": "71367065d18a10d85c40bc5dc73389bcc741e895fd1d5419c41711666b2a31fb"
+  },
+  "staticValidation": {
+    "passed": true,
+    "serverFunctionCount": 1126,
+    "apiAllowlistCount": 267
+  },
+  "setupSystem": {
+    "startedAt": "2026-07-21T14:08:23+07:00",
+    "completedAt": "2026-07-21T14:14:02+07:00",
+    "durationSeconds": 340.256,
+    "executionStatus": "Completed",
+    "appSchemaVersionProperty": 13,
+    "p3SheetCount": 16,
+    "operationalTriggerCount": 8,
+    "actionPermissionCount": 25,
+    "activeAllowRoleMappingCount": 66,
+    "catalogMigrationIntentCount": 12,
+    "catalogMigrationSuccessCount": 12,
+    "unexpectedExistingCatalogFieldChanges": 0
+  },
+  "liveCheck": {
+    "checkedAt": "2026-07-21T07:26:49.978Z",
+    "exitCode": 0,
+    "publicFormLoaded": true,
+    "publicStillLoading": false,
+    "publicBrowserErrors": [],
+    "adminLoginVisible": true,
+    "adminBrowserErrors": [],
+    "buildId": "2026.07.21.1-workflow-integration",
+    "schemaVersion": 13,
+    "installedSchemaVersion": 13,
+    "schemaReady": true,
+    "missingSchema": [],
+    "releaseVerificationPassed": true,
+    "expectedPlatformWarnings": [
+      "Google Apps Script sandboxed iframe warning"
+    ]
+  },
+  "remainingAcceptance": [
+    "Authenticated per-role transactional UAT",
+    "Controlled sandbox rollback drill"
+  ]
+}

@@ -1,0 +1,525 @@
+<!-- Employee.html — พนักงานและทรัพย์สินที่ครอบครอง -->
+<script>
+  var EMP_DATA = null;
+  var EMP_CONTAINER = null;
+
+  function empNormalizeData(data) {
+    data = (data && typeof data === 'object') ? data : {};
+    return {
+      canEdit: data.canEdit === true,
+      statuses: Array.isArray(data.statuses) ? data.statuses : ['Active', 'Inactive'],
+      assignmentStatuses: Array.isArray(data.assignmentStatuses)
+        ? data.assignmentStatuses : ['ครอบครอง', 'คืนแล้ว', 'ส่งซ่อม', 'สูญหาย'],
+      categories: Array.isArray(data.categories) ? data.categories : ['อื่นๆ'],
+      departments: Array.isArray(data.departments) ? data.departments : [],
+      assetOptions: Array.isArray(data.assetOptions) ? data.assetOptions : [],
+      lifecycles: Array.isArray(data.lifecycles) ? data.lifecycles : [],
+      employees: Array.isArray(data.employees) ? data.employees : []
+    };
+  }
+
+  function renderEmployees(container) {
+    EMP_CONTAINER = container;
+    container.innerHTML = skeletonCards(4) +
+      '<div class="card stat-card"><div class="card-body"><div class="skeleton-line"></div><div class="skeleton-line"></div></div></div>';
+    return callServer('getEmployeeModuleData').then(function (data) {
+      EMP_DATA = empNormalizeData(data);
+      var active = EMP_DATA.employees.filter(function (employee) {
+        return String(employee.status).toLowerCase() === 'active';
+      }).length;
+      var withAssets = EMP_DATA.employees.filter(function (employee) {
+        return Number(employee.holdingCount) > 0;
+      }).length;
+      var holdings = EMP_DATA.employees.reduce(function (total, employee) {
+        return total + (Number(employee.holdingCount) || 0);
+      }, 0);
+      var lifecyclePending = EMP_DATA.employees.filter(function (employee) {
+        return employee.lifecycle && employee.lifecycle.status === 'IN_PROGRESS';
+      }).length;
+      var departments = {};
+      EMP_DATA.employees.forEach(function (employee) {
+        if (employee.department) departments[employee.department] = true;
+      });
+
+      var html = '<div class="d-flex flex-wrap align-items-center gap-2 mb-3">' +
+        '<div><h3 class="text-primary mb-1">รายชื่อพนักงานและทรัพย์สินที่ครอบครอง</h3>' +
+        '<div class="text-muted small">ทะเบียนพนักงาน อุปกรณ์ Software และสิทธิ์ใช้งานที่อยู่กับแต่ละคน</div></div>';
+      if (EMP_DATA.canEdit) {
+        html += '<button class="btn btn-primary ms-auto" onclick="empOpenForm()">' +
+          '<i class="bi bi-person-plus"></i> เพิ่มพนักงาน</button>';
+      }
+      html += '</div>';
+      html += moduleDashboard([
+        mdStat('พนักงานทั้งหมด', EMP_DATA.employees.length, 'bi-people', 'blue'),
+        mdStat('Active', active, 'bi-person-check', active ? 'teal' : 'gray'),
+        mdStat('มีทรัพย์สินครอบครอง', withAssets, 'bi-person-workspace', withAssets ? 'amber' : 'gray'),
+        mdStat('Lifecycle ค้าง', lifecyclePending, 'bi-person-gear', lifecyclePending ? 'amber' : 'teal'),
+        mdStat('รายการที่ครอบครอง', holdings, 'bi-pc-display', holdings ? 'blue' : 'gray')
+      ]);
+      html += '<div class="alert alert-light border d-flex gap-2 py-2 mb-3">' +
+        '<i class="bi bi-diagram-3 text-primary mt-1"></i><div class="small">' +
+        'ข้อมูลจากโมดูลนี้จะรวมรายการใน <b>EmployeeAssignments</b>, เจ้าของใน <b>AssetRegister</b> และผู้ใช้ใน <b>SoftwareLicenses</b> ไว้ในหน้ารายคน' +
+        '</div></div>';
+      html += dataTable(empTableConfig());
+      container.innerHTML = html;
+    });
+  }
+
+  function empFind(employeeId) {
+    return ((EMP_DATA && EMP_DATA.employees) || []).filter(function (employee) {
+      return employee.id === employeeId;
+    })[0] || null;
+  }
+
+  function empFindAssignment(assignmentId) {
+    var found = null;
+    ((EMP_DATA && EMP_DATA.employees) || []).some(function (employee) {
+      return (employee.holdings || []).some(function (holding) {
+        if (holding.assignmentId === assignmentId) {
+          found = holding;
+          return true;
+        }
+        return false;
+      });
+    });
+    return found;
+  }
+
+  function empStatusBadge(status) {
+    var active = String(status || '').toLowerCase() === 'active';
+    return '<span class="badge bg-' + (active ? 'success' : 'secondary') + '">' +
+      escapeHtmlJs(status || '-') + '</span>';
+  }
+
+  function empHoldingBadge(status) {
+    var tone = {
+      'ครอบครอง': 'primary',
+      'คืนแล้ว': 'secondary',
+      'ส่งซ่อม': 'warning text-dark',
+      'สูญหาย': 'danger'
+    }[status] || 'secondary';
+    return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(status || '-') + '</span>';
+  }
+
+  function empHoldingSummary(employee) {
+    var current = (employee.holdings || []).filter(function (holding) { return holding.current; });
+    if (!current.length) return '<span class="text-muted">ยังไม่มีรายการ</span>';
+    var visible = current.slice(0, 3).map(function (holding) {
+      return '<span class="badge bg-light text-dark border me-1 mb-1">' +
+        escapeHtmlJs(holding.category) + ': ' + escapeHtmlJs(holding.itemName || holding.assetCode || '-') +
+        '</span>';
+    }).join('');
+    if (current.length > 3) visible += '<span class="badge bg-secondary">+' + (current.length - 3) + '</span>';
+    return visible;
+  }
+
+  function empTableConfig() {
+    return {
+      id: 'employee-directory',
+      rows: EMP_DATA.employees,
+      pageSize: 25,
+      empty: 'ยังไม่มีข้อมูลพนักงาน กด “เพิ่มพนักงาน” เพื่อเริ่มสร้างทะเบียน',
+      actionsLabel: 'จัดการ',
+      columns: [
+        {
+          key: 'employeeCode',
+          label: 'รหัสพนักงาน',
+          value: function (employee) { return '<b>' + escapeHtmlJs(employee.employeeCode || '-') + '</b>'; },
+          raw: function (employee) { return employee.employeeCode || ''; }
+        },
+        {
+          key: 'fullName',
+          label: 'ชื่อพนักงาน',
+          value: function (employee) {
+            return '<b>' + escapeHtmlJs(employee.fullName || '-') + '</b>' +
+              (employee.nickname ? '<br><small class="text-muted">ชื่อเล่น: ' + escapeHtmlJs(employee.nickname) + '</small>' : '') +
+              (employee.englishName ? '<br><small class="text-muted">' + escapeHtmlJs(employee.englishName) + '</small>' : '');
+          },
+          raw: function (employee) {
+            return [employee.fullName, employee.nickname, employee.englishName].join(' ');
+          }
+        },
+        {
+          key: 'position',
+          label: 'ตำแหน่ง',
+          value: function (employee) { return escapeHtmlJs(employee.position || '-'); },
+          raw: function (employee) { return employee.position || ''; }
+        },
+        {
+          key: 'department',
+          label: 'Department',
+          value: function (employee) { return escapeHtmlJs(employee.department || '-'); },
+          raw: function (employee) { return employee.department || ''; }
+        },
+        {
+          key: 'account',
+          label: 'บัญชีงาน',
+          value: function (employee) {
+            var lines = [];
+            if (employee.usernameAD) lines.push('<span class="badge bg-light text-dark border">AD: ' + escapeHtmlJs(employee.usernameAD) + '</span>');
+            if (employee.upn) lines.push('<small class="d-block text-muted mt-1">' + escapeHtmlJs(employee.upn) + '</small>');
+            if (employee.email && employee.email !== employee.upn) lines.push('<small class="d-block text-muted">' + escapeHtmlJs(employee.email) + '</small>');
+            return lines.join('') || '<span class="text-muted">-</span>';
+          },
+          raw: function (employee) { return [employee.usernameAD, employee.upn, employee.email].join(' '); },
+          default: false
+        },
+        {
+          key: 'holdings',
+          label: 'ทรัพย์สินที่ครอบครอง',
+          value: empHoldingSummary,
+          raw: function (employee) {
+            return (employee.holdings || []).filter(function (holding) { return holding.current; })
+              .map(function (holding) { return [holding.category, holding.itemName, holding.assetCode, holding.serialNumber].join(' '); })
+              .join(' ');
+          }
+        },
+        {
+          key: 'holdingCount',
+          label: 'จำนวน',
+          value: function (employee) {
+            return '<span class="badge bg-' + (employee.holdingCount ? 'primary' : 'secondary') + '">' +
+              (employee.holdingCount || 0) + '</span>';
+          },
+          raw: function (employee) { return Number(employee.holdingCount) || 0; }
+        },
+        {
+          key: 'status',
+          label: 'สถานะ',
+          value: function (employee) { return empStatusBadge(employee.status); },
+          raw: function (employee) { return employee.status || ''; }
+        }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (employee) { return employee.status || ''; } },
+        { key: 'department', label: 'Department', value: function (employee) { return employee.department || ''; } },
+        {
+          key: 'holding',
+          label: 'การครอบครอง',
+          value: function (employee) { return employee.holdingCount ? 'มีทรัพย์สิน' : 'ไม่มีทรัพย์สิน'; }
+        }
+      ],
+      actions: function (employee) {
+        var html = '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="empShowDetail(\'' +
+          employee.id + '\')"><i class="bi bi-eye"></i> ดู</button>';
+        if (EMP_DATA.canEdit) {
+          html += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="empOpenForm(\'' +
+            employee.id + '\')"><i class="bi bi-pencil"></i> แก้ไข</button>' +
+            '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="empOpenAssignmentForm(\'' +
+            employee.id + '\')"><i class="bi bi-pc-display"></i> เพิ่มทรัพย์สิน</button>' +
+            '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="empLifecycleForm(\'' +
+            employee.id + '\')"><i class="bi bi-person-gear"></i> Lifecycle</button>';
+          if (employee.lifecycle && employee.lifecycle.status === 'IN_PROGRESS') {
+            html += '<button class="btn btn-sm btn-outline-success mb-1" onclick="empCompleteLifecycle(\'' +
+              employee.lifecycle.id + '\')"><i class="bi bi-check2-circle"></i> ปิด Checklist</button>';
+          }
+        }
+        return html;
+      }
+    };
+  }
+
+  function empOpenForm(employeeId) {
+    EMP_DATA = empNormalizeData(EMP_DATA);
+    var employee = employeeId ? empFind(employeeId) : {};
+    if (employeeId && !employee) {
+      toast('ไม่พบพนักงานที่เลือก กรุณาโหลดหน้าใหม่', 'warning');
+      return;
+    }
+    showFormModal({
+      title: employeeId ? ('แก้ไขพนักงาน: ' + employee.fullName) : 'เพิ่มพนักงาน',
+      submitLabel: employeeId ? 'บันทึกการแก้ไข' : 'เพิ่มพนักงาน',
+      size: 'xl',
+      fields: [
+        { id: 'employeeCode', label: 'รหัสพนักงาน', value: employee.employeeCode, required: true, col: 'col-md-3' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: EMP_DATA.statuses, value: employee.status || 'Active', placeholder: false, col: 'col-md-3' },
+        { id: 'prefixTH', label: 'คำนำหน้า', value: employee.prefixTH, col: 'col-md-2' },
+        { id: 'firstNameTH', label: 'ชื่อ', value: employee.firstNameTH, required: true, col: 'col-md-2' },
+        { id: 'lastNameTH', label: 'นามสกุล', value: employee.lastNameTH, required: true, col: 'col-md-2' },
+        { id: 'nickname', label: 'ชื่อเล่น', value: employee.nickname, col: 'col-md-3' },
+        { id: 'prefixEN', label: 'คำนำหน้า (อังกฤษ)', value: employee.prefixEN, col: 'col-md-3' },
+        { id: 'firstNameEN', label: 'Name', value: employee.firstNameEN, col: 'col-md-3' },
+        { id: 'lastNameEN', label: 'Lastname', value: employee.lastNameEN, col: 'col-md-3' },
+        { id: 'position', label: 'ตำแหน่ง', value: employee.position, col: 'col-md-6' },
+        {
+          id: 'department', label: 'Department', value: employee.department,
+          help: EMP_DATA.departments.length ? 'ข้อมูลเดิม: ' + EMP_DATA.departments.join(', ') : '',
+          col: 'col-md-6'
+        },
+        { id: 'usernameAD', label: 'Username_AD', value: employee.usernameAD, col: 'col-md-4' },
+        { id: 'upn', label: 'UPN', value: employee.upn, col: 'col-md-4' },
+        { id: 'email', label: 'Email', type: 'email', value: employee.email, col: 'col-md-4' },
+        { id: 'notes', label: 'Note', type: 'textarea', rows: 2, value: employee.notes, col: 'col-12' }
+      ],
+      onSubmit: function (values) {
+        return callServer('saveEmployee', employeeId || '', values).then(function (message) {
+          toast(message || 'บันทึกแล้ว', 'success');
+          loadModule('employees');
+        });
+      }
+    });
+  }
+
+  function empInfoRow(label, value) {
+    return '<div class="col-md-4"><div class="text-muted small">' + escapeHtmlJs(label) +
+      '</div><div class="fw-semibold">' + escapeHtmlJs(value || '-') + '</div></div>';
+  }
+
+  function empHoldingTable(employee) {
+    var holdings = Array.isArray(employee.holdings) ? employee.holdings : [];
+    if (!holdings.length) return '<div class="alert alert-secondary mb-0">ยังไม่มีประวัติทรัพย์สินหรือ Software</div>';
+    var rows = holdings.map(function (holding) {
+      var item = '<b>' + escapeHtmlJs(holding.itemName || '-') + '</b>' +
+        (holding.assetCode ? '<br><small class="text-muted">รหัส: ' + escapeHtmlJs(holding.assetCode) + '</small>' : '') +
+        (holding.serialNumber ? '<br><small class="text-muted">S/N: ' + escapeHtmlJs(holding.serialNumber) + '</small>' : '');
+      var network = [
+        holding.ipAddress ? 'IP ' + holding.ipAddress : '',
+        holding.macAddress ? 'MAC ' + holding.macAddress : '',
+        holding.phoneNumber ? 'Tel ' + holding.phoneNumber : ''
+      ].filter(String).map(escapeHtmlJs).join('<br>');
+      var spec = [
+        holding.producer, holding.model, holding.osSystem, holding.hardwareSpec,
+        holding.softwareLicense, holding.scanUser, holding.scanFolder
+      ].filter(String).map(escapeHtmlJs).join('<br>');
+      var actions = '';
+      if (EMP_DATA.canEdit && holding.editable) {
+        actions = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="empEditAssignment(\'' +
+          holding.assignmentId + '\')"><i class="bi bi-pencil"></i></button>';
+        if (holding.current) {
+          actions += '<button class="btn btn-sm btn-outline-success mb-1" onclick="empReturnAssignment(\'' +
+            holding.assignmentId + '\',\'' + employee.id + '\')"><i class="bi bi-box-arrow-in-left"></i> คืน</button>';
+        }
+      } else if (holding.source === 'IT Asset') {
+        actions = '<button class="btn btn-sm btn-outline-secondary" onclick="loadModule(\'asset\')">เปิด Asset</button>';
+      } else if (holding.source === 'Software License') {
+        actions = '<button class="btn btn-sm btn-outline-secondary" onclick="loadModule(\'license\')">เปิด License</button>';
+      }
+      return '<tr><td>' + escapeHtmlJs(holding.category || '-') + '</td><td>' + item + '</td>' +
+        '<td>' + (network || '-') + '</td><td>' + (spec || '-') + '</td><td>' +
+        empHoldingBadge(holding.status) + '<br><small class="text-muted">' + escapeHtmlJs(holding.source || '') +
+        '</small></td><td>' + escapeHtmlJs(holding.assignedDate || '-') + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    return '<div class="table-responsive"><table class="table table-hover align-middle">' +
+      '<thead><tr><th>ประเภท</th><th>รายการ</th><th>Network/โทรศัพท์</th><th>รายละเอียด</th>' +
+      '<th>สถานะ/แหล่งข้อมูล</th><th>วันที่รับ</th><th></th></tr></thead><tbody>' + rows +
+      '</tbody></table></div>';
+  }
+
+  function empLifecycleSummary(employee) {
+    var lifecycle = employee.lifecycle;
+    if (!lifecycle) return '';
+    var items = (lifecycle.checklist || []).map(function (item) {
+      var tone = item.status === 'DONE' ? 'success' : (item.status === 'PENDING' ? 'warning text-dark' : 'secondary');
+      return '<li class="list-group-item d-flex align-items-center gap-2 py-2">' +
+        '<span class="badge bg-' + tone + '">' + escapeHtmlJs(item.status || '-') + '</span>' +
+        '<span>' + escapeHtmlJs(item.label || item.key || '-') +
+        (item.detail ? ' <small class="text-muted">· ' + escapeHtmlJs(item.detail) + '</small>' : '') +
+        '</span></li>';
+    }).join('');
+    return '<div class="col-12"><div class="border rounded p-3">' +
+      '<div class="d-flex align-items-center mb-2"><b>Lifecycle ล่าสุด</b>' +
+      '<span class="badge ms-auto bg-' + (lifecycle.status === 'COMPLETED' ? 'success' : 'warning text-dark') + '">' +
+      escapeHtmlJs(lifecycle.eventType + ' · ' + lifecycle.status) + '</span></div>' +
+      '<div class="small text-muted mb-2">ทรัพย์สินคงค้าง ' + escapeHtmlJs(lifecycle.assetsPending || 0) +
+      ' รายการ · ' + escapeHtmlJs(lifecycle.createdAt || '') + '</div>' +
+      (items ? '<ul class="list-group list-group-flush">' + items + '</ul>' : '') +
+      '</div></div>';
+  }
+
+  function empShowDetail(employeeId) {
+    var employee = empFind(employeeId);
+    if (!employee) return;
+    var account = employee.systemAccount
+      ? '<span class="badge bg-success">มีบัญชีระบบ · ' + escapeHtmlJs(employee.systemAccount.role || '-') + '</span>'
+      : '<span class="badge bg-light text-dark border">ยังไม่มีบัญชีระบบ</span>';
+    var body = '<div class="row g-3 mb-3">' +
+      empInfoRow('รหัสพนักงาน', employee.employeeCode) +
+      empInfoRow('ชื่อ-นามสกุล', employee.fullName) +
+      empInfoRow('ชื่อเล่น', employee.nickname) +
+      empInfoRow('English name', employee.englishName) +
+      empInfoRow('ตำแหน่ง', employee.position) +
+      empInfoRow('Department', employee.department) +
+      empInfoRow('Username_AD', employee.usernameAD) +
+      empInfoRow('UPN', employee.upn) +
+      empInfoRow('Email', employee.email) +
+      '<div class="col-md-4"><div class="text-muted small">สถานะ</div>' + empStatusBadge(employee.status) + '</div>' +
+      '<div class="col-md-8"><div class="text-muted small">บัญชีระบบ</div>' + account + '</div>' +
+      empLifecycleSummary(employee) +
+      (employee.notes ? '<div class="col-12"><div class="text-muted small">Note</div><div>' +
+        escapeHtmlJs(employee.notes).replace(/\r?\n/g, '<br>') + '</div></div>' : '') +
+      '</div><div class="d-flex align-items-center mb-2"><h6 class="mb-0">ทรัพย์สินและสิทธิ์ใช้งาน</h6>' +
+      (EMP_DATA.canEdit ? '<button class="btn btn-sm btn-primary ms-auto" onclick="empOpenAssignmentForm(\'' +
+        employee.id + '\')"><i class="bi bi-plus-lg"></i> เพิ่มรายการ</button>' : '') +
+      '</div>' + empHoldingTable(employee);
+    showInfoModal('ข้อมูลพนักงาน · ' + employee.fullName, body, 'xl');
+  }
+
+  function empAssignmentAssetOptions() {
+    return (EMP_DATA.assetOptions || []).map(function (asset) {
+      return {
+        value: asset.value,
+        label: asset.label + (asset.currentOwner ? ' · ผู้ถือครอง: ' + asset.currentOwner : '')
+      };
+    });
+  }
+
+  function empOpenAssignmentForm(employeeId, assignmentId) {
+    var employee = empFind(employeeId);
+    var holding = assignmentId ? empFindAssignment(assignmentId) : {};
+    if (!employee || (assignmentId && !holding)) {
+      toast('ไม่พบข้อมูลพนักงานหรือรายการที่เลือก', 'warning');
+      return;
+    }
+    showFormModal({
+      title: (assignmentId ? 'แก้ไขรายการ · ' : 'เพิ่มทรัพย์สิน · ') + employee.fullName,
+      submitLabel: assignmentId ? 'บันทึกการแก้ไข' : 'เพิ่มรายการ',
+      size: 'xl',
+      fields: [
+        {
+          id: 'assetId', label: 'เชื่อมกับ Asset Register', type: 'select',
+          options: empAssignmentAssetOptions(), value: holding.assetId,
+          help: 'ไม่บังคับ; เลือกเมื่อรายการนี้มีอยู่ในทะเบียน IT Asset', col: 'col-md-6'
+        },
+        {
+          id: 'category', label: 'Category', type: 'select', options: EMP_DATA.categories,
+          value: holding.category || 'Computer', placeholder: false, required: true, col: 'col-md-3'
+        },
+        {
+          id: 'status', label: 'สถานะ', type: 'select', options: EMP_DATA.assignmentStatuses,
+          value: holding.status || 'ครอบครอง', placeholder: false, required: true, col: 'col-md-3'
+        },
+        { id: 'itemName', label: 'Name_Device / ชื่อรายการ', value: holding.itemName, required: true, col: 'col-md-6' },
+        { id: 'assetCode', label: 'รหัส Asset', value: holding.assetCode, col: 'col-md-3' },
+        { id: 'assetNumber', label: 'เลขครุภัณฑ์', value: holding.assetNumber, col: 'col-md-3' },
+        { id: 'producer', label: 'Producer / ผู้ผลิต', value: holding.producer, col: 'col-md-3' },
+        { id: 'model', label: 'รุ่น', value: holding.model, col: 'col-md-3' },
+        { id: 'serialNumber', label: 'S/N', value: holding.serialNumber, col: 'col-md-3' },
+        { id: 'macAddress', label: 'MAC Address', value: holding.macAddress, col: 'col-md-3' },
+        { id: 'ipAddress', label: 'IP Address - DHCP', value: holding.ipAddress, col: 'col-md-4' },
+        { id: 'osSystem', label: 'OS System', value: holding.osSystem, col: 'col-md-4' },
+        { id: 'phoneNumber', label: 'เบอร์ติดต่อ', value: holding.phoneNumber, col: 'col-md-4' },
+        { id: 'hardwareSpec', label: 'Hardware / Spec', type: 'textarea', rows: 2, value: holding.hardwareSpec, col: 'col-md-6' },
+        { id: 'softwareName', label: 'Software', value: holding.softwareName, help: 'เช่น Office H&B 2019, Acrobat Pro, Adobe Creative Cloud', col: 'col-md-3' },
+        { id: 'softwareLicense', label: 'License / สิทธิ์ใช้งาน', value: holding.softwareLicense, col: 'col-md-3' },
+        { id: 'scanUser', label: 'Scanner User', value: holding.scanUser, col: 'col-md-3' },
+        { id: 'scanFolder', label: 'Scan Folder', value: holding.scanFolder, col: 'col-md-5' },
+        { id: 'assignedDate', label: 'วันที่รับมอบ', type: 'date', value: dmyToInput(holding.assignedDate), col: 'col-md-2' },
+        { id: 'returnedDate', label: 'วันที่คืน', type: 'date', value: dmyToInput(holding.returnedDate), col: 'col-md-2' },
+        { id: 'notes', label: 'Note', type: 'textarea', rows: 2, value: holding.notes, col: 'col-12' }
+      ],
+      onSubmit: function (values) {
+        values.employeeId = employee.id;
+        return callServer('saveEmployeeAssignment', assignmentId || '', values).then(function (message) {
+          toast(message || 'บันทึกแล้ว', 'success');
+          loadModule('employees');
+        });
+      }
+    });
+    var assetSelect = document.getElementById('mf-assetId');
+    if (assetSelect) {
+      assetSelect.onchange = function () {
+        empFillFromAsset(this.value);
+      };
+    }
+  }
+
+  function empFillFromAsset(assetId) {
+    if (!assetId) return;
+    var asset = (EMP_DATA.assetOptions || []).filter(function (item) {
+      return item.value === assetId;
+    })[0];
+    if (!asset) return;
+    var values = {
+      itemName: asset.name,
+      assetCode: asset.code,
+      assetNumber: asset.code,
+      producer: asset.producer,
+      model: asset.model,
+      serialNumber: asset.serialNumber,
+      category: EMP_DATA.categories.indexOf(asset.category) > -1 ? asset.category : 'อื่นๆ'
+    };
+    Object.keys(values).forEach(function (key) {
+      var el = document.getElementById('mf-' + key);
+      if (el && !el.value) el.value = values[key] || '';
+    });
+    if (asset.currentOwner) {
+      toast('Asset นี้มีผู้ครอบครองปัจจุบัน: ' + asset.currentOwner, 'warning');
+    }
+  }
+
+  function empEditAssignment(assignmentId) {
+    var holding = empFindAssignment(assignmentId);
+    if (!holding) return;
+    empOpenAssignmentForm(holding.employeeId, assignmentId);
+  }
+
+  function empReturnAssignment(assignmentId, employeeId) {
+    showConfirm('ยืนยันการคืนรายการนี้? ประวัติจะยังคงอยู่และ Asset ที่เชื่อมไว้จะกลับเป็น “พร้อมใช้งาน”',
+      function () {
+        return callServer('setEmployeeAssignmentStatus', assignmentId, 'คืนแล้ว').then(function (message) {
+          toast(message || 'คืนรายการแล้ว', 'success');
+          loadModule('employees');
+        });
+      },
+      { title: 'ยืนยันการคืนทรัพย์สิน', okLabel: 'บันทึกการคืน' });
+  }
+
+  function empSetStatus(employeeId, status) {
+    showConfirm('ปรับสถานะพนักงานเป็น ' + status + '? รายการครอบครองเดิมจะไม่ถูกลบ',
+      function () {
+        return callServer('setEmployeeStatus', employeeId, status).then(function (message) {
+          toast(message || 'ปรับสถานะแล้ว', 'success');
+          loadModule('employees');
+        });
+      });
+  }
+
+  function empLifecycleForm(employeeId) {
+    var employee = empFind(employeeId);
+    if (!employee) return;
+    showFormModal({
+      title: 'เริ่ม Joiner / Mover / Leaver · ' + employee.fullName,
+      submitLabel: 'เริ่ม Workflow',
+      size: 'lg',
+      fields: [
+        { id: 'eventType', label: 'เหตุการณ์', type: 'select', placeholder: false,
+          options: [
+            { value: 'JOINER', label: 'JOINER · เริ่มงาน/กลับเข้าทำงาน' },
+            { value: 'MOVER', label: 'MOVER · ย้ายหน่วยงาน/เปลี่ยนตำแหน่ง' },
+            { value: 'LEAVER', label: 'LEAVER · พ้นสภาพ' }
+          ], value: String(employee.status).toLowerCase() === 'active' ? 'MOVER' : 'JOINER',
+          required: true, col: 'col-md-6' },
+        { id: 'effectiveDate', label: 'วันที่มีผล', type: 'date', required: true, col: 'col-md-6' },
+        { id: 'newDepartment', label: 'Department ใหม่ (สำหรับ MOVER)', value: employee.department, col: 'col-md-6' },
+        { id: 'newPosition', label: 'ตำแหน่งใหม่ (สำหรับ MOVER)', value: employee.position, col: 'col-md-6' },
+        { id: 'reason', label: 'เหตุผล/หมายเหตุ', type: 'textarea', rows: 3, required: true, col: 'col-12',
+          help: 'LEAVER จะระงับบัญชี สิทธิ์ และ LINE session ทันที แต่จะยังไม่ปิด checklist จนกว่าจะคืนทรัพย์สินครบ' }
+      ],
+      onSubmit: function (values) {
+        return callServer('startEmployeeLifecycle', employeeId, values.eventType, values).then(function (result) {
+          toast('สร้าง ' + result.eventType + ' ' + result.id +
+            ' · สิทธิ์ ' + result.accessAffected + ' · ทรัพย์สินคงค้าง ' + result.assetsPending, 'success');
+          loadModule('employees');
+        });
+      }
+    });
+  }
+
+  function empCompleteLifecycle(lifecycleId) {
+    showFormModal({
+      title: 'ปิด Lifecycle Checklist',
+      submitLabel: 'ยืนยันว่าดำเนินการครบ',
+      size: 'md',
+      fields: [
+        { id: 'notes', label: 'หลักฐาน/หมายเหตุการปิดงาน', type: 'textarea', rows: 3, required: true,
+          help: 'กรณี LEAVER ระบบจะตรวจว่าคืนทรัพย์สินและ Software ครบก่อนปิด' }
+      ],
+      onSubmit: function (values) {
+        return callServer('completeEmployeeLifecycle', lifecycleId, values.notes).then(function (message) {
+          toast(message, 'success');
+          loadModule('employees');
+        });
+      }
+    });
+  }
+</script>

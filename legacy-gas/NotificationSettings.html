@@ -1,0 +1,109 @@
+﻿<!-- NotificationSettings.html — ตั้งค่าระบบแจ้งเตือน (IT Admin) -->
+<script>
+  function renderNotificationSettings(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getNotificationSettings').then(function (d) {
+      var html = pageHeader(
+        'ตั้งค่าระบบแจ้งเตือน',
+        'กำหนดช่องทางหลัก ผู้รับข้อความ และทดสอบการเชื่อมต่อก่อนเปิดใช้งานจริง',
+        '',
+        'bi-bell'
+      );
+      html += '<div class="alert alert-success d-flex gap-2 align-items-start">' +
+        '<i class="bi bi-chat-dots-fill fs-5"></i><div><b>LINE Messaging API เป็นช่องทางแจ้งเตือนเพียงช่องทางเดียว</b>' +
+        '<div class="small">หากส่งไม่สำเร็จ ระบบจะเข้าคิว retry อัตโนมัติ ส่วน Email ใช้เฉพาะ OTP ยืนยันตัวตนเท่านั้น</div></div></div>';
+      html += nsDashboard(d);
+
+      html += '<div class="card stat-card mb-3 border-success"><div class="card-body">' +
+        '<div class="d-flex flex-wrap gap-2 align-items-center mb-3"><h5 class="text-success mb-0"><i class="bi bi-chat-dots-fill"></i> LINE Messaging API</h5>' +
+        '<span class="badge ' + (d.lineConfigured && d.lineTargetConfigured ? 'bg-success' : 'bg-warning text-dark') + '">' +
+        (d.lineConfigured && d.lineTargetConfigured ? 'พร้อมใช้งาน' : 'ตั้งค่ายังไม่ครบ') + '</span></div>' +
+        '<div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="ns-line"' +
+        (d.lineEnabled ? ' checked' : '') + '><label class="form-check-label fw-semibold" for="ns-line">เปิดใช้งาน LINE เป็นช่องทางหลัก</label></div>' +
+        '<div class="row g-3">' +
+        '<div class="col-md-6"><label class="form-label">LINE target ID <span class="text-danger">*</span></label>' +
+        '<input id="ns-line-target" class="form-control" value="' + escapeHtmlJs(d.lineTarget || '') + '" placeholder="U..., C... หรือ R...">' +
+        '<div class="form-text">User ID, Group ID หรือ Room ID ที่ Bot มีสิทธิ์ส่งข้อความ</div></div>' +
+        '<div class="col-md-6"><label class="form-label">Channel access token ' + (d.lineConfigured ? '<span class="badge bg-success">บันทึกแล้ว</span>' : '<span class="text-danger">*</span>') + '</label>' +
+        '<input id="ns-line-token" type="password" class="form-control" value="" autocomplete="new-password" placeholder="' +
+        (d.lineConfigured ? 'เว้นว่างเพื่อใช้ token เดิม' : 'วาง token จาก LINE Developers') + '">' +
+        '<div class="form-text">Token ถูกส่งไปเก็บใน Script Properties และจะไม่ถูกอ่านกลับมาแสดง</div></div>' +
+        '</div>' +
+        (d.lineConfigured ? '<div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="ns-line-clear">' +
+          '<label class="form-check-label text-danger" for="ns-line-clear">ลบ token เดิมเมื่อกดบันทึก</label></div>' : '') +
+        '<div class="mt-3"><button class="btn btn-success me-2" onclick="nsSaveAndTestLine()"><i class="bi bi-send-check"></i> บันทึกและทดสอบ LINE</button>' +
+        '<button class="btn btn-outline-success" onclick="nsTestLine()"><i class="bi bi-send"></i> ทดสอบด้วยค่าที่บันทึกไว้</button></div>' +
+        '</div></div>';
+
+      html += '<div class="card stat-card mb-3"><div class="card-body">' +
+        '<h5 class="text-primary mb-3"><i class="bi bi-arrow-repeat"></i> คิวส่งซ้ำและรอบแจ้งเตือน</h5>' +
+        '<div class="alert ' + (d.queueDead ? 'alert-danger' : 'alert-light border') + ' py-2">' +
+        'รอส่ง/Retry <b>' + escapeHtmlJs(d.queuePending || 0) + '</b> รายการ · Dead letter <b>' +
+        escapeHtmlJs(d.queueDead || 0) + '</b> รายการ ' +
+        '<button class="btn btn-sm btn-outline-primary ms-2" onclick="nsProcessQueue()">ประมวลผลคิวตอนนี้</button></div>' +
+        '<div class="row g-2 mt-3">' +
+        '<div class="col-md-6"><label class="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>' +
+        '<input id="ns-lead" type="number" class="form-control" value="' + escapeHtmlJs(d.leadDays) + '"></div>' +
+        '<div class="col-md-6"><label class="form-label">รอบทบทวนสิทธิ์ (วัน)</label>' +
+        '<input id="ns-cycle" type="number" class="form-control" value="' + escapeHtmlJs(d.reviewCycle) + '"></div>' +
+        '</div>' +
+        '<div class="mt-3"><button class="btn btn-primary me-2" onclick="nsSave()">บันทึกการตั้งค่า</button>' +
+        '<button class="btn btn-outline-secondary" onclick="nsRunNow()">ตรวจวันครบกำหนดทันที</button></div>' +
+        '</div></div>';
+
+      // log ล่าสุด
+      html += '<h5 class="text-primary mb-2">ประวัติการแจ้งเตือนล่าสุด</h5>';
+      if (!d.logs.length) html += '<div class="alert alert-secondary">ยังไม่มีประวัติ</div>';
+      else {
+        var body = d.logs.map(function (r) {
+          var rc = r.result === 'fail' ? 'overdue' : '';
+          return '<tr><td><small>' + escapeHtmlJs(r.sentAt) + '</small></td><td>' + escapeHtmlJs(r.channel) + '</td>' +
+            '<td><small>' + escapeHtmlJs(r.recipient) + '</small></td><td><small>' + escapeHtmlJs(r.subject) + '</small></td>' +
+            '<td class="' + rc + '">' + escapeHtmlJs(r.result) + '</td><td><small>' + escapeHtmlJs(r.error || '') + '</small></td></tr>';
+        }).join('');
+        html += tableWrap('<tr><th>เวลา</th><th>ช่องทาง</th><th>ผู้รับ</th><th>เรื่อง</th><th>ผล</th><th>ข้อผิดพลาด</th></tr>', body);
+      }
+      container.innerHTML = html;
+    });
+  }
+  function nsDashboard(d) {
+    var fail = d.logs.filter(function (r) { return r.result === 'fail'; }).length;
+    return moduleDashboard([
+      mdStat('LINE · ช่องทางหลัก', d.lineEnabled ? 'เปิด' : 'ปิด', 'bi-chat-dots-fill', d.lineEnabled ? (d.lineConfigured && d.lineTargetConfigured ? 'teal' : 'amber') : 'gray',
+        d.lineConfigured && d.lineTargetConfigured ? 'พร้อมส่ง' : 'ตั้งค่า token/target ให้ครบ'),
+      mdStat('คิว LINE', d.queuePending || 0, 'bi-arrow-repeat', d.queuePending ? 'amber' : 'teal',
+        d.queueDead ? ('Dead ' + d.queueDead) : 'ไม่มี Dead letter'),
+      mdStat('แจ้งล่วงหน้า', d.leadDays + ' วัน', 'bi-calendar-event', 'blue'),
+      mdStat('ส่งไม่สำเร็จล่าสุด', fail, 'bi-x-circle', fail ? 'danger' : 'teal')
+    ]);
+  }
+  function nsPayload() {
+    var clearEl = document.getElementById('ns-line-clear');
+    return { emailEnabled: false,
+      lineEnabled: document.getElementById('ns-line').checked,
+      teamsEnabled: false,
+      lineTarget: val('ns-line-target'), lineToken: val('ns-line-token'),
+      clearLineToken: !!(clearEl && clearEl.checked),
+      leadDays: val('ns-lead'), reviewCycle: val('ns-cycle') };
+  }
+  function nsSave() {
+    return callServer('saveNotificationSettings', nsPayload()).then(function (m) { toast(m); loadModule('notification'); });
+  }
+  function nsSaveAndTestLine() {
+    callServer('saveNotificationSettings', nsPayload()).then(function () {
+      return callServer('testLineNotification');
+    }).then(function (m) { toast(m, 'success'); loadModule('notification'); });
+  }
+  function nsTestLine() {
+    callServer('testLineNotification').then(function (m) { toast(m, 'success'); loadModule('notification'); });
+  }
+  function nsRunNow() { callServer('runNotificationCheckNow').then(function (m) { toast(m); loadModule('notification'); }); }
+  function nsProcessQueue() {
+    callServer('processNotificationQueueNow').then(function (r) {
+      toast('ประมวลผล ' + r.processed + ' · ส่งสำเร็จ ' + r.sent +
+        ' · Retry ' + r.retry + ' · Dead ' + r.dead +
+        (r.requeued ? ' · Requeue ' + r.requeued : ''), r.dead ? 'warning' : 'success');
+      loadModule('notification');
+    });
+  }
+</script>

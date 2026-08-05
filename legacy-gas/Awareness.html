@@ -1,0 +1,293 @@
+﻿<!-- Awareness.html — การสร้างความตระหนัก/อบรม + e-sign รับทราบนโยบาย -->
+<script>
+  var AW_DATA = null;
+  function renderAwareness(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getAwarenessModuleData').then(function (d) {
+      AW_DATA = d;
+      var html = '<h3 class="text-primary mb-3">การสร้างความตระหนักด้านความมั่นคงปลอดภัย</h3>';
+      html += awDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3">' +
+        awTab('ack', 'รับทราบนโยบาย', true) +
+        awTab('plan', 'แผนอบรม (' + d.plans.length + ')', false) +
+        awTab('rec', 'บันทึกการอบรม (' + d.records.length + ')', false) + '</ul>';
+      html += '<div class="tab-content">';
+      html += '<div class="tab-pane fade show active" id="aw-ack">' + ackHtml(d) + '</div>';
+      html += '<div class="tab-pane fade" id="aw-plan">' + (d.canManage ? planForm(d) : '') + planTable(d) + '</div>';
+      html += '<div class="tab-pane fade" id="aw-rec">' + (d.canManage ? recForm(d) : '') + recTable(d) + '</div>';
+      html += '</div>';
+      container.innerHTML = html;
+    });
+  }
+  function awDashboard(d) {
+    var donePlans = d.plans.filter(function (r) { return String(r.status).indexOf('เสร็จ') > -1; }).length;
+    return moduleDashboard([
+      mdStat('นโยบายที่ต้องรับทราบ', d.policies.length, 'bi-file-earmark-text', 'blue'),
+      mdStat('รับทราบแล้ว', d.myAcks.length, 'bi-pen', d.myAcks.length >= d.policies.length ? 'teal' : 'amber'),
+      mdStat('แผนอบรมเสร็จ', donePlans + '/' + d.plans.length, 'bi-mortarboard', donePlans === d.plans.length ? 'teal' : 'amber'),
+      mdStat('บันทึกการอบรม', d.records.length, 'bi-people', 'blue')
+    ]);
+  }
+  function awTab(k, label, a) {
+    return '<li class="nav-item"><button class="nav-link' + (a ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#aw-' + k + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+
+  // ---------- e-sign รับทราบนโยบาย ----------
+  function ackHtml(d) {
+    d = d || {}; if (!Array.isArray(d.myAcks)) d.myAcks = []; if (!Array.isArray(d.policies)) d.policies = [];
+    var ackedKeys = {};
+    d.myAcks.forEach(function (a) { ackedKeys[a.policy + '|' + a.version] = a.date; });
+    var rows = d.policies.map(function (p, i) {
+      var key = p.name + '|' + p.version;
+      var done = ackedKeys[key];
+      var btn = done ? '<span class="badge bg-success">รับทราบแล้ว ' + escapeHtmlJs(done) + '</span>' :
+        '<button class="btn btn-sm btn-primary" onclick="ackOpen(' + i + ')">ลงชื่อรับทราบ</button>';
+      return '<tr><td>' + escapeHtmlJs(p.name) + '</td><td>' + escapeHtmlJs(p.version) + '</td><td>' + btn + '</td></tr>';
+    }).join('');
+    window.__POLICIES = d.policies; window.__USERNAME = d.userName;
+    return '<div class="card stat-card"><div class="card-body">' +
+      '<p class="text-muted">โปรดอ่านและลงชื่อรับทราบนโยบายที่เกี่ยวข้อง (การลงชื่อถือเป็นการยืนยันว่าท่านได้อ่านและเข้าใจ)</p>' +
+      '<table class="table"><thead><tr><th>นโยบาย</th><th>ฉบับ</th><th>การรับทราบ</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div></div>' +
+      '<div class="modal fade" id="ackModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">' +
+      '<div class="modal-header"><h5 class="modal-title">ลงชื่อรับทราบนโยบาย</h5>' +
+      '<button class="btn-close" data-bs-dismiss="modal"></button></div>' +
+      '<div class="modal-body"><p id="ack-policy-name" class="fw-bold"></p>' +
+      '<div class="mb-3"><label class="form-label">ชื่อ-สกุล (พิมพ์ชื่อของท่านเพื่อลงนาม)</label>' +
+      '<input id="ack-sig" class="form-control"></div>' +
+      '<div class="form-check"><input class="form-check-input" type="checkbox" id="ack-confirm">' +
+      '<label class="form-check-label" for="ack-confirm">ข้าพเจ้าได้อ่านและรับทราบนโยบายฉบับนี้แล้ว</label></div></div>' +
+      '<div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>' +
+      '<button class="btn btn-primary" onclick="ackSubmit()">ยืนยันการรับทราบ</button></div>' +
+      '</div></div></div>';
+  }
+  var __ackIdx = -1;
+  function ackOpen(i) {
+    __ackIdx = i;
+    var p = window.__POLICIES[i];
+    document.getElementById('ack-policy-name').textContent = p.name + ' (' + p.version + ')';
+    document.getElementById('ack-sig').value = window.__USERNAME || '';
+    document.getElementById('ack-confirm').checked = false;
+    new bootstrap.Modal(document.getElementById('ackModal')).show();
+  }
+  function ackSubmit() {
+    var p = window.__POLICIES[__ackIdx];
+    var sig = val('ack-sig');
+    var confirmed = document.getElementById('ack-confirm').checked;
+    callServer('acknowledgePolicy', p.name, p.version, sig, confirmed).then(function (m) {
+      toast(m); bootstrap.Modal.getInstance(document.getElementById('ackModal')).hide(); loadModule('awareness');
+    });
+  }
+
+  // ---------- แผนอบรม ----------
+  function planForm(d) {
+    var q = d.quarters.map(function (x) { return '<option>' + x + '</option>'; }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มแผนอบรม</h6><div class="row g-2">' +
+      fld('pl-year', 'ปี (พ.ศ.) *', 'text', 'col-md-2') +
+      sel('pl-q', 'ไตรมาส *', q, 'col-md-2') +
+      fld('pl-topic', 'หัวข้อ *', 'text', 'col-md-5') +
+      fld('pl-date', 'กำหนดวันที่', 'date', 'col-md-3') +
+      fld('pl-target', 'กลุ่มเป้าหมาย', 'text', 'col-md-6') +
+      fld('pl-resp', 'ผู้รับผิดชอบ', 'text', 'col-md-6') +
+      '</div><button class="btn btn-primary mt-3" onclick="plSave()">บันทึก</button></div></div>';
+  }
+  function plSave() {
+    var form = { year: val('pl-year'), quarter: val('pl-q'), topic: val('pl-topic'),
+      plannedDate: val('pl-date'), target: val('pl-target'), responsible: val('pl-resp') };
+    callServer('addTrainingPlan', form).then(function (m) { toast(m); loadModule('awareness'); });
+  }
+  function planTable(d) {
+    if (!d.plans.length) return '<div class="alert alert-secondary">ยังไม่มีแผนอบรม</div>';
+    var body = d.plans.map(function (r) {
+      var quizCell = r.hasQuiz
+        ? '<span class="badge bg-info-subtle text-info border border-info-subtle">' + r.questionCount + ' ข้อ · ผ่าน ' + r.passingScore + '%</span>'
+        : '<span class="text-muted small">ยังไม่มี</span>';
+      var act = '';
+      if (d.canManage) {
+        act += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="quizBuilderOpen(\'' + r.id + '\')"><i class="bi bi-card-checklist"></i> ' + (r.hasQuiz ? 'แก้ไขแบบทดสอบ' : 'สร้างแบบทดสอบ') + '</button>';
+        if (r.status !== 'เสร็จสิ้น')
+          act += '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="plComplete(\'' + r.id + '\')">ทำเสร็จแล้ว</button>';
+      }
+      if (r.hasQuiz)
+        act += '<button class="btn btn-sm btn-primary mb-1" onclick="quizTakeOpen(\'' + r.id + '\')"><i class="bi bi-pencil-square"></i> ทำแบบทดสอบ</button>';
+      return '<tr><td>' + escapeHtmlJs(r.year) + '/' + escapeHtmlJs(r.quarter) + '</td><td>' + escapeHtmlJs(r.topic) + '</td>' +
+        '<td>' + escapeHtmlJs(r.target || '') + '</td><td>' + escapeHtmlJs(r.plannedDate || '-') + '</td>' +
+        '<td>' + escapeHtmlJs(r.status) + '</td><td>' + quizCell + '</td><td>' + (act || '-') + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>ปี/ไตรมาส</th><th>หัวข้อ</th><th>กลุ่มเป้าหมาย</th><th>กำหนด</th><th>สถานะ</th><th>แบบทดสอบ</th><th></th></tr>', body);
+  }
+  function plComplete(id) { callServer('completeTrainingPlan', id).then(function (m) { toast(m); loadModule('awareness'); }); }
+
+  // ---------- บันทึกการอบรม ----------
+  function recForm(d) {
+    var planOpts = d.plans.map(function (p) {
+      return '<option value="' + escapeHtmlJs(p.id) + '">' + escapeHtmlJs(p.topic) + ' (' + escapeHtmlJs(p.year) + '/' + escapeHtmlJs(p.quarter) + ')</option>';
+    }).join('');
+    return '<div class="card stat-card mb-3"><div class="card-body"><h6>บันทึกผู้เข้าอบรม</h6><div class="row g-2">' +
+      sel('rc-plan', 'แผนอบรม (ถ้ามี)', planOpts, 'col-md-5') +
+      fld('rc-topic', 'หัวข้อ *', 'text', 'col-md-4') +
+      fld('rc-date', 'วันที่อบรม *', 'date', 'col-md-3') +
+      fld('rc-email', 'อีเมลผู้เข้าอบรม *', 'email', 'col-md-4') +
+      fld('rc-result', 'ผล', 'text', 'col-md-2') +
+      fld('rc-score', 'คะแนน', 'text', 'col-md-2') +
+      fileFld('rc-file', 'หลักฐาน', 'col-md-4') +
+      '</div><button class="btn btn-primary mt-3" onclick="rcSave()">บันทึก</button></div></div>';
+  }
+  function rcSave() {
+    uploadIfAny('rc-file', 'awareness').then(function (url) {
+      var planTopic = '';
+      var planSel = document.getElementById('rc-plan');
+      if (planSel && planSel.selectedIndex > 0) planTopic = planSel.options[planSel.selectedIndex].text;
+      var form = { planId: val('rc-plan'), topic: val('rc-topic') || planTopic, date: val('rc-date'),
+        attendeeEmail: val('rc-email'), result: val('rc-result'), score: val('rc-score'), evidence: url };
+      callServer('addTrainingRecord', form).then(function (m) { toast(m); loadModule('awareness'); });
+    });
+  }
+  function recTable(d) {
+    if (!d.records.length) return '<div class="alert alert-secondary">ยังไม่มีบันทึกการอบรม</div>';
+    var body = d.records.map(function (r) {
+      var resultBadge = r.passed === 'Yes' ? '<span class="badge bg-success">ผ่าน</span>'
+        : (r.passed === 'No' ? '<span class="badge bg-danger">ไม่ผ่าน</span>' : escapeHtmlJs(r.result || ''));
+      return '<tr><td>' + escapeHtmlJs(r.date) + '</td><td>' + escapeHtmlJs(r.topic) + '</td>' +
+        '<td>' + escapeHtmlJs(r.attendee) + '<br><small class="text-muted">' + escapeHtmlJs(r.dept || '') + '</small></td>' +
+        '<td>' + resultBadge + '</td><td>' + escapeHtmlJs(r.score || '') + '</td>' +
+        '<td>' + (r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : '') + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>วันที่</th><th>หัวข้อ</th><th>ผู้เข้าอบรม</th><th>ผล</th><th>คะแนน</th><th></th></tr>', body);
+  }
+
+  // ============================================================
+  // แบบทดสอบหลังอบรม (Quiz)
+  // ============================================================
+  var _awModal = null, _qSeq = 0;
+  function awQuizModal_() {
+    if (!document.getElementById('awQuizModal')) {
+      var h = '<div class="modal fade" id="awQuizModal" tabindex="-1" aria-hidden="true">' +
+        '<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">' +
+        '<div class="modal-header"><h5 class="modal-title" id="awQuizTitle"></h5>' +
+        '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button></div>' +
+        '<div class="modal-body" id="awQuizBody"></div>' +
+        '<div class="modal-footer" id="awQuizFoot"></div></div></div></div>';
+      document.body.insertAdjacentHTML('beforeend', h);
+    }
+    if (!_awModal) _awModal = new bootstrap.Modal(document.getElementById('awQuizModal'));
+    return _awModal;
+  }
+
+  // ----- ผู้ดูแล: สร้าง/แก้ไขแบบทดสอบ -----
+  function quizBuilderOpen(planId) {
+    var plan = (AW_DATA.plans || []).filter(function (p) { return p.id === planId; })[0] || {};
+    awQuizModal_();
+    document.getElementById('awQuizTitle').textContent = 'แบบทดสอบ: ' + (plan.topic || planId);
+    document.getElementById('awQuizBody').innerHTML =
+      '<div class="d-flex align-items-center gap-2 mb-3">' +
+      '<label class="form-label mb-0">เกณฑ์ผ่าน (%)</label>' +
+      '<input id="quizPass" type="number" min="0" max="100" class="form-control" style="width:100px" value="' + (plan.passingScore || 70) + '">' +
+      '<button class="btn btn-sm btn-outline-primary ms-auto" onclick="addQuizQuestion()"><i class="bi bi-plus-lg"></i> เพิ่มคำถาม</button></div>' +
+      '<div id="quizQ"></div>' +
+      '<div class="text-muted small">ติ๊กวงกลมหน้าตัวเลือกที่เป็น “คำตอบที่ถูกต้อง” · เว้นตัวเลือกที่ไม่ใช้ว่างได้ (ต้องมีอย่างน้อย 2 ตัวเลือก)</div>';
+    document.getElementById('awQuizFoot').innerHTML =
+      '<button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>' +
+      '<button class="btn btn-primary" onclick="quizSave(\'' + planId + '\')"><i class="bi bi-save"></i> บันทึกแบบทดสอบ</button>';
+    var existing = plan.quiz || [];
+    if (existing.length) existing.forEach(function (q) { addQuizQuestion(q); });
+    else addQuizQuestion();
+    awQuizModal_().show();
+  }
+  function addQuizQuestion(prefill) {
+    _qSeq++;
+    var seq = _qSeq;
+    var choices = (prefill && prefill.choices) || ['', '', '', ''];
+    while (choices.length < 4) choices.push('');
+    var ans = prefill ? prefill.answer : -1;
+    var rows = choices.slice(0, 4).map(function (c, i) {
+      return '<div class="input-group mb-1">' +
+        '<span class="input-group-text"><input type="radio" name="correct-' + seq + '"' + (ans === i ? ' checked' : '') + '></span>' +
+        '<input class="form-control q-choice" placeholder="ตัวเลือกที่ ' + (i + 1) + '" value="' + escapeHtmlJs(c) + '"></div>';
+    }).join('');
+    var block = '<div class="quiz-q card mb-2" data-seq="' + seq + '"><div class="card-body py-2">' +
+      '<div class="d-flex align-items-center mb-2"><b>ข้อ <span class="qnum"></span></b>' +
+      '<button class="btn btn-sm btn-outline-danger ms-auto" onclick="this.closest(\'.quiz-q\').remove();quizRenumber_()"><i class="bi bi-trash"></i></button></div>' +
+      '<input class="form-control q-text mb-2" placeholder="ข้อความคำถาม" value="' + escapeHtmlJs(prefill ? prefill.q : '') + '">' +
+      rows + '</div></div>';
+    document.getElementById('quizQ').insertAdjacentHTML('beforeend', block);
+    quizRenumber_();
+  }
+  function quizRenumber_() {
+    document.querySelectorAll('#quizQ .quiz-q .qnum').forEach(function (el, i) { el.textContent = (i + 1); });
+  }
+  function quizSave(planId) {
+    var questions = [];
+    var blocks = document.querySelectorAll('#quizQ .quiz-q');
+    for (var b = 0; b < blocks.length; b++) {
+      var blk = blocks[b];
+      var text = blk.querySelector('.q-text').value.trim();
+      var choiceEls = blk.querySelectorAll('.q-choice');
+      var radios = blk.querySelectorAll('input[type=radio]');
+      var rawChoices = [], correctRaw = -1;
+      for (var i = 0; i < choiceEls.length; i++) {
+        rawChoices.push(choiceEls[i].value.trim());
+        if (radios[i] && radios[i].checked) correctRaw = i;
+      }
+      if (!text && rawChoices.every(function (c) { return !c; })) continue; // ข้ามบล็อกว่าง
+      var correctText = correctRaw > -1 ? rawChoices[correctRaw] : '';
+      var choices = rawChoices.filter(function (c) { return c !== ''; });
+      var answer = correctText ? choices.indexOf(correctText) : -1;
+      if (!text) { toast('ข้อ ' + (b + 1) + ': ยังไม่มีข้อความคำถาม', 'warning'); return; }
+      if (choices.length < 2) { toast('ข้อ ' + (b + 1) + ': ต้องมีอย่างน้อย 2 ตัวเลือก', 'warning'); return; }
+      if (answer < 0) { toast('ข้อ ' + (b + 1) + ': กรุณาติ๊กคำตอบที่ถูกต้อง', 'warning'); return; }
+      questions.push({ q: text, choices: choices, answer: answer });
+    }
+    var pass = parseInt(document.getElementById('quizPass').value, 10);
+    callServer('saveTrainingQuiz', planId, questions, isNaN(pass) ? 70 : pass).then(function (m) {
+      toast(m); awQuizModal_().hide(); loadModule('awareness');
+    });
+  }
+
+  // ----- ผู้เข้าอบรม: ทำแบบทดสอบ -----
+  function quizTakeOpen(planId) {
+    callServer('getTrainingQuiz', planId).then(function (q) {
+      q = q || {}; if (!Array.isArray(q.questions)) q.questions = [];
+      awQuizModal_();
+      document.getElementById('awQuizTitle').textContent = 'ทำแบบทดสอบ: ' + q.topic;
+      var body = '<p class="text-muted small">มี ' + q.questions.length + ' ข้อ · เกณฑ์ผ่าน ' + q.passingScore + '%</p><div id="quizTake">';
+      q.questions.forEach(function (item, qi) {
+        body += '<div class="card mb-2" data-qi="' + qi + '"><div class="card-body py-2">' +
+          '<b>' + (qi + 1) + '. ' + escapeHtmlJs(item.q) + '</b><div class="mt-2">';
+        (Array.isArray(item.choices) ? item.choices : []).forEach(function (c, ci) {
+          body += '<div class="form-check"><input class="form-check-input" type="radio" name="take-' + qi + '" value="' + ci + '" id="t' + qi + '-' + ci + '">' +
+            '<label class="form-check-label" for="t' + qi + '-' + ci + '">' + escapeHtmlJs(c) + '</label></div>';
+        });
+        body += '</div></div></div>';
+      });
+      body += '</div>';
+      document.getElementById('awQuizBody').innerHTML = body;
+      document.getElementById('awQuizFoot').innerHTML =
+        '<button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>' +
+        '<button class="btn btn-primary" id="quizSubmitBtn" onclick="quizSubmit(\'' + planId + '\',' + q.questions.length + ')"><i class="bi bi-send"></i> ส่งคำตอบ</button>';
+      awQuizModal_().show();
+    });
+  }
+  function quizSubmit(planId, n) {
+    var answers = [];
+    for (var i = 0; i < n; i++) {
+      var sel = document.querySelector('input[name="take-' + i + '"]:checked');
+      if (!sel) { toast('กรุณาตอบข้อ ' + (i + 1), 'warning'); return; }
+      answers.push(parseInt(sel.value, 10));
+    }
+    callServer('submitTrainingQuiz', planId, answers).then(function (res) {
+      var ok = res.passed;
+      var html = '<div class="text-center py-3">' +
+        '<i class="bi ' + (ok ? 'bi-patch-check-fill text-success' : 'bi-x-circle-fill text-danger') + '" style="font-size:3rem"></i>' +
+        '<h3 class="mt-2 mb-1">' + res.score + '%</h3>' +
+        '<div class="mb-2">ตอบถูก ' + res.correct + '/' + res.total + ' ข้อ · เกณฑ์ผ่าน ' + res.passingScore + '%</div>' +
+        '<span class="badge ' + (ok ? 'bg-success' : 'bg-danger') + ' fs-6">' + (ok ? 'ผ่าน 🎉' : 'ไม่ผ่าน') + '</span>' +
+        '<p class="text-muted small mt-3">บันทึกผลลงระบบเรียบร้อยแล้ว</p></div>';
+      document.getElementById('awQuizBody').innerHTML = html;
+      document.getElementById('awQuizFoot').innerHTML =
+        (ok ? '' : '<button class="btn btn-outline-primary" onclick="quizTakeOpen(\'' + planId + '\')">ลองใหม่อีกครั้ง</button>') +
+        '<button class="btn btn-primary" onclick="awQuizModal_().hide();loadModule(\'awareness\')">เสร็จสิ้น</button>';
+    });
+  }
+</script>

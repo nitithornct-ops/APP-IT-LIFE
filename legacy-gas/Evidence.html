@@ -1,0 +1,105 @@
+﻿<!-- Evidence.html — ศูนย์รวมหลักฐานตรวจสอบ + %compliance + Export -->
+<script>
+  function renderEvidence(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังคำนวณสุขภาพมาตรการควบคุม...</div>';
+    callServer('getEvidenceData').then(function (d) {
+      d = d || {};
+      if (!Array.isArray(d.compliance)) d.compliance = [];
+      if (!Array.isArray(d.evidence)) d.evidence = [];
+      if (!Array.isArray(d.sheets)) d.sheets = [];
+      var html ='<div class="d-flex align-items-center mb-3"><h3 class="text-primary mb-0">ศูนย์รวมหลักฐานตรวจสอบ</h3>' +
+        '<span class="ms-auto small text-muted">ข้อมูล ณ ' + escapeHtmlJs(d.generatedAt) + '</span></div>';
+      html += evDashboard(d);
+      html += '<div class="card stat-card mb-4 border-primary"><div class="card-body"><div class="d-flex flex-wrap gap-2 align-items-center">' +
+        '<div class="flex-grow-1"><h5 class="mb-1"><i class="bi bi-folder2-open text-primary"></i> คลังเอกสารธรรมาภิบาล</h5><div class="small text-muted">จัดเก็บ PDF, DOC และ DOCX พร้อมเวอร์ชัน วันทบทวน และการเชื่อมโยงโมดูล</div></div>' +
+        '<button class="btn btn-primary" onclick="evOpenDocumentUpload()"><i class="bi bi-cloud-upload"></i> เพิ่มเอกสาร</button>' +
+        '<button class="btn btn-outline-primary" onclick="evLoadDocuments()">ดูเอกสารทั้งหมด</button></div><div id="ev-documents" class="mt-3"></div></div></div>';
+
+      // อัตราโดยรวม
+      var oc = !d.hasData ? 'gray' : (d.overall >= 90 ? 'green' : (d.overall >= 70 ? 'yellow' : 'red'));
+      html += '<div class="row g-3 mb-4"><div class="col-md-4"><div class="kpi ' +
+        (oc === 'green' ? 'teal' : (oc === 'yellow' ? 'amber' : (oc === 'gray' ? 'gray' : 'danger'))) + '">' +
+        '<div class="num">' + (d.hasData ? d.overall + '%' : 'N/A') + '</div><div>สุขภาพมาตรการควบคุมโดยรวม</div></div></div>' +
+        '<div class="col-md-8 d-flex align-items-center"><div>' +
+        '<button class="btn btn-danger me-2" onclick="evExportPdf()">📄 ออกรายงานสรุป (PDF)</button>' +
+        '<span class="text-muted small">สำหรับยื่นผู้ตรวจสอบ (IT Audit)</span></div></div></div>';
+
+      // ตารางสุขภาพมาตรการควบคุมรายโมดูล — ไม่ใช่คำรับรอง Legal Compliance
+      html += '<h5 class="text-primary mb-2">สถานะมาตรการควบคุมรายด้าน</h5>' +
+        '<p class="text-muted small">ตัวเลขนี้วัดความครบถ้วนของข้อมูลปฏิบัติการในแต่ละโมดูล ' +
+        'ส่วนผลการปฏิบัติตามกฎหมายให้ดูที่หน้า “กฎหมายและการปฏิบัติตาม”</p>';
+      html += '<div class="card stat-card mb-4"><div class="table-responsive"><table class="table mb-0">' +
+        '<thead><tr><th>โมดูล/ข้อกำหนด</th><th>ข้อกำหนดนโยบาย</th><th class="text-center">ผ่าน/ทั้งหมด</th><th style="width:220px">%</th></tr></thead><tbody>';
+      d.compliance.forEach(function (c) {
+        var bar = c.status === 'green' ? 'bg-success' : (c.status === 'yellow' ? 'bg-warning' : (c.status === 'red' ? 'bg-danger' : 'bg-secondary'));
+        html += '<tr><td>' + escapeHtmlJs(c.label) + '</td><td><small>' + escapeHtmlJs(c.policyClause || '-') + '</small></td>' +
+          '<td class="text-center">' + c.compliant + '/' + c.total + '</td>' +
+          '<td>' + (c.hasData
+            ? '<div class="progress" style="height:20px"><div class="progress-bar ' + bar + '" style="width:' + c.pct + '%">' + c.pct + '%</div></div>'
+            : '<span class="text-muted">N/A — ยังไม่มีข้อมูล</span>') + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+
+      // จำนวนหลักฐาน
+      html += '<h5 class="text-primary mb-2">จำนวนหลักฐานที่จัดเก็บ</h5><div class="row g-2 mb-4">';
+      d.evidence.forEach(function (e) {
+        html += '<div class="col-6 col-md-3"><div class="card stat-card"><div class="card-body py-2">' +
+          '<div class="fs-4 fw-bold text-primary">' + e.count + '</div><div class="small text-muted">' + escapeHtmlJs(e.label) + '</div></div></div></div>';
+      });
+      html += '</div>';
+
+      // Export CSV รายทะเบียน
+      html += '<h5 class="text-primary mb-2">ส่งออกทะเบียน (CSV สำหรับ Excel)</h5><div class="card stat-card"><div class="card-body"><div class="row g-2">';
+      d.sheets.forEach(function (s) {
+        html += '<div class="col-6 col-md-3"><button class="btn btn-outline-primary btn-sm w-100" onclick="evCsv(\'' +
+          escapeHtmlJs(s.key) + '\')">⬇ ' + escapeHtmlJs(s.label) + '</button></div>';
+      });
+      html += '</div></div></div>';
+
+      container.innerHTML = html;
+    });
+  }
+
+  function evDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.evidence)) d.evidence = []; if (!Array.isArray(d.compliance)) d.compliance = [];
+    var totalEvidence = 0;
+    d.evidence.forEach(function (e) { totalEvidence += e.count; });
+    var red = d.compliance.filter(function (c) { return c.status === 'red'; }).length;
+    return moduleDashboard([
+      mdStat('สุขภาพมาตรการ', d.hasData ? d.overall + '%' : 'N/A', 'bi-clipboard-data',
+        !d.hasData ? 'gray' : (d.overall >= 90 ? 'teal' : (d.overall >= 70 ? 'amber' : 'danger'))),
+      mdStat('ข้อกำหนด', d.compliance.length, 'bi-list-check', 'blue'),
+      mdStat('หลักฐานทั้งหมด', totalEvidence, 'bi-folder-check', 'teal'),
+      mdStat('ต้องเร่งแก้', red, 'bi-exclamation-triangle', red ? 'danger' : 'gray')
+    ]);
+  }
+
+  function evExportPdf() {
+    callServer('exportComplianceReportPdf').then(function (res) {
+      toast('สร้างรายงานสุขภาพมาตรการเรียบร้อย (' + (res.hasData ? res.overall + '%' : 'N/A') + ')', 'success');
+      window.open(res.url, '_blank');
+    });
+  }
+
+  function evCsv(sheetName) {
+    callServer('exportSheetCsv', sheetName).then(function (res) {
+      var blob = new Blob([res.content], { type: 'text/csv;charset=utf-8;' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = res.filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      toast('ดาวน์โหลด ' + res.filename, 'success');
+    });
+  }
+  function evOpenDocumentUpload() {
+    showFormModal({title:'เพิ่มเอกสารธรรมาภิบาล',submitLabel:'อัปโหลดและบันทึก',size:'lg',fields:[
+      {id:'title',label:'ชื่อเอกสาร',required:true,col:'col-md-8'},{id:'documentType',label:'ประเภทเอกสาร',value:'นโยบาย/หลักฐาน',col:'col-md-4'},
+      {id:'moduleKey',label:'เชื่อมกับโมดูล',type:'select',options:['evidence','compliance','risk','incident','dataClass','access','change','backup'],col:'col-md-4'},
+      {id:'relatedId',label:'เลขอ้างอิงรายการ',col:'col-md-4'},{id:'version',label:'เวอร์ชัน',value:'1.0',col:'col-md-2'},
+      {id:'reviewDate',label:'วันทบทวน',type:'date',col:'col-md-2'},{id:'notes',label:'หมายเหตุ',type:'textarea',rows:2,col:'col-12'},
+      {id:'file',label:'ไฟล์ PDF / DOC / DOCX',type:'file',accept:'.pdf,.doc,.docx',required:true,col:'col-12'}],
+      onSubmit:function(v){var files=v._files&&v._files.file;var file=files&&files[0];if(!file)throw new Error('กรุณาเลือกไฟล์');if(file.size>15*1024*1024)throw new Error('ไฟล์ต้องไม่เกิน 15 MB');return new Promise(function(resolve,reject){var rd=new FileReader();rd.onload=function(){callServer('uploadEvidence',{base64:String(rd.result).split(',')[1],filename:file.name,mimeType:file.type,module:'ธรรมาภิบาล'}).then(function(up){v.fileName=file.name;v.mimeType=file.type;v.fileUrl=up.url;v.fileId=up.id;return callServer('registerGovernanceDocument',v);}).then(function(m){toast(m,'success');evLoadDocuments();resolve();}).catch(reject);};rd.onerror=reject;rd.readAsDataURL(file);});}
+    });
+  }
+  function evLoadDocuments(){var box=document.getElementById('ev-documents');if(!box)return;box.innerHTML='<div class="text-muted">กำลังโหลด...</div>';callServer('listGovernanceDocuments').then(function(rows){if(!rows.length){box.innerHTML='<div class="alert alert-secondary mb-0">ยังไม่มีเอกสาร</div>';return;}box.innerHTML='<div class="table-responsive"><table class="table table-sm"><thead><tr><th>เอกสาร</th><th>โมดูล</th><th>เวอร์ชัน</th><th>วันทบทวน</th><th>ไฟล์</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td><b>'+escapeHtmlJs(r.title)+'</b><br><small class="text-muted">'+escapeHtmlJs(r.type||'')+'</small></td><td>'+escapeHtmlJs(r.moduleKey||'-')+'<br><small>'+escapeHtmlJs(r.relatedId||'')+'</small></td><td>'+escapeHtmlJs(r.version||'-')+'</td><td>'+escapeHtmlJs(r.reviewDate||'-')+'</td><td><a class="btn btn-sm btn-outline-primary" href="'+escapeHtmlJs(r.url)+'" target="_blank">เปิด '+escapeHtmlJs(r.fileName)+'</a></td></tr>';}).join('')+'</tbody></table></div>';});}
+</script>

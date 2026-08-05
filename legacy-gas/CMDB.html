@@ -1,0 +1,371 @@
+<!-- CMDB.html — Configuration Items, typed relationships and relationship map -->
+<style>
+  .cmdb-tabs { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+  .cmdb-map-card { overflow:hidden; }
+  .cmdb-map-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.65rem; margin-bottom:.75rem; }
+  .cmdb-map-frame { min-height:580px; border:1px solid var(--bs-border-color); border-radius:14px;
+    background:linear-gradient(180deg,rgba(37,99,235,.035),rgba(15,23,42,.015)); overflow:auto; }
+  .cmdb-map-frame svg { display:block; width:100%; min-width:900px; height:auto; }
+  .cmdb-edge { stroke:#94a3b8; stroke-width:1.6; opacity:.78; }
+  .cmdb-edge.critical { stroke:#dc2626; stroke-width:2.4; }
+  .cmdb-edge.high { stroke:#f59e0b; stroke-width:2; }
+  .cmdb-edge-label { fill:#64748b; font-size:10px; paint-order:stroke; stroke:var(--bs-body-bg); stroke-width:3px; }
+  .cmdb-node { cursor:pointer; outline:none; }
+  .cmdb-node rect { stroke:rgba(15,23,42,.24); stroke-width:1.2; filter:drop-shadow(0 3px 5px rgba(15,23,42,.12)); }
+  .cmdb-node:focus rect,.cmdb-node:hover rect { stroke:#1d4ed8; stroke-width:3; }
+  .cmdb-node-name { fill:#fff; font-size:12px; font-weight:700; pointer-events:none; }
+  .cmdb-node-id { fill:rgba(255,255,255,.86); font-size:9.5px; pointer-events:none; }
+  .cmdb-legend { display:flex; flex-wrap:wrap; gap:.45rem .8rem; margin-top:.75rem; }
+  .cmdb-legend-item { display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; color:var(--bs-secondary-color); }
+  .cmdb-legend-dot { width:.8rem; height:.8rem; border-radius:50%; display:inline-block; }
+  .cmdb-detail-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; }
+  .cmdb-detail-cell { padding:.65rem .75rem; border:1px solid var(--bs-border-color); border-radius:10px; min-width:0; }
+  .cmdb-detail-cell small { display:block; color:var(--bs-secondary-color); margin-bottom:.15rem; }
+  .cmdb-detail-cell div { overflow-wrap:anywhere; }
+  @media(max-width:992px){.cmdb-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media(max-width:576px){.cmdb-detail-grid{grid-template-columns:1fr;}}
+</style>
+<script>
+  var CMDB_DATA = null;
+  var CMDB_CONTAINER = null;
+  var CMDB_CURRENT_VIEW = 'items';
+  var CMDB_MAP_ROOT = '';
+
+  var CMDB_LABELS = {
+    Draft:'ร่าง', Active:'ใช้งาน', Maintenance:'บำรุงรักษา', Degraded:'ขัดข้อง/เสื่อมสภาพ', Retired:'ยกเลิกใช้งาน',
+    Low:'ต่ำ', Medium:'ปานกลาง', High:'สูง', Critical:'วิกฤต',
+    Forward:'ทิศทางเดียว', Bidirectional:'สองทิศทาง', Inactive:'ไม่ใช้งาน',
+    Yes:'ใช่', No:'ไม่',
+    DEPENDS_ON:'ขึ้นต่อ', RUNS_ON:'ทำงานบน', HOSTS:'โฮสต์', CONNECTS_TO:'เชื่อมต่อ', USES:'ใช้งาน',
+    BACKED_UP_BY:'สำรองโดย', SUPPLIED_BY:'ให้บริการโดย', COVERED_BY_CONTRACT:'ครอบคลุมโดยสัญญา',
+    IMPACTED_BY:'ได้รับผลจาก Incident', CHANGED_BY:'ถูกเปลี่ยนโดย', LINKED_TO:'เกี่ยวข้องกับ'
+  };
+  var CMDB_NODE_COLORS = {
+    CI:'#2563eb', Asset:'#0f766e', Vendor:'#7c3aed', Contract:'#9333ea', Cloud:'#0284c7',
+    Backup:'#0891b2', Incident:'#dc2626', Change:'#d97706', Missing:'#64748b'
+  };
+
+  function renderCMDB(container) {
+    CMDB_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังโหลด CMDB...</div></div>';
+    return callServer('getCmdbModuleData').then(function (data) {
+      CMDB_DATA = data || {};
+      if (!Array.isArray(CMDB_DATA.items)) CMDB_DATA.items = [];
+      if (!Array.isArray(CMDB_DATA.relationships)) CMDB_DATA.relationships = [];
+      if (!Array.isArray(CMDB_DATA.nodes)) CMDB_DATA.nodes = [];
+      if (!Array.isArray(CMDB_DATA.nodeOptions)) CMDB_DATA.nodeOptions = [];
+      cmdbRenderShell_();
+    });
+  }
+
+  // Renderer name used by Index.html; keep the uppercase alias for direct compatibility.
+  function renderCmdb(container) {
+    return renderCMDB(container);
+  }
+
+  function cmdbRenderShell_() {
+    var d = CMDB_DATA || {}, s = d.stats || {};
+    var actions = d.canEdit ?
+      '<button class="btn btn-outline-primary" onclick="cmdbOpenRelationshipForm_()"><i class="bi bi-diagram-3"></i> เพิ่มความสัมพันธ์</button>' +
+      '<button class="btn btn-primary" onclick="cmdbOpenCiForm_()"><i class="bi bi-plus-lg"></i> เพิ่ม CI</button>' : '';
+    var html = pageHeader('CMDB / Relationship Map',
+      'ทะเบียน Configuration Item ความสัมพันธ์ การพึ่งพา และผลกระทบข้ามโมดูล', actions, 'bi-diagram-3');
+    html += moduleDashboard([
+      mdStat('Configuration Items', s.total || 0, 'bi-hdd-rack', 'blue'),
+      mdStat('ใช้งาน', s.active || 0, 'bi-check-circle', 'teal'),
+      mdStat('Critical', s.critical || 0, 'bi-exclamation-diamond', (s.critical ? 'danger' : 'gray')),
+      mdStat('ความสัมพันธ์ Active', s.activeRelationships || 0, 'bi-share', (s.orphanRelationships ? 'amber' : 'blue'),
+        s.orphanRelationships ? 'อ้างอิงไม่พบ ' + s.orphanRelationships : '')
+    ]);
+    html += '<div class="cmdb-tabs" role="tablist" aria-label="มุมมอง CMDB">' +
+      cmdbTabButton_('items','bi-hdd-rack','CI List') +
+      cmdbTabButton_('relationships','bi-link-45deg','Relationships') +
+      cmdbTabButton_('map','bi-diagram-3','Relationship Map') +
+      cmdbTabButton_('quality','bi-clipboard-data','Data Quality') +
+      '</div><div id="cmdbViewBody"></div>';
+    CMDB_CONTAINER.innerHTML = html;
+    cmdbShowView_(CMDB_CURRENT_VIEW || 'items');
+  }
+
+  function cmdbTabButton_(key, icon, label) {
+    return '<button type="button" class="btn btn-sm ' + (CMDB_CURRENT_VIEW === key ? 'btn-primary' : 'btn-outline-secondary') +
+      ' cmdb-tab" data-view="' + key + '" onclick="cmdbShowView_(\'' + key + '\')" role="tab">' +
+      '<i class="bi ' + icon + '"></i> ' + escapeHtmlJs(label) + '</button>';
+  }
+
+  function cmdbShowView_(view) {
+    CMDB_CURRENT_VIEW = view || 'items';
+    document.querySelectorAll('.cmdb-tab').forEach(function (button) {
+      var active = button.getAttribute('data-view') === CMDB_CURRENT_VIEW;
+      button.classList.toggle('btn-primary', active);
+      button.classList.toggle('btn-outline-secondary', !active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    var body = document.getElementById('cmdbViewBody');
+    if (!body) return;
+    if (CMDB_CURRENT_VIEW === 'relationships') body.innerHTML = cmdbRelationshipTable_();
+    else if (CMDB_CURRENT_VIEW === 'map') cmdbRenderMapView_(body);
+    else if (CMDB_CURRENT_VIEW === 'quality') body.innerHTML = cmdbQualityView_();
+    else body.innerHTML = cmdbCiTable_();
+  }
+
+  function cmdbCiTable_() {
+    var d = CMDB_DATA;
+    return dataTable({
+      id:'cmdb-ci', rows:d.items, empty:'ยังไม่มี Configuration Item', pageSize:25,
+      filters:[
+        {key:'type',label:'ประเภท',value:function(r){return r.type || '-';}},
+        {key:'environment',label:'Environment',value:function(r){return r.environment || '-';}},
+        {key:'criticality',label:'Criticality',value:function(r){return r.criticality || '-';}},
+        {key:'status',label:'สถานะ',value:function(r){return cmdbLabel_(r.status);}}
+      ],
+      columns:[
+        {key:'name',label:'CI',value:function(r){return '<button class="btn btn-link p-0 text-start fw-semibold" onclick="cmdbShowCiDetail_(\'' + cmdbJs_(r.id) + '\')">' + escapeHtmlJs(r.name || r.id) + '</button><br><small class="text-muted">' + escapeHtmlJs(r.id) + '</small>';},raw:function(r){return (r.name||'')+' '+r.id;}},
+        {key:'type',label:'ประเภท / Environment',value:function(r){return escapeHtmlJs(r.type||'-')+'<br><small class="text-muted">'+escapeHtmlJs(r.environment||'-')+'</small>';},raw:function(r){return (r.type||'')+' '+(r.environment||'');}},
+        {key:'service',label:'Business Service',value:function(r){return escapeHtmlJs(r.businessService||'-');}},
+        {key:'owner',label:'Owner / Admin',value:function(r){return escapeHtmlJs(r.owner||'-')+'<br><small class="text-muted">'+escapeHtmlJs(r.administrator||'-')+'</small>';},raw:function(r){return (r.owner||'')+' '+(r.administrator||'');}},
+        {key:'criticality',label:'Criticality',value:function(r){return cmdbBadge_(r.criticality);}},
+        {key:'links',label:'Linked Records',value:function(r){var a=[];if(r.assetId)a.push('Asset: '+r.assetId);if(r.cloudId)a.push('Cloud: '+r.cloudId);if(r.vendorId)a.push('Vendor: '+r.vendorId);return a.length?a.map(escapeHtmlJs).join('<br>'):'-';},raw:function(r){return [r.assetId,r.cloudId,r.vendorId].filter(Boolean).join(' ');},default:false},
+        {key:'verified',label:'ตรวจยืนยัน',value:function(r){return r.lastVerifiedAt?escapeHtmlJs(r.lastVerifiedAt)+'<br><small class="text-muted">'+escapeHtmlJs(r.lastVerifiedBy||'')+'</small>':'<span class="text-warning">ยังไม่ตรวจยืนยัน</span>';},raw:function(r){return r.lastVerifiedAt||'';},default:false},
+        {key:'status',label:'สถานะ',value:function(r){return cmdbStatusBadge_(r.status);}}
+      ],
+      actionsLabel:'จัดการ',
+      actions:function(r){
+        var html='<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="cmdbShowCiDetail_(\''+cmdbJs_(r.id)+'\')" title="รายละเอียด"><i class="bi bi-eye"></i></button>';
+        if(!d.canEdit)return html;
+        return html+'<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="cmdbOpenCiForm_(\''+cmdbJs_(r.id)+'\')" title="แก้ไข"><i class="bi bi-pencil"></i></button>'+
+          '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="cmdbVerifyCi_(\''+cmdbJs_(r.id)+'\')" title="ตรวจยืนยัน"><i class="bi bi-patch-check"></i></button>'+
+          '<button class="btn btn-sm btn-outline-warning mb-1" onclick="cmdbChangeCiStatus_(\''+cmdbJs_(r.id)+'\')" title="เปลี่ยนสถานะ"><i class="bi bi-arrow-repeat"></i></button>';
+      }
+    });
+  }
+
+  function cmdbRelationshipTable_() {
+    var d = CMDB_DATA;
+    return dataTable({
+      id:'cmdb-rel', rows:d.relationships, empty:'ยังไม่มีความสัมพันธ์', pageSize:25,
+      filters:[
+        {key:'type',label:'ประเภท',value:function(r){return cmdbLabel_(r.relationshipType);}},
+        {key:'impact',label:'Impact',value:function(r){return cmdbLabel_(r.impactLevel);}},
+        {key:'status',label:'สถานะ',value:function(r){return cmdbLabel_(r.status);}}
+      ],
+      columns:[
+        {key:'source',label:'ต้นทาง',value:function(r){return cmdbNodeCell_(r.sourceType,r.sourceId,r.sourceName,r.sourceMissing);},raw:function(r){return [r.sourceType,r.sourceId,r.sourceName].join(' ');}},
+        {key:'relation',label:'ความสัมพันธ์',value:function(r){return '<span class="badge text-bg-light border">'+escapeHtmlJs(cmdbLabel_(r.relationshipType))+'</span><br><small class="text-muted">'+escapeHtmlJs(cmdbLabel_(r.direction))+'</small>';},raw:function(r){return cmdbLabel_(r.relationshipType)+' '+cmdbLabel_(r.direction);}},
+        {key:'target',label:'ปลายทาง',value:function(r){return cmdbNodeCell_(r.targetType,r.targetId,r.targetName,r.targetMissing);},raw:function(r){return [r.targetType,r.targetId,r.targetName].join(' ');}},
+        {key:'impact',label:'Impact',value:function(r){return cmdbBadge_(r.impactLevel);}},
+        {key:'validity',label:'ช่วงมีผล',value:function(r){return escapeHtmlJs(r.validFrom||'-')+' → '+escapeHtmlJs(r.validUntil||'ไม่กำหนด');},raw:function(r){return (r.validFrom||'')+' '+(r.validUntil||'');},default:false},
+        {key:'verified',label:'ตรวจยืนยัน',value:function(r){return r.lastVerifiedAt?escapeHtmlJs(r.lastVerifiedAt)+'<br><small class="text-muted">'+escapeHtmlJs(r.lastVerifiedBy||'')+'</small>':'<span class="text-warning">ยังไม่ตรวจยืนยัน</span>';},raw:function(r){return r.lastVerifiedAt||'';},default:false},
+        {key:'status',label:'สถานะ',value:function(r){return r.expired?'<span class="badge bg-danger">หมดอายุ</span>':(r.notStarted?'<span class="badge bg-info text-dark">ยังไม่เริ่ม</span>':cmdbStatusBadge_(r.status));}}
+      ],
+      actionsLabel:'จัดการ',
+      actions:function(r){
+        if(!d.canEdit)return '';
+        return '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="cmdbOpenRelationshipForm_(\''+cmdbJs_(r.id)+'\')" title="แก้ไข"><i class="bi bi-pencil"></i></button>'+
+          '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="cmdbVerifyRelationship_(\''+cmdbJs_(r.id)+'\')" title="ตรวจยืนยัน"><i class="bi bi-patch-check"></i></button>'+
+          '<button class="btn btn-sm btn-outline-warning mb-1" onclick="cmdbChangeRelationshipStatus_(\''+cmdbJs_(r.id)+'\')" title="เปลี่ยนสถานะ"><i class="bi bi-arrow-repeat"></i></button>';
+      }
+    });
+  }
+
+  function cmdbOpenCiForm_(id) {
+    var d=CMDB_DATA, r=cmdbFindCi_(id)||{};
+    var vendors=cmdbOptionsByType_('Vendor'), assets=cmdbOptionsByType_('Asset'), clouds=cmdbOptionsByType_('Cloud');
+    var contracts=cmdbOptionsByType_('Contract'), backups=cmdbOptionsByType_('Backup');
+    (d.nodeOptions||[]).filter(function(n){return n.type==='CI'&&n.ciType==='Backup Job';}).forEach(function(n){backups.push({value:n.id,label:'[Backup Job CI] '+n.name+' ('+n.id+')'});});
+    showFormModal({title:id?'แก้ไข Configuration Item':'เพิ่ม Configuration Item',size:'xl',submitLabel:'บันทึก',fields:[
+      {id:'name',label:'ชื่อ CI',value:r.name||'',required:true,col:'col-md-6'},
+      {id:'type',label:'ประเภท',type:'select',options:d.ciTypes||[],value:r.type||'',required:true,col:'col-md-3'},
+      {id:'environment',label:'Environment',type:'select',options:d.environments||[],value:r.environment||'Production',required:true,placeholder:false,col:'col-md-3'},
+      {id:'businessService',label:'Business Service',value:r.businessService||'',col:'col-md-4'},
+      {id:'owner',label:'Owner',value:r.owner||'',required:true,col:'col-md-4'},
+      {id:'administrator',label:'Administrator',value:r.administrator||'',required:true,col:'col-md-4'},
+      {id:'criticality',label:'Criticality',type:'select',options:d.criticalities||[],value:r.criticality||'Medium',required:true,placeholder:false,col:'col-md-3'},
+      {id:'dataClassification',label:'Data Classification',type:'select',options:d.dataClassifications||[],value:r.dataClassification||'ไม่ลับ',required:true,placeholder:false,col:'col-md-3'},
+      {id:'status',label:'สถานะ',type:'select',options:d.ciStatuses||[],value:r.status||'Draft',required:true,placeholder:false,col:'col-md-3'},
+      {id:'version',label:'Version',value:r.version||'',col:'col-md-3'},
+      {id:'ipAddress',label:'IP Address / CIDR',value:r.ipAddress||'',help:'หลายค่าให้คั่นด้วย comma',col:'col-md-4'},
+      {id:'url',label:'URL (http/https)',value:r.url||'',col:'col-md-5'},
+      {id:'location',label:'Location',value:r.location||'',col:'col-md-3'},
+      {id:'assetId',label:'Linked Asset',type:'select',options:assets,value:r.assetId||'',col:'col-md-4'},
+      {id:'cloudId',label:'Linked Cloud',type:'select',options:clouds,value:r.cloudId||'',col:'col-md-4'},
+      {id:'vendorId',label:'Vendor',type:'select',options:vendors,value:r.vendorId||'',col:'col-md-4'},
+      {id:'contractRef',label:'Contract',type:'select',options:contracts,value:r.contractRef||'',col:'col-md-4'},
+      {id:'rpoHours',label:'RPO (ชั่วโมง)',type:'number',value:r.rpoHours===0?0:(r.rpoHours||''),col:'col-md-2'},
+      {id:'rtoHours',label:'RTO (ชั่วโมง)',type:'number',value:r.rtoHours===0?0:(r.rtoHours||''),col:'col-md-2'},
+      {id:'backupRequired',label:'ต้องสำรองข้อมูล',type:'select',options:d.backupRequiredOptions||['Yes','No'],value:r.backupRequired||'No',required:true,placeholder:false,col:'col-md-2'},
+      {id:'backupReference',label:'Backup Reference',type:'select',options:backups,value:r.backupReference||'',col:'col-md-4'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:3,value:r.notes||'',col:'col-12'}
+    ],onSubmit:function(v){v.id=id||'';return callServer('saveConfigurationItem',v).then(function(){toast(id?'อัปเดต CI แล้ว':'สร้าง CI แล้ว','success');loadModule('cmdb');});}});
+  }
+
+  function cmdbChangeCiStatus_(id) {
+    var r=cmdbFindCi_(id);if(!r)return;
+    showFormModal({title:'เปลี่ยนสถานะ · '+(r.name||id),submitLabel:'อัปเดต',fields:[
+      {id:'status',label:'สถานะ',type:'select',options:CMDB_DATA.ciStatuses||[],value:r.status||'',required:true,placeholder:false},
+      {id:'reason',label:'เหตุผล',type:'textarea',rows:3,help:'จำเป็นสำหรับ Degraded และ Retired'}
+    ],onSubmit:function(v){return callServer('updateConfigurationItemStatus',id,v.status,v.reason||'').then(function(){toast('อัปเดตสถานะแล้ว','success');loadModule('cmdb');});}});
+  }
+
+  function cmdbVerifyCi_(id) {
+    var r=cmdbFindCi_(id);if(!r)return;
+    showFormModal({title:'ตรวจยืนยัน CI · '+(r.name||id),submitLabel:'ยืนยันข้อมูล',fields:[
+      {id:'note',label:'หมายเหตุการตรวจ',type:'textarea',rows:3,help:'บันทึกใน Audit Trail'}
+    ],onSubmit:function(v){return callServer('verifyConfigurationItem',id,v.note||'').then(function(){toast('ตรวจยืนยัน CI แล้ว','success');loadModule('cmdb');});}});
+  }
+
+  function cmdbOpenRelationshipForm_(id) {
+    var d=CMDB_DATA,r=cmdbFindRelationship_(id)||{};
+    var opts=cmdbRelationshipNodeOptions_();
+    var sourceValue=r.sourceType?cmdbNodeValue_(r.sourceType,r.sourceId):'';
+    var targetValue=r.targetType?cmdbNodeValue_(r.targetType,r.targetId):'';
+    cmdbEnsureSelectedNodeOption_(opts,sourceValue,r.sourceName,r.sourceType,r.sourceId);
+    cmdbEnsureSelectedNodeOption_(opts,targetValue,r.targetName,r.targetType,r.targetId);
+    var relTypes=(d.relationshipTypes||[]).map(function(x){return {value:x,label:cmdbLabel_(x)};});
+    var dirs=(d.relationshipDirections||[]).map(function(x){return {value:x,label:cmdbLabel_(x)};});
+    var impacts=(d.impactLevels||[]).map(function(x){return {value:x,label:cmdbLabel_(x)};});
+    var statuses=(d.relationshipStatuses||[]).map(function(x){return {value:x,label:cmdbLabel_(x)};});
+    showFormModal({title:id?'แก้ไขความสัมพันธ์':'เพิ่มความสัมพันธ์',size:'xl',submitLabel:'บันทึก',fields:[
+      {id:'sourceNode',label:'ต้นทาง',type:'select',options:opts,value:sourceValue,required:true,col:'col-md-6'},
+      {id:'targetNode',label:'ปลายทาง',type:'select',options:opts,value:targetValue,required:true,col:'col-md-6'},
+      {id:'relationshipType',label:'ประเภทความสัมพันธ์',type:'select',options:relTypes,value:r.relationshipType||'DEPENDS_ON',required:true,placeholder:false,col:'col-md-4'},
+      {id:'direction',label:'ทิศทาง',type:'select',options:dirs,value:r.direction||'Forward',required:true,placeholder:false,col:'col-md-4'},
+      {id:'impactLevel',label:'ระดับผลกระทบ',type:'select',options:impacts,value:r.impactLevel||'Medium',required:true,placeholder:false,col:'col-md-4'},
+      {id:'validFrom',label:'เริ่มมีผล',type:'date',value:dmyToInput(r.validFrom||''),col:'col-md-3'},
+      {id:'validUntil',label:'สิ้นสุด',type:'date',value:dmyToInput(r.validUntil||''),col:'col-md-3'},
+      {id:'status',label:'สถานะ',type:'select',options:statuses,value:r.status||'Active',required:true,placeholder:false,col:'col-md-3'},
+      {id:'description',label:'คำอธิบาย',type:'textarea',rows:3,value:r.description||'',col:'col-md-9'},
+      {id:'notes',label:'หมายเหตุ',type:'textarea',rows:3,value:r.notes||'',col:'col-12'}
+    ],onSubmit:function(v){
+      var source=cmdbParseNodeValue_(v.sourceNode),target=cmdbParseNodeValue_(v.targetNode);
+      if(!source||!target){toast('ข้อมูล node ไม่ถูกต้อง','warning');return false;}
+      v.id=id||'';v.sourceType=source.type;v.sourceId=source.id;v.targetType=target.type;v.targetId=target.id;
+      return callServer('saveCIRelationship',v).then(function(){toast(id?'อัปเดตความสัมพันธ์แล้ว':'สร้างความสัมพันธ์แล้ว','success');loadModule('cmdb');});
+    }});
+  }
+
+  function cmdbChangeRelationshipStatus_(id) {
+    var r=cmdbFindRelationship_(id);if(!r)return;
+    var statuses=(CMDB_DATA.relationshipStatuses||[]).map(function(x){return {value:x,label:cmdbLabel_(x)};});
+    showFormModal({title:'เปลี่ยนสถานะความสัมพันธ์',submitLabel:'อัปเดต',fields:[
+      {id:'status',label:'สถานะ',type:'select',options:statuses,value:r.status||'Active',required:true,placeholder:false},
+      {id:'reason',label:'เหตุผล',type:'textarea',rows:3,help:'จำเป็นเมื่อเปลี่ยนเป็น Inactive'}
+    ],onSubmit:function(v){return callServer('updateCIRelationshipStatus',id,v.status,v.reason||'').then(function(){toast('อัปเดตสถานะแล้ว','success');loadModule('cmdb');});}});
+  }
+
+  function cmdbVerifyRelationship_(id) {
+    showFormModal({title:'ตรวจยืนยันความสัมพันธ์',submitLabel:'ยืนยันข้อมูล',fields:[
+      {id:'note',label:'หมายเหตุการตรวจ',type:'textarea',rows:3,help:'บันทึกใน Audit Trail'}
+    ],onSubmit:function(v){return callServer('verifyCIRelationship',id,v.note||'').then(function(){toast('ตรวจยืนยันความสัมพันธ์แล้ว','success');loadModule('cmdb');});}});
+  }
+
+  function cmdbShowCiDetail_(id) {
+    var r=cmdbFindCi_(id);if(!r)return;
+    var fields=[['CI ID',r.id],['ชื่อ',r.name],['ประเภท',r.type],['Environment',r.environment],
+      ['Business Service',r.businessService],['Owner',r.owner],['Administrator',r.administrator],['Criticality',cmdbLabel_(r.criticality)],
+      ['IP Address',r.ipAddress],['URL',r.url],['Version',r.version],['Data Classification',r.dataClassification],
+      ['Asset',r.assetId],['Cloud',r.cloudId],['Vendor',r.vendorId],['Contract',r.contractRef],
+      ['RPO',r.rpoHours===''?'-':r.rpoHours+' ชม.'],['RTO',r.rtoHours===''?'-':r.rtoHours+' ชม.'],
+      ['Backup',r.backupRequired==='Yes'?(r.backupReference||'Yes'):'No'],['Location',r.location],
+      ['สถานะ',cmdbLabel_(r.status)],['ตรวจยืนยันล่าสุด',r.lastVerifiedAt],['ผู้ตรวจยืนยัน',r.lastVerifiedBy],['หมายเหตุ',r.notes]];
+    var grid='<div class="cmdb-detail-grid">'+fields.map(function(kv){var value=kv[1];if(kv[0]==='URL'&&/^https?:\/\//i.test(value||''))value='<a href="'+escapeHtmlJs(value)+'" target="_blank" rel="noopener noreferrer">'+escapeHtmlJs(value)+'</a>';else value=escapeHtmlJs(value||'-');return '<div class="cmdb-detail-cell"><small>'+escapeHtmlJs(kv[0])+'</small><div>'+value+'</div></div>';}).join('')+'</div>';
+    var rels=(CMDB_DATA.relationships||[]).filter(function(x){return (x.sourceType==='CI'&&x.sourceId===id)||(x.targetType==='CI'&&x.targetId===id);});
+    var relHtml=rels.length?'<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>ต้นทาง</th><th>ความสัมพันธ์</th><th>ปลายทาง</th><th>สถานะ</th></tr></thead><tbody>'+rels.map(function(x){return '<tr><td>'+cmdbNodeCell_(x.sourceType,x.sourceId,x.sourceName,x.sourceMissing)+'</td><td>'+escapeHtmlJs(cmdbLabel_(x.relationshipType))+'</td><td>'+cmdbNodeCell_(x.targetType,x.targetId,x.targetName,x.targetMissing)+'</td><td>'+cmdbStatusBadge_(x.status)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="text-muted">ยังไม่มีความสัมพันธ์</div>';
+    var focusValue=cmdbNodeValue_('CI',id);
+    var mapButton='<button class="btn btn-sm btn-outline-primary mt-3" onclick="cmdbFocusMap_(\''+cmdbJs_(focusValue)+'\')"><i class="bi bi-diagram-3"></i> เปิด Relationship Map</button>';
+    showInfoModal((r.name||id)+' · '+id,grid+'<h6 class="mt-4">ความสัมพันธ์ ('+rels.length+')</h6>'+relHtml+mapButton,'xl');
+  }
+
+  function cmdbFocusMap_(key) {
+    try{_modal().hide();}catch(e){}
+    CMDB_MAP_ROOT=key||'';cmdbShowView_('map');
+  }
+
+  function cmdbRenderMapView_(body) {
+    var nodes=cmdbMapNodes_(),rootOptions='<option value="">แสดงภาพรวม</option>'+nodes.map(function(n){var k=cmdbNodeValue_(n.type,n.id);return '<option value="'+escapeHtmlJs(k)+'"'+(CMDB_MAP_ROOT===k?' selected':'')+'>['+escapeHtmlJs(n.type)+'] '+escapeHtmlJs(n.name||n.id)+'</option>';}).join('');
+    body.innerHTML='<div class="card stat-card cmdb-map-card"><div class="card-body">'+
+      '<div class="cmdb-map-toolbar"><label class="form-label mb-0" for="cmdbMapRoot">โฟกัส node</label><select id="cmdbMapRoot" class="form-select form-select-sm" style="max-width:440px" onchange="CMDB_MAP_ROOT=this.value;cmdbDrawMap_()">'+rootOptions+'</select>'+
+      '<span class="small text-muted">แสดงความสัมพันธ์ Active; เมื่อเลือก node จะแสดงเพื่อนบ้านไม่เกิน 2 ระดับ</span></div>'+
+      '<div id="cmdbMapCanvas" class="cmdb-map-frame" aria-live="polite"></div><div id="cmdbMapLegend" class="cmdb-legend"></div>'+ 
+      '<h6 class="mt-4">รายการเชื่อมโยงในแผนภาพ</h6><div id="cmdbMapAdjacency"></div></div></div>';
+    cmdbDrawMap_();
+  }
+
+  function cmdbDrawMap_() {
+    var canvas=document.getElementById('cmdbMapCanvas');if(!canvas)return;
+    var graph=cmdbBuildGraph_(CMDB_MAP_ROOT),nodes=graph.nodes,edges=graph.edges;
+    if(!nodes.length){canvas.innerHTML='<div class="text-center text-muted py-5">ยังไม่มีความสัมพันธ์ Active สำหรับแสดงแผนภาพ</div>';document.getElementById('cmdbMapAdjacency').innerHTML='<div class="text-muted">ไม่มีรายการ</div>';return;}
+    var limited=false;if(nodes.length>45){nodes=nodes.slice(0,45);var keep={};nodes.forEach(function(n){keep[cmdbNodeValue_(n.type,n.id)]=true;});edges=edges.filter(function(e){return keep[cmdbNodeValue_(e.sourceType,e.sourceId)]&&keep[cmdbNodeValue_(e.targetType,e.targetId)];});limited=true;}
+    var pos=cmdbLayoutNodes_(nodes,edges,1200,650,CMDB_MAP_ROOT),svg='<svg viewBox="0 0 1200 650" role="img" aria-label="แผนภาพความสัมพันธ์ CMDB"><title>CMDB Relationship Map</title><defs><marker id="cmdbArrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"></path></marker><marker id="cmdbArrowStart" markerWidth="8" markerHeight="8" refX="1" refY="3" orient="auto"><path d="M8,0 L8,6 L0,3 z" fill="#64748b"></path></marker></defs>';
+    edges.forEach(function(e){var sk=cmdbNodeValue_(e.sourceType,e.sourceId),tk=cmdbNodeValue_(e.targetType,e.targetId),a=pos[sk],b=pos[tk];if(!a||!b)return;var cls=String(e.impactLevel||'').toLowerCase();var mx=(a.x+b.x)/2,my=(a.y+b.y)/2;svg+='<line class="cmdb-edge '+escapeHtmlJs(cls)+'" x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" marker-end="url(#cmdbArrow)"'+(e.direction==='Bidirectional'?' marker-start="url(#cmdbArrowStart)"':'')+'></line><text class="cmdb-edge-label" x="'+mx.toFixed(1)+'" y="'+(my-4).toFixed(1)+'" text-anchor="middle">'+escapeHtmlJs(cmdbLabel_(e.relationshipType))+'</text>';});
+    nodes.forEach(function(n){var k=cmdbNodeValue_(n.type,n.id),p=pos[k],color=CMDB_NODE_COLORS[n.type]||CMDB_NODE_COLORS.Missing;var label=cmdbTruncate_(n.name||n.id,19),sid=cmdbTruncate_(n.id,17);svg+='<g class="cmdb-node" tabindex="0" role="button" data-node="'+escapeHtmlJs(k)+'" onclick="cmdbGraphNode_(this.getAttribute(\'data-node\'))" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();cmdbGraphNode_(this.getAttribute(\'data-node\'));}"><title>'+escapeHtmlJs('['+n.type+'] '+(n.name||n.id)+' · '+n.id)+'</title><rect x="'+(p.x-66).toFixed(1)+'" y="'+(p.y-25).toFixed(1)+'" rx="9" width="132" height="50" fill="'+color+'"></rect><text class="cmdb-node-name" x="'+p.x.toFixed(1)+'" y="'+(p.y-3).toFixed(1)+'" text-anchor="middle">'+escapeHtmlJs(label)+'</text><text class="cmdb-node-id" x="'+p.x.toFixed(1)+'" y="'+(p.y+13).toFixed(1)+'" text-anchor="middle">'+escapeHtmlJs(n.type+' · '+sid)+'</text></g>';});
+    svg+='</svg>'+(limited?'<div class="alert alert-warning m-3 py-2">แผนภาพจำกัด 45 nodes เพื่อคงประสิทธิภาพ กรุณาเลือก node เพื่อดูเฉพาะบริบท</div>':'');canvas.innerHTML=svg;
+    var used={};nodes.forEach(function(n){used[n.type]=true;});document.getElementById('cmdbMapLegend').innerHTML=Object.keys(used).sort().map(function(t){return '<span class="cmdb-legend-item"><span class="cmdb-legend-dot" style="background:'+escapeHtmlJs(CMDB_NODE_COLORS[t]||CMDB_NODE_COLORS.Missing)+'"></span>'+escapeHtmlJs(t)+'</span>';}).join('');
+    document.getElementById('cmdbMapAdjacency').innerHTML=cmdbAdjacencyTable_(edges);
+  }
+
+  function cmdbBuildGraph_(rootValue) {
+    var allNodes=cmdbMapNodes_(),allEdges=(CMDB_DATA.relationships||[]).filter(function(r){return r.status==='Active'&&!r.expired&&!r.notStarted;});
+    if(!rootValue)return {nodes:allNodes.filter(function(n){return n.type==='CI'||allEdges.some(function(e){return cmdbNodeValue_(e.sourceType,e.sourceId)===cmdbNodeValue_(n.type,n.id)||cmdbNodeValue_(e.targetType,e.targetId)===cmdbNodeValue_(n.type,n.id);});}),edges:allEdges};
+    var keep={};keep[rootValue]=true;var frontier=[rootValue];for(var depth=0;depth<2;depth++){var next=[],frontierSet={};frontier.forEach(function(k){frontierSet[k]=true;});allEdges.forEach(function(e){var s=cmdbNodeValue_(e.sourceType,e.sourceId),t=cmdbNodeValue_(e.targetType,e.targetId);if(frontierSet[s]&&!keep[t]){keep[t]=true;next.push(t);}if(frontierSet[t]&&!keep[s]){keep[s]=true;next.push(s);}});frontier=next;if(!frontier.length)break;}
+    return {nodes:allNodes.filter(function(n){return keep[cmdbNodeValue_(n.type,n.id)];}),edges:allEdges.filter(function(e){return keep[cmdbNodeValue_(e.sourceType,e.sourceId)]&&keep[cmdbNodeValue_(e.targetType,e.targetId)];})};
+  }
+
+  function cmdbMapNodes_() {
+    var map={};(CMDB_DATA.nodes||[]).forEach(function(n){map[cmdbNodeValue_(n.type,n.id)]=n;});
+    (CMDB_DATA.relationships||[]).forEach(function(r){var sk=cmdbNodeValue_(r.sourceType,r.sourceId),tk=cmdbNodeValue_(r.targetType,r.targetId);if(!map[sk])map[sk]={type:r.sourceType,id:r.sourceId,name:r.sourceName||r.sourceId,status:'Missing'};if(!map[tk])map[tk]={type:r.targetType,id:r.targetId,name:r.targetName||r.targetId,status:'Missing'};});
+    return Object.keys(map).map(function(k){return map[k];});
+  }
+
+  function cmdbLayoutNodes_(nodes,edges,width,height,rootKey) {
+    var pos={},cx=width/2,cy=height/2,n=Math.max(nodes.length,1),radius=Math.min(width,height)*.34;
+    nodes.forEach(function(node,i){var k=cmdbNodeValue_(node.type,node.id),a=(Math.PI*2*i/n)-Math.PI/2;pos[k]={x:cx+Math.cos(a)*radius,y:cy+Math.sin(a)*radius,vx:0,vy:0,fixed:k===rootKey};if(k===rootKey){pos[k].x=cx;pos[k].y=cy;}});
+    for(var iter=0;iter<100;iter++){
+      for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var ai=pos[cmdbNodeValue_(nodes[i].type,nodes[i].id)],bj=pos[cmdbNodeValue_(nodes[j].type,nodes[j].id)],dx=ai.x-bj.x,dy=ai.y-bj.y,d2=Math.max(dx*dx+dy*dy,900),f=5200/d2,dist=Math.sqrt(d2);dx/=dist;dy/=dist;if(!ai.fixed){ai.vx+=dx*f;ai.vy+=dy*f;}if(!bj.fixed){bj.vx-=dx*f;bj.vy-=dy*f;}}
+      edges.forEach(function(e){var a=pos[cmdbNodeValue_(e.sourceType,e.sourceId)],b=pos[cmdbNodeValue_(e.targetType,e.targetId)];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(Math.sqrt(dx*dx+dy*dy),1),f=(dist-175)*.006,ux=dx/dist,uy=dy/dist;if(!a.fixed){a.vx+=ux*f;a.vy+=uy*f;}if(!b.fixed){b.vx-=ux*f;b.vy-=uy*f;}});
+      Object.keys(pos).forEach(function(k){var p=pos[k];if(p.fixed)return;p.vx+=(cx-p.x)*.0009;p.vy+=(cy-p.y)*.0009;p.vx*=.82;p.vy*=.82;p.x=Math.max(80,Math.min(width-80,p.x+p.vx));p.y=Math.max(45,Math.min(height-45,p.y+p.vy));});
+    }
+    return pos;
+  }
+
+  function cmdbGraphNode_(value) {
+    var p=cmdbParseNodeValue_(value);if(!p)return;if(p.type==='CI'){cmdbShowCiDetail_(p.id);return;}
+    var n=cmdbMapNodes_().filter(function(x){return x.type===p.type&&String(x.id)===String(p.id);})[0];if(!n)return;
+    var body='<div class="cmdb-detail-grid"><div class="cmdb-detail-cell"><small>ประเภท</small><div>'+escapeHtmlJs(n.type)+'</div></div><div class="cmdb-detail-cell"><small>ID</small><div>'+escapeHtmlJs(n.id)+'</div></div><div class="cmdb-detail-cell"><small>ชื่อ</small><div>'+escapeHtmlJs(n.name||n.id)+'</div></div><div class="cmdb-detail-cell"><small>สถานะ</small><div>'+escapeHtmlJs(n.status||'-')+'</div></div></div>';
+    showInfoModal((n.name||n.id)+' · '+n.type,body,'lg');
+  }
+
+  function cmdbAdjacencyTable_(edges) {
+    if(!edges.length)return '<div class="text-muted">ไม่มีความสัมพันธ์ Active</div>';
+    return '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>ต้นทาง</th><th>ความสัมพันธ์</th><th>ปลายทาง</th><th>Impact</th></tr></thead><tbody>'+edges.map(function(e){return '<tr><td>'+cmdbNodeCell_(e.sourceType,e.sourceId,e.sourceName,e.sourceMissing)+'</td><td>'+escapeHtmlJs(cmdbLabel_(e.relationshipType))+'</td><td>'+cmdbNodeCell_(e.targetType,e.targetId,e.targetName,e.targetMissing)+'</td><td>'+cmdbBadge_(e.impactLevel)+'</td></tr>';}).join('')+'</tbody></table></div>';
+  }
+
+  function cmdbQualityView_() {
+    var d=CMDB_DATA,s=d.stats||{},unverified=d.items.filter(function(x){return x.status!=='Retired'&&!x.lastVerifiedAt;}),incomplete=d.items.filter(function(x){return x.status==='Active'&&(x.criticality==='High'||x.criticality==='Critical')&&(!x.owner||!x.administrator||x.rpoHours===''||x.rtoHours===''||(x.backupRequired==='Yes'&&!x.backupReference));}),orphans=d.relationships.filter(function(x){return x.sourceMissing||x.targetMissing;}),expired=d.relationships.filter(function(x){return x.status==='Active'&&x.expired;});
+    var card=function(title,count,tone,body){return '<div class="col-lg-4"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center justify-content-between"><h6>'+escapeHtmlJs(title)+'</h6><span class="badge text-bg-'+tone+'">'+count+'</span></div>'+body+'</div></div></div>';};
+    var list=function(rows,fn){return rows.length?'<ul class="list-group list-group-flush mt-2">'+rows.slice(0,12).map(function(r){return '<li class="list-group-item px-0 py-2 small">'+fn(r)+'</li>';}).join('')+'</ul>':'<div class="text-success small mt-3"><i class="bi bi-check-circle"></i> ไม่พบประเด็น</div>';};
+    return '<div class="row g-3">'+
+      card('CI ยังไม่ตรวจยืนยัน',unverified.length,unverified.length?'warning':'success',list(unverified,function(r){return '<b>'+escapeHtmlJs(r.name||r.id)+'</b><br><span class="text-muted">'+escapeHtmlJs(r.id)+'</span>';}))+
+      card('High/Critical ข้อมูลไม่ครบ',incomplete.length,incomplete.length?'danger':'success',list(incomplete,function(r){return '<b>'+escapeHtmlJs(r.name||r.id)+'</b><br><span class="text-muted">ตรวจ Owner/Admin/RPO/RTO/Backup</span>';}))+
+      card('Relationship ผิดปกติ',orphans.length+expired.length,(orphans.length+expired.length)?'danger':'success',list(orphans.concat(expired),function(r){return escapeHtmlJs((r.sourceName||r.sourceId)+' → '+(r.targetName||r.targetId)+(r.expired?' · หมดอายุ':''));}))+
+      '</div><div class="alert alert-info mt-3 mb-0"><i class="bi bi-info-circle"></i> การยกเลิก CI ต้องปิดความสัมพันธ์ Active ก่อน และ dependency แบบ DEPENDS_ON/RUNS_ON จะถูกตรวจวงจรอัตโนมัติ</div>';
+  }
+
+  function cmdbOptionsByType_(type) {
+    return (CMDB_DATA.nodeOptions||[]).filter(function(n){return n.type===type;}).map(function(n){return {value:n.id,label:(n.name||n.id)+' ('+n.id+')'};});
+  }
+  function cmdbRelationshipNodeOptions_() {
+    return (CMDB_DATA.nodeOptions||[]).map(function(n){return {value:cmdbNodeValue_(n.type,n.id),label:'['+n.type+'] '+(n.name||n.id)+' ('+n.id+')'};});
+  }
+  function cmdbEnsureSelectedNodeOption_(opts,value,name,type,id){if(!value)return;if(!opts.some(function(o){return o.value===value;}))opts.unshift({value:value,label:'['+(type||'?')+'] '+(name||id||value)+' ('+(id||'ไม่พบ')+')'});}
+  function cmdbNodeValue_(type,id){return String(type||'')+'|'+encodeURIComponent(String(id||''));}
+  function cmdbParseNodeValue_(value){value=String(value||'');var i=value.indexOf('|');if(i<1)return null;try{return {type:value.slice(0,i),id:decodeURIComponent(value.slice(i+1))};}catch(e){return null;}}
+  function cmdbFindCi_(id){return (CMDB_DATA.items||[]).filter(function(r){return String(r.id)===String(id);})[0]||null;}
+  function cmdbFindRelationship_(id){return (CMDB_DATA.relationships||[]).filter(function(r){return String(r.id)===String(id);})[0]||null;}
+  function cmdbLabel_(value){return CMDB_LABELS[value]||value||'-';}
+  function cmdbJs_(value){return String(value==null?'':value).replace(/[\\'"<>]/g,' ').trim();}
+  function cmdbTruncate_(value,max){value=String(value||'');return value.length>max?value.slice(0,max-1)+'…':value;}
+  function cmdbNodeCell_(type,id,name,missing){return '<span class="badge text-bg-light border">'+escapeHtmlJs(type||'?')+'</span> <b>'+escapeHtmlJs(name||id||'-')+'</b><br><small class="'+(missing?'text-danger':'text-muted')+'">'+escapeHtmlJs(id||'-')+(missing?' · ไม่พบ record':'')+'</small>';}
+  function cmdbBadge_(value){var tone=value==='Critical'?'danger':value==='High'?'warning text-dark':value==='Medium'?'info text-dark':'secondary';return '<span class="badge bg-'+tone+'">'+escapeHtmlJs(cmdbLabel_(value))+'</span>';}
+  function cmdbStatusBadge_(value){var tone=(value==='Active')?'success':(value==='Degraded'?'danger':(value==='Maintenance'?'warning text-dark':(value==='Draft'?'secondary':'dark')));return '<span class="badge bg-'+tone+'">'+escapeHtmlJs(cmdbLabel_(value))+'</span>';}
+</script>

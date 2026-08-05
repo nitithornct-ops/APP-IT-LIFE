@@ -1,0 +1,1517 @@
+﻿<!-- ITAssetExtras.html — โมดูล IT Asset เพิ่มเติม + Reports/Users/Settings/Tester -->
+<script>
+  function optList(list) {
+    return (list || []).map(function (x) { return '<option>' + escapeHtmlJs(x) + '</option>'; }).join('');
+  }
+  function optAssets(list) {
+    return (list || []).map(function (a) {
+      return '<option value="' + escapeHtmlJs(a.id) + '">' + escapeHtmlJs(a.label || (a.id + ' - ' + a.name)) + '</option>';
+    }).join('');
+  }
+  function optPairs(list, valueKey, labelKey) {
+    return (list || []).map(function (r) {
+      return '<option value="' + escapeHtmlJs(r[valueKey]) + '">' + escapeHtmlJs(r[labelKey] || r[valueKey]) + '</option>';
+    }).join('');
+  }
+  function selectedOptionText(id) {
+    var el = document.getElementById(id);
+    if (!el || el.selectedIndex < 0) return '';
+    var text = el.options[el.selectedIndex].text;
+    var marker = text.indexOf(' - ');
+    return marker > -1 ? text.substring(marker + 3) : text;
+  }
+  function itBadgeTone(text) {
+    var s = String(text || '').toLowerCase();
+    if (s.indexOf('fail') > -1 || s.indexOf('หมด') > -1 || s.indexOf('ยกเลิก') > -1 || s.indexOf('inactive') > -1) return 'danger';
+    if (s.indexOf('warn') > -1 || s.indexOf('block') > -1 || s.indexOf('รอ') > -1 || s.indexOf('กำลัง') > -1) return 'warning text-dark';
+    if (s.indexOf('info') > -1) return 'secondary';
+    if (s.indexOf('pass') > -1 || s.indexOf('active') > -1 || s.indexOf('เสร็จ') > -1 || s.indexOf('ปิด') > -1) return 'success';
+    return 'secondary';
+  }
+  function itStatusBadge(text) {
+    return '<span class="badge bg-' + itBadgeTone(text) + '">' + escapeHtmlJs(text || '-') + '</span>';
+  }
+
+  // ===== Borrow / Return / Transfer =====
+  var BORROW_DATA = null;
+  var BR_CONTAINER = null;
+  var BR_CHARTS = [];
+  var BR_ACTION_FN = { assign: 'assignAsset', return: 'returnAsset', transfer: 'transferAsset', repair: 'sendAssetToRepair', repairReturn: 'returnAssetFromRepair' };
+
+  function renderBorrow(container) {
+    BR_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getBorrowModuleData').then(function (d) {
+      BORROW_DATA = d;
+      var s = d.summary;
+      var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><h3 class="text-primary mb-0">ยืม / คืน / โอนย้าย Asset</h3>';
+      html += '<div class="ms-auto d-flex flex-wrap gap-2">';
+      if (d.canViewAnalytics) html += '<button class="btn btn-outline-primary" onclick="brShowAnalytics()"><i class="bi bi-graph-up"></i> วิเคราะห์ผล</button>';
+      if (d.canEdit) html += '<button class="btn btn-primary" onclick="brOpenForm()"><i class="bi bi-plus-lg"></i> บันทึกการเคลื่อนไหว</button>';
+      html += '</div></div>';
+      html += moduleDashboard([
+        mdStat('พร้อมให้ยืม', s.available, 'bi-check-circle', 'teal'),
+        mdStat('กำลังถือครอง', s.onLoan, 'bi-person-badge', s.onLoan ? 'blue' : 'gray'),
+        mdStat('ใกล้ครบกำหนดคืน', s.dueSoon, 'bi-calendar-event', s.dueSoon ? 'amber' : 'gray'),
+        mdStat('ค้างคืน (เกินกำหนด)', s.overdue, 'bi-alarm', s.overdue ? 'danger' : 'teal')
+      ]);
+      html += '<ul class="nav nav-tabs mb-3">' +
+        '<li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#br-onloan" type="button">กำลังถือครอง / ค้างคืน (' + (d.onLoan || []).length + ')</button></li>' +
+        '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#br-history" type="button">ประวัติเคลื่อนไหว</button></li>' +
+        '</ul><div class="tab-content">' +
+        '<div class="tab-pane fade show active" id="br-onloan">' + dataTable(brOnLoanCfg(d)) + '</div>' +
+        '<div class="tab-pane fade" id="br-history">' + dataTable(brHistoryCfg(d)) + '</div></div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function brDueHtml(r) {
+    if (!r.hasDue) return '<small class="text-muted">ไม่กำหนดคืน</small>';
+    if (r.dueDays === null) return escapeHtmlJs(r.loanDue || '-');
+    if (r.dueDays < 0) return '<span class="overdue">เกิน ' + Math.abs(r.dueDays) + ' วัน</span><br><small class="text-muted">' + escapeHtmlJs(r.loanDue) + '</small>';
+    if (r.dueDays <= 7) return '<span class="soon">อีก ' + r.dueDays + ' วัน</span><br><small class="text-muted">' + escapeHtmlJs(r.loanDue) + '</small>';
+    return '<small>' + escapeHtmlJs(r.loanDue) + '</small>';
+  }
+  function brOnLoanCfg(d) {
+    return {
+      id: 'brOnLoan', rows: d.onLoan || [], empty: 'ไม่มีทรัพย์สินที่ถูกยืม/ถือครองอยู่',
+      columns: [
+        { key: 'asset', label: 'Asset', value: function (r) { return '<b>' + escapeHtmlJs(r.code || r.id) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.name || '') + '</small>'; }, raw: function (r) { return (r.code || '') + ' ' + (r.name || ''); } },
+        { key: 'borrower', label: 'ผู้ถือครอง', value: function (r) { return escapeHtmlJs(r.borrower || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.department || '') + '</small>'; }, raw: function (r) { return (r.borrower || '') + ' ' + (r.department || ''); } },
+        { key: 'location', label: 'สถานที่', value: function (r) { return escapeHtmlJs(r.location || '-'); }, default: false },
+        { key: 'loanDate', label: 'ยืมเมื่อ', value: function (r) { return escapeHtmlJs(r.loanDate || '-'); } },
+        { key: 'due', label: 'กำหนดคืน', value: brDueHtml, raw: function (r) { return r.loanDue || ''; } }
+      ],
+      filters: [{ key: 'department', label: 'แผนก', value: function (r) { return r.department || ''; } }],
+      actions: d.canEdit ? function (r) {
+        return '<button class="btn btn-sm btn-success me-1 mb-1" onclick="brReturn(\'' + r.id + '\')"><i class="bi bi-box-arrow-in-left"></i> รับคืน</button>' +
+          '<button class="btn btn-sm btn-outline-dark mb-1" onclick="brPrintSlip(\'' + r.id + '\')"><i class="bi bi-printer"></i> ใบยืม</button>';
+      } : null,
+      actionsLabel: ''
+    };
+  }
+  function brHistoryCfg(d) {
+    return {
+      id: 'borrow', rows: d.movements, empty: 'ยังไม่มีประวัติการเคลื่อนไหว Asset',
+      columns: [
+        { key: 'date', label: 'วันที่', value: function (r) { return escapeHtmlJs(r.actionDate || '-'); } },
+        { key: 'asset', label: 'Asset', value: function (r) { return escapeHtmlJs(r.assetName || r.assetId); }, raw: function (r) { return (r.assetName || '') + ' ' + (r.assetId || ''); } },
+        { key: 'action', label: 'การดำเนินการ', value: function (r) { return itStatusBadge(r.action); }, raw: function (r) { return r.action; } },
+        { key: 'fromto', label: 'จาก → ถึง', value: function (r) { return escapeHtmlJs(r.fromUser || '-') + ' → ' + escapeHtmlJs(r.toUser || '-'); }, raw: function (r) { return (r.fromUser || '') + ' ' + (r.toUser || ''); } },
+        { key: 'due', label: 'กำหนดคืน', value: function (r) { return escapeHtmlJs(r.dueDate || '-'); }, default: false },
+        { key: 'location', label: 'สถานที่', value: function (r) { return escapeHtmlJs(r.location || '-'); } },
+        { key: 'notes', label: 'หมายเหตุ', value: function (r) { return '<small>' + escapeHtmlJs(r.notes || '') + (r.condition ? '<br>สภาพ: ' + escapeHtmlJs(r.condition) : '') + (r.evidence ? ' <a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : '') + '</small>'; }, raw: function (r) { return r.notes || ''; } }
+      ],
+      filters: [{ key: 'action', label: 'การดำเนินการ', value: function (r) { return r.action || ''; } }]
+    };
+  }
+
+  function brOpenForm(preAction) {
+    var d = BORROW_DATA;
+    showFormModal({
+      title: 'บันทึกการเคลื่อนไหว Asset', submitLabel: 'บันทึก',
+      fields: [
+        { id: 'action', label: 'การดำเนินการ', type: 'select', placeholder: false, required: true, value: preAction || 'assign', col: 'col-md-4',
+          options: [{ value: 'assign', label: 'ยืม/มอบหมาย' }, { value: 'return', label: 'คืน' }, { value: 'transfer', label: 'โอนย้าย' }, { value: 'repair', label: 'ส่งซ่อม' }, { value: 'repairReturn', label: 'รับคืนจากซ่อม' }] },
+        { id: 'assetId', label: 'Asset', type: 'select', required: true, col: 'col-md-8',
+          options: (d.assets || []).map(function (a) { return { value: a.id, label: a.label || a.id }; }) },
+        { id: 'toUser', label: 'ผู้รับ/ผู้ถือครอง (หรือชื่อร้านซ่อม)', col: 'col-md-6' },
+        { id: 'toEmail', label: 'อีเมลผู้รับ', type: 'email', col: 'col-md-6' },
+        { id: 'dueDate', label: 'กำหนดคืน (กรณียืม/โอนย้าย)', type: 'date', col: 'col-md-4' },
+        { id: 'department', label: 'แผนก', col: 'col-md-4' },
+        { id: 'location', label: 'สถานที่', col: 'col-md-4' },
+        { id: 'condition', label: 'สภาพตอนคืน (กรณีคืน)', col: 'col-md-8' },
+        { id: 'ticketId', label: 'Ticket ที่เกี่ยวข้อง', col: 'col-md-4' },
+        { id: 'file', label: 'แนบหลักฐาน', type: 'file', col: 'col-md-6' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-md-6' }
+      ],
+      onSubmit: function (v) {
+        var fn = BR_ACTION_FN[v.action] || 'assignAsset';
+        var up = (v.file && v.file.files && v.file.files[0]) ? uploadFileInput(v.file, 'borrow') : Promise.resolve(null);
+        return up.then(function (res) {
+          return callServer(fn, { assetId: v.assetId, toUser: v.toUser, toEmail: v.toEmail, dueDate: v.dueDate, department: v.department, location: v.location, condition: v.condition, ticketId: v.ticketId, notes: v.notes, evidence: res ? res.url : '' });
+        }).then(function (m) { toast(m, 'success'); loadModule('borrow'); });
+      }
+    });
+  }
+
+  function brFindLoan(id) { return (BORROW_DATA.onLoan || []).filter(function (x) { return x.id === id; })[0] || {}; }
+  function brReturn(id) {
+    var r = brFindLoan(id);
+    showFormModal({
+      title: 'รับคืน: ' + (r.code || id), submitLabel: 'บันทึกการคืน', size: 'md',
+      fields: [
+        { id: 'condition', label: 'สภาพทรัพย์สินตอนคืน', type: 'select', options: ['ปกติ/ใช้งานได้', 'ชำรุดเล็กน้อย', 'ชำรุด/ต้องซ่อม'], value: 'ปกติ/ใช้งานได้', col: 'col-12' },
+        { id: 'location', label: 'จัดเก็บที่', value: 'คลัง IT', col: 'col-12' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('returnAsset', { assetId: id, condition: v.condition, location: v.location, notes: v.notes }).then(function (m) { toast(m, 'success'); loadModule('borrow'); }); }
+    });
+  }
+
+  function brPrintSlip(id) {
+    var r = brFindLoan(id); if (!r.id) return;
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[<>&]/g, ' '); };
+    var org = (typeof ORG_NAME !== 'undefined' ? ORG_NAME : '');
+    var w = window.open('', '_blank', 'width=720,height=800');
+    if (!w) { toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต popup', 'warning'); return; }
+    var row = function (k, v) { return '<tr><td class="k">' + k + '</td><td>' + esc(v || '-') + '</td></tr>'; };
+    var html = '<html><head><meta charset="utf-8"><title>ใบยืมทรัพย์สิน ' + esc(r.code || r.id) + '</title>' +
+      '<style>body{font-family:"Sarabun",Arial,sans-serif;padding:32px;color:#222}h2{text-align:center;margin:0 0 4px}' +
+      '.org{text-align:center;color:#555;margin-bottom:20px}table{width:100%;border-collapse:collapse;margin-bottom:24px}' +
+      'td{border:1px solid #999;padding:8px 10px;font-size:15px}.k{background:#f2f2f2;width:32%;font-weight:600}' +
+      '.sign{margin-top:48px;display:flex;justify-content:space-around;text-align:center}.sign div{width:40%}' +
+      '.line{border-top:1px solid #333;margin-top:48px;padding-top:6px}</style></head><body>' +
+      '<h2>ใบยืมทรัพย์สิน IT</h2><div class="org">' + esc(org) + '</div>' +
+      '<table>' + row('รหัสทรัพย์สิน', r.code || r.id) + row('ชื่อทรัพย์สิน', r.name) +
+      row('ผู้ยืม/ผู้ถือครอง', r.borrower) + row('แผนก', r.department) + row('สถานที่', r.location) +
+      row('วันที่ยืม', r.loanDate) + row('กำหนดคืน', r.loanDue) + '</table>' +
+      '<div class="sign"><div><div class="line">ผู้ยืม</div></div><div><div class="line">ผู้ให้ยืม (เจ้าหน้าที่ IT)</div></div></div>' +
+      '</body><script>window.onload=function(){window.focus();window.print();}<\/script></html>';
+    w.document.write(html); w.document.close();
+  }
+
+  // ===== รายงานวิเคราะห์ยืม-คืน =====
+  function brChart(id, cfg) { var el = document.getElementById(id); if (!el || typeof Chart === 'undefined') return; BR_CHARTS.push(new Chart(el, cfg)); }
+  function brShowAnalytics() {
+    var c = BR_CONTAINER; if (!c) return;
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังคำนวณรายงาน...</div></div>';
+    callServer('getBorrowAnalytics').then(function (a) { brRenderAnalytics(c, a); })
+      .catch(function (err) { c.innerHTML = '<div class="alert alert-danger">โหลดรายงานไม่สำเร็จ: ' + escapeHtmlJs((err && err.message) || String(err)) + '</div><button class="btn btn-outline-secondary" onclick="loadModule(\'borrow\')">กลับ</button>'; });
+  }
+  function brRenderAnalytics(c, a) {
+    BR_CHARTS.forEach(function (ch) { try { ch.destroy(); } catch (e) {} });
+    BR_CHARTS = [];
+    var kpi = function (label, value, sub, tone) {
+      return '<div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-3"><div class="text-muted small">' + label + '</div>' +
+        '<div class="fs-4 fw-bold text-' + (tone || 'primary') + '">' + value + '</div>' + (sub ? '<div class="text-muted" style="font-size:.75rem">' + sub + '</div>' : '') + '</div></div></div>';
+    };
+    var listCard = function (title, arr) {
+      var rows = (arr || []).map(function (x) { return '<tr><td>' + escapeHtmlJs(x.label) + '</td><td class="text-end"><b>' + x.value + '</b></td></tr>'; }).join('') || '<tr><td class="text-muted" colspan="2">ไม่มีข้อมูล</td></tr>';
+      return '<div class="col-lg-6"><div class="card h-100"><div class="card-body"><h6 class="text-muted">' + title + '</h6><div class="table-responsive"><table class="table table-sm mb-0">' + rows + '</table></div></div></div></div>';
+    };
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3">' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'borrow\')"><i class="bi bi-arrow-left"></i> กลับ</button>' +
+      '<h4 class="text-primary mb-0 ms-2">รายงานวิเคราะห์ยืม-คืน</h4></div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('กำลังถูกยืม', a.currentlyOut, 'รายการ', 'primary') +
+      kpi('ค้างคืน', a.overdue, 'เกินกำหนด', a.overdue ? 'danger' : 'success') +
+      kpi('ใกล้ครบกำหนด', a.dueSoon, '≤7 วัน', a.dueSoon ? 'warning' : 'success') +
+      kpi('ระยะเวลายืมเฉลี่ย', a.avgLoanDurationDays === null ? '-' : a.avgLoanDurationDays + ' วัน', 'จาก ' + a.completedLoans + ' ครั้งที่คืน', 'info') +
+      '</div>';
+    html += '<div class="row g-3 mb-3"><div class="col-lg-12"><div class="card"><div class="card-body"><h6 class="text-muted">แนวโน้มยืม vs คืน (6 เดือน)</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="brChartTrend"></canvas></div></div></div></div></div>';
+    html += '<div class="row g-3">' +
+      listCard('ผู้ถือครองมากสุด (กำลังยืม)', a.byBorrower) +
+      listCard('ตามแผนก (กำลังยืม)', a.byDepartment) +
+      listCard('ทรัพย์สินที่ถูกยืมบ่อย', a.mostBorrowed) +
+      '<div class="col-lg-6"><div class="card h-100"><div class="card-body"><h6 class="text-muted">สัดส่วนตามแผนก</h6><div class="analytics-chart-frame"><canvas id="brChartDept"></canvas></div></div></div></div>' +
+      '</div>';
+    c.innerHTML = html;
+    brChart('brChartTrend', {
+      type: 'bar',
+      data: { labels: a.trend.map(function (t) { return t.month; }), datasets: [
+        { label: 'ยืม', data: a.trend.map(function (t) { return t.assign; }), backgroundColor: '#2563eb' },
+        { label: 'คืน', data: a.trend.map(function (t) { return t.ret; }), backgroundColor: '#22c55e' }
+      ] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+    brChart('brChartDept', {
+      type: 'doughnut',
+      data: { labels: a.byDepartment.map(function (x) { return x.label; }), datasets: [{ data: a.byDepartment.map(function (x) { return x.value; }), backgroundColor: ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'] }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } } }
+    });
+  }
+
+  // ===== Maintenance =====
+  var MAINT_DATA = null;
+  var PM_CONTAINER = null;
+  var PM_CHARTS = [];
+  var PM_TPL_DATA = null;
+  var PM_CAL_MONTH = null; // 'YYYY-MM' ที่แสดงในปฏิทิน
+
+  function pmAssigneeOptions(current) {
+    var opts = (MAINT_DATA.assignees || []).map(function (a) { return { value: a.value, label: a.label }; });
+    if (current && !opts.some(function (o) { return String(o.value) === String(current); })) opts.unshift({ value: current, label: current + ' (ปัจจุบัน)' });
+    return opts;
+  }
+
+  function renderMaintenance(container) {
+    PM_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getMaintenanceModuleData').then(function (d) {
+      MAINT_DATA = d;
+      var due = d.plans.filter(function (p) { return p.planDays !== null && p.planDays <= 7 && p.planDays >= 0 && p.status !== 'ดำเนินการแล้ว' && p.status !== 'ยกเลิก'; }).length;
+      var overdue = d.plans.filter(function (p) { return p.planDays !== null && p.planDays < 0 && p.status !== 'ดำเนินการแล้ว' && p.status !== 'ยกเลิก'; }).length;
+      var done = d.plans.filter(function (p) { return p.status === 'ดำเนินการแล้ว'; }).length;
+      var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><h3 class="text-primary mb-0">PM / บำรุงรักษา</h3>';
+      html += '<div class="ms-auto d-flex flex-wrap gap-2">';
+      if (d.canViewAnalytics) html += '<button class="btn btn-outline-primary" onclick="pmShowAnalytics()"><i class="bi bi-graph-up"></i> วิเคราะห์ผล</button>';
+      if (d.canManageTemplates) html += '<button class="btn btn-outline-secondary" onclick="pmManageTemplates()"><i class="bi bi-list-check"></i> เทมเพลต</button>';
+      if (d.canEdit) html += '<button class="btn btn-primary" onclick="pmOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่มแผน PM</button>';
+      html += '</div></div>';
+      html += moduleDashboard([
+        mdStat('แผนทั้งหมด', d.plans.length, 'bi-tools', 'blue'),
+        mdStat('ใกล้ครบกำหนด', due, 'bi-calendar-event', due ? 'amber' : 'gray'),
+        mdStat('เกินกำหนด', overdue, 'bi-alarm', overdue ? 'danger' : 'teal'),
+        mdStat('ดำเนินการแล้ว', done, 'bi-check-circle', 'teal')
+      ]);
+      PM_CAL_MONTH = null;
+      html += '<ul class="nav nav-tabs mb-3">' +
+        '<li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pm-list" type="button">รายการ</button></li>' +
+        '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pm-cal" type="button">ปฏิทิน</button></li>' +
+        '</ul><div class="tab-content">' +
+        '<div class="tab-pane fade show active" id="pm-list">' + dataTable(pmTableCfg(d)) + '</div>' +
+        '<div class="tab-pane fade" id="pm-cal"><div id="pmCalWrap">' + pmCalendarGrid() + '</div></div></div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function pmChecklistToText(items) { return (items || []).map(function (i) { return (i && i.text !== undefined) ? i.text : i; }).join('\n'); }
+
+  function pmOpenForm() {
+    var d = MAINT_DATA;
+    var tplHelp = (d.templates && d.templates.length) ? 'เลือกเทมเพลตเพื่อเติมหัวข้อตรวจอัตโนมัติ' : 'ยังไม่มีเทมเพลต (สร้างได้ที่ปุ่มเทมเพลต)';
+    showFormModal({
+      title: 'เพิ่มแผน PM', submitLabel: 'บันทึกแผน',
+      fields: [
+        { id: 'assetId', label: 'Asset', type: 'select', required: true, col: 'col-md-8',
+          options: (d.assets || []).map(function (a) { return { value: a.id, label: a.label || a.id }; }) },
+        { id: 'planDate', label: 'วันที่วางแผน', type: 'date', required: true, col: 'col-md-4' },
+        { id: 'recurrence', label: 'รอบทำซ้ำ', type: 'select', placeholder: false, options: d.recurrences, col: 'col-md-4' },
+        { id: 'technician', label: 'ผู้รับผิดชอบ', type: 'select', options: pmAssigneeOptions(''), col: 'col-md-8' },
+        { id: 'template', label: 'เทมเพลตเช็กลิสต์', type: 'select', options: (d.templates || []).map(function (t) { return { value: t.id, label: t.name + (t.category ? ' · ' + t.category : '') }; }), col: 'col-12', help: tplHelp },
+        { id: 'checklistText', label: 'หัวข้อตรวจ (บรรทัดละ 1 ข้อ)', type: 'textarea', rows: 4, col: 'col-12', help: 'ถ้าเลือกเทมเพลตด้วย ระบบจะรวมหัวข้อจากเทมเพลตให้' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var tplItems = [];
+        if (v.template) { var t = (d.templates || []).filter(function (x) { return x.id === v.template; })[0]; if (t) tplItems = (t.items || []).slice(); }
+        var lines = (v.checklistText || '').split('\n').map(function (s) { return s.trim(); }).filter(String);
+        var items = tplItems.concat(lines.filter(function (l) { return tplItems.indexOf(l) === -1; }));
+        var assetName = ((d.assets || []).filter(function (a) { return a.id === v.assetId; })[0] || {}).name || '';
+        return callServer('addMaintenancePlan', { assetId: v.assetId, assetName: assetName, planDate: v.planDate, recurrence: v.recurrence, technician: v.technician, checklistItems: items, notes: v.notes })
+          .then(function (m) { toast(m, 'success'); loadModule('maintenance'); });
+      }
+    });
+  }
+
+  function pmFind(id) { return (MAINT_DATA.plans || []).filter(function (p) { return p.id === id; })[0] || {}; }
+
+  function pmDone(id) {
+    var p = pmFind(id);
+    var items = p.checklistItems || [];
+    var fields = [];
+    items.forEach(function (it, idx) {
+      var txt = (it && it.text !== undefined) ? it.text : it;
+      fields.push({ id: 'chk_' + idx, label: (idx + 1) + '. ' + txt, type: 'select', placeholder: false, options: ['ผ่าน', 'ไม่ผ่าน', 'N/A'], value: (it && it.result) || 'ผ่าน', col: 'col-md-4' });
+      fields.push({ id: 'note_' + idx, label: 'หมายเหตุข้อ ' + (idx + 1), value: (it && it.note) || '', col: 'col-md-8' });
+    });
+    fields.push({ id: 'result', label: 'สรุปผล/หมายเหตุรวม', type: 'textarea', rows: 2, value: items.length ? '' : 'ดำเนินการเรียบร้อย', col: 'col-12' });
+    fields.push({ id: 'file', label: 'แนบไฟล์/รูปผลการตรวจ', type: 'file', col: 'col-12' });
+    showFormModal({
+      title: 'บันทึกผล PM: ' + (p.assetName || id), submitLabel: 'บันทึกผล', size: items.length ? 'lg' : 'md',
+      fields: fields,
+      onSubmit: function (v) {
+        var results = items.map(function (it, idx) { var txt = (it && it.text !== undefined) ? it.text : it; return { text: txt, result: v['chk_' + idx], note: v['note_' + idx] }; });
+        var up = (v.file && v.file.files && v.file.files[0]) ? uploadFileInput(v.file, 'maintenance') : Promise.resolve(null);
+        return up.then(function (res) { return callServer('updateMaintenancePlanResult', id, { status: 'ดำเนินการแล้ว', result: v.result, checklistResults: results, evidence: res ? res.url : '' }); })
+          .then(function (m) { toast(m, 'success'); loadModule('maintenance'); });
+      }
+    });
+  }
+
+  function pmStart(id) {
+    var p = pmFind(id);
+    showConfirm('เริ่มงาน PM "' + (p.assetName || id) + '" (สถานะ → กำลังดำเนินการ)?',
+      function () { callServer('startMaintenance', id, '').then(function (m) { toast(m); loadModule('maintenance'); }); });
+  }
+  function pmReschedule(id) {
+    var p = pmFind(id);
+    showFormModal({
+      title: 'เลื่อนกำหนดแผน PM: ' + (p.assetName || id), submitLabel: 'เลื่อนกำหนด', size: 'md',
+      fields: [
+        { id: 'planDate', label: 'วันแผนใหม่', type: 'date', required: true, col: 'col-md-6' },
+        { id: 'technician', label: 'ผู้รับผิดชอบ', type: 'select', options: pmAssigneeOptions(p.technician), value: p.technician, col: 'col-md-6' },
+        { id: 'reason', label: 'เหตุผลการเลื่อน', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('rescheduleMaintenance', id, v).then(function (m) { toast(m, 'success'); loadModule('maintenance'); }); }
+    });
+  }
+  function pmCancel(id) {
+    showFormModal({ title: 'ยกเลิกแผน PM', submitLabel: 'ยกเลิกแผน', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผลการยกเลิก', type: 'textarea', rows: 2, required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('cancelMaintenancePlan', id, v.reason).then(function (m) { toast(m); loadModule('maintenance'); }); } });
+  }
+  function pmDetail(id) {
+    var p = pmFind(id);
+    var chk = (p.checklistItems || []).map(function (i) {
+      var badge = i.result ? '<span class="badge ' + (i.result === 'ผ่าน' ? 'bg-success' : (i.result === 'ไม่ผ่าน' ? 'bg-danger' : 'bg-secondary')) + '">' + escapeHtmlJs(i.result) + '</span>' : '<span class="badge bg-light text-dark">ยังไม่ตรวจ</span>';
+      return '<li class="list-group-item d-flex justify-content-between align-items-start"><span>' + escapeHtmlJs(i.text) + (i.note ? '<br><small class="text-muted">' + escapeHtmlJs(i.note) + '</small>' : '') + '</span>' + badge + '</li>';
+    }).join('') || '<li class="list-group-item text-muted">ไม่มีเช็กลิสต์รายข้อ</li>';
+    var info = [['Asset', p.assetName || p.assetId], ['แผนวันที่', p.planDate], ['สถานะ', p.status], ['ผู้รับผิดชอบ', p.technician], ['รอบ', p.recurrence], ['ทำจริงเมื่อ', p.actualDate], ['ผล', p.result]]
+      .map(function (kv) { return '<div class="col-md-4 col-6"><small class="text-muted">' + kv[0] + '</small><br>' + escapeHtmlJs(kv[1] || '-') + '</div>'; }).join('');
+    var body = '<div class="row g-2 mb-3">' + info + '</div><h6>เช็กลิสต์</h6><ul class="list-group list-group-flush">' + chk + '</ul>' +
+      (MAINT_DATA.canEdit ? '<div class="mt-3"><button class="btn btn-sm btn-outline-dark" onclick="pmPrintWorkOrder(\'' + id + '\')"><i class="bi bi-printer"></i> พิมพ์ใบสั่งงาน</button></div>' : '');
+    showInfoModal('แผน PM · ' + (p.assetName || id), body, 'lg');
+  }
+  function pmPrintWorkOrder(id) {
+    var p = pmFind(id); if (!p.id) return;
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[<>&]/g, ' '); };
+    var org = (typeof ORG_NAME !== 'undefined' ? ORG_NAME : '');
+    var chk = (p.checklistItems || []).map(function (i, idx) {
+      return '<tr><td>' + (idx + 1) + '</td><td>' + esc(i.text) + '</td><td class="c">☐ ผ่าน&nbsp;&nbsp;☐ ไม่ผ่าน&nbsp;&nbsp;☐ N/A</td><td></td></tr>';
+    }).join('') || '<tr><td colspan="4" style="text-align:center;color:#777">— ไม่มีเช็กลิสต์ —</td></tr>';
+    var w = window.open('', '_blank', 'width=800,height=900');
+    if (!w) { toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์', 'warning'); return; }
+    var html = '<html><head><meta charset="utf-8"><title>ใบสั่งงาน PM ' + esc(p.id) + '</title>' +
+      '<style>body{font-family:"Sarabun",Arial,sans-serif;padding:28px;color:#222}h2{text-align:center;margin:0}' +
+      '.org{text-align:center;color:#555;margin-bottom:16px}.meta td{padding:5px 8px;font-size:14px}' +
+      'table.chk{width:100%;border-collapse:collapse;margin-top:12px}table.chk td,table.chk th{border:1px solid #999;padding:8px;font-size:14px}' +
+      'table.chk th{background:#f2f2f2}.c{white-space:nowrap}.sign{margin-top:56px;display:flex;justify-content:space-around;text-align:center}' +
+      '.line{border-top:1px solid #333;margin-top:48px;padding-top:6px;width:40%}</style></head><body>' +
+      '<h2>ใบสั่งงานบำรุงรักษา (PM Work Order)</h2><div class="org">' + esc(org) + '</div>' +
+      '<table class="meta"><tr><td><b>เลขที่:</b> ' + esc(p.id) + '</td><td><b>Asset:</b> ' + esc(p.assetName || p.assetId) + '</td></tr>' +
+      '<tr><td><b>วันที่วางแผน:</b> ' + esc(p.planDate) + '</td><td><b>ผู้รับผิดชอบ:</b> ' + esc(p.technician) + '</td></tr>' +
+      '<tr><td><b>รอบ:</b> ' + esc(p.recurrence) + '</td><td><b>สถานะ:</b> ' + esc(p.status) + '</td></tr></table>' +
+      '<table class="chk"><thead><tr><th style="width:6%">#</th><th>รายการตรวจ</th><th style="width:34%">ผลตรวจ</th><th style="width:18%">หมายเหตุ</th></tr></thead><tbody>' + chk + '</tbody></table>' +
+      '<div class="sign"><div class="line">ผู้ปฏิบัติงาน</div><div class="line">ผู้ตรวจสอบ</div></div>' +
+      '</body><script>window.onload=function(){window.focus();window.print();}<\/script></html>';
+    w.document.write(html); w.document.close();
+  }
+
+  function pmTableCfg(d) {
+    return {
+      id: 'maintenance', rows: d.plans, empty: 'ยังไม่มีแผน PM',
+      columns: [
+        { key: 'asset', label: 'Asset', value: function (r) { return '<b>' + escapeHtmlJs(r.assetName || r.assetId) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.id) + '</small>'; }, raw: function (r) { return (r.assetName || '') + ' ' + (r.assetId || ''); } },
+        { key: 'planDate', label: 'แผนวันที่', value: function (r) {
+            var plan = (r.planDays !== null && r.planDays < 0 && r.status !== 'ดำเนินการแล้ว' && r.status !== 'ยกเลิก') ? '<span class="overdue">' + escapeHtmlJs(r.planDate) + '</span>' : escapeHtmlJs(r.planDate || '-');
+            return plan + (r.recurrence && r.recurrence !== 'ครั้งเดียว' ? '<br><small class="text-muted">🔁 ' + escapeHtmlJs(r.recurrence) + '</small>' : '');
+          }, raw: function (r) { return r.planDate || ''; } },
+        { key: 'technician', label: 'ผู้รับผิดชอบ', value: function (r) { return escapeHtmlJs(r.technician || '-'); } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status); }, raw: function (r) { return r.status; } },
+        { key: 'checklist', label: 'Checklist/ผล', value: function (r) { var n = (r.checklistItems || []).length; return (n ? '<span class="badge bg-light text-dark">' + n + ' ข้อ</span> ' : '') + '<small>' + escapeHtmlJs(r.result || r.checklist || '') + '</small>' + (r.evidence ? ' <a href="' + escapeHtmlJs(r.evidence) + '" target="_blank">หลักฐาน</a>' : ''); }, raw: function (r) { return (r.checklist || '') + ' ' + (r.result || ''); }, default: false }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } },
+        { key: 'recurrence', label: 'รอบ', value: function (r) { return r.recurrence || ''; } }
+      ],
+      actions: function (r) {
+        var a = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="pmDetail(\'' + r.id + '\')">รายละเอียด</button>';
+        if (d.canEdit && r.status !== 'ดำเนินการแล้ว' && r.status !== 'ยกเลิก') {
+          if (r.status === 'วางแผน') a += '<button class="btn btn-sm btn-outline-info me-1 mb-1" onclick="pmStart(\'' + r.id + '\')">เริ่มงาน</button>';
+          a += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="pmDone(\'' + r.id + '\')">บันทึกผล</button>' +
+            '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="pmReschedule(\'' + r.id + '\')">เลื่อน</button>' +
+            '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="pmCancel(\'' + r.id + '\')">ยกเลิก</button>';
+        }
+        if (d.canEdit) a += deleteBtn('maintenance', r.id, r.assetName || r.assetId || r.id);
+        return a;
+      }
+    };
+  }
+
+  // ---- ปฏิทินรายเดือนแบบ grid ----
+  function pmCalendarGrid() {
+    var plans = (MAINT_DATA.plans || []).filter(function (p) { return p.planISO; });
+    if (!PM_CAL_MONTH) {
+      var now = new Date();
+      PM_CAL_MONTH = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+    }
+    var parts = PM_CAL_MONTH.split('-');
+    var year = parseInt(parts[0], 10), month = parseInt(parts[1], 10) - 1;
+    var byDay = {};
+    plans.forEach(function (p) { if (p.planISO.indexOf(PM_CAL_MONTH) === 0) { (byDay[p.planISO] = byDay[p.planISO] || []).push(p); } });
+    var first = new Date(year, month, 1);
+    var startDow = first.getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var monthName = new Date(year, month, 1).toLocaleDateString('th-TH', { year: 'numeric', month: 'long' });
+    var dows = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+    var html = '<div class="d-flex align-items-center justify-content-center gap-3 mb-2">' +
+      '<button class="btn btn-sm btn-outline-secondary" onclick="pmCalMove(-1)"><i class="bi bi-chevron-left"></i></button>' +
+      '<h5 class="mb-0">' + escapeHtmlJs(monthName) + '</h5>' +
+      '<button class="btn btn-sm btn-outline-secondary" onclick="pmCalMove(1)"><i class="bi bi-chevron-right"></i></button></div>';
+    html += '<div class="table-responsive"><table class="table table-bordered text-center align-top mb-0" style="table-layout:fixed">';
+    html += '<thead><tr>' + dows.map(function (d) { return '<th class="small text-muted">' + d + '</th>'; }).join('') + '</tr></thead><tbody><tr>';
+    for (var i = 0; i < startDow; i++) html += '<td style="background:#fafafa"></td>';
+    for (var day = 1; day <= daysInMonth; day++) {
+      var iso = year + '-' + ('0' + (month + 1)).slice(-2) + '-' + ('0' + day).slice(-2);
+      var cell = '<div class="small text-muted">' + day + '</div>';
+      (byDay[iso] || []).forEach(function (p) {
+        var tone = p.status === 'ดำเนินการแล้ว' ? 'bg-success' : (p.status === 'ยกเลิก' ? 'bg-secondary' : (p.planDays !== null && p.planDays < 0 ? 'bg-danger' : 'bg-primary'));
+        cell += '<div class="badge ' + tone + ' d-block text-truncate mb-1" style="cursor:pointer;max-width:100%" title="' + escapeHtmlJs(p.assetName || p.assetId) + '" onclick="pmDetail(\'' + p.id + '\')">' + escapeHtmlJs(p.assetName || p.assetId) + '</div>';
+      });
+      html += '<td style="height:88px;vertical-align:top">' + cell + '</td>';
+      if ((startDow + day) % 7 === 0 && day !== daysInMonth) html += '</tr><tr>';
+    }
+    html += '</tr></tbody></table></div>';
+    return html;
+  }
+  function pmCalMove(delta) {
+    var parts = PM_CAL_MONTH.split('-');
+    var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1 + delta, 1);
+    PM_CAL_MONTH = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+    var wrap = document.getElementById('pmCalWrap');
+    if (wrap) wrap.innerHTML = pmCalendarGrid();
+  }
+
+  // ===== เทมเพลตเช็กลิสต์ PM =====
+  function pmManageTemplates() {
+    callServer('getPMTemplatesAdmin').then(function (d) { PM_TPL_DATA = d; pmRenderTemplateModal(); })
+      .catch(function (err) { toast((err && err.message) || 'โหลดเทมเพลตไม่สำเร็จ', 'danger'); });
+  }
+  function pmRenderTemplateModal() {
+    var d = PM_TPL_DATA || { templates: [] };
+    var rows = (d.templates || []).map(function (t) {
+      var active = String(t.status).toLowerCase() === 'active';
+      return '<tr><td><b>' + escapeHtmlJs(t.name) + '</b>' + (t.category ? ' <span class="badge bg-light text-dark">' + escapeHtmlJs(t.category) + '</span>' : '') + '<br><small class="text-muted">' + (t.items || []).length + ' ข้อ</small></td>' +
+        '<td><span class="badge ' + (active ? 'bg-success' : 'bg-secondary') + '">' + escapeHtmlJs(t.status) + '</span></td>' +
+        '<td class="text-nowrap"><button class="btn btn-sm btn-outline-primary me-1" onclick="pmTplForm(\'' + t.id + '\')">แก้ไข</button>' +
+        '<button class="btn btn-sm btn-outline-warning" onclick="pmTplToggle(\'' + t.id + '\',\'' + (active ? 'Inactive' : 'Active') + '\')">' + (active ? 'ปิดใช้' : 'เปิดใช้') + '</button></td></tr>';
+    }).join('');
+    var body = '<div class="d-flex mb-2"><button class="btn btn-sm btn-primary ms-auto" onclick="pmTplForm()"><i class="bi bi-plus-lg"></i> เพิ่มเทมเพลต</button></div>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>เทมเพลต</th><th>สถานะ</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="3" class="text-muted">ยังไม่มีเทมเพลต</td></tr>') + '</tbody></table></div>';
+    showInfoModal('เทมเพลตเช็กลิสต์ PM', body, 'lg');
+  }
+  function pmTplFind(id) { return (PM_TPL_DATA.templates || []).filter(function (t) { return t.id === id; })[0] || {}; }
+  function pmTplForm(id) {
+    var t = id ? pmTplFind(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไขเทมเพลต: ' + t.name) : 'เพิ่มเทมเพลต', submitLabel: id ? 'อัปเดต' : 'บันทึก', size: 'md',
+      fields: [
+        { id: 'name', label: 'ชื่อเทมเพลต', value: t.name, required: true, col: 'col-md-8' },
+        { id: 'category', label: 'หมวด/ประเภทเครื่อง', value: t.category, col: 'col-md-4' },
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: ['Active', 'Inactive'], value: t.status || 'Active', col: 'col-md-4' },
+        { id: 'items', label: 'หัวข้อตรวจ (บรรทัดละ 1 ข้อ)', type: 'textarea', rows: 6, value: (t.items || []).join('\n'), col: 'col-12', required: true }
+      ],
+      onSubmit: function (v) {
+        var items = (v.items || '').split('\n').map(function (s) { return s.trim(); }).filter(String);
+        return callServer('savePMTemplate', { id: id || '', name: v.name, category: v.category, status: v.status, items: items })
+          .then(function (m) { toast(m, 'success'); pmManageTemplates(); });
+      }
+    });
+  }
+  function pmTplToggle(id, status) { callServer('setPMTemplateStatus', id, status).then(function (m) { toast(m); pmManageTemplates(); }); }
+
+  // ===== รายงานวิเคราะห์ PM =====
+  function pmChart(id, cfg) { var el = document.getElementById(id); if (!el || typeof Chart === 'undefined') return; PM_CHARTS.push(new Chart(el, cfg)); }
+  function pmShowAnalytics() {
+    var c = PM_CONTAINER; if (!c) return;
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังคำนวณรายงาน...</div></div>';
+    callServer('getPMAnalytics').then(function (a) { pmRenderAnalytics(c, a); })
+      .catch(function (err) { c.innerHTML = '<div class="alert alert-danger">โหลดรายงานไม่สำเร็จ: ' + escapeHtmlJs((err && err.message) || String(err)) + '</div><button class="btn btn-outline-secondary" onclick="loadModule(\'maintenance\')">กลับ</button>'; });
+  }
+  function pmRenderAnalytics(c, a) {
+    PM_CHARTS.forEach(function (ch) { try { ch.destroy(); } catch (e) {} });
+    PM_CHARTS = [];
+    var kpi = function (label, value, sub, tone) {
+      return '<div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-3"><div class="text-muted small">' + label + '</div><div class="fs-4 fw-bold text-' + (tone || 'primary') + '">' + value + '</div>' + (sub ? '<div class="text-muted" style="font-size:.75rem">' + sub + '</div>' : '') + '</div></div></div>';
+    };
+    var listCard = function (title, arr) {
+      var rows = (arr || []).map(function (x) { return '<tr><td>' + escapeHtmlJs(x.label) + '</td><td class="text-end"><b>' + x.value + '</b></td></tr>'; }).join('') || '<tr><td class="text-muted" colspan="2">ไม่มีข้อมูล</td></tr>';
+      return '<div class="col-lg-6"><div class="card h-100"><div class="card-body"><h6 class="text-muted">' + title + '</h6><div class="table-responsive"><table class="table table-sm mb-0">' + rows + '</table></div></div></div></div>';
+    };
+    var compTone = a.completionRate === null ? 'secondary' : (a.completionRate >= 80 ? 'success' : (a.completionRate >= 50 ? 'warning' : 'danger'));
+    var otTone = a.onTimeRate === null ? 'secondary' : (a.onTimeRate >= 80 ? 'success' : (a.onTimeRate >= 50 ? 'warning' : 'danger'));
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'maintenance\')"><i class="bi bi-arrow-left"></i> กลับ</button><h4 class="text-primary mb-0 ms-2">รายงานวิเคราะห์ PM</h4></div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('% ทำเสร็จ', a.completionRate === null ? '-' : a.completionRate + '%', 'ทำเสร็จ ' + a.done + ' จาก ' + (a.total - a.cancelled), compTone) +
+      kpi('% ตรงเวลา', a.onTimeRate === null ? '-' : a.onTimeRate + '%', 'จาก ' + a.onTimeEval + ' งาน', otTone) +
+      kpi('เกินกำหนด', a.overdue, 'ยังไม่ทำ', a.overdue ? 'danger' : 'success') +
+      kpi('กำหนดใน 7/30 วัน', a.due7 + ' / ' + a.due30, 'งานที่จะถึง', 'info') +
+      '</div>';
+    html += '<div class="row g-3 mb-3"><div class="col-lg-12"><div class="card"><div class="card-body"><h6 class="text-muted">PM ที่ทำเสร็จ (6 เดือน)</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="pmChartTrend"></canvas></div></div></div></div></div>';
+    html += '<div class="row g-3">' + listCard('ตามช่างผู้รับผิดชอบ (ทำเสร็จ)', a.byTechnician) + listCard('เครื่องที่มี PM มากสุด', a.byAsset) + '</div>';
+    c.innerHTML = html;
+    pmChart('pmChartTrend', {
+      type: 'bar',
+      data: { labels: a.trend.map(function (t) { return t.month; }), datasets: [{ label: 'ทำเสร็จ', data: a.trend.map(function (t) { return t.done; }), backgroundColor: '#22c55e' }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+  }
+
+  // ===== Inventory =====
+  var INV_DATA = null;
+  var IV_CONTAINER = null;
+  var IV_CHARTS = [];
+  function ivMoney(n) { return (typeof asMoney === 'function') ? asMoney(n) : String(n || 0); }
+
+  function renderInventory(container) {
+    IV_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getInventoryModuleData').then(function (d) {
+      INV_DATA = d;
+      var low = d.items.filter(function (x) { return x.low && String(x.status).toLowerCase() !== 'inactive'; }).length;
+      var active = d.items.filter(function (x) { return String(x.status).toLowerCase() !== 'inactive'; }).length;
+      var totalValue = d.items.reduce(function (s, x) { return s + (String(x.status).toLowerCase() !== 'inactive' ? (x.value || 0) : 0); }, 0);
+      var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><h3 class="text-primary mb-0">Inventory</h3>';
+      html += '<div class="ms-auto d-flex flex-wrap gap-2">';
+      if (d.canViewAnalytics) html += '<button class="btn btn-outline-primary" onclick="ivShowAnalytics()"><i class="bi bi-graph-up"></i> วิเคราะห์ผล</button>';
+      html += '<button class="btn btn-outline-danger" onclick="ivReorderView()"><i class="bi bi-cart-plus"></i> ต้องสั่งซื้อ' + (low ? ' (' + low + ')' : '') + '</button>';
+      if (d.canEdit) html += '<button class="btn btn-outline-primary" onclick="ivTxForm()"><i class="bi bi-arrow-down-up"></i> รับเข้า/จ่ายออก</button>' +
+        '<button class="btn btn-primary" onclick="ivOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่มรายการ</button>';
+      html += '</div></div>';
+      html += moduleDashboard([
+        mdStat('รายการทั้งหมด', d.items.length, 'bi-box-seam', 'blue'),
+        mdStat('ใช้งานอยู่', active, 'bi-check-circle', 'teal'),
+        mdStat('ต่ำกว่าขั้นต่ำ', low, 'bi-exclamation-triangle', low ? 'danger' : 'gray'),
+        mdStat('มูลค่าสต็อก', ivMoney(totalValue), 'bi-cash-stack', 'teal', 'บาท')
+      ]);
+      html += dataTable({
+        id: 'inventory', rows: d.items, empty: 'ยังไม่มีรายการ Inventory',
+        columns: [
+          { key: 'name', label: 'รายการ', value: function (r) { return '<b>' + escapeHtmlJs(r.name) + '</b>' + (r.low ? ' <span class="badge bg-danger">ต่ำกว่าขั้นต่ำ</span>' : '') + '<br><small class="text-muted">' + escapeHtmlJs(r.id) + '</small>'; }, raw: function (r) { return r.name + ' ' + r.id; } },
+          { key: 'category', label: 'หมวดหมู่', value: function (r) { return escapeHtmlJs(r.category || '-'); } },
+          { key: 'stock', label: 'คงเหลือ', value: function (r) { return (r.low ? '<span class="overdue">' + r.stock + '</span>' : r.stock) + ' ' + escapeHtmlJs(r.unit || '') + '<br><small class="text-muted">ขั้นต่ำ ' + r.min + '</small>'; }, raw: function (r) { return String(r.stock); } },
+          { key: 'unitPrice', label: 'ราคา/หน่วย', value: function (r) { return r.unitPrice ? ivMoney(r.unitPrice) : '-'; }, raw: function (r) { return String(r.unitPrice || 0); }, default: false },
+          { key: 'value', label: 'มูลค่า', value: function (r) { return r.value ? ivMoney(r.value) : '-'; }, raw: function (r) { return String(r.value || 0); } },
+          { key: 'location', label: 'สถานที่', value: function (r) { return escapeHtmlJs(r.location || '-'); }, default: false },
+          { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status || 'Active'); }, raw: function (r) { return r.status; } }
+        ],
+        filters: [
+          { key: 'category', label: 'หมวดหมู่', value: function (r) { return r.category || ''; } },
+          { key: 'status', label: 'สถานะ', value: function (r) { return r.status || 'Active'; } }
+        ],
+        actions: function (r) {
+          var a = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="ivLedger(\'' + r.id + '\')"><i class="bi bi-journal-text"></i> ประวัติ</button>';
+          if (d.canEdit) {
+            a += '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="ivAdjust(\'' + r.id + '\')">ตรวจนับ</button>';
+            a += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="ivEditItem(\'' + r.id + '\')">แก้ไข</button>';
+            var next = String(r.status).toLowerCase() === 'inactive' ? 'Active' : 'Inactive';
+            a += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="ivStatus(\'' + r.id + '\',\'' + next + '\')">' + next + '</button>';
+            a += deleteBtn('inventory', r.id, r.name || r.id);
+          }
+          return a;
+        }
+      });
+      html += '<h5 class="text-primary mt-4 mb-2">ประวัติรับเข้า/จ่ายออก (ล่าสุด)</h5>';
+      html += dataTable({
+        id: 'invtx', rows: d.transactions, empty: 'ยังไม่มีประวัติ Inventory',
+        columns: [
+          { key: 'date', label: 'เวลา', value: function (r) { return escapeHtmlJs(r.actionDate); } },
+          { key: 'item', label: 'รายการ', value: function (r) { return escapeHtmlJs(r.itemName || r.itemId); }, raw: function (r) { return r.itemName || r.itemId; } },
+          { key: 'type', label: 'ประเภท', value: function (r) { return ivTxBadge(r); }, raw: function (r) { return r.type; } },
+          { key: 'qty', label: 'จำนวน', value: function (r) { return escapeHtmlJs(r.qty); } },
+          { key: 'balance', label: 'คงเหลือหลังรายการ', value: function (r) { return (r.balanceAfter === '' || r.balanceAfter === null || r.balanceAfter === undefined) ? '-' : escapeHtmlJs(r.balanceAfter); }, default: false },
+          { key: 'notes', label: 'หมายเหตุ', value: function (r) { return '<small>' + escapeHtmlJs(r.notes || '') + (r.ticketId ? ' · ' + escapeHtmlJs(r.ticketId) : '') + '</small>'; }, default: false }
+        ],
+        filters: [{ key: 'type', label: 'ประเภท', value: function (r) { return r.type || ''; } }]
+      });
+      container.innerHTML = html;
+    });
+  }
+
+  function ivTxBadge(r) {
+    if (r.type === 'IN') return '<span class="badge bg-success">รับเข้า +' + escapeHtmlJs(r.qty) + '</span>';
+    if (r.type === 'OUT') return '<span class="badge bg-danger">จ่ายออก -' + escapeHtmlJs(r.qty) + '</span>';
+    if (r.type === 'ADJUST') { var v = Number(r.variance); var sign = v > 0 ? '+' : ''; return '<span class="badge bg-info text-dark">ปรับยอด ' + sign + (isNaN(v) ? escapeHtmlJs(r.variance) : v) + '</span>'; }
+    return itStatusBadge(r.type);
+  }
+  function ivFind(id) { return (INV_DATA.items || []).filter(function (x) { return x.id === id; })[0] || {}; }
+
+  function ivOpenForm() {
+    showFormModal({
+      title: 'เพิ่มรายการ Inventory', submitLabel: 'บันทึกรายการ',
+      fields: [
+        { id: 'name', label: 'ชื่อรายการ', required: true, col: 'col-md-6' },
+        { id: 'category', label: 'หมวดหมู่', col: 'col-md-3' },
+        { id: 'unit', label: 'หน่วยนับ', required: true, col: 'col-md-3' },
+        { id: 'stock', label: 'จำนวนเริ่มต้น', type: 'number', col: 'col-md-3' },
+        { id: 'min', label: 'ขั้นต่ำ (MinQty)', type: 'number', col: 'col-md-3' },
+        { id: 'unitPrice', label: 'ราคา/หน่วย (บาท)', type: 'number', col: 'col-md-3' },
+        { id: 'reorderQty', label: 'จำนวนสั่งซื้อแนะนำ', type: 'number', col: 'col-md-3', help: 'เว้นว่าง = ใช้ขั้นต่ำ×2 คำนวณให้' },
+        { id: 'location', label: 'สถานที่เก็บ', col: 'col-md-6' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-md-6' }
+      ],
+      onSubmit: function (v) { return callServer('addInventoryItem', v).then(function (m) { toast(m); loadModule('inventory'); }); }
+    });
+  }
+  function ivEditItem(id) {
+    var r = ivFind(id);
+    showFormModal({
+      title: 'แก้ไขรายการ: ' + (r.name || id), submitLabel: 'บันทึก',
+      fields: [
+        { id: 'name', label: 'ชื่อรายการ', value: r.name, required: true, col: 'col-md-6' },
+        { id: 'category', label: 'หมวดหมู่', value: r.category, col: 'col-md-3' },
+        { id: 'unit', label: 'หน่วยนับ', value: r.unit, col: 'col-md-3' },
+        { id: 'min', label: 'ขั้นต่ำ (MinQty)', type: 'number', value: r.min, col: 'col-md-3' },
+        { id: 'unitPrice', label: 'ราคา/หน่วย (บาท)', type: 'number', value: r.unitPrice, col: 'col-md-3' },
+        { id: 'reorderQty', label: 'จำนวนสั่งซื้อแนะนำ', type: 'number', value: r.reorderQty, col: 'col-md-3' },
+        { id: 'location', label: 'สถานที่เก็บ', value: r.location, col: 'col-md-3' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('updateInventoryItem', id, v).then(function (m) { toast(m, 'success'); loadModule('inventory'); }); }
+    });
+  }
+  function ivTxForm() {
+    var d = INV_DATA;
+    showFormModal({
+      title: 'รับเข้า / จ่ายออก', submitLabel: 'บันทึก', size: 'md',
+      fields: [
+        { id: 'itemId', label: 'รายการ', type: 'select', required: true, col: 'col-12', options: (d.items || []).map(function (i) { return { value: i.id, label: i.name + ' (คงเหลือ ' + i.stock + ')' }; }) },
+        { id: 'type', label: 'ประเภท', type: 'select', placeholder: false, required: true, col: 'col-md-6', options: d.txTypes },
+        { id: 'qty', label: 'จำนวน', type: 'number', required: true, col: 'col-md-6' },
+        { id: 'ticketId', label: 'Ticket ที่เกี่ยวข้อง', col: 'col-12' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('recordInventoryTransaction', v).then(function (m) { toast(m); loadModule('inventory'); }); }
+    });
+  }
+  function ivAdjust(id) {
+    var r = ivFind(id);
+    showFormModal({
+      title: 'ตรวจนับ/ปรับยอด: ' + (r.name || id), submitLabel: 'บันทึกผลตรวจนับ', size: 'md',
+      fields: [
+        { id: 'current', label: 'ยอดในระบบปัจจุบัน', type: 'static', value: r.stock + ' ' + (r.unit || ''), col: 'col-md-6' },
+        { id: 'counted', label: 'จำนวนที่นับได้จริง', type: 'number', value: r.stock, required: true, col: 'col-md-6' },
+        { id: 'notes', label: 'หมายเหตุ (สาเหตุผลต่าง ถ้ามี)', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('adjustInventoryStock', { itemId: id, counted: v.counted, notes: v.notes }).then(function (m) { toast(m, 'success'); loadModule('inventory'); }); }
+    });
+  }
+  function ivStatus(id, status) {
+    showConfirm('ปรับสถานะรายการเป็น ' + status + '?',
+      function () { callServer('setInventoryItemStatus', id, status).then(function (m) { toast(m); loadModule('inventory'); }); });
+  }
+
+  function ivLedger(id) {
+    callServer('getInventoryLedger', id).then(function (d) {
+      var it = d.item;
+      var rows = (d.transactions || []).map(function (t) {
+        return '<tr><td class="small">' + escapeHtmlJs(t.date) + '</td><td>' + ivTxBadge(t) + '</td>' +
+          '<td class="text-end">' + (t.balanceAfter === null ? '-' : escapeHtmlJs(t.balanceAfter)) + '</td>' +
+          '<td class="small">' + escapeHtmlJs(t.notes || '') + (t.ticketId ? ' · ' + escapeHtmlJs(t.ticketId) : '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="4" class="text-muted">ยังไม่มีความเคลื่อนไหว</td></tr>';
+      var body = '<div class="alert alert-light border py-2"><b>' + escapeHtmlJs(it.name) + '</b> · คงเหลือ <b>' + it.stock + '</b> ' + escapeHtmlJs(it.unit || '') + ' · ขั้นต่ำ ' + it.min + '</div>' +
+        '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>เวลา</th><th>รายการ</th><th class="text-end">คงเหลือ</th><th>หมายเหตุ</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      showInfoModal('บัญชีเคลื่อนไหว · ' + it.name, body, 'lg');
+    });
+  }
+
+  // ===== รายการต้องสั่งซื้อ (Reorder) =====
+  function ivReorderList() {
+    return (INV_DATA.items || []).filter(function (r) { return r.low && String(r.status).toLowerCase() !== 'inactive'; })
+      .map(function (r) {
+        var suggested = r.reorderQty > 0 ? r.reorderQty : Math.max((r.min * 2) - r.stock, r.min - r.stock, 1);
+        return { id: r.id, name: r.name, category: r.category, unit: r.unit, stock: r.stock, min: r.min, suggested: suggested, unitPrice: r.unitPrice, estCost: Math.round(suggested * (r.unitPrice || 0)) };
+      });
+  }
+  function ivReorderView() {
+    var c = IV_CONTAINER; if (!c) return;
+    var list = ivReorderList();
+    var totalCost = list.reduce(function (s, x) { return s + (x.estCost || 0); }, 0);
+    var rows = list.map(function (r) {
+      return '<tr><td><b>' + escapeHtmlJs(r.name) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.category || '') + '</small></td>' +
+        '<td class="text-center overdue">' + r.stock + '</td><td class="text-center">' + r.min + '</td>' +
+        '<td class="text-center"><b>' + r.suggested + '</b> ' + escapeHtmlJs(r.unit || '') + '</td>' +
+        '<td class="text-end">' + (r.estCost ? ivMoney(r.estCost) : '-') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="text-muted text-center">ไม่มีรายการที่ต่ำกว่าขั้นต่ำ 🎉</td></tr>';
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3">' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'inventory\')"><i class="bi bi-arrow-left"></i> กลับ</button>' +
+      '<h4 class="text-primary mb-0 ms-2">รายการที่ต้องสั่งซื้อ</h4>' +
+      (list.length ? '<button class="btn btn-outline-dark btn-sm ms-auto" onclick="ivPrintReorder()"><i class="bi bi-printer"></i> พิมพ์ใบขอซื้อ</button>' : '') + '</div>';
+    html += '<div class="table-responsive"><table class="table table-bordered align-middle"><thead class="table-light"><tr><th>รายการ</th><th class="text-center">คงเหลือ</th><th class="text-center">ขั้นต่ำ</th><th class="text-center">แนะนำสั่ง</th><th class="text-end">ประมาณการ (บาท)</th></tr></thead><tbody>' + rows + '</tbody>' +
+      (list.length ? '<tfoot><tr><th colspan="4" class="text-end">รวมประมาณการ</th><th class="text-end">' + ivMoney(totalCost) + '</th></tr></tfoot>' : '') + '</table></div>';
+    c.innerHTML = html;
+  }
+  function ivPrintReorder() {
+    var list = ivReorderList();
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[<>&]/g, ' '); };
+    var org = (typeof ORG_NAME !== 'undefined' ? ORG_NAME : '');
+    var totalCost = list.reduce(function (s, x) { return s + (x.estCost || 0); }, 0);
+    var rows = list.map(function (r, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(r.name) + '</td><td class="c">' + r.stock + '</td><td class="c">' + r.min + '</td><td class="c">' + r.suggested + ' ' + esc(r.unit || '') + '</td><td class="r">' + ivMoney(r.estCost) + '</td></tr>';
+    }).join('');
+    var w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) { toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์', 'warning'); return; }
+    var html = '<html><head><meta charset="utf-8"><title>ใบขอซื้อวัสดุ</title>' +
+      '<style>body{font-family:"Sarabun",Arial,sans-serif;padding:28px;color:#222}h2{text-align:center;margin:0}.org{text-align:center;color:#555;margin-bottom:16px}' +
+      'table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #999;padding:7px 9px;font-size:14px}th{background:#f2f2f2}.c{text-align:center}.r{text-align:right}' +
+      '.sign{margin-top:56px;display:flex;justify-content:space-around;text-align:center}.line{border-top:1px solid #333;margin-top:48px;padding-top:6px;width:40%}</style></head><body>' +
+      '<h2>ใบขอซื้อวัสดุ/อะไหล่ IT</h2><div class="org">' + esc(org) + ' · วันที่ ' + new Date().toLocaleDateString('th-TH') + '</div>' +
+      '<table><thead><tr><th style="width:5%">#</th><th>รายการ</th><th class="c" style="width:12%">คงเหลือ</th><th class="c" style="width:12%">ขั้นต่ำ</th><th class="c" style="width:16%">แนะนำสั่ง</th><th class="r" style="width:16%">ประมาณการ</th></tr></thead>' +
+      '<tbody>' + (rows || '<tr><td colspan="6" class="c">— ไม่มีรายการ —</td></tr>') + '</tbody>' +
+      '<tfoot><tr><th colspan="5" class="r">รวมประมาณการ (บาท)</th><th class="r">' + ivMoney(totalCost) + '</th></tr></tfoot></table>' +
+      '<div class="sign"><div class="line">ผู้ขอซื้อ</div><div class="line">ผู้อนุมัติ</div></div>' +
+      '</body><script>window.onload=function(){window.focus();window.print();}<\/script></html>';
+    w.document.write(html); w.document.close();
+  }
+
+  // ===== รายงานวิเคราะห์ Inventory =====
+  function ivChart(id, cfg) { var el = document.getElementById(id); if (!el || typeof Chart === 'undefined') return; IV_CHARTS.push(new Chart(el, cfg)); }
+  function ivShowAnalytics() {
+    var c = IV_CONTAINER; if (!c) return;
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังคำนวณรายงาน...</div></div>';
+    callServer('getInventoryAnalytics').then(function (a) { ivRenderAnalytics(c, a); })
+      .catch(function (err) { c.innerHTML = '<div class="alert alert-danger">โหลดรายงานไม่สำเร็จ: ' + escapeHtmlJs((err && err.message) || String(err)) + '</div><button class="btn btn-outline-secondary" onclick="loadModule(\'inventory\')">กลับ</button>'; });
+  }
+  function ivRenderAnalytics(c, a) {
+    IV_CHARTS.forEach(function (ch) { try { ch.destroy(); } catch (e) {} });
+    IV_CHARTS = [];
+    var kpi = function (label, value, sub, tone) {
+      return '<div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-3"><div class="text-muted small">' + label + '</div><div class="fs-4 fw-bold text-' + (tone || 'primary') + '">' + value + '</div>' + (sub ? '<div class="text-muted" style="font-size:.75rem">' + sub + '</div>' : '') + '</div></div></div>';
+    };
+    var listCard = function (title, arr, unit) {
+      var rows = (arr || []).map(function (x) { return '<tr><td>' + escapeHtmlJs(x.label) + '</td><td class="text-end"><b>' + (unit === 'money' ? ivMoney(x.value) : x.value) + '</b></td></tr>'; }).join('') || '<tr><td class="text-muted" colspan="2">ไม่มีข้อมูล</td></tr>';
+      return '<div class="col-lg-6"><div class="card h-100"><div class="card-body"><h6 class="text-muted">' + title + '</h6><div class="table-responsive"><table class="table table-sm mb-0">' + rows + '</table></div></div></div></div>';
+    };
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'inventory\')"><i class="bi bi-arrow-left"></i> กลับ</button><h4 class="text-primary mb-0 ms-2">รายงานวิเคราะห์ Inventory</h4></div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('มูลค่าสต็อกรวม', ivMoney(a.totalValue), 'บาท', 'teal') +
+      kpi('รายการใช้งาน', a.activeCount, 'รายการ', 'primary') +
+      kpi('ต่ำกว่าขั้นต่ำ', a.low, 'ต้องสั่งซื้อ', a.low ? 'danger' : 'success') +
+      kpi('หมวดหมู่', (a.byCategory || []).length, 'หมวด', 'info') +
+      '</div>';
+    html += '<div class="row g-3 mb-3"><div class="col-lg-12"><div class="card"><div class="card-body"><h6 class="text-muted">แนวโน้มรับเข้า vs จ่ายออก (6 เดือน)</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="ivChartTrend"></canvas></div></div></div></div></div>';
+    html += '<div class="row g-3">' + listCard('มูลค่าสต็อกตามหมวดหมู่', a.byCategory, 'money') + listCard('รายการใช้เยอะสุด (จ่ายออก)', a.topConsumed) + '</div>';
+    c.innerHTML = html;
+    ivChart('ivChartTrend', {
+      type: 'bar',
+      data: { labels: a.trend.map(function (t) { return t.month; }), datasets: [
+        { label: 'รับเข้า', data: a.trend.map(function (t) { return t.in; }), backgroundColor: '#22c55e' },
+        { label: 'จ่ายออก', data: a.trend.map(function (t) { return t.out; }), backgroundColor: '#ef4444' }
+      ] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+
+  // ===== Software License =====
+  var LICENSE_DATA = null;
+  function renderLicense(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getLicenseModuleData').then(function (d) {
+      LICENSE_DATA = d;
+      var expiring = d.licenses.filter(function (x) { return x.expireDays !== null && x.expireDays >= 0 && x.expireDays <= 30; }).length;
+      var expired = d.licenses.filter(function (x) { return x.expireDays !== null && x.expireDays < 0; }).length;
+      var html = '<div class="d-flex align-items-center mb-3"><h3 class="text-primary mb-0">Software License</h3>';
+      if (d.canEdit) html += '<div class="ms-auto">' +
+        '<button class="btn btn-outline-primary me-2" onclick="licCheck()"><i class="bi bi-calendar-check"></i> ตรวจวันหมดอายุ</button>' +
+        '<button class="btn btn-primary" onclick="licOpenForm()"><i class="bi bi-plus-lg"></i> เพิ่ม License</button></div>';
+      html += '</div>';
+      html += moduleDashboard([
+        mdStat('License ทั้งหมด', d.licenses.length, 'bi-key', 'blue'),
+        mdStat('ใกล้หมดอายุ', expiring, 'bi-calendar-event', expiring ? 'amber' : 'gray'),
+        mdStat('หมดอายุแล้ว', expired, 'bi-x-octagon', expired ? 'danger' : 'gray'),
+        mdStat('Vendor อ้างอิง', d.vendors.length, 'bi-buildings', 'blue')
+      ]);
+      html += dataTable({
+        id: 'license', rows: d.licenses, empty: 'ยังไม่มี Software License',
+        columns: [
+          { key: 'id', label: 'รหัส', value: function (r) { return escapeHtmlJs(r.id); } },
+          { key: 'name', label: 'Software', value: function (r) { return escapeHtmlJs(r.name); }, raw: function (r) { return r.name; } },
+          { key: 'type', label: 'ประเภท', value: function (r) { return escapeHtmlJs(r.type || '-'); } },
+          { key: 'qty', label: 'ใช้งาน', value: function (r) { return escapeHtmlJs(r.used) + ' / ' + escapeHtmlJs(r.total); } },
+          { key: 'expire', label: 'หมดอายุ', value: function (r) {
+              if (!r.expire) return '-';
+              if (r.expireDays !== null && r.expireDays < 0) return '<span class="overdue">' + escapeHtmlJs(r.expire) + '</span>';
+              if (r.expireDays !== null && r.expireDays <= 30) return '<span class="soon">' + escapeHtmlJs(r.expire) + '</span>';
+              return escapeHtmlJs(r.expire);
+            }, raw: function (r) { return r.expire || ''; } },
+          { key: 'assignedTo', label: 'ผู้ใช้งาน', value: function (r) { return escapeHtmlJs(r.assignedTo || '-'); }, default: false },
+          { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status || 'Active'); }, raw: function (r) { return r.status; } }
+        ],
+        filters: [
+          { key: 'type', label: 'ประเภท', value: function (r) { return r.type || ''; } },
+          { key: 'status', label: 'สถานะ', value: function (r) { return r.status || 'Active'; } }
+        ],
+        actions: d.canEdit ? function (r) {
+          return '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="licEditUsed(\'' + r.id + '\',\'' + escapeHtmlJs(r.used) + '\')">สิทธิ์</button>' +
+            '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="licEdit(\'' + r.id + '\')">แก้ไข</button>' +
+            '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="licStatus(\'' + r.id + '\',\'' + escapeHtmlJs(r.status || 'Active') + '\')">สถานะ</button>' +
+            deleteBtn('license', r.id, r.name || r.id);
+        } : null
+      });
+      container.innerHTML = html;
+    });
+  }
+  function licOpenForm(id) {
+    var d = LICENSE_DATA, r = id ? (d.licenses.filter(function (x) { return x.id === id; })[0] || {}) : {};
+    showFormModal({
+      title: id ? ('แก้ไข License: ' + r.name) : 'เพิ่ม Software License', submitLabel: id ? 'อัปเดต' : 'บันทึก',
+      fields: [
+        { id: 'name', label: 'ชื่อ Software', value: r.name, required: true, col: 'col-md-6' },
+        { id: 'type', label: 'ประเภท', type: 'select', options: d.types, value: r.type, col: 'col-md-3' },
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: d.statuses, value: r.status || 'Active', col: 'col-md-3' },
+        { id: 'total', label: 'จำนวนทั้งหมด', type: 'number', value: r.total, required: !id, col: 'col-md-3' },
+        { id: 'used', label: 'ใช้แล้ว', type: 'number', value: r.used, col: 'col-md-3' },
+        { id: 'start', label: 'เริ่มต้น', type: 'date', value: dmyToInput(r.start), col: 'col-md-3' },
+        { id: 'expire', label: 'หมดอายุ', type: 'date', value: dmyToInput(r.expire), col: 'col-md-3' },
+        { id: 'vendorId', label: 'Vendor', type: 'select', options: (d.vendors || []).map(function (v) { return { value: v.id, label: v.name || v.id }; }), value: r.vendorId, col: 'col-md-6' },
+        { id: 'assignedTo', label: 'ผู้ใช้งาน/หน่วยงาน', value: r.assignedTo, col: 'col-md-6' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var fn = id ? callServer('updateLicense', id, v) : callServer('addSoftwareLicense', v);
+        return fn.then(function (m) { toast(m); loadModule('license'); });
+      }
+    });
+  }
+  function licEdit(id) { licOpenForm(id); }
+  function licCheck() { callServer('runLicenseExpiryCheck').then(function (m) { toast(m, 'success'); loadModule('license'); }); }
+  function licStatus(id, cur) {
+    showFormModal({ title: 'เปลี่ยนสถานะ License', submitLabel: 'บันทึก', size: 'md',
+      fields: [{ id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: LICENSE_DATA.statuses, value: cur || 'Active', required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('setLicenseStatus', id, v.status).then(function (m) { toast(m); loadModule('license'); }); } });
+  }
+  function licEditUsed(id, cur) {
+    showFormModal({ title: 'แก้ไขจำนวนสิทธิ์ที่ใช้', submitLabel: 'บันทึก', size: 'md',
+      fields: [{ id: 'used', label: 'จำนวนสิทธิ์ที่ใช้แล้ว (UsedQty)', type: 'number', value: cur, required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('updateLicense', id, { used: v.used }).then(function (m) { toast(m); loadModule('license'); }); } });
+  }
+
+  // ===== Reports =====
+  function renderReports(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getReportsModuleData').then(function (d) {
+      var totalRows = d.modules.reduce(function (s, m) { return s + (m.total || 0); }, 0);
+      var html = '<div class="d-flex align-items-center mb-3"><h3 class="text-primary mb-0">Reports</h3>' +
+        '<span class="ms-auto small text-muted">ข้อมูล ณ ' + escapeHtmlJs(d.generatedAt) + '</span></div>';
+      html += moduleDashboard([
+        mdStat('หมวดโมดูล', d.categories.length, 'bi-diagram-3', 'blue'),
+        mdStat('โมดูลทั้งหมด', d.modules.length, 'bi-grid', 'blue'),
+        mdStat('รายการข้อมูลรวม', totalRows, 'bi-table', 'teal'),
+        mdStat('เปิดได้ตามสิทธิ์', d.modules.filter(function (m) { return m.canOpen; }).length, 'bi-unlock', 'blue')
+      ]);
+      html += '<div class="card stat-card mb-4 border-primary"><div class="card-body d-flex flex-wrap align-items-center gap-3">' +
+        '<div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width:48px;height:48px"><i class="bi bi-file-earmark-pdf fs-4"></i></div>' +
+        '<div class="flex-grow-1"><h5 class="mb-1">PDF Designer</h5><div class="small text-muted">ออกแบบหัวรายงาน เลือกข้อมูลและคอลัมน์ ดูตัวอย่าง แล้วสร้าง PDF ลง Google Drive</div></div>' +
+        '<button class="btn btn-primary" onclick="openPdfDesigner()"><i class="bi bi-palette me-1"></i> เปิด PDF Designer</button></div></div>';
+      var grouped = {};
+      d.modules.forEach(function (m) { (grouped[m.category] = grouped[m.category] || []).push(m); });
+      Object.keys(grouped).forEach(function (cat) {
+        html += '<h5 class="text-primary mt-4 mb-2">' + escapeHtmlJs(cat) + '</h5><div class="row g-3">';
+        grouped[cat].forEach(function (m) { html += reportModuleCard(m); });
+        html += '</div>';
+      });
+      container.innerHTML = html;
+    });
+  }
+
+  var PDF_DESIGNER_DATA = null;
+  function openPdfDesigner() {
+    var c = document.getElementById('content');
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังเปิด PDF Designer...</div></div>';
+    callServer('getPdfDesignerData').then(function (d) { PDF_DESIGNER_DATA = d; renderPdfDesigner(c); });
+  }
+  function renderPdfDesigner(c) {
+    var d = PDF_DESIGNER_DATA, types = d.types || [];
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'reports\')"><i class="bi bi-arrow-left"></i> กลับ</button><h3 class="text-primary mb-0 ms-2">PDF Designer</h3></div>' +
+      '<div class="alert alert-primary d-flex align-items-center justify-content-between"><span><b>Visual Canvas</b> ลาก ย้าย และปรับขนาดข้อความได้ พร้อมฟอนต์ Sarabun</span><button class="btn btn-primary btn-sm" onclick="openUniversalCanvasDesigner()">เปิด Canvas Designer</button></div><div class="row g-3"><div class="col-12 col-xl-5"><div class="card stat-card"><div class="card-body"><h5>ตั้งค่ารายงาน</h5><div class="row g-2">' +
+      '<div class="col-md-7"><label class="form-label">ประเภทรายงาน</label><select id="pdf-type" class="form-select" onchange="pdfTypeChanged()">' + types.map(function(t){return '<option value="'+escapeHtmlJs(t.key)+'">'+escapeHtmlJs(t.label)+'</option>';}).join('') + '</select></div>' +
+      '<div class="col-md-5"><label class="form-label">แนวกระดาษ</label><select id="pdf-orientation" class="form-select"><option value="portrait">A4 แนวตั้ง</option><option value="landscape">A4 แนวนอน</option></select></div>' +
+      '<div class="col-12"><label class="form-label">ชื่อหน่วยงาน</label><input id="pdf-org" class="form-control" value="'+escapeHtmlJs(d.orgName||'')+'"></div>' +
+      '<div class="col-12"><label class="form-label">ชื่อรายงาน</label><input id="pdf-title" class="form-control"></div>' +
+      '<div class="col-12"><label class="form-label">คำอธิบายใต้หัวเรื่อง</label><input id="pdf-subtitle" class="form-control" placeholder="เช่น รายงานประจำเดือน กรกฎาคม 2569"></div>' +
+      '<div class="col-md-4"><label class="form-label">สีหัวตาราง</label><input id="pdf-color" type="color" class="form-control form-control-color w-100" value="'+escapeHtmlJs(d.defaults.color)+'"></div>' +
+      '<div class="col-md-4"><label class="form-label">ตั้งแต่วันที่</label><input id="pdf-from" type="date" class="form-control"></div>' +
+      '<div class="col-md-4"><label class="form-label">ถึงวันที่</label><input id="pdf-to" type="date" class="form-control"></div>' +
+      '<div class="col-md-7"><label class="form-label">สถานะ (ตรงตามข้อมูล)</label><input id="pdf-status" class="form-control" placeholder="เว้นว่าง = ทุกสถานะ"></div>' +
+      '<div class="col-md-5"><label class="form-label">จำนวนสูงสุด</label><input id="pdf-max" type="number" min="1" max="1000" class="form-control" value="500"></div>' +
+      '<div class="col-12"><label class="form-label">ข้อความท้ายรายงาน</label><input id="pdf-footer" class="form-control" value="'+escapeHtmlJs(d.defaults.footer)+'"></div></div>' +
+      '<hr><label class="form-label fw-semibold">คอลัมน์ที่แสดง</label><div id="pdf-columns" class="row g-2"></div>' +
+      '<hr><div class="input-group"><input id="pdf-template-name" class="form-control" placeholder="ชื่อ Template"><button class="btn btn-outline-primary" onclick="pdfSaveTemplate()">บันทึก Template</button></div>' +
+      '<select id="pdf-template" class="form-select mt-2" onchange="pdfLoadTemplate()"><option value="">— โหลด Template ที่บันทึกไว้ —</option>' + pdfTemplateOptions(d.templates) + '</select>' +
+      '<div class="d-grid gap-2 d-md-flex mt-3"><button class="btn btn-outline-primary flex-fill" onclick="pdfPreview()"><i class="bi bi-eye"></i> ดูตัวอย่าง</button><button class="btn btn-danger flex-fill" onclick="pdfGenerate(this)"><i class="bi bi-file-earmark-pdf"></i> สร้าง PDF</button></div>' +
+      '</div></div></div><div class="col-12 col-xl-7"><div class="card stat-card h-100"><div class="card-body"><h5>ตัวอย่างรายงาน</h5><div id="pdf-preview" class="text-muted py-5 text-center">ตั้งค่ารายงานแล้วกด “ดูตัวอย่าง”</div></div></div></div></div>';
+    c.innerHTML = html; pdfTypeChanged();
+  }
+  function pdfTemplateOptions(rows) { return (rows||[]).map(function(t,i){return '<option value="'+i+'">'+escapeHtmlJs(t.name)+' · '+escapeHtmlJs(t.updatedAt||'')+'</option>';}).join(''); }
+  function pdfTypeChanged() {
+    var type = val('pdf-type'), def = (PDF_DESIGNER_DATA.types||[]).find(function(t){return t.key===type;}); if(!def)return;
+    document.getElementById('pdf-title').value = def.label;
+    document.getElementById('pdf-columns').innerHTML = def.columns.map(function(col,i){return '<div class="col-6"><label class="form-check border rounded p-2 w-100"><input class="form-check-input pdf-col ms-0 me-2" type="checkbox" value="'+escapeHtmlJs(col.key)+'" '+(i<8?'checked':'')+'><span class="small">'+escapeHtmlJs(col.label)+'</span></label></div>';}).join('');
+  }
+  function pdfForm() {
+    return { reportType:val('pdf-type'), orientation:val('pdf-orientation'), orgName:val('pdf-org'), title:val('pdf-title'), subtitle:val('pdf-subtitle'), color:val('pdf-color'), dateFrom:val('pdf-from'), dateTo:val('pdf-to'), status:val('pdf-status'), maxRows:val('pdf-max'), footer:val('pdf-footer'), columns:Array.prototype.slice.call(document.querySelectorAll('.pdf-col:checked')).map(function(x){return x.value;}) };
+  }
+  function pdfPreview() {
+    var box=document.getElementById('pdf-preview'); box.innerHTML='<div class="spinner-border text-primary"></div>';
+    callServer('previewPdfReport',pdfForm()).then(function(d){ var head=d.columns.map(function(x){return '<th>'+escapeHtmlJs(x.label)+'</th>';}).join(''); var body=d.rows.map(function(r){return '<tr>'+d.columns.map(function(x){return '<td><small>'+escapeHtmlJs(r[x.key]===undefined?'':r[x.key])+'</small></td>';}).join('')+'</tr>';}).join(''); box.innerHTML='<div class="text-start mb-2"><strong>'+escapeHtmlJs(d.design.title)+'</strong><span class="badge bg-primary ms-2">'+d.total+' รายการ</span></div><div class="table-responsive"><table class="table table-sm table-bordered"><thead style="background:'+escapeHtmlJs(d.design.color)+';color:white"><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>'+(d.total>20?'<div class="small text-muted">ตัวอย่าง 20 รายการแรก</div>':''); });
+  }
+  function pdfGenerate(btn) { var old=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm"></span> กำลังสร้าง...'; callServer('generateDesignedPdf',pdfForm()).then(function(d){toast('สร้าง PDF แล้ว '+d.total+' รายการ','success'); window.open(d.url,'_blank');}).finally(function(){btn.disabled=false;btn.innerHTML=old;}); }
+  function pdfSaveTemplate() { var f=pdfForm(); f.templateName=val('pdf-template-name'); callServer('savePdfDesignTemplate',f).then(function(d){PDF_DESIGNER_DATA.templates=d.templates||[];document.getElementById('pdf-template').innerHTML='<option value="">— โหลด Template ที่บันทึกไว้ —</option>'+pdfTemplateOptions(d.templates);toast(d.message||'บันทึกแล้ว','success');}); }
+  function pdfLoadTemplate() { var i=val('pdf-template'); if(i==='')return; var t=PDF_DESIGNER_DATA.templates[Number(i)]; if(!t||!t.design)return; var x=t.design; document.getElementById('pdf-type').value=x.reportType; pdfTypeChanged(); ['orgName','title','subtitle','color','dateFrom','dateTo','status','maxRows','footer','orientation'].forEach(function(k){var ids={orgName:'pdf-org',title:'pdf-title',subtitle:'pdf-subtitle',color:'pdf-color',dateFrom:'pdf-from',dateTo:'pdf-to',status:'pdf-status',maxRows:'pdf-max',footer:'pdf-footer',orientation:'pdf-orientation'}; if(x[k]!==undefined)document.getElementById(ids[k]).value=x[k];}); Array.prototype.slice.call(document.querySelectorAll('.pdf-col')).forEach(function(el){el.checked=(x.columns||[]).indexOf(el.value)>-1;}); }
+
+  var PDF_CANVAS=null, PDF_PAGES=[], PDF_PAGE_INDEX=0, PDF_HISTORY=[], PDF_FUTURE=[], PDF_HISTORY_LOCK=false;
+  var PDF_SOURCES=[], PDF_CANVAS_TEMPLATE_ID='';
+  function openUniversalCanvasDesigner(){
+    var c=document.getElementById('content');
+    c.innerHTML='<div class="d-flex align-items-center flex-wrap gap-2 mb-2"><button class="btn btn-outline-secondary btn-sm" onclick="openPdfDesigner()">← กลับ</button><h3 class="mb-0 text-primary">Document Designer</h3><span class="badge bg-primary-subtle text-primary">Word-like</span><div class="ms-auto d-flex gap-2"><select id="uc-template" class="form-select form-select-sm" style="min-width:210px"><option value="">— Template —</option></select><button class="btn btn-outline-primary btn-sm" onclick="ucLoadTemplate()">เปิด</button><button class="btn btn-outline-danger btn-sm" onclick="ucDeleteTemplate()" title="ลบ Template"><i class="bi bi-trash"></i></button><button class="btn btn-primary btn-sm" onclick="ucSaveTemplate()">บันทึก</button><button class="btn btn-danger btn-sm" onclick="ucExport(this)"><i class="bi bi-file-earmark-pdf"></i> PDF</button></div></div>'+
+      '<div class="card stat-card mb-2"><div class="card-body p-2"><div class="d-flex flex-wrap align-items-center gap-1">'+
+      '<button class="btn btn-light btn-sm" onclick="ucUndo()" title="Undo (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button><button class="btn btn-light btn-sm" onclick="ucRedo()" title="Redo (Ctrl+Y)"><i class="bi bi-arrow-clockwise"></i></button><span class="vr mx-1"></span>'+
+      '<select id="uc-font" class="form-select form-select-sm" style="width:155px" onchange="ucSet(\'fontFamily\',this.value)"><option value="Sarabun">Sarabun</option><option value="TH Sarabun New">TH Sarabun New</option><option value="Arial">Arial</option><option value="Tahoma">Tahoma</option></select><input id="uc-size" type="number" min="6" max="144" class="form-control form-control-sm" style="width:70px" value="24" onchange="ucSet(\'fontSize\',Number(this.value))">'+
+      '<button class="btn btn-light btn-sm fw-bold" onclick="ucToggle(\'fontWeight\',\'bold\',\'normal\')">B</button><button class="btn btn-light btn-sm fst-italic" onclick="ucToggle(\'fontStyle\',\'italic\',\'normal\')">I</button><button class="btn btn-light btn-sm text-decoration-underline" onclick="ucToggle(\'underline\',true,false)">U</button><input id="uc-color" type="color" class="form-control form-control-color form-control-sm" value="#172b4d" onchange="ucSet(\'fill\',this.value)" title="สีตัวอักษร">'+
+      '<span class="vr mx-1"></span><button class="btn btn-light btn-sm" onclick="ucSet(\'textAlign\',\'left\')"><i class="bi bi-text-left"></i></button><button class="btn btn-light btn-sm" onclick="ucSet(\'textAlign\',\'center\')"><i class="bi bi-text-center"></i></button><button class="btn btn-light btn-sm" onclick="ucSet(\'textAlign\',\'right\')"><i class="bi bi-text-right"></i></button><button class="btn btn-light btn-sm" onclick="ucSet(\'textAlign\',\'justify\')"><i class="bi bi-justify"></i></button>'+ 
+      '<span class="vr mx-1"></span><button class="btn btn-light btn-sm" onclick="ucDuplicate()" title="ทำสำเนา"><i class="bi bi-copy"></i></button><button class="btn btn-light btn-sm" onclick="ucLayer(1)" title="นำขึ้น"><i class="bi bi-front"></i></button><button class="btn btn-light btn-sm" onclick="ucLayer(-1)" title="ส่งลง"><i class="bi bi-back"></i></button><button class="btn btn-outline-danger btn-sm" onclick="ucDelete()"><i class="bi bi-trash"></i></button></div></div></div>'+
+      '<div class="row g-2"><div class="col-xl-2 col-lg-3"><div class="card stat-card"><div class="card-body p-2"><label class="form-label small fw-semibold">แหล่งข้อมูล</label><select id="uc-source" class="form-select form-select-sm mb-2" onchange="ucSourceChanged()"><option>กำลังโหลด...</option></select><select id="uc-field" class="form-select form-select-sm mb-2"><option value="">— เลือกฟิลด์ —</option></select><button class="btn btn-outline-primary btn-sm w-100 mb-3" onclick="ucAddField()">แทรก Data Field</button><div class="d-grid gap-2"><button class="btn btn-outline-primary btn-sm" onclick="ucAddHeading()">หัวรายงาน</button><button class="btn btn-outline-primary btn-sm" onclick="ucAddText()">กล่องข้อความ</button><button class="btn btn-outline-primary btn-sm" onclick="ucAddTable()">ตาราง</button><button class="btn btn-outline-primary btn-sm" onclick="ucAddRect()">กรอบ/พื้นสี</button><button class="btn btn-outline-primary btn-sm" onclick="document.getElementById(\'uc-image-file\').click()">รูปภาพ/โลโก้</button><input id="uc-image-file" type="file" class="d-none" accept="image/*" onchange="ucAddImage(this)"><button class="btn btn-outline-secondary btn-sm" onclick="ucPreviewData()">ตัวอย่างข้อมูลจริง</button></div><hr><div class="d-flex gap-1"><button class="btn btn-light btn-sm flex-fill" onclick="ucAddPage()">+ หน้า</button><button class="btn btn-light btn-sm flex-fill" onclick="ucDuplicatePage()">คัดลอก</button></div><div class="d-flex align-items-center justify-content-between mt-2"><button class="btn btn-light btn-sm" onclick="ucChangePage(-1)">‹</button><span id="uc-page-label" class="small">หน้า 1/1</span><button class="btn btn-light btn-sm" onclick="ucChangePage(1)">›</button></div><button class="btn btn-outline-danger btn-sm w-100 mt-2" onclick="ucDeletePage()">ลบหน้านี้</button></div></div></div>'+
+      '<div class="col-xl-10 col-lg-9"><div class="overflow-auto border rounded bg-secondary-subtle p-3 text-center" style="max-height:calc(100vh - 250px)"><div class="d-inline-block shadow"><canvas id="uc-canvas"></canvas></div></div></div></div>';
+    if(!window.fabric){toast('โหลด Fabric.js ไม่สำเร็จ','danger');return;}
+    PDF_CANVAS=new fabric.Canvas('uc-canvas',{width:794,height:1123,backgroundColor:'#ffffff',preserveObjectStacking:true,selection:true});
+    PDF_PAGES=[];PDF_PAGE_INDEX=0;PDF_HISTORY=[];PDF_FUTURE=[];PDF_CANVAS_TEMPLATE_ID='';
+    PDF_CANVAS.on('object:added',ucRemember);PDF_CANVAS.on('object:modified',ucRemember);PDF_CANVAS.on('object:removed',ucRemember);
+    PDF_CANVAS.on('selection:created',ucSyncToolbar);PDF_CANVAS.on('selection:updated',ucSyncToolbar);
+    document.removeEventListener('keydown',ucKeyboard);document.addEventListener('keydown',ucKeyboard);
+    ucAddHeading();ucSaveCurrentPage();ucResetHistory();ucLoadSources();ucLoadTemplateList();
+  }
+  function ucCanvasJson(){return PDF_CANVAS.toJSON(['dataField','templateText']);}
+  function ucSaveCurrentPage(){if(!PDF_CANVAS)return;PDF_PAGES[PDF_PAGE_INDEX]={json:ucCanvasJson()};ucUpdatePageLabel();}
+  function ucLoadPage(index){if(index<0||index>=PDF_PAGES.length)return;PDF_HISTORY_LOCK=true;PDF_PAGE_INDEX=index;PDF_CANVAS.loadFromJSON(PDF_PAGES[index].json,function(){PDF_CANVAS.setBackgroundColor('#ffffff',function(){PDF_CANVAS.requestRenderAll();});PDF_HISTORY_LOCK=false;ucResetHistory();ucUpdatePageLabel();});}
+  function ucUpdatePageLabel(){var el=document.getElementById('uc-page-label');if(el)el.textContent='หน้า '+(PDF_PAGE_INDEX+1)+'/'+Math.max(1,PDF_PAGES.length);}
+  function ucAddPage(){ucSaveCurrentPage();PDF_PAGES.push({json:{version:'5.3.0',objects:[],background:'#ffffff'}});ucLoadPage(PDF_PAGES.length-1);}
+  function ucDuplicatePage(){ucSaveCurrentPage();PDF_PAGES.splice(PDF_PAGE_INDEX+1,0,{json:JSON.parse(JSON.stringify(PDF_PAGES[PDF_PAGE_INDEX].json))});ucLoadPage(PDF_PAGE_INDEX+1);}
+  function ucDeletePage(){if(PDF_PAGES.length<=1){toast('เอกสารต้องมีอย่างน้อย 1 หน้า','warning');return;}PDF_PAGES.splice(PDF_PAGE_INDEX,1);ucLoadPage(Math.min(PDF_PAGE_INDEX,PDF_PAGES.length-1));}
+  function ucChangePage(delta){ucSaveCurrentPage();ucLoadPage(PDF_PAGE_INDEX+delta);}
+  function ucText(text,opt){opt=opt||{};var o=new fabric.Textbox(text,{left:opt.left||70,top:opt.top||160,width:opt.width||650,fontFamily:'Sarabun',fontSize:opt.size||24,fill:opt.color||'#172b4d',fontWeight:opt.weight||'normal',textAlign:opt.align||'left',lineHeight:1.25,splitByGrapheme:true});if(opt.dataField){o.dataField=opt.dataField;o.templateText=text;}PDF_CANVAS.add(o).setActiveObject(o);PDF_CANVAS.requestRenderAll();}
+  function ucAddText(){ucText('ดับเบิลคลิกเพื่อแก้ไขข้อความ');}
+  function ucAddHeading(){ucText(ORG_NAME+'\nรายงานสรุปข้อมูล',{top:55,size:34,weight:'bold',align:'center'});}
+  function ucAddField(){var key=val('uc-field');if(!key){toast('กรุณาเลือกฟิลด์','warning');return;}ucText('{{'+key+'}}',{dataField:key,width:300});}
+  function ucAddRect(){var r=new fabric.Rect({left:80,top:220,width:300,height:120,fill:'#eaf2ff',stroke:'#0d6efd',strokeWidth:1});PDF_CANVAS.add(r).setActiveObject(r);}
+  function ucAddTable(){var rows=4,cols=3,w=180,h=44,items=[];for(var r=0;r<rows;r++)for(var col=0;col<cols;col++){items.push(new fabric.Rect({left:col*w,top:r*h,width:w,height:h,fill:r===0?'#dbeafe':'#ffffff',stroke:'#64748b',strokeWidth:1}));items.push(new fabric.Text(r===0?'หัวตาราง '+(col+1):'ข้อมูล',{left:col*w+8,top:r*h+10,fontFamily:'Sarabun',fontSize:16,fill:'#172b4d'}));}var g=new fabric.Group(items,{left:70,top:300});PDF_CANVAS.add(g).setActiveObject(g);}
+  function ucAddImage(input){var f=input.files&&input.files[0];if(!f)return;if(f.size>5*1024*1024){toast('รูปต้องไม่เกิน 5 MB','warning');return;}var rd=new FileReader();rd.onload=function(){fabric.Image.fromURL(rd.result,function(img){img.scaleToWidth(Math.min(300,img.width));img.set({left:80,top:200});PDF_CANVAS.add(img).setActiveObject(img);PDF_CANVAS.requestRenderAll();});};rd.readAsDataURL(f);input.value='';}
+  function ucDelete(){var o=PDF_CANVAS&&PDF_CANVAS.getActiveObject();if(o){PDF_CANVAS.remove(o);PDF_CANVAS.discardActiveObject().requestRenderAll();}}
+  function ucSet(prop,value){var o=PDF_CANVAS&&PDF_CANVAS.getActiveObject();if(!o)return;o.set(prop,value);PDF_CANVAS.requestRenderAll();ucRemember();}
+  function ucToggle(prop,on,off){var o=PDF_CANVAS&&PDF_CANVAS.getActiveObject();if(!o)return;ucSet(prop,o.get(prop)===on?off:on);}
+  function ucLayer(dir){var o=PDF_CANVAS&&PDF_CANVAS.getActiveObject();if(!o)return;if(dir>0)PDF_CANVAS.bringForward(o);else PDF_CANVAS.sendBackwards(o);PDF_CANVAS.requestRenderAll();ucRemember();}
+  function ucDuplicate(){var o=PDF_CANVAS&&PDF_CANVAS.getActiveObject();if(!o)return;o.clone(function(copy){copy.set({left:o.left+20,top:o.top+20});PDF_CANVAS.add(copy).setActiveObject(copy);PDF_CANVAS.requestRenderAll();},['dataField','templateText']);}
+  function ucSyncToolbar(){var o=PDF_CANVAS.getActiveObject();if(!o)return;var s=document.getElementById('uc-size'),c=document.getElementById('uc-color'),f=document.getElementById('uc-font');if(s&&o.fontSize)s.value=Math.round(o.fontSize);if(c&&/^#[0-9a-f]{6}$/i.test(o.fill||''))c.value=o.fill;if(f&&o.fontFamily)f.value=o.fontFamily;}
+  function ucRemember(){if(PDF_HISTORY_LOCK||!PDF_CANVAS)return;var json=JSON.stringify(ucCanvasJson());if(PDF_HISTORY[PDF_HISTORY.length-1]!==json){PDF_HISTORY.push(json);if(PDF_HISTORY.length>50)PDF_HISTORY.shift();PDF_FUTURE=[];}ucSaveCurrentPage();}
+  function ucResetHistory(){PDF_HISTORY=[JSON.stringify(ucCanvasJson())];PDF_FUTURE=[];}
+  function ucUndo(){if(PDF_HISTORY.length<2)return;PDF_FUTURE.push(PDF_HISTORY.pop());ucLoadHistory(PDF_HISTORY[PDF_HISTORY.length-1]);}
+  function ucRedo(){if(!PDF_FUTURE.length)return;var j=PDF_FUTURE.pop();PDF_HISTORY.push(j);ucLoadHistory(j);}
+  function ucLoadHistory(json){PDF_HISTORY_LOCK=true;PDF_CANVAS.loadFromJSON(JSON.parse(json),function(){PDF_CANVAS.requestRenderAll();PDF_HISTORY_LOCK=false;ucSaveCurrentPage();});}
+  function ucKeyboard(e){if(!PDF_CANVAS||!document.getElementById('uc-canvas'))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?ucRedo():ucUndo();}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();ucRedo();}else if((e.key==='Delete'||e.key==='Backspace')&&!PDF_CANVAS.getActiveObject()?.isEditing){e.preventDefault();ucDelete();}}
+  function ucLoadSources(){callServer('getUniversalReportSources').then(function(d){PDF_SOURCES=d.sources||[];document.getElementById('uc-source').innerHTML=PDF_SOURCES.map(function(s,i){return '<option value="'+i+'">'+escapeHtmlJs(s.label)+'</option>';}).join('');ucSourceChanged();});}
+  function ucSourceChanged(){var s=PDF_SOURCES[Number(val('uc-source'))];var el=document.getElementById('uc-field');if(!s||!el)return;el.innerHTML='<option value="">— เลือกฟิลด์ —</option>'+s.fields.map(function(f){return '<option value="'+escapeHtmlJs(f)+'">'+escapeHtmlJs(f)+'</option>';}).join('');}
+  function ucPreviewData(){var s=PDF_SOURCES[Number(val('uc-source'))];if(!s)return;callServer('getUniversalReportSample',s.moduleKey,s.sheet).then(function(d){PDF_CANVAS.getObjects().forEach(function(o){if(o.dataField){if(!o.templateText)o.templateText='{{'+o.dataField+'}}';o.set('text',String(d.row[o.dataField]||'-'));}});PDF_CANVAS.requestRenderAll();toast('แสดงข้อมูลตัวอย่างแถวแรกแล้ว','success');});}
+  function ucTemplatePayload(){ucSaveCurrentPage();var s=PDF_SOURCES[Number(val('uc-source'))]||{};return {id:PDF_CANVAS_TEMPLATE_ID,moduleKey:s.moduleKey||'',sheet:s.sheet||'',orientation:'portrait',json:JSON.stringify({pages:PDF_PAGES})};}
+  function ucSaveTemplate(){showFormModal({title:'บันทึก Template เอกสาร',submitLabel:'บันทึก',size:'md',fields:[{id:'name',label:'ชื่อ Template',required:true,col:'col-12'}],onSubmit:function(v){var p=ucTemplatePayload();p.name=v.name;return callServer('saveCanvasTemplate',p).then(function(d){PDF_CANVAS_TEMPLATE_ID=d.id;toast(d.message,'success');ucLoadTemplateList();});}});}
+  function ucLoadTemplateList(){callServer('listCanvasTemplates').then(function(rows){var el=document.getElementById('uc-template');if(!el)return;el._rows=rows;el.innerHTML='<option value="">— Template —</option>'+rows.map(function(t,i){return '<option value="'+i+'">'+escapeHtmlJs(t.name)+' · '+escapeHtmlJs(t.updatedAt)+'</option>';}).join('');});}
+  function ucLoadTemplate(){var el=document.getElementById('uc-template'),i=el&&el.value;if(i==='')return;var t=el._rows[Number(i)];try{var data=JSON.parse(t.json);PDF_PAGES=data.pages||[];if(!PDF_PAGES.length)throw new Error('ไม่มีหน้า');PDF_CANVAS_TEMPLATE_ID=t.id;var sourceIndex=PDF_SOURCES.findIndex(function(s){return s.moduleKey===t.moduleKey&&s.sheet===t.sheet;});if(sourceIndex>=0){document.getElementById('uc-source').value=sourceIndex;ucSourceChanged();}ucLoadPage(0);toast('เปิด Template แล้ว','success');}catch(e){toast('Template ไม่ถูกต้อง: '+e.message,'danger');}}
+  function ucDeleteTemplate(){var el=document.getElementById('uc-template'),i=el&&el.value;if(i===''){toast('กรุณาเลือก Template','warning');return;}var t=el._rows[Number(i)];showConfirm('ปิดใช้งาน Template “'+t.name+'” ?',function(){callServer('deleteCanvasTemplate',t.id).then(function(m){toast(m,'success');PDF_CANVAS_TEMPLATE_ID='';ucLoadTemplateList();});},{title:'ลบ Template',okLabel:'ลบ',danger:true});}
+  function ucRenderPageImages(done){ucSaveCurrentPage();var saved=PDF_PAGE_INDEX,images=[],i=0;function next(){if(i>=PDF_PAGES.length){ucLoadPage(saved);done(images);return;}PDF_HISTORY_LOCK=true;PDF_CANVAS.loadFromJSON(PDF_PAGES[i].json,function(){PDF_CANVAS.discardActiveObject().requestRenderAll();images.push(PDF_CANVAS.toDataURL({format:'png',multiplier:1.5}));PDF_HISTORY_LOCK=false;i++;next();});}next();}
+  function ucExport(btn){if(!PDF_CANVAS)return;var old=btn.innerHTML;btn.disabled=true;btn.innerHTML='กำลังสร้าง...';var ready=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();ready.then(function(){ucRenderPageImages(function(images){callServer('generateCanvasPdf',{title:'รายงานออกแบบ',orientation:'portrait',images:images}).then(function(d){toast('สร้าง PDF '+d.pages+' หน้าแล้ว','success');window.open(d.url,'_blank');}).finally(function(){btn.disabled=false;btn.innerHTML=old;});});});}
+  function reportModuleCard(m) {
+    var rows = '';
+    if (m.fields && m.fields.length) {
+      rows = '<div class="table-responsive mt-2" style="max-height:220px"><table class="table table-sm mb-0"><thead><tr>' +
+        m.fields.map(function (f) { return '<th>' + escapeHtmlJs(f) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      if (!m.rows.length) rows += '<tr><td colspan="' + m.fields.length + '" class="text-muted">ยังไม่มีข้อมูล</td></tr>';
+      else rows += m.rows.map(function (r) {
+        return '<tr>' + m.fields.map(function (f) { return '<td><small>' + escapeHtmlJs(r[f] || '') + '</small></td>'; }).join('') + '</tr>';
+      }).join('');
+      rows += '</tbody></table></div>';
+    } else {
+      rows = '<div class="small text-muted mt-2">โมดูลนี้เป็นหน้าสรุป ไม่มีชีตข้อมูลหลักโดยตรง</div>';
+    }
+    var openBtn = m.canOpen ? '<button class="btn btn-sm btn-outline-primary mt-3" onclick="loadModule(\'' + m.key + '\')">เปิดโมดูล</button>' : '';
+    return '<div class="col-12 col-xl-6"><div class="card stat-card h-100"><div class="card-body">' +
+      '<div class="d-flex align-items-start gap-2"><div><h6 class="mb-1">' + escapeHtmlJs(m.label) + '</h6>' +
+      '<div class="small text-muted">' + escapeHtmlJs(m.description || '') + '</div></div>' +
+      '<span class="badge bg-primary ms-auto">' + escapeHtmlJs(m.total || 0) + ' รายการ</span></div>' +
+      '<div class="small text-muted mt-2">Sheet: ' + escapeHtmlJs(m.sheet || '-') + '</div>' + rows + openBtn +
+      '</div></div></div>';
+  }
+
+  // ===== Users =====
+  function renderUsers(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getUsersModuleData').then(function (d) {
+      var active = d.users.filter(function (u) { return String(u.status).toLowerCase() === 'active'; }).length;
+      var html = '<h3 class="text-primary mb-3">Users</h3>';
+      html += moduleDashboard([
+        mdStat('ผู้ใช้ทั้งหมด', d.users.length, 'bi-people', 'blue'),
+        mdStat('Active', active, 'bi-person-check', 'teal'),
+        mdStat('Inactive', d.users.length - active, 'bi-person-x', d.users.length - active ? 'amber' : 'gray'),
+        mdStat('บทบาท', d.roles.length, 'bi-shield-check', 'blue')
+      ]);
+      if (d.canEdit) {
+        html += '<div class="card stat-card mb-3"><div class="card-body"><h6>เพิ่มผู้ใช้งาน</h6><div class="row g-2">' +
+          fld('usr-name', 'ชื่อ-สกุล *', 'text', 'col-md-3') +
+          fld('usr-username', 'Username *', 'text', 'col-md-2') +
+          fld('usr-email', 'Email สำหรับ MFA *', 'email', 'col-md-3') +
+          fld('usr-employee', 'รหัสพนักงาน', 'text', 'col-md-2') +
+          fld('usr-dept', 'หน่วยงาน', 'text', 'col-md-2') +
+          sel('usr-role', 'บทบาท *', optPairs(d.roles, 'value', 'label'), 'col-md-2') +
+          fld('usr-supervisor', 'Supervisor Email', 'email', 'col-md-2') +
+          '</div><button class="btn btn-primary mt-3" onclick="usrSave()">เพิ่มผู้ใช้</button></div></div>';
+      }
+      html += usrTable(d.users, d.canEdit);
+      html += lineUserTable(d.lineUsers || [], d.canEdit);
+      container.innerHTML = html;
+    });
+  }
+  function usrSave() {
+    var form = { name: val('usr-name'), username: val('usr-username'), email: val('usr-email'), employeeCode: val('usr-employee'), dept: val('usr-dept'),
+      role: val('usr-role'), supervisor: val('usr-supervisor') };
+    callServer('addSystemUser', form).then(function (m) { toast(m); loadModule('users'); });
+  }
+  function usrStatus(id, status) {
+    showConfirm('ปรับสถานะผู้ใช้งานเป็น ' + status + '?',
+      function () { callServer('setSystemUserStatus', id, status).then(function (m) { toast(m); loadModule('users'); }); });
+  }
+  function usrTable(rows, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีผู้ใช้งาน</div>';
+    var body = rows.map(function (r) {
+      var next = String(r.status).toLowerCase() === 'active' ? 'Inactive' : 'Active';
+      var act = '';
+      if (canEdit) {
+        act += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="usrSetPassword(\'' + escapeHtmlJs(r.username) + '\')">ตั้งรหัสผ่าน</button>';
+        act += '<button class="btn btn-sm btn-outline-success me-1 mb-1" onclick="usrSetEmployeeCode(\'' +
+          r.id + '\',\'' + escapeHtmlJs(r.employeeCode || '').replace(/'/g, "\\'") + '\')">รหัสพนักงาน</button>';
+        act += '<button class="btn btn-sm btn-outline-secondary mb-1" onclick="usrStatus(\'' + r.id + '\',\'' + next + '\')">' + next + '</button>';
+      }
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.username || '-') + '</td><td>' + escapeHtmlJs(r.employeeCode || '-') + '</td><td>' + escapeHtmlJs(r.email) + '</td><td>' + escapeHtmlJs(r.dept || '-') + '</td>' +
+        '<td>' + escapeHtmlJs(r.roleLabel || r.role) + '</td><td>' + itStatusBadge(r.status) + '</td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>ชื่อ</th><th>Username</th><th>รหัสพนักงาน</th><th>Email/MFA</th><th>หน่วยงาน</th><th>บทบาท</th><th>สถานะ</th><th></th></tr>', body);
+  }
+  function usrSetPassword(username) {
+    showFormModal({ title: 'ตั้งรหัสผ่าน: ' + username, submitLabel: 'บันทึก', size: 'md',
+      fields: [{ id: 'pw', label: 'ข้อความรหัสผ่านใหม่ (อย่างน้อย 12 ตัว)', type: 'password', required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('setUserPassword', username, v.pw).then(function (m) { toast(m, 'success'); }); } });
+  }
+  function usrSetEmployeeCode(userId, currentCode) {
+    showFormModal({ title: 'กำหนดรหัสพนักงาน', submitLabel: 'บันทึก', size: 'md',
+      fields: [{ id: 'employeeCode', label: 'รหัสพนักงาน', value: currentCode || '', required: true, col: 'col-12' }],
+      onSubmit: function (v) {
+        return callServer('updateSystemUserEmployeeCode', userId, v.employeeCode)
+          .then(function (m) { toast(m, 'success'); loadModule('users'); });
+      } });
+  }
+  function lineUserTable(rows, canEdit) {
+    var html = '<div class="card stat-card mt-3"><div class="card-body"><h6 class="mb-3">' +
+      '<i class="bi bi-line text-success"></i> บัญชี LINE ที่เชื่อมระบบ (' + rows.length + ')</h6>';
+    if (!rows.length) return html + '<div class="alert alert-secondary mb-0">ยังไม่มีผู้ใช้ LINE Login</div></div></div>';
+    var body = rows.map(function (r) {
+      var avatar = r.pictureUrl
+        ? '<img src="' + escapeHtmlJs(r.pictureUrl) + '" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover" class="me-2">'
+        : '';
+      var actions = '';
+      if (canEdit) {
+        if (r.linkStatus !== 'Active') actions += '<button class="btn btn-sm btn-outline-success me-1" onclick="lineUserStatus(\'' + r.lineUserId + '\',\'Active\')">เปิดใช้</button>';
+        if (r.linkStatus !== 'Suspended') actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="lineUserStatus(\'' + r.lineUserId + '\',\'Suspended\')">ระงับ</button>';
+        actions += '<button class="btn btn-sm btn-outline-danger" onclick="lineUserStatus(\'' + r.lineUserId + '\',\'Unlinked\')">ยกเลิกการผูก</button>';
+      }
+      return '<tr><td>' + avatar + '<b>' + escapeHtmlJs(r.fullName || r.displayName || '-') + '</b><br><small class="text-muted">' +
+        escapeHtmlJs(r.maskedId) + '</small></td><td>' + escapeHtmlJs(r.employeeCode || '-') + '</td><td>' +
+        escapeHtmlJs(r.department || '-') + '</td><td>' + itStatusBadge(r.linkStatus || 'Pending') + '</td><td>' +
+        escapeHtmlJs(r.friendStatus || 'Unknown') + '</td><td>' + escapeHtmlJs(r.lastLoginAt || '-') + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    return html + tableWrap('<tr><th>ผู้ใช้ LINE</th><th>รหัสพนักงาน</th><th>หน่วยงาน</th><th>สถานะ</th><th>OA</th><th>Login ล่าสุด</th><th></th></tr>', body) + '</div></div>';
+  }
+  function lineUserStatus(lineUserId, status) {
+    showConfirm('ปรับสถานะบัญชี LINE เป็น ' + status + '?', function () {
+      return callServer('setLineUserStatus', lineUserId, status)
+        .then(function (m) { toast(m, 'success'); loadModule('users'); });
+    });
+  }
+
+  // ===== Settings =====
+  var SETTINGS_DATA = null;
+  function renderSettings(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getSettingsModuleData').then(function (d) {
+      SETTINGS_DATA = d;
+      var html = '<h3 class="text-primary mb-3">Settings</h3>';
+      html += moduleDashboard([
+        mdStat('ค่าตั้งค่า', d.settings.length, 'bi-gear', 'blue'),
+        mdStat('แก้ผ่านหน้านี้ได้', d.allowedKeys.length, 'bi-pencil-square', 'teal'),
+        mdStat('กลุ่ม', Array.from(new Set(d.settings.map(function (s) { return s.group || '-'; }))).length, 'bi-folder', 'blue'),
+        mdStat('Secret', 'ไม่แสดง', 'bi-shield-lock', 'gray')
+      ]);
+      html += setBrandingCard(d);
+      html += setSchemaDesignerCard(d.schemaDesigner, d.canEdit);
+      html += '<h5 class="text-primary mt-4 mb-2"><i class="bi bi-sliders"></i> ค่าระบบ</h5>';
+      html += setTable(d.settings, d.allowedKeys, d.canEdit);
+      html += '<div id="recycle-bin" class="mt-4"></div>';
+      container.innerHTML = html;
+      setSchemaDesignerInit();
+      loadRecycleBin();
+    });
+  }
+
+  // การ์ดแบรนด์/โลโก้องค์กร
+  function setBrandingCard(d) {
+    var logo = d.logoUrl
+      ? '<img src="' + escapeHtmlJs(d.logoUrl) + '" alt="logo" style="width:64px;height:64px;object-fit:contain;border-radius:14px;border:1px solid #e2e8f0;background:#fff" onerror="this.style.display=\'none\'">'
+      : '<div style="width:64px;height:64px;border-radius:14px;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.3rem">กช</div>';
+    var controls = d.canEdit
+      ? '<div class="ms-auto d-flex gap-2 align-items-center">' +
+          '<input id="logo-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="form-control form-control-sm" style="max-width:240px" onchange="logoUpload()">' +
+          (d.logoUrl ? '<button class="btn btn-sm btn-outline-danger" onclick="logoRemove()"><i class="bi bi-trash"></i> นำออก</button>' : '') +
+        '</div>'
+      : '';
+    return '<div class="card stat-card mb-3"><div class="card-body d-flex align-items-center gap-3 flex-wrap">' +
+      logo +
+      '<div><h6 class="mb-1"><i class="bi bi-image"></i> โลโก้องค์กร</h6>' +
+      '<div class="small text-muted">แสดงบนหน้าหลังบ้านและหน้าแจ้งซ่อม · รองรับ PNG/JPG/GIF/WEBP/SVG ≤ 2 MB</div></div>' +
+      controls + '</div></div>';
+  }
+  function logoUpload() {
+    var el = document.getElementById('logo-file');
+    if (!el || !el.files || !el.files[0]) return;
+    var f = el.files[0];
+    if (f.size > 2 * 1024 * 1024) { toast('ไฟล์โลโก้ต้องไม่เกิน 2 MB', 'warning'); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      callServer('uploadOrgLogo', { base64: reader.result.split(',')[1], filename: f.name, mimeType: f.type })
+        .then(function () { toast('อัปเดตโลโก้แล้ว — รีโหลดหน้าเพื่อแสดงผลทุกจุด', 'success'); loadModule('settings'); });
+    };
+    reader.readAsDataURL(f);
+  }
+  function logoRemove() {
+    showConfirm('นำโลโก้ออกและกลับไปใช้ตัวอักษรเริ่มต้น?',
+      function () { callServer('removeOrgLogo').then(function (m) { toast(m); loadModule('settings'); }); },
+      { danger: true, okLabel: 'นำออก' });
+  }
+
+  // ตัวออกแบบโครงสร้างตาราง — เพิ่ม/แก้ชื่อ/ชนิดข้อมูล/ลบฟิลด์รายโมดูล
+  var SETTINGS_SCHEMA_MODULE = 'ticket';
+  var SETTINGS_SCHEMA_SHEET = '';
+
+  function setSchemaDesignerCard(schema, canEdit) {
+    if (!schema || schema.error || !schema.modules) {
+      return '<div class="alert alert-warning"><b>ไม่สามารถโหลดตัวออกแบบโครงสร้างตาราง</b><div class="small">' +
+        escapeHtmlJs(schema && schema.error ? schema.error : 'ไม่พบข้อมูล schema') + '</div></div>';
+    }
+    var tableCount = schema.modules.reduce(function (n, m) { return n + (m.tables || []).length; }, 0);
+    var customCount = schema.modules.reduce(function (n, m) {
+      return n + (m.tables || []).reduce(function (x, t) {
+        return x + (t.fields || []).filter(function (f) { return !f.isSystem; }).length;
+      }, 0);
+    }, 0);
+    var moduleOptions = schema.modules.map(function (m) {
+      return '<option value="' + escapeHtmlJs(m.key) + '">' + escapeHtmlJs(m.group + ' · ' + m.label) + '</option>';
+    }).join('');
+    var guidance = (schema.guidance || []).map(function (x) {
+      return '<li>' + escapeHtmlJs(x) + '</li>';
+    }).join('');
+    return '<div class="card stat-card mt-4 mb-3 border-primary"><div class="card-body">' +
+      '<div class="d-flex flex-wrap gap-2 align-items-start mb-3"><div>' +
+      '<h5 class="text-primary mb-1"><i class="bi bi-table"></i> ตัวออกแบบฟิลด์ทุกโมดูล</h5>' +
+      '<div class="small text-muted">จัดการคอลัมน์จริงใน Google Sheet พร้อมรูปแบบข้อมูลและ Data validation</div></div>' +
+      '<div class="ms-auto d-flex gap-2"><span class="badge bg-primary">' + tableCount + ' ตาราง</span>' +
+      '<span class="badge bg-info text-dark">' + customCount + ' ฟิลด์เพิ่มเอง</span></div></div>' +
+      '<div class="alert alert-light border py-2"><ul class="small mb-0 ps-3">' + guidance + '</ul></div>' +
+      '<div class="row g-2 align-items-end">' +
+      '<div class="col-lg-5"><label class="form-label">โมดูล</label><select id="set-schema-module" class="form-select" onchange="setSchemaModuleChanged()">' +
+      moduleOptions + '</select></div>' +
+      '<div class="col-lg-4"><label class="form-label">ตารางข้อมูล</label><select id="set-schema-sheet" class="form-select" onchange="setSchemaTableChanged()"></select></div>' +
+      '<div class="col-lg-3 d-grid"><button id="set-schema-add" class="btn btn-primary" onclick="setSchemaEditField(\'\')" ' +
+      (canEdit ? '' : 'disabled') + '><i class="bi bi-plus-lg"></i> เพิ่มฟิลด์</button></div>' +
+      '</div>' +
+      '<div id="set-schema-context" class="small text-muted mt-2"></div>' +
+      '<div id="set-schema-fields" class="mt-3"></div>' +
+      '</div></div>';
+  }
+
+  function setSchemaDesignerInit() {
+    if (!SETTINGS_DATA || !SETTINGS_DATA.schemaDesigner) return;
+    var moduleEl = document.getElementById('set-schema-module');
+    if (!moduleEl) return;
+    var modules = SETTINGS_DATA.schemaDesigner.modules || [];
+    var selected = modules.find(function (m) { return m.key === SETTINGS_SCHEMA_MODULE; });
+    if (!selected) selected = modules.find(function (m) { return (m.tables || []).length; }) || modules[0];
+    if (!selected) return;
+    SETTINGS_SCHEMA_MODULE = selected.key;
+    moduleEl.value = selected.key;
+    setSchemaModuleChanged();
+  }
+
+  function setSchemaModuleChanged() {
+    var moduleEl = document.getElementById('set-schema-module');
+    var sheetEl = document.getElementById('set-schema-sheet');
+    if (!moduleEl || !sheetEl || !SETTINGS_DATA) return;
+    SETTINGS_SCHEMA_MODULE = moduleEl.value;
+    var module = setSchemaCurrentModule_();
+    var tables = module ? (module.tables || []) : [];
+    sheetEl.innerHTML = tables.length
+      ? tables.map(function (t) { return '<option value="' + escapeHtmlJs(t.sheet) + '">' + escapeHtmlJs(t.label) + '</option>'; }).join('')
+      : '<option value="">โมดูลนี้ไม่มีตารางข้อมูลโดยตรง</option>';
+    var selected = tables.find(function (t) { return t.sheet === SETTINGS_SCHEMA_SHEET; }) || tables[0];
+    SETTINGS_SCHEMA_SHEET = selected ? selected.sheet : '';
+    sheetEl.value = SETTINGS_SCHEMA_SHEET;
+    setSchemaRenderFields_();
+  }
+
+  function setSchemaTableChanged() {
+    var sheetEl = document.getElementById('set-schema-sheet');
+    SETTINGS_SCHEMA_SHEET = sheetEl ? sheetEl.value : '';
+    setSchemaRenderFields_();
+  }
+
+  function setSchemaCurrentModule_() {
+    var modules = SETTINGS_DATA && SETTINGS_DATA.schemaDesigner ? SETTINGS_DATA.schemaDesigner.modules : [];
+    return (modules || []).find(function (m) { return m.key === SETTINGS_SCHEMA_MODULE; }) || null;
+  }
+
+  function setSchemaCurrentTable_() {
+    var module = setSchemaCurrentModule_();
+    return module ? (module.tables || []).find(function (t) { return t.sheet === SETTINGS_SCHEMA_SHEET; }) : null;
+  }
+
+  function setSchemaRenderFields_() {
+    var box = document.getElementById('set-schema-fields');
+    var context = document.getElementById('set-schema-context');
+    var addBtn = document.getElementById('set-schema-add');
+    if (!box) return;
+    var module = setSchemaCurrentModule_();
+    var table = setSchemaCurrentTable_();
+    if (!table) {
+      if (context) context.textContent = module && module.description ? module.description : '';
+      if (addBtn) addBtn.disabled = true;
+      box.innerHTML = '<div class="alert alert-secondary mb-0">โมดูลนี้เป็นหน้าสรุปหรือรายงาน จึงไม่มีตารางหลักให้ปรับโครงสร้าง</div>';
+      return;
+    }
+    if (context) context.innerHTML = '<b>' + escapeHtmlJs(module.label) + '</b> · Sheet: <code>' +
+      escapeHtmlJs(table.sheet) + '</code>' + (table.lockedReason ? ' · <span class="text-danger">' + escapeHtmlJs(table.lockedReason) + '</span>' : '');
+    if (addBtn) addBtn.disabled = !SETTINGS_DATA.canEdit || table.locked;
+    var fields = table.fields || [];
+    if (!fields.length) {
+      box.innerHTML = '<div class="alert alert-secondary mb-0">ยังไม่มีฟิลด์ในตารางนี้</div>';
+      return;
+    }
+    var body = fields.map(function (f) {
+      var origin = f.isSystem
+        ? '<span class="badge bg-secondary">ฟิลด์ระบบ</span>'
+        : '<span class="badge bg-info text-dark">เพิ่มเอง</span>';
+      var required = f.required ? '<span class="badge bg-warning text-dark ms-1">Required</span>' : '';
+      var actions = '';
+      if (SETTINGS_DATA.canEdit && f.canEdit) {
+        actions += '<button class="btn btn-sm btn-outline-primary me-1" onclick="setSchemaEditField(\'' + _jsArg(f.key) + '\')">' +
+          '<i class="bi bi-pencil"></i> แก้ไข</button>';
+      }
+      if (SETTINGS_DATA.canEdit && f.canDelete) {
+        actions += '<button class="btn btn-sm btn-outline-danger" onclick="setSchemaDeleteField(\'' + _jsArg(f.key) + '\')">' +
+          '<i class="bi bi-trash"></i> ลบ</button>';
+      }
+      if (!actions) actions = '<span class="text-muted small">ดูอย่างเดียว</span>';
+      return '<tr><td class="text-center">' + f.position + '</td>' +
+        '<td><b>' + escapeHtmlJs(f.displayName) + '</b><div><code>' + escapeHtmlJs(f.key) + '</code></div></td>' +
+        '<td>' + escapeHtmlJs(f.dataTypeLabel) +
+        (f.options ? '<div class="small text-muted">' + escapeHtmlJs(f.options.split('\n').join(', ')) + '</div>' : '') + '</td>' +
+        '<td>' + origin + required + '</td><td class="text-nowrap">' + actions + '</td></tr>';
+    }).join('');
+    box.innerHTML = tableWrap('<tr><th style="width:60px">ลำดับ</th><th>ชื่อฟิลด์ / Field key</th><th>ประเภทข้อมูล</th><th>ประเภทฟิลด์</th><th>จัดการ</th></tr>', body);
+  }
+
+  function setSchemaEditField(fieldKey) {
+    var table = setSchemaCurrentTable_();
+    if (!table || table.locked) return;
+    var field = (table.fields || []).find(function (f) { return f.key === fieldKey; }) || null;
+    var typeOptions = (SETTINGS_DATA.schemaDesigner.types || []).map(function (t) {
+      return { value: t.key, label: t.label };
+    });
+    showFormModal({
+      title: field ? 'แก้ไขฟิลด์: ' + field.displayName : 'เพิ่มฟิลด์ใน ' + table.sheet,
+      submitLabel: field ? 'บันทึกการเปลี่ยนแปลง' : 'เพิ่มฟิลด์',
+      size: 'lg',
+      fields: [
+        { id: 'displayName', label: 'ชื่อที่แสดง', type: 'text', value: field ? field.displayName : '', required: true, col: 'col-md-6' },
+        { id: 'fieldKey', label: 'Field key / ชื่อคอลัมน์จริง', type: 'text', value: field ? field.key : '', required: true, col: 'col-md-6',
+          help: field && field.isSystem ? 'ฟิลด์ระบบเปลี่ยน Field key ไม่ได้ เพื่อไม่ให้โมดูลพัง' : 'ต้องไม่ซ้ำกับคอลัมน์อื่นในตาราง' },
+        { id: 'dataType', label: 'ประเภทข้อมูล', type: 'select', value: field ? field.dataType : 'text', options: typeOptions, required: true, col: 'col-md-6' },
+        { id: 'required', label: 'กำหนดเป็นฟิลด์จำเป็นใน metadata', type: 'checkbox', value: field ? field.required : false, col: 'col-md-6' },
+        { id: 'options', label: 'ตัวเลือก (ใช้เมื่อประเภทเป็น “รายการตัวเลือก”)', type: 'textarea',
+          value: field ? field.options : '', rows: 4, col: 'col-12', help: 'หนึ่งค่าต่อบรรทัด หรือคั่นด้วย comma' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveModuleFieldDefinition', {
+          moduleKey: SETTINGS_SCHEMA_MODULE,
+          sheetName: SETTINGS_SCHEMA_SHEET,
+          originalKey: field ? field.key : '',
+          fieldKey: v.fieldKey,
+          displayName: v.displayName,
+          dataType: v.dataType,
+          required: v.required,
+          options: v.options
+        }).then(function (m) {
+          toast(m, 'success');
+          loadModule('settings');
+        });
+      }
+    });
+  }
+
+  function setSchemaDeleteField(fieldKey) {
+    var table = setSchemaCurrentTable_();
+    if (!table) return;
+    showConfirm('ลบฟิลด์ “' + fieldKey + '” ออกจากตาราง ' + table.sheet + '?',
+      function () {
+        callServer('deleteModuleField', SETTINGS_SCHEMA_MODULE, SETTINGS_SCHEMA_SHEET, fieldKey, false)
+          .then(function (r) {
+            if (r && r.requiresConfirm) {
+              showConfirm(r.message + ' ยืนยันลบถาวรหรือไม่?',
+                function () {
+                  callServer('deleteModuleField', SETTINGS_SCHEMA_MODULE, SETTINGS_SCHEMA_SHEET, fieldKey, true)
+                    .then(function (done) {
+                      toast(done.message, 'success');
+                      loadModule('settings');
+                    });
+                }, { danger: true, okLabel: 'ลบคอลัมน์และข้อมูล', title: 'ยืนยันครั้งสุดท้าย' });
+            } else {
+              toast(r && r.message ? r.message : 'ลบฟิลด์เรียบร้อย', 'success');
+              loadModule('settings');
+            }
+          });
+      }, { danger: true, okLabel: 'ตรวจสอบและลบ', title: 'ยืนยันการลบฟิลด์' });
+  }
+
+  // ถังขยะ — รายการที่ถูกลบ (กู้คืนได้)
+  function loadRecycleBin() {
+    var box = document.getElementById('recycle-bin'); if (!box) return;
+    callServerQuiet('listDeletedRecords').then(function (d) {
+      if (!d || !d.items.length) {
+        box.innerHTML = '<h5 class="text-primary mt-2 mb-2"><i class="bi bi-trash"></i> ถังขยะ</h5>' +
+          '<div class="alert alert-light border mb-0"><i class="bi bi-check2-circle text-success"></i> ถังขยะว่าง — ไม่มีรายการที่ถูกลบ</div>';
+        return;
+      }
+      var body = d.items.map(function (r) {
+        var act = d.canRestore
+          ? '<button class="btn btn-sm btn-outline-success" onclick="binRestore(\'' + _jsArg(r.entity) + '\',\'' + _jsArg(r.id) + '\')"><i class="bi bi-arrow-counterclockwise"></i> กู้คืน</button>'
+          : '<span class="text-muted small">—</span>';
+        return '<tr><td><span class="badge bg-secondary">' + escapeHtmlJs(r.entityLabel) + '</span></td>' +
+          '<td><b>' + escapeHtmlJs(r.name) + '</b><div class="small text-muted">' + escapeHtmlJs(r.id) + '</div></td>' +
+          '<td><small>' + escapeHtmlJs(r.deletedAt || '-') + '</small></td>' +
+          '<td><small>' + escapeHtmlJs(r.deletedBy || '-') + '</small></td><td>' + act + '</td></tr>';
+      }).join('');
+      box.innerHTML = '<h5 class="text-primary mt-2 mb-2"><i class="bi bi-trash"></i> ถังขยะ (' + d.count + ')</h5>' +
+        '<div class="small text-muted mb-2">รายการที่ถูกลบจากทุกโมดูล สามารถกู้คืนได้</div>' +
+        tableWrap('<tr><th>ประเภท</th><th>รายการ</th><th>ลบเมื่อ</th><th>ลบโดย</th><th></th></tr>', body);
+    }).catch(function () {
+      box.innerHTML = '';
+    });
+  }
+  function binRestore(entity, id) {
+    showConfirm('กู้คืนรายการนี้กลับสู่ระบบ?',
+      function () {
+        callServer('restoreRecord', entity, id).then(function (m) {
+          toast(m, 'success'); loadRecycleBin();
+        });
+      }, { okLabel: 'กู้คืน', title: 'ยืนยันการกู้คืน' });
+  }
+  function setTable(rows, allowed, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มี Settings</div>';
+    var body = rows.map(function (r, i) {
+      var editable = canEdit && allowed.indexOf(r.key) > -1;
+      var input = editable ? '<input id="set-' + i + '" class="form-control form-control-sm" value="' + escapeHtmlJs(r.value) + '">' : escapeHtmlJs(r.value);
+      var act = editable ? '<button class="btn btn-sm btn-outline-primary" onclick="setSave(\'' + r.key + '\',' + i + ')">บันทึก</button>' : '';
+      return '<tr><td><b>' + escapeHtmlJs(r.key) + '</b><div class="small text-muted">' + escapeHtmlJs(r.description || '') + '</div></td>' +
+        '<td>' + input + '</td><td>' + escapeHtmlJs(r.group || '-') + '</td><td><small>' + escapeHtmlJs(r.updatedAt || '-') + '</small></td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>Key</th><th>Value</th><th>Group</th><th>Updated</th><th></th></tr>', body);
+  }
+  function setSave(key, i) {
+    callServer('saveSystemSetting', key, val('set-' + i)).then(function (m) { toast(m); loadModule('settings'); });
+  }
+
+  // ===== Tester / QA =====
+  var TESTER_STATUSES = null;
+  function renderTester(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    callServer('getTesterModuleData').then(function (d) {
+      TESTER_STATUSES = d.statuses;
+      var pass = d.checks.filter(function (c) { return c.status === 'PASS'; }).length;
+      var fail = d.checks.filter(function (c) { return c.status === 'FAIL'; }).length;
+      var html = '<div class="d-flex flex-wrap align-items-center mb-3"><h3 class="text-primary mb-0">Tester / QA</h3>' +
+        (d.canEdit ? '<button class="btn btn-outline-primary ms-auto" onclick="qaRunLive()">' +
+          '<i class="bi bi-activity"></i> ตรวจ Deployment จริง</button>' : '') + '</div>';
+      html += moduleDashboard([
+        mdStat('Test cases', d.cases.length, 'bi-clipboard-check', 'blue'),
+        mdStat('Smoke PASS', pass, 'bi-check-circle', 'teal'),
+        mdStat('Smoke FAIL', fail, 'bi-x-circle', fail ? 'danger' : 'gray'),
+        mdStat('โมดูลตรวจได้', d.modules.length, 'bi-grid', 'blue')
+      ]);
+      html += qaGoLiveChecklist(d.goLive);
+      html += '<h5 class="text-primary mb-2">Smoke checks</h5>' + qaCheckTable(d.checks);
+      if (d.canEdit) {
+        html += '<div class="card stat-card my-3"><div class="card-body"><h6>เพิ่ม Test case</h6><div class="row g-2">' +
+          sel('qa-module', 'โมดูล *', optPairs(d.modules, 'key', 'label'), 'col-md-3') +
+          fld('qa-scenario', 'Scenario *', 'text', 'col-md-5') +
+          sel('qa-priority', 'Priority', optList(d.priorities), 'col-md-2') +
+          sel('qa-status', 'Status', optList(d.statuses), 'col-md-2') +
+          textareaFld('qa-steps', 'Steps', 2, 'col-md-4') +
+          textareaFld('qa-expected', 'Expected', 2, 'col-md-4') +
+          textareaFld('qa-actual', 'Actual', 2, 'col-md-4') +
+          '</div><button class="btn btn-primary mt-3" onclick="qaSave()">เพิ่ม Test case</button></div></div>';
+      }
+      html += '<h5 class="text-primary mb-2">รายการ Test case</h5>' + qaCaseTable(d.cases, d.canEdit);
+      container.innerHTML = html;
+    });
+  }
+  function qaSave() {
+    var form = { module: val('qa-module'), scenario: val('qa-scenario'), priority: val('qa-priority'),
+      status: val('qa-status'), steps: val('qa-steps'), expected: val('qa-expected'), actual: val('qa-actual') };
+    callServer('addQaCase', form).then(function (m) { toast(m); loadModule('tester'); });
+  }
+  function qaResult(id) {
+    showFormModal({ title: 'บันทึกผลทดสอบ', submitLabel: 'บันทึก', size: 'md',
+      fields: [
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: (TESTER_STATUSES || ['PASS', 'FAIL', 'BLOCKED', 'PENDING']), value: 'PASS', col: 'col-12' },
+        { id: 'actual', label: 'Actual result', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('updateQaCaseResult', id, v.status, v.actual).then(function (m) { toast(m); loadModule('tester'); }); } });
+  }
+  function qaRunLive() {
+    callServer('runLiveHealthCheckNow').then(function (r) {
+      var failed = (r.checks || []).filter(function (c) { return c.status === 'FAIL'; }).length;
+      toast('Live health ' + r.status + ' · ไม่ผ่าน ' + failed + ' รายการ',
+        failed ? 'danger' : 'success');
+      loadModule('tester');
+    });
+  }
+  function qaGoLiveChecklist(g) {
+    if (!g || !g.items) return '';
+    var tone = g.overallStatus === 'PASS' ? 'success' : (g.overallStatus === 'BLOCKED' ? 'danger' : 'warning text-dark');
+    var icon = g.overallStatus === 'PASS' ? 'bi-rocket-takeoff' : (g.overallStatus === 'BLOCKED' ? 'bi-shield-exclamation' : 'bi-exclamation-triangle');
+    var actions = '<button class="btn btn-outline-primary btn-sm" onclick="qaRunLive()"><i class="bi bi-activity"></i> ตรวจ Deployment จริง</button>' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'settings\')"><i class="bi bi-sliders"></i> Settings</button>' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'backup\')"><i class="bi bi-database-check"></i> Backup</button>' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'notification\')"><i class="bi bi-line"></i> LINE Queue</button>';
+    var next = (g.nextActions || []).length
+      ? '<div class="alert alert-light border py-2 mb-3"><div class="fw-bold small mb-1">สิ่งที่ควรปิดก่อนประกาศใช้งาน</div>' +
+        '<ul class="small mb-0 ps-3">' + g.nextActions.map(function (x) { return '<li>' + escapeHtmlJs(x) + '</li>'; }).join('') + '</ul></div>'
+      : '<div class="alert alert-success py-2 mb-3"><i class="bi bi-check-circle"></i> ไม่มี blocker จาก checklist นี้</div>';
+    var body = g.items.map(function (r) {
+      var action = '';
+      if (r.action === 'runLive') {
+        action = '<button class="btn btn-sm btn-outline-primary" onclick="qaRunLive()">ตรวจ</button>';
+      } else if (r.moduleKey) {
+        action = '<button class="btn btn-sm btn-outline-secondary" onclick="loadModule(\'' + escapeHtmlJs(r.moduleKey) + '\')">เปิด</button>';
+      }
+      return '<tr><td><span class="badge bg-light text-dark border">' + escapeHtmlJs(r.category) + '</span></td>' +
+        '<td><b>' + escapeHtmlJs(r.title) + '</b><div class="small text-muted">' + escapeHtmlJs(r.detail || '-') + '</div></td>' +
+        '<td>' + itStatusBadge(r.status) + '</td><td class="text-end">' + action + '</td></tr>';
+    }).join('');
+    return '<div class="card stat-card mb-4 border-primary"><div class="card-body">' +
+      '<div class="d-flex flex-wrap gap-2 align-items-start mb-3"><div>' +
+      '<h5 class="text-primary mb-1"><i class="bi ' + icon + '"></i> Go-live / Release Checklist</h5>' +
+      '<div class="small text-muted">ตรวจสถานะก่อนประกาศใช้งานจริง · อัปเดตล่าสุด ' + escapeHtmlJs(g.generatedAt || '-') + '</div></div>' +
+      '<div class="ms-auto d-flex flex-wrap gap-2 align-items-center"><span class="badge bg-' + tone + '">' +
+      escapeHtmlJs(g.overallLabel || g.overallStatus) + '</span>' + actions + '</div></div>' +
+      '<div class="row g-3 mb-3">' +
+      '<div class="col-6 col-lg-3"><div class="mini-kpi teal"><div class="mini-icon"><i class="bi bi-check2-circle"></i></div><div><div class="mini-num">' + escapeHtmlJs(g.passed) + '</div><div class="mini-label">PASS</div></div></div></div>' +
+      '<div class="col-6 col-lg-3"><div class="mini-kpi ' + (g.warnings ? 'amber' : 'gray') + '"><div class="mini-icon"><i class="bi bi-exclamation-triangle"></i></div><div><div class="mini-num">' + escapeHtmlJs(g.warnings) + '</div><div class="mini-label">WARN</div></div></div></div>' +
+      '<div class="col-6 col-lg-3"><div class="mini-kpi ' + (g.blockers ? 'danger' : 'gray') + '"><div class="mini-icon"><i class="bi bi-x-octagon"></i></div><div><div class="mini-num">' + escapeHtmlJs(g.blockers) + '</div><div class="mini-label">BLOCKER</div></div></div></div>' +
+      '<div class="col-6 col-lg-3"><div class="mini-kpi blue"><div class="mini-icon"><i class="bi bi-list-check"></i></div><div><div class="mini-num">' + escapeHtmlJs(g.total) + '</div><div class="mini-label">รายการตรวจ</div></div></div></div>' +
+      '</div>' + next +
+      '<div class="table-responsive" style="max-height:430px"><table class="table table-hover mb-0">' +
+      '<thead><tr><th>หมวด</th><th>รายการ</th><th>สถานะ</th><th class="text-end">ทางลัด</th></tr></thead><tbody>' +
+      body + '</tbody></table></div></div></div>';
+  }
+  function qaCheckTable(rows) {
+    var body = rows.map(function (r) {
+      return '<tr><td>' + escapeHtmlJs(r.name) + '</td><td>' + escapeHtmlJs(r.detail) + '</td><td>' + itStatusBadge(r.status) + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>โมดูล</th><th>ผลตรวจ</th><th>สถานะ</th></tr>', body);
+  }
+  function qaCaseTable(rows, canEdit) {
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มี Test case</div>';
+    var body = rows.map(function (r) {
+      var act = canEdit ? '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="qaResult(\'' + r.id + '\')">บันทึกผล</button>' + deleteBtn('qa', r.id, r.scenario || r.id) : '';
+      return '<tr><td>' + escapeHtmlJs(r.id) + '</td><td>' + escapeHtmlJs(r.module) + '</td><td>' + escapeHtmlJs(r.scenario) + '</td>' +
+        '<td>' + itStatusBadge(r.status) + '</td><td>' + escapeHtmlJs(r.priority || '-') + '</td>' +
+        '<td><small>' + escapeHtmlJs(r.testedAt || '-') + '</small></td><td>' + act + '</td></tr>';
+    }).join('');
+    return tableWrap('<tr><th>Case</th><th>โมดูล</th><th>Scenario</th><th>Status</th><th>Priority</th><th>Tested</th><th></th></tr>', body);
+  }
+</script>

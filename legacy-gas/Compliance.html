@@ -1,0 +1,379 @@
+<!-- Compliance.html — ทะเบียนกฎหมาย ข้อกำหนด การประเมิน และ CAPA -->
+<script>
+  var LC_DATA = null;
+
+  function renderCompliance(container) {
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลดทะเบียนกฎหมายและผลประเมิน...</div>';
+    callServer('getComplianceModuleData').then(function (d) {
+      LC_DATA = d || {};
+      LC_DATA.laws = Array.isArray(LC_DATA.laws) ? LC_DATA.laws : [];
+      LC_DATA.obligations = Array.isArray(LC_DATA.obligations) ? LC_DATA.obligations : [];
+      LC_DATA.assessments = Array.isArray(LC_DATA.assessments) ? LC_DATA.assessments : [];
+      LC_DATA.actions = Array.isArray(LC_DATA.actions) ? LC_DATA.actions : [];
+      LC_DATA.summary = LC_DATA.summary || {};
+      LC_DATA.options = LC_DATA.options || {};
+      var actions = d.canEdit
+        ? '<button class="btn btn-primary" onclick="lcLawForm()"><i class="bi bi-plus-lg"></i> เพิ่มกฎหมาย/มาตรฐาน</button>'
+        : '';
+      var html = pageHeader(
+        'กฎหมายและการปฏิบัติตาม',
+        'เชื่อมข้อกฎหมาย หน้าที่ มาตรการควบคุม หลักฐาน ผลประเมิน และแผนแก้ไขให้ตรวจสอบย้อนหลังได้',
+        actions,
+        'bi-bank'
+      );
+      html += '<div class="alert alert-info d-flex gap-2 align-items-start"><i class="bi bi-info-circle-fill mt-1"></i><div>' +
+        '<b>คะแนนหน้านี้มาจากผลประเมินข้อกำหนดที่มีผู้รับผิดชอบและหลักฐานเท่านั้น</b><br>' +
+        '<span class="small">รายการสถานะ “ต้องยืนยัน” ต้องผ่านฝ่ายกฎหมาย/DPO ก่อนนำไปอ้างว่าเป็นข้อบังคับขององค์กร</span></div></div>';
+      html += lcDashboard(d);
+      html += '<ul class="nav nav-tabs mb-3" role="tablist">' +
+        lcTabButton('laws', 'ทะเบียนกฎหมาย', true) +
+        lcTabButton('obligations', 'ข้อกำหนดและมาตรการ') +
+        lcTabButton('assessments', 'ผลการประเมิน') +
+        lcTabButton('capa', 'CAPA / แผนแก้ไข') + '</ul>';
+      html += '<div class="tab-content">' +
+        '<div class="tab-pane fade show active" id="lc-laws">' + lcLawTab(d) + '</div>' +
+        '<div class="tab-pane fade" id="lc-obligations">' + lcObligationTab(d) + '</div>' +
+        '<div class="tab-pane fade" id="lc-assessments">' + lcAssessmentTab(d) + '</div>' +
+        '<div class="tab-pane fade" id="lc-capa">' + lcCapaTab(d) + '</div></div>';
+      container.innerHTML = html;
+    });
+  }
+
+  function lcTabButton(key, label, active) {
+    return '<li class="nav-item" role="presentation"><button class="nav-link' + (active ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#lc-' + key + '" type="button">' + escapeHtmlJs(label) + '</button></li>';
+  }
+
+  function lcDashboard(d) {
+    var s = d.summary || {};
+    return moduleDashboard([
+      mdStat('ข้อกำหนดยืนยันใช้บังคับ', s.applicable || 0, 'bi-list-check', 'blue'),
+      mdStat('ครอบคลุมการประเมิน', s.assessmentCoverage === null ? 'N/A' : s.assessmentCoverage + '%',
+        'bi-clipboard-check', s.assessmentCoverage === null ? 'gray' : (s.assessmentCoverage >= 90 ? 'teal' : 'amber')),
+      mdStat('ไม่สอดคล้อง', s.nonCompliant || 0, 'bi-exclamation-octagon',
+        s.nonCompliant ? 'danger' : 'gray'),
+      mdStat('CAPA ที่ยังเปิด', s.openActions || 0, 'bi-tools', s.openActions ? 'amber' : 'gray')
+    ]);
+  }
+
+  function lcApplicabilityBadge(value) {
+    var tone = value === 'ใช้บังคับ' ? 'success' :
+      (value === 'ต้องยืนยัน' ? 'warning text-dark' : (value === 'ไม่เกี่ยวข้อง' ? 'secondary' : 'info'));
+    return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(value || '-') + '</span>';
+  }
+
+  function lcResultBadge(value) {
+    if (!value) return '<span class="badge bg-secondary">ยังไม่ประเมิน</span>';
+    var tone = value === 'สอดคล้อง' ? 'success' :
+      (value === 'สอดคล้องบางส่วน' ? 'warning text-dark' :
+        (value === 'ไม่สอดคล้อง' ? 'danger' : 'secondary'));
+    return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(value) + '</span>';
+  }
+
+  function lcDueHtml(value, days) {
+    if (!value) return '-';
+    if (days !== null && days < 0) return '<span class="overdue">' + escapeHtmlJs(value) + '</span>';
+    if (days !== null && days <= 30) return '<span class="soon">' + escapeHtmlJs(value) + '</span>';
+    return escapeHtmlJs(value);
+  }
+
+  function lcLawTab(d) {
+    return dataTable({
+      id: 'lcLaws', rows: d.laws, empty: 'ยังไม่มีกฎหมายหรือมาตรฐานในทะเบียน',
+      columns: [
+        { key: 'law', label: 'กฎหมาย/มาตรฐาน', value: function (r) {
+          return '<b>' + escapeHtmlJs(r.shortName || r.name) + '</b><br><small>' + escapeHtmlJs(r.name) + '</small>';
+        }, raw: function (r) { return (r.shortName || '') + ' ' + (r.name || ''); } },
+        { key: 'authority', label: 'หน่วยงาน', value: function (r) { return escapeHtmlJs(r.authority || '-'); } },
+        { key: 'applicability', label: 'การใช้บังคับ', value: function (r) {
+          return lcApplicabilityBadge(r.applicability) +
+            (r.applicabilityReason ? '<br><small class="text-muted">' + escapeHtmlJs(r.applicabilityReason) + '</small>' : '');
+        }, raw: function (r) { return r.applicability || ''; } },
+        { key: 'owner', label: 'เจ้าของ', value: function (r) { return escapeHtmlJs(r.owner || '-'); } },
+        { key: 'nextReview', label: 'ทบทวนถัดไป', value: function (r) {
+          return lcDueHtml(r.nextReview, r.nextReviewDays);
+        }, raw: function (r) { return r.nextReview || ''; }, default: false },
+        { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status); } },
+        { key: 'source', label: 'แหล่งทางการ', value: function (r) {
+          return r.sourceUrl ? '<a href="' + escapeHtmlJs(r.sourceUrl) + '" target="_blank" rel="noopener">เปิดเอกสาร</a>' : '-';
+        }, raw: function (r) { return r.sourceUrl || ''; }, default: false }
+      ],
+      filters: [
+        { key: 'applicability', label: 'การใช้บังคับ', value: function (r) { return r.applicability || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        return '<button class="btn btn-sm btn-outline-primary" onclick="lcLawForm(\'' + r.id + '\')">แก้ไข</button>';
+      } : null
+    });
+  }
+
+  function lcObligationTab(d) {
+    var action = d.canEdit
+      ? '<div class="mb-3"><button class="btn btn-primary btn-sm" onclick="lcObligationForm()"><i class="bi bi-plus-lg"></i> เพิ่มข้อกำหนด</button></div>'
+      : '';
+    return action + dataTable({
+      id: 'lcObligations', rows: d.obligations, empty: 'ยังไม่มีข้อกำหนด',
+      columns: [
+        { key: 'requirement', label: 'หน้าที่ที่ต้องปฏิบัติ', value: function (r) {
+          return '<b>' + escapeHtmlJs(r.requirement) + '</b><br><small class="text-muted">' +
+            escapeHtmlJs(r.id) + (r.clause ? ' · ' + escapeHtmlJs(r.clause) : '') + '</small>';
+        }, raw: function (r) { return (r.requirement || '') + ' ' + (r.clause || ''); } },
+        { key: 'law', label: 'กฎหมาย', value: function (r) { return escapeHtmlJs(r.lawShortName || r.lawId); },
+          raw: function (r) { return r.lawShortName || r.lawId || ''; } },
+        { key: 'domain', label: 'โดเมนควบคุม', value: function (r) {
+          return escapeHtmlJs(r.domain || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.owner || '-') + '</small>';
+        }, raw: function (r) { return (r.domain || '') + ' ' + (r.owner || ''); } },
+        { key: 'applicability', label: 'การใช้บังคับ', value: function (r) {
+          return lcApplicabilityBadge(r.applicability);
+        }, raw: function (r) { return r.applicability || ''; } },
+        { key: 'assessment', label: 'ผลล่าสุด', value: function (r) {
+          var a = r.latestAssessment;
+          return lcResultBadge(a && a.result) + (a ? '<br><small>' + escapeHtmlJs(a.date || '') + '</small>' : '');
+        }, raw: function (r) { return r.latestAssessment ? r.latestAssessment.result : 'ยังไม่ประเมิน'; } },
+        { key: 'due', label: 'กำหนด/ทบทวน', value: function (r) {
+          var a = r.latestAssessment;
+          return a && a.nextReview ? lcDueHtml(a.nextReview, a.nextReviewDays) : lcDueHtml(r.due, r.dueDays);
+        }, raw: function (r) { return (r.latestAssessment && r.latestAssessment.nextReview) || r.due || ''; }, default: false }
+      ],
+      filters: [
+        { key: 'law', label: 'กฎหมาย', value: function (r) { return r.lawShortName || r.lawId || ''; } },
+        { key: 'applicability', label: 'การใช้บังคับ', value: function (r) { return r.applicability || ''; } },
+        { key: 'result', label: 'ผลประเมิน', value: function (r) {
+          return r.latestAssessment ? r.latestAssessment.result : 'ยังไม่ประเมิน';
+        } }
+      ],
+      actions: d.canEdit ? function (r) {
+        return '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="lcAssessmentForm(\'' + r.id + '\')">ประเมิน</button>' +
+          '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="lcObligationForm(\'' + r.id + '\')">แก้ไข</button>' +
+          '<button class="btn btn-sm btn-outline-warning mb-1" onclick="lcCapaForm(null,\'' + r.id + '\')">เปิด CAPA</button>';
+      } : null
+    });
+  }
+
+  function lcAssessmentTab(d) {
+    return dataTable({
+      id: 'lcAssessments', rows: d.assessments, empty: 'ยังไม่มีประวัติการประเมิน',
+      columns: [
+        { key: 'obligation', label: 'ข้อกำหนด', value: function (r) {
+          var o = lcFindObligation(r.obligationId);
+          return '<b>' + escapeHtmlJs(o ? o.requirement : r.obligationId) + '</b><br><small>' + escapeHtmlJs(r.obligationId) + '</small>';
+        }, raw: function (r) { var o = lcFindObligation(r.obligationId); return o ? o.requirement : r.obligationId; } },
+        { key: 'date', label: 'วันที่/ผู้ประเมิน', value: function (r) {
+          return escapeHtmlJs(r.date || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.assessor || '-') + '</small>';
+        }, raw: function (r) { return r.date || ''; } },
+        { key: 'result', label: 'ผล', value: function (r) { return lcResultBadge(r.result); },
+          raw: function (r) { return r.result || ''; } },
+        { key: 'control', label: 'มาตรการ/ช่องว่าง', value: function (r) {
+          return escapeHtmlJs(r.controlDescription || '-') +
+            (r.gap ? '<br><small class="text-danger">Gap: ' + escapeHtmlJs(r.gap) + '</small>' : '');
+        }, raw: function (r) { return (r.controlDescription || '') + ' ' + (r.gap || ''); } },
+        { key: 'evidence', label: 'หลักฐาน', value: function (r) {
+          return r.evidence ? '<a href="' + escapeHtmlJs(r.evidence) + '" target="_blank" rel="noopener">เปิดหลักฐาน</a>' : '-';
+        }, raw: function (r) { return r.evidence || ''; }, default: false },
+        { key: 'nextReview', label: 'ทบทวนถัดไป', value: function (r) {
+          return lcDueHtml(r.nextReview, r.nextReviewDays);
+        }, raw: function (r) { return r.nextReview || ''; }, default: false }
+      ],
+      filters: [
+        { key: 'result', label: 'ผลประเมิน', value: function (r) { return r.result || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        return (r.result === 'ไม่สอดคล้อง' || r.result === 'สอดคล้องบางส่วน')
+          ? '<button class="btn btn-sm btn-outline-warning" onclick="lcCapaForm(null,\'' +
+              r.obligationId + '\',\'' + r.id + '\')">เปิด CAPA</button>'
+          : '';
+      } : null
+    });
+  }
+
+  function lcCapaTab(d) {
+    var action = d.canEdit
+      ? '<div class="mb-3"><button class="btn btn-primary btn-sm" onclick="lcCapaForm()"><i class="bi bi-plus-lg"></i> เพิ่ม CAPA</button></div>'
+      : '';
+    return action + dataTable({
+      id: 'lcCapa', rows: d.actions, empty: 'ยังไม่มีแผนแก้ไข CAPA',
+      columns: [
+        { key: 'title', label: 'แผนแก้ไข', value: function (r) {
+          return '<b>' + escapeHtmlJs(r.title) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.id) + '</small>';
+        }, raw: function (r) { return r.title || ''; } },
+        { key: 'obligation', label: 'ข้อกำหนด', value: function (r) {
+          var o = lcFindObligation(r.obligationId);
+          return escapeHtmlJs(o ? o.requirement : r.obligationId);
+        }, raw: function (r) { var o = lcFindObligation(r.obligationId); return o ? o.requirement : r.obligationId; } },
+        { key: 'owner', label: 'ผู้รับผิดชอบ', value: function (r) { return escapeHtmlJs(r.owner || '-'); } },
+        { key: 'priority', label: 'ความสำคัญ', value: function (r) {
+          var tone = r.priority === 'วิกฤต' ? 'danger' : (r.priority === 'สูง' ? 'warning text-dark' : 'secondary');
+          return '<span class="badge bg-' + tone + '">' + escapeHtmlJs(r.priority || '-') + '</span>';
+        }, raw: function (r) { return r.priority || ''; } },
+        { key: 'due', label: 'กำหนดเสร็จ', value: function (r) { return lcDueHtml(r.due, r.dueDays); },
+          raw: function (r) { return r.due || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return itStatusBadge(r.status); } }
+      ],
+      filters: [
+        { key: 'priority', label: 'ความสำคัญ', value: function (r) { return r.priority || ''; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } }
+      ],
+      actions: d.canEdit ? function (r) {
+        return '<button class="btn btn-sm btn-outline-primary" onclick="lcCapaForm(\'' + r.id + '\')">แก้ไข/ติดตาม</button>';
+      } : null
+    });
+  }
+
+  function lcFindLaw(id) {
+    return (LC_DATA.laws || []).filter(function (r) { return String(r.id) === String(id); })[0] || null;
+  }
+
+  function lcFindObligation(id) {
+    return (LC_DATA.obligations || []).filter(function (r) { return String(r.id) === String(id); })[0] || null;
+  }
+
+  function lcFindAction(id) {
+    return (LC_DATA.actions || []).filter(function (r) { return String(r.id) === String(id); })[0] || null;
+  }
+
+  function lcLawSelectOptions() {
+    return (LC_DATA.laws || []).map(function (r) {
+      return { value: r.id, label: (r.shortName || r.id) + ' — ' + r.name };
+    });
+  }
+
+  function lcTodayInput() {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 10);
+  }
+
+  function lcObligationSelectOptions() {
+    return (LC_DATA.obligations || []).map(function (r) {
+      return { value: r.id, label: r.id + ' — ' + r.requirement };
+    });
+  }
+
+  function lcLawForm(id) {
+    var r = id ? lcFindLaw(id) : {};
+    showFormModal({
+      title: id ? 'แก้ไขกฎหมาย/มาตรฐาน' : 'เพิ่มกฎหมาย/มาตรฐาน',
+      submitLabel: 'บันทึก', size: 'xl',
+      fields: [
+        { id: 'name', label: 'ชื่อกฎหมาย/มาตรฐาน', value: r.name, required: true, col: 'col-md-8' },
+        { id: 'shortName', label: 'ชื่อย่อ', value: r.shortName, col: 'col-md-4' },
+        { id: 'authority', label: 'หน่วยงานเจ้าของกฎ', value: r.authority, col: 'col-md-6' },
+        { id: 'version', label: 'ฉบับ/ปี', value: r.version, col: 'col-md-3' },
+        { id: 'effectiveDate', label: 'วันที่มีผล', type: 'date', value: dmyToInput(r.effectiveDate), col: 'col-md-3' },
+        { id: 'applicability', label: 'สถานะการใช้บังคับ', type: 'select',
+          options: LC_DATA.options.applicability || [], value: r.applicability || 'ต้องยืนยัน', required: true, col: 'col-md-4' },
+        { id: 'owner', label: 'เจ้าของข้อกำหนด', value: r.owner, col: 'col-md-4' },
+        { id: 'status', label: 'สถานะทะเบียน', type: 'select', options: LC_DATA.options.lawStatuses || [],
+          value: r.status || 'ใช้งาน', placeholder: false, col: 'col-md-4' },
+        { id: 'applicabilityReason', label: 'เหตุผล/ขอบเขตการใช้บังคับ', type: 'textarea',
+          rows: 3, value: r.applicabilityReason, col: 'col-12' },
+        { id: 'sourceUrl', label: 'URL แหล่งทางการ', type: 'url', value: r.sourceUrl, col: 'col-md-6' },
+        { id: 'lastReview', label: 'ทบทวนล่าสุด', type: 'date', value: dmyToInput(r.lastReview), col: 'col-md-3' },
+        { id: 'nextReview', label: 'ทบทวนถัดไป', type: 'date', value: dmyToInput(r.nextReview), col: 'col-md-3' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveLegalRecord', id || '', v).then(function (m) {
+          toast(m, 'success'); loadModule('compliance');
+        });
+      }
+    });
+  }
+
+  function lcObligationForm(id) {
+    var r = id ? lcFindObligation(id) : {};
+    showFormModal({
+      title: id ? 'แก้ไขข้อกำหนด' : 'เพิ่มข้อกำหนด',
+      submitLabel: 'บันทึก', size: 'xl',
+      fields: [
+        { id: 'lawId', label: 'กฎหมาย/มาตรฐาน', type: 'select', options: lcLawSelectOptions(),
+          value: r.lawId, required: true, col: 'col-md-7' },
+        { id: 'clause', label: 'มาตรา/ข้อ', value: r.clause, col: 'col-md-5' },
+        { id: 'requirement', label: 'หน้าที่ที่ต้องปฏิบัติ', type: 'textarea', rows: 3,
+          value: r.requirement, required: true, col: 'col-12' },
+        { id: 'domain', label: 'โดเมนมาตรการควบคุม', value: r.domain, col: 'col-md-4' },
+        { id: 'owner', label: 'ผู้รับผิดชอบ', value: r.owner, col: 'col-md-4' },
+        { id: 'frequency', label: 'ความถี่', value: r.frequency, col: 'col-md-4' },
+        { id: 'evidenceRequired', label: 'หลักฐานที่ต้องมี', type: 'textarea', rows: 2,
+          value: r.evidenceRequired, col: 'col-md-8' },
+        { id: 'relatedModule', label: 'โมดูลที่เกี่ยวข้อง', value: r.relatedModule, col: 'col-md-4' },
+        { id: 'applicability', label: 'สถานะการใช้บังคับ', type: 'select',
+          options: LC_DATA.options.applicability || [], value: r.applicability || 'ต้องยืนยัน',
+          required: true, col: 'col-md-4' },
+        { id: 'due', label: 'กำหนดดำเนินการ', type: 'date', value: dmyToInput(r.due), col: 'col-md-4' },
+        { id: 'status', label: 'สถานะข้อกำหนด', type: 'select',
+          options: LC_DATA.options.obligationStatuses || [], value: r.status || 'เปิด',
+          placeholder: false, col: 'col-md-4' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveComplianceObligation', id || '', v).then(function (m) {
+          toast(m, 'success'); loadModule('compliance');
+        });
+      }
+    });
+  }
+
+  function lcAssessmentForm(obligationId) {
+    var o = lcFindObligation(obligationId) || {};
+    var a = o.latestAssessment || {};
+    showFormModal({
+      title: 'ประเมินข้อกำหนด: ' + (o.requirement || obligationId),
+      submitLabel: 'บันทึกผลประเมิน', size: 'xl',
+      fields: [
+        { id: 'obligationId', label: 'ข้อกำหนด', type: 'select', options: lcObligationSelectOptions(),
+          value: obligationId, required: true, col: 'col-md-8' },
+        { id: 'assessmentDate', label: 'วันที่ประเมิน', type: 'date',
+          value: lcTodayInput(), col: 'col-md-4' },
+        { id: 'result', label: 'ผลการประเมิน', type: 'select',
+          options: LC_DATA.options.results || [], value: a.result, required: true, col: 'col-md-4' },
+        { id: 'nextReview', label: 'ทบทวนถัดไป', type: 'date', value: dmyToInput(a.nextReview), col: 'col-md-4' },
+        { id: 'evidence', label: 'ลิงก์หลักฐาน', type: 'url', value: a.evidence, col: 'col-md-4' },
+        { id: 'controlDescription', label: 'มาตรการควบคุมที่ใช้อยู่', type: 'textarea',
+          rows: 3, value: a.controlDescription, col: 'col-md-6' },
+        { id: 'gap', label: 'ช่องว่าง/ข้อบกพร่อง', type: 'textarea', rows: 3,
+          value: '', col: 'col-md-6' },
+        { id: 'notes', label: 'บันทึกผลประเมิน', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('recordComplianceAssessment', v).then(function (m) {
+          toast(m, 'success'); loadModule('compliance');
+        });
+      }
+    });
+  }
+
+  function lcCapaForm(id, obligationId, assessmentId) {
+    var r = id ? lcFindAction(id) : {};
+    showFormModal({
+      title: id ? 'แก้ไข/ติดตาม CAPA' : 'เปิดแผนแก้ไข CAPA',
+      submitLabel: 'บันทึก CAPA', size: 'xl',
+      fields: [
+        { id: 'obligationId', label: 'ข้อกำหนด', type: 'select', options: lcObligationSelectOptions(),
+          value: r.obligationId || obligationId, required: true, col: 'col-md-8' },
+        { id: 'assessmentId', label: 'Assessment ID', value: r.assessmentId || assessmentId, col: 'col-md-4' },
+        { id: 'title', label: 'หัวข้อการแก้ไข', value: r.title, required: true, col: 'col-12' },
+        { id: 'rootCause', label: 'สาเหตุราก', type: 'textarea', rows: 2, value: r.rootCause, col: 'col-md-6' },
+        { id: 'actionPlan', label: 'แผนดำเนินการ', type: 'textarea', rows: 2, value: r.actionPlan, col: 'col-md-6' },
+        { id: 'owner', label: 'ผู้รับผิดชอบ', value: r.owner, col: 'col-md-4' },
+        { id: 'priority', label: 'ความสำคัญ', type: 'select', options: LC_DATA.options.priorities || [],
+          value: r.priority || 'ปานกลาง', placeholder: false, col: 'col-md-4' },
+        { id: 'due', label: 'กำหนดเสร็จ', type: 'date', value: dmyToInput(r.due), col: 'col-md-4' },
+        { id: 'status', label: 'สถานะ', type: 'select', options: LC_DATA.options.actionStatuses || [],
+          value: r.status || 'เปิด', placeholder: false, col: 'col-md-4' },
+        { id: 'completedDate', label: 'วันที่เสร็จ', type: 'date', value: dmyToInput(r.completedDate), col: 'col-md-4' },
+        { id: 'verifiedBy', label: 'ผู้ตรวจสอบผล', value: r.verifiedBy, col: 'col-md-4' },
+        { id: 'verification', label: 'ผลตรวจสอบประสิทธิผล', type: 'textarea', rows: 2,
+          value: r.verification, col: 'col-md-6' },
+        { id: 'evidence', label: 'ลิงก์หลักฐาน', type: 'url', value: r.evidence, col: 'col-md-6' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: r.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveCorrectiveAction', id || '', v).then(function (m) {
+          toast(m, 'success'); loadModule('compliance');
+        });
+      }
+    });
+  }
+</script>

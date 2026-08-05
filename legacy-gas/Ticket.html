@@ -1,0 +1,491 @@
+﻿<!-- Ticket.html — Help Desk / Ticket workflow (include_ ใน Index) -->
+<script>
+  var TICKET_DATA = null;
+  var TK_CONTAINER = null;
+  var TK_CHARTS = [];
+  var TK_CAT_DATA = null;
+  var TK_ANALYTICS_RANGE = 90;
+  var TK_TERMINAL = ['เสร็จสิ้น', 'ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'];
+  function tkIsTerminal(st) { return TK_TERMINAL.indexOf(st) > -1; }
+
+  function renderTicket(container) {
+    TK_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5">กำลังโหลด...</div>';
+    return callServer('getTicketAdminBootstrapV2').then(function (d) {
+      d = tkNormalizeData(d);
+      TICKET_DATA = d;
+      var actions = '';
+      if (d.canViewAnalytics) actions += '<button class="btn btn-outline-primary" onclick="tkShowAnalytics()"><i class="bi bi-graph-up"></i> วิเคราะห์ผล</button>';
+      if (d.canManageCategories) actions += '<button class="btn btn-outline-secondary" onclick="tkManageCategories()"><i class="bi bi-tags"></i> จัดการหมวดหมู่</button>';
+      if (d.canCreate) actions += '<button class="btn btn-primary" onclick="tkOpenForm()"><i class="bi bi-plus-lg"></i> เปิด Ticket</button>';
+      var html = pageHeader(
+        'แจ้งซ่อม / Help Desk',
+        'รับเรื่อง จัดคิว ติดตาม SLA และสื่อสารความคืบหน้าในหน้าจอเดียว',
+        actions,
+        'bi-ticket-detailed'
+      );
+      html += tkDashboard(d);
+      html += dataTable(tkTableCfg(d));
+      container.innerHTML = html;
+    }).catch(function (err) {
+      if (typeof CURRENT_MODULE_KEY !== 'undefined' && CURRENT_MODULE_KEY !== 'ticket') return;
+      var msg = err && err.message ? err.message : String(err || 'ไม่ทราบสาเหตุ');
+      container.innerHTML =
+        '<div class="alert alert-danger shadow-sm">' +
+        '<h5><i class="bi bi-exclamation-triangle"></i> โหลดข้อมูลแจ้งซ่อมไม่สำเร็จ</h5>' +
+        '<div>' + escapeHtmlJs(msg) + '</div>' +
+        '<div class="small mt-2">กรุณาตรวจว่าอัปเดตไฟล์ Config.gs, Utils.gs, Module_Ticket.gs, Auth.gs, DeleteService.gs, JavaScript.html และ Ticket.html ครบใน Deployment เดียวกัน</div>' +
+        '<button class="btn btn-outline-danger btn-sm mt-3" onclick="loadModule(\'ticket\')"><i class="bi bi-arrow-clockwise"></i> ลองโหลดใหม่</button>' +
+        '</div>';
+    });
+  }
+
+  function tkNormalizeData(d) {
+    if (typeof d === 'string') {
+      try { d = JSON.parse(d); } catch (e) { throw new Error('ข้อมูล Ticket ที่ Server ส่งกลับมาไม่ใช่ JSON ที่ถูกต้อง'); }
+    }
+    if (d && typeof d === 'object' && d.ok === true && Object.prototype.hasOwnProperty.call(d, 'data')) d = d.data;
+    if (d && typeof d === 'object' && d.success === true && Object.prototype.hasOwnProperty.call(d, 'data')) d = d.data;
+    if (!d || typeof d !== 'object') throw new Error('Server ไม่ได้ส่งข้อมูล Ticket กลับมา');
+    d.tickets = Array.isArray(d.tickets) ? d.tickets : [];
+    d.categories = Array.isArray(d.categories) ? d.categories : [];
+    d.priorities = Array.isArray(d.priorities) ? d.priorities : [];
+    d.workStatuses = Array.isArray(d.workStatuses) ? d.workStatuses : [];
+    d.incidentCategories = Array.isArray(d.incidentCategories) ? d.incidentCategories : [];
+    d.incidentSeverities = Array.isArray(d.incidentSeverities) ? d.incidentSeverities : [];
+    d.assets = Array.isArray(d.assets) ? d.assets : [];
+    d.outsourceOptions = Array.isArray(d.outsourceOptions) ? d.outsourceOptions : [];
+    d.assignees = Array.isArray(d.assignees) ? d.assignees : [];
+    return d;
+  }
+
+  // ตัวเลือกผู้รับผิดชอบสำหรับฟอร์ม (คงค่าปัจจุบันไว้แม้ไม่อยู่ในรายชื่อ)
+  function tkAssigneeOptions(current) {
+    var opts = (TICKET_DATA.assignees || []).map(function (a) { return { value: a.value, label: a.label }; });
+    if (current && !opts.some(function (o) { return String(o.value) === String(current); })) {
+      opts.unshift({ value: current, label: current + ' (ปัจจุบัน)' });
+    }
+    return opts;
+  }
+
+  function tkDashboard(d) {
+    d = d || {}; if (!Array.isArray(d.tickets)) d.tickets = [];
+    var open = 0, overdue = 0, security = 0, rated = 0, ratingSum = 0;
+    d.tickets.forEach(function (t) {
+      if (!tkIsTerminal(t.status)) { open++; if (!t.slaPaused && t.dueHours !== null && t.dueHours < 0) overdue++; }
+      if (t.isSecurity === 'Yes') security++;
+      if (t.rating) { rated++; ratingSum += Number(t.rating) || 0; }
+    });
+    var avg = rated ? (ratingSum / rated).toFixed(1) : '-';
+    return moduleDashboard([
+      mdStat('Ticket เปิดอยู่', open, 'bi-ticket-detailed', 'blue'),
+      mdStat('เกิน SLA', overdue, 'bi-alarm', overdue ? 'danger' : 'teal'),
+      mdStat('เข้าข่ายภัยคุกคาม', security, 'bi-shield-exclamation', security ? 'amber' : 'gray'),
+      mdStat('คะแนนเฉลี่ย', avg, 'bi-star-fill', 'teal', rated + ' รายการที่ประเมิน')
+    ]);
+  }
+
+  function tkTone(st) {
+    if (st === 'เสร็จสิ้น' || st === 'ปิดงาน') return 'bg-success';
+    if (st === 'ยกเลิก') return 'bg-secondary';
+    if (st === 'รออะไหล่' || st === 'รอผู้ใช้งาน') return 'bg-warning text-dark';
+    if (st === 'ส่งต่อ Outsource') return 'bg-dark';
+    if (st === 'ยกระดับเป็น Incident') return 'bg-danger';
+    if (st === 'ใหม่') return 'bg-info text-dark';
+    return 'bg-primary';
+  }
+  function tkDueHtml(r) {
+    if (tkIsTerminal(r.status)) return '<small class="text-muted">' + escapeHtmlJs(r.closeDate || '') + '</small>';
+    if (r.slaPaused) return '<span class="badge bg-secondary"><i class="bi bi-pause-circle"></i> หยุด SLA</span>';
+    if (r.dueHours === null || r.dueHours === undefined) return '<small class="text-muted">ไม่ระบุ SLA</small>';
+    var cls = r.dueHours < 0 ? 'overdue' : (r.dueHours <= 8 ? 'soon' : 'text-muted');
+    var text = r.dueHours < 0 ? 'เลย SLA ' + Math.abs(r.dueHours) + ' ชม.' : 'เหลือ ' + r.dueHours + ' ชม.';
+    var response = '';
+    if (!r.acknowledgedAt && r.responseDueHours !== null && r.responseDueHours !== undefined) {
+      var responseCls = r.responseDueHours < 0 ? 'overdue' : (r.responseDueHours <= 2 ? 'soon' : 'text-muted');
+      response = '<br><small class="' + responseCls + '">ตอบรับ: ' +
+        (r.responseDueHours < 0 ? 'เลย ' + Math.abs(r.responseDueHours) : 'เหลือ ' + r.responseDueHours) +
+        ' ชม.</small>';
+    }
+    return '<span class="' + cls + '">' + text + '</span>' + response;
+  }
+
+  function tkTableCfg(d) {
+    return {
+      id: 'ticket', rows: d.tickets, empty: 'ยังไม่มี Ticket',
+      columns: [
+        { key: 'id', label: 'เลขที่', value: function (r) { return escapeHtmlJs(r.id) + '<br>' + (r.isSecurity === 'Yes' ? '<span class="badge bg-danger">Security</span>' : '<span class="badge bg-secondary">ทั่วไป</span>'); }, raw: function (r) { return r.id; } },
+        { key: 'title', label: 'เรื่อง', value: function (r) { return '<b>' + escapeHtmlJs(r.title) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.category) + ' · ' + escapeHtmlJs(r.priority) + '</small>' + (r.incidentId ? '<br><small class="text-danger">Incident: ' + escapeHtmlJs(r.incidentId) + '</small>' : '') + (r.rating ? '<br><small class="text-warning">★ ' + escapeHtmlJs(r.rating) + '/5</small>' : ''); }, raw: function (r) { return (r.title || '') + ' ' + (r.category || ''); } },
+        { key: 'requester', label: 'ผู้แจ้ง', value: function (r) { var channel = r.requesterIdentityType === 'LINE' ? ' <span class="badge bg-success">LINE</span>' : ''; return escapeHtmlJs(r.requesterName || r.requesterEmail) + channel + '<br><small class="text-muted">' + escapeHtmlJs(r.dept || '') + (r.requesterPhone ? ' ☎' + escapeHtmlJs(r.requesterPhone || '') : '') + '</small>'; }, raw: function (r) { return [r.requesterName, r.requesterEmail, r.dept, r.requesterPhone, r.requesterIdentityType].join(' '); } },
+        { key: 'location', label: 'สถานที่', value: function (r) { return escapeHtmlJs(r.location || '-'); }, default: false },
+        { key: 'status', label: 'สถานะ/SLA', value: function (r) { return '<span class="badge ' + tkTone(r.status) + '">' + escapeHtmlJs(r.status) + '</span><br>' + tkDueHtml(r); }, raw: function (r) { return r.status; } },
+        { key: 'assignee', label: 'ผู้รับผิดชอบ', value: function (r) { return escapeHtmlJs(r.assignee || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.assetName || r.assetId || '') + '</small>'; }, raw: function (r) { return r.assignee || ''; } },
+        { key: 'outsource', label: 'Outsource', value: function (r) { return r.outsourceName || r.outsourceIssueNo ? '<b>' + escapeHtmlJs(r.outsourceName || '-') + '</b><br><small class="text-muted">เลขแจ้งปัญหา: ' + escapeHtmlJs(r.outsourceIssueNo || '-') + '</small>' : '<span class="text-muted">-</span>'; }, raw: function (r) { return [r.outsourceName, r.outsourceIssueNo, r.outsourceSentAt].join(' '); } }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } },
+        { key: 'category', label: 'ประเภท', value: function (r) { return r.category || ''; } },
+        { key: 'priority', label: 'ความเร่งด่วน', value: function (r) { return r.priority || ''; } }
+      ],
+      actions: function (r) { return tkActionsHtml(d, r); },
+      actionsLabel: 'ดำเนินการ'
+    };
+  }
+
+  function tkActionsHtml(d, r) {
+    var a = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="tkDetail(\'' + r.id + '\')">รายละเอียด</button>';
+    var del = tkDeleteBtn(d, r);
+    if (tkIsTerminal(r.status)) {
+      if (d.canManage && (r.status === 'เสร็จสิ้น' || r.status === 'ปิดงาน')) {
+        a += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="tkReopen(\'' + r.id + '\')"><i class="bi bi-arrow-counterclockwise"></i> เปิดงานซ้ำ</button>';
+      }
+      return a + del;
+    }
+    if (d.canTriage) {
+      if (r.status === 'ใหม่') a += '<button class="btn btn-sm btn-primary me-1 mb-1" onclick="tkAck(\'' + r.id + '\')">รับเรื่อง</button>';
+      a += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="tkTriage(\'' + r.id + '\')">คัดแยก</button>';
+      a += '<button class="btn btn-sm btn-outline-danger me-1 mb-1" onclick="tkEscalate(\'' + r.id + '\')">ยกระดับ</button>';
+    }
+    if (d.canManage) {
+      a += '<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="tkUpdate(\'' + r.id + '\')">อัปเดต</button>';
+      a += '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="tkOutsource(\'' + r.id + '\')"><i class="bi bi-box-arrow-up-right"></i> ' + (r.outsourceIssueNo ? 'แก้ไข Outsource' : 'ส่งต่อ Outsource') + '</button>';
+      a += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="tkClose(\'' + r.id + '\')">ปิดงาน</button>';
+      a += '<button class="btn btn-sm btn-outline-warning mb-1" onclick="tkCancel(\'' + r.id + '\')">ยกเลิก</button>';
+    }
+    return a + del;
+  }
+  function tkFind(id) { return (TICKET_DATA.tickets || []).filter(function (t) { return t.id === id; })[0] || {}; }
+  function tkSafeJsArg(s) { return String(s == null ? '' : s).replace(/[\\'"<>]/g, ' ').trim(); }
+  function tkDeleteBtn(d, r) {
+    if (!d.canDelete) return '';
+    if (typeof deleteBtn === 'function') return deleteBtn('ticket', r.id, r.id + ' ' + r.title, true);
+    return '<button class="btn btn-sm btn-outline-danger mb-1" title="ลบ (ย้ายไปถังขยะ)" ' +
+      'onclick="tkDelete(\'' + tkSafeJsArg(r.id) + '\')"><i class="bi bi-trash"></i> ลบ</button>';
+  }
+  function tkDelete(id) {
+    var r = tkFind(id);
+    var run = function () {
+      return callServer('softDeleteRecord', 'ticket', id).then(function (m) {
+        toast(m || 'ลบแล้ว — ย้ายไปถังขยะ', 'success');
+        loadModule('ticket');
+      });
+    };
+    var message = 'ต้องการลบ "' + (r.title || id) + '" หรือไม่?\nรายการจะถูกย้ายไปถังขยะและกู้คืนได้จากหน้า Settings';
+    if (typeof showConfirm === 'function') {
+      showConfirm(message, run, { danger: true, okLabel: 'ลบ', title: 'ยืนยันการลบ' });
+    } else if (window.confirm(message)) {
+      run();
+    }
+  }
+
+  // ---- เปิด Ticket (modal) ----
+  function tkOpenForm() {
+    var d = TICKET_DATA;
+    var idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+      ('ticket-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+    showFormModal({
+      title: 'เปิด Ticket แจ้งซ่อม', submitLabel: 'เปิด Ticket',
+      fields: [
+        { id: 'title', label: 'หัวข้อปัญหา', required: true, col: 'col-md-8' },
+        { id: 'category', label: 'ประเภทปัญหา', type: 'select', required: true, options: d.categories.map(function (c) { return c.name; }), col: 'col-md-4' },
+        { id: 'priority', label: 'ความเร่งด่วน', type: 'select', options: d.priorities, col: 'col-md-4' },
+        { id: 'requesterPhone', label: 'เบอร์โทรติดต่อ', col: 'col-md-4' },
+        { id: 'location', label: 'สถานที่ตั้งเครื่อง', col: 'col-md-4' },
+        { id: 'assetId', label: 'ผูกกับ Asset (ถ้ามี)', type: 'select', options: (d.assets || []).map(function (a) { return { value: a.id, label: a.label || a.id }; }), col: 'col-md-8' },
+        { id: 'isSecurity', label: 'สงสัยภัยคุกคาม', type: 'checkbox', col: 'col-md-4' },
+        { id: 'description', label: 'รายละเอียดปัญหา', type: 'textarea', rows: 4, required: true, col: 'col-12' },
+        { id: 'file', label: 'แนบหลักฐาน/ภาพหน้าจอ', type: 'file', col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var form = { title: v.title, category: v.category, priority: v.priority, requesterPhone: v.requesterPhone,
+          location: v.location, assetId: v.assetId, assetName: tkAssetName(v.assetId),
+          description: v.description, isSecurity: v.isSecurity ? 'yes' : 'no',
+          attachmentIds: [], idempotencyKey: idempotencyKey };
+        var fileEl = v.file;
+        var up = (fileEl && fileEl.files && fileEl.files[0]) ?
+          uploadRegisteredFileInput(fileEl, {
+            moduleKey: 'ticket', recordType: 'Ticket', fieldName: 'AttachmentIDsJSON',
+            attachmentRole: 'REQUEST_EVIDENCE', classification: 'Confidential', isEvidence: true
+          }) : Promise.resolve(null);
+        return up.then(function (res) {
+          form.attachmentIds = res ? [res.attachmentId] : [];
+          return callServer('submitTicket', form);
+        }).then(function (result) {
+          toast((result && result.duplicate ? 'พบ Ticket เดิม ' : 'เปิด Ticket เรียบร้อย ') +
+            ((result && result.id) || ''), 'success');
+          loadModule('ticket');
+        });
+      }
+    });
+  }
+  function tkAssetName(id) { var a = (TICKET_DATA.assets || []).filter(function (x) { return x.id === id; })[0]; return a ? (a.name || '') : ''; }
+
+  function tkAck(id) {
+    showFormModal({ title: 'รับเรื่อง Ticket ' + id, submitLabel: 'รับเรื่อง', size: 'md',
+      fields: [{ id: 'note', label: 'หมายเหตุ (ถ้ามี)', type: 'textarea', rows: 2, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('acknowledgeTicket', id, v.note).then(function (m) { toast(m); loadModule('ticket'); }); } });
+  }
+  function tkTriage(id) {
+    var r = tkFind(id), d = TICKET_DATA;
+    showFormModal({ title: 'คัดแยก/มอบหมาย Ticket ' + id, submitLabel: 'บันทึก',
+      fields: [
+        { id: 'category', label: 'ประเภทปัญหา', type: 'select', options: d.categories.map(function (c) { return c.name; }), value: r.category, col: 'col-md-6' },
+        { id: 'priority', label: 'ความเร่งด่วน', type: 'select', options: d.priorities, value: r.priority, col: 'col-md-6' },
+        { id: 'assignee', label: 'มอบหมายให้', type: 'select', options: tkAssigneeOptions(r.assignee), value: r.assignee, col: 'col-md-8' },
+        { id: 'isSecurity', label: 'เข้าข่ายภัยคุกคาม', type: 'checkbox', value: r.isSecurity === 'Yes', col: 'col-md-4' },
+        { id: 'notes', label: 'หมายเหตุการคัดแยก', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('triageTicket', id, { category: v.category, priority: v.priority, assignee: v.assignee, isSecurity: v.isSecurity ? 'yes' : 'no', notes: v.notes }).then(function (m) { toast(m); loadModule('ticket'); }); } });
+  }
+  function tkUpdate(id) {
+    var r = tkFind(id), d = TICKET_DATA;
+    showFormModal({ title: 'อัปเดตการดำเนินงาน Ticket ' + id, submitLabel: 'บันทึก',
+      fields: [
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: d.workStatuses, value: (r.status === 'ใหม่' ? 'กำลังดำเนินการ' : r.status), col: 'col-md-6', help: 'เลือก "รอผู้ใช้งาน/รออะไหล่" เพื่อหยุดนาฬิกา SLA ชั่วคราว' },
+        { id: 'assignee', label: 'ผู้รับผิดชอบ', type: 'select', options: tkAssigneeOptions(r.assignee), value: r.assignee, col: 'col-md-6' },
+        { id: 'minutes', label: 'เวลาที่ใช้ (นาที)', type: 'number', col: 'col-md-4' },
+        { id: 'resolution', label: 'สรุปผล (กรณีเสร็จสิ้น)', value: r.resolution, col: 'col-md-8' },
+        { id: 'notes', label: 'บันทึกการดำเนินงาน', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('updateTicketWork', id, v).then(function (m) { toast(m); loadModule('ticket'); }); } });
+  }
+  function tkOutsource(id) {
+    var r = tkFind(id), d = TICKET_DATA;
+    showFormModal({
+      title: (r.outsourceIssueNo ? 'แก้ไขข้อมูล Outsource: ' : 'ส่งต่อ Outsource: ') + id,
+      submitLabel: r.outsourceIssueNo ? 'บันทึกการแก้ไข' : 'ส่งต่อ Outsource',
+      fields: [
+        { id: 'vendorId', label: 'เลือกจากทะเบียนผู้ให้บริการ', type: 'select', options: d.outsourceOptions || [], value: r.outsourceVendorId || '', col: 'col-md-7', help: 'หากไม่มีในรายการ ให้กรอกชื่อ Outsource เอง' },
+        { id: 'outsourceName', label: 'ชื่อ Outsource (กรณีไม่มีในทะเบียน)', value: r.outsourceName || '', col: 'col-md-5' },
+        { id: 'issueNo', label: 'เลขแจ้งปัญหา Outsource', value: r.outsourceIssueNo || '', col: 'col-md-6', help: 'เว้นว่างเพื่อให้ระบบสร้างเลข OUT-* อัตโนมัติ' },
+        { id: 'notes', label: 'รายละเอียดที่ส่งต่อ/หมายเหตุ', type: 'textarea', rows: 3, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('forwardTicketToOutsource', id, {
+          vendorId: v.vendorId,
+          outsourceName: v.outsourceName,
+          issueNo: v.issueNo,
+          notes: v.notes
+        }).then(function (m) { toast(m, 'success'); loadModule('ticket'); });
+      }
+    });
+  }
+  function tkClose(id) {
+    showFormModal({ title: 'ปิดงาน Ticket ' + id, submitLabel: 'ปิดงาน', size: 'md',
+      fields: [{ id: 'resolution', label: 'สรุปการแก้ไข/ผลการดำเนินการ', type: 'textarea', rows: 3, required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('closeTicket', id, v.resolution).then(function (m) { toast(m); loadModule('ticket'); }); } });
+  }
+  function tkCancel(id) {
+    showFormModal({ title: 'ยกเลิก Ticket ' + id, submitLabel: 'ยกเลิกงาน', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผลการยกเลิก', type: 'textarea', rows: 3, required: true, col: 'col-12' }],
+      onSubmit: function (v) { return callServer('cancelTicket', id, v.reason).then(function (m) { toast(m); loadModule('ticket'); }); } });
+  }
+  function tkEscalate(id) {
+    var d = TICKET_DATA;
+    showFormModal({ title: 'ยกระดับเป็น Incident: Ticket ' + id, submitLabel: 'ยกระดับ',
+      fields: [
+        { id: 'category', label: 'ประเภท Incident', type: 'select', options: d.incidentCategories, col: 'col-md-6' },
+        { id: 'severity', label: 'ระดับความรุนแรง', type: 'select', options: d.incidentSeverities, col: 'col-md-6' },
+        { id: 'personalData', label: 'เกี่ยวข้องข้อมูลส่วนบุคคล (PDPA)', type: 'checkbox', col: 'col-12' },
+        { id: 'notes', label: 'เหตุผล/หมายเหตุการยกระดับ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) { return callServer('escalateTicketToIncident', id, { category: v.category, severity: v.severity, personalData: v.personalData ? 'yes' : 'no', notes: v.notes }).then(function (m) { toast(m, 'success'); loadModule('ticket'); }); } });
+  }
+
+  function tkDetail(id) {
+    var r = tkFind(id);
+    var wl = (r.worklogs || []).map(function (w) {
+      return '<li class="list-group-item"><div class="small text-muted">' + escapeHtmlJs(w.date) + ' · ' + escapeHtmlJs(w.actor || '') + '</div>' +
+        '<b>' + escapeHtmlJs(w.action) + '</b>' + (w.statusTo ? ' <span class="badge bg-light text-dark">' + escapeHtmlJs(w.statusTo) + '</span>' : '') +
+        (w.minutes ? ' <span class="badge bg-info text-dark">' + escapeHtmlJs(w.minutes) + ' นาที</span>' : '') +
+        (w.detail ? '<div>' + escapeHtmlJs(w.detail) + '</div>' : '') +
+        (w.hasLegacyAttachment ? '<div class="small text-muted"><i class="bi bi-file-earmark-lock"></i> หลักฐานเดิมถูกซ่อนจนกว่าจะย้ายเข้าทะเบียนไฟล์</div>' : '') + '</li>';
+    }).join('') || '<li class="list-group-item text-muted">ยังไม่มีบันทึก</li>';
+    var attachments = (r.attachmentIds || []).map(function (attachmentId, index) {
+      return registeredAttachmentButtonHtml(attachmentId, 'ไฟล์แนบ ' + (index + 1),
+        'btn btn-sm btn-outline-primary me-2 mb-2');
+    }).join('');
+    var fb = r.rating ? '<div class="alert alert-warning py-2">★ ' + escapeHtmlJs(r.rating) + '/5 ' + (r.feedback ? '— ' + escapeHtmlJs(r.feedback) : '') + '</div>' : '';
+    var outsource = r.outsourceName || r.outsourceIssueNo
+      ? '<div class="alert alert-dark py-2"><b>Outsource:</b> ' + escapeHtmlJs(r.outsourceName || '-') +
+        '<br><b>เลขแจ้งปัญหา:</b> ' + escapeHtmlJs(r.outsourceIssueNo || '-') +
+        (r.outsourceSentAt ? '<br><b>ส่งต่อเมื่อ:</b> ' + escapeHtmlJs(r.outsourceSentAt) : '') + '</div>'
+      : '';
+    var body = '<p>' + escapeHtmlJs(r.description || '') + '</p>' +
+      (attachments ? '<div class="mb-3"><div class="small text-muted mb-1">ไฟล์แนบที่ป้องกันด้วยสิทธิ์ระบบ</div>' + attachments + '</div>' : '') +
+      outsource + fb +
+      '<h6>ประวัติการดำเนินงาน (Worklog)</h6><ul class="list-group list-group-flush">' + wl + '</ul>';
+    showInfoModal(r.id + ' · ' + r.title, body, 'lg');
+  }
+
+  function tkSafeHttps_(value) {
+    var url = String(value || '').split('\n')[0].trim();
+    return /^https:\/\//i.test(url) ? url : '';
+  }
+
+  // ---- เปิดงานซ้ำ (Reopen) ----
+  function tkReopen(id) {
+    showFormModal({
+      title: 'เปิดงานซ้ำ Ticket ' + id, submitLabel: 'เปิดงานซ้ำ', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผล/อาการที่กลับมา', type: 'textarea', rows: 3, required: true, col: 'col-12', help: 'ระบบจะตั้งนาฬิกา SLA ใหม่ตามหมวดหมู่ และแจ้งผู้แจ้ง/ผู้รับผิดชอบ' }],
+      onSubmit: function (v) { return callServer('reopenTicket', id, { reason: v.reason }).then(function (m) { toast(m, 'success'); loadModule('ticket'); }); }
+    });
+  }
+
+  // ================= จัดการหมวดหมู่ Ticket =================
+  function tkManageCategories() {
+    callServer('getTicketCategoriesAdmin').then(function (d) { TK_CAT_DATA = d; tkRenderCategoryModal(); })
+      .catch(function (err) { toast((err && err.message) || 'โหลดหมวดหมู่ไม่สำเร็จ', 'danger'); });
+  }
+  function tkRenderCategoryModal() {
+    var d = TK_CAT_DATA || { categories: [] };
+    var rows = (d.categories || []).map(function (c) {
+      var active = String(c.status).toLowerCase() === 'active';
+      return '<tr><td><b>' + escapeHtmlJs(c.name) + '</b>' + (c.isSecurityDefault === 'Yes' ? ' <span class="badge bg-danger">Security</span>' : '') +
+        (c.notes ? '<br><small class="text-muted">' + escapeHtmlJs(c.notes) + '</small>' : '') + '</td>' +
+        '<td>' + escapeHtmlJs(c.priority || '-') + '</td>' +
+        '<td class="text-center">ตอบรับ ' + escapeHtmlJs(c.responseSlaHours || '-') +
+        ' / แก้เสร็จ ' + escapeHtmlJs(c.resolutionSlaHours || c.slaHours || '-') + ' ชม.</td>' +
+        '<td><span class="badge ' + (active ? 'bg-success' : 'bg-secondary') + '">' + escapeHtmlJs(c.status) + '</span></td>' +
+        '<td class="text-nowrap"><button class="btn btn-sm btn-outline-primary me-1" onclick="tkCatForm(\'' + c.id + '\')">แก้ไข</button>' +
+        '<button class="btn btn-sm btn-outline-warning" onclick="tkCatToggle(\'' + c.id + '\',\'' + (active ? 'Inactive' : 'Active') + '\')">' + (active ? 'ปิดใช้' : 'เปิดใช้') + '</button></td></tr>';
+    }).join('');
+    var body = '<div class="d-flex mb-2"><button class="btn btn-sm btn-primary ms-auto" onclick="tkCatForm()"><i class="bi bi-plus-lg"></i> เพิ่มหมวดหมู่</button></div>' +
+      '<div class="alert alert-light border small py-2">SLA คำนวณเฉพาะเวลาทำการและวันทำการตามค่าใน Settings</div>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>หมวดหมู่</th><th>ความเร่งด่วนเริ่มต้น</th><th class="text-center">SLA ตอบรับ / แก้เสร็จ</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="5" class="text-muted">ยังไม่มีหมวดหมู่</td></tr>') + '</tbody></table></div>';
+    showInfoModal('จัดการหมวดหมู่ Ticket', body, 'lg');
+  }
+  function tkCatFind(id) { return (TK_CAT_DATA.categories || []).filter(function (c) { return c.id === id; })[0] || {}; }
+  function tkCatForm(id) {
+    var d = TK_CAT_DATA, c = id ? tkCatFind(id) : {};
+    showFormModal({
+      title: id ? ('แก้ไขหมวดหมู่: ' + c.name) : 'เพิ่มหมวดหมู่', submitLabel: id ? 'อัปเดต' : 'บันทึก', size: 'md',
+      fields: [
+        { id: 'name', label: 'ชื่อหมวดหมู่', value: c.name, required: true, col: 'col-md-8' },
+        { id: 'priority', label: 'ความเร่งด่วนเริ่มต้น', type: 'select', placeholder: false, options: d.priorities, value: c.priority || 'ปานกลาง', col: 'col-md-4' },
+        { id: 'responseSlaHours', label: 'Response SLA (ชม.ทำการ)', type: 'number', value: c.responseSlaHours || 4, col: 'col-md-4' },
+        { id: 'resolutionSlaHours', label: 'Resolution SLA (ชม.ทำการ)', type: 'number', value: c.resolutionSlaHours || c.slaHours || 24, col: 'col-md-4' },
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: ['Active', 'Inactive'], value: c.status || 'Active', col: 'col-md-4' },
+        { id: 'isSecurityDefault', label: 'ตั้งเป็นภัยคุกคามอัตโนมัติ', type: 'checkbox', value: c.isSecurityDefault === 'Yes', col: 'col-md-4' },
+        { id: 'notes', label: 'คำอธิบาย', type: 'textarea', rows: 2, value: c.notes, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        var form = { id: id || '', name: v.name, priority: v.priority,
+          responseSlaHours: v.responseSlaHours, resolutionSlaHours: v.resolutionSlaHours,
+          status: v.status, isSecurityDefault: v.isSecurityDefault ? 'yes' : 'no', notes: v.notes };
+        return callServer('saveTicketCategory', form).then(function (m) { toast(m, 'success'); tkManageCategories(); });
+      }
+    });
+  }
+  function tkCatToggle(id, status) {
+    callServer('setTicketCategoryStatus', id, status).then(function (m) { toast(m); tkManageCategories(); });
+  }
+
+  // ================= รายงานวิเคราะห์ผล / SLA =================
+  function tkHoursFmt(h) { if (h === null || h === undefined) return '-'; return h >= 48 ? (h / 24).toFixed(1) + ' วัน' : h + ' ชม.'; }
+  var TK_PALETTE = ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b', '#22c55e', '#eab308'];
+
+  function tkShowAnalytics(range) {
+    var days = (range === undefined) ? TK_ANALYTICS_RANGE : range;
+    TK_ANALYTICS_RANGE = days;
+    var c = TK_CONTAINER; if (!c) return;
+    c.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังคำนวณรายงาน...</div></div>';
+    callServer('getTicketAnalytics', days).then(function (a) { tkRenderAnalytics(c, a); })
+      .catch(function (err) { c.innerHTML = '<div class="alert alert-danger">โหลดรายงานไม่สำเร็จ: ' + escapeHtmlJs((err && err.message) || String(err)) + '</div><button class="btn btn-outline-secondary" onclick="loadModule(\'ticket\')">กลับ</button>'; });
+  }
+
+  function tkRangeBtns() {
+    var opts = [{ v: 30, t: '30 วัน' }, { v: 90, t: '90 วัน' }, { v: 365, t: '1 ปี' }, { v: 0, t: 'ทั้งหมด' }];
+    return '<div class="btn-group btn-group-sm" role="group">' + opts.map(function (o) {
+      return '<button class="btn ' + (TK_ANALYTICS_RANGE === o.v ? 'btn-primary' : 'btn-outline-primary') + '" onclick="tkShowAnalytics(' + o.v + ')">' + o.t + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function tkRenderAnalytics(c, a) {
+    TK_CHARTS.forEach(function (ch) { try { ch.destroy(); } catch (e) {} });
+    TK_CHARTS = [];
+    var kpi = function (label, value, sub, tone) {
+      return '<div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-3">' +
+        '<div class="text-muted small">' + label + '</div>' +
+        '<div class="fs-4 fw-bold text-' + (tone || 'primary') + '">' + value + '</div>' +
+        (sub ? '<div class="text-muted" style="font-size:.75rem">' + sub + '</div>' : '') + '</div></div></div>';
+    };
+    var slaTone = a.slaCompliance === null ? 'secondary' : (a.slaCompliance >= 90 ? 'success' : (a.slaCompliance >= 70 ? 'warning' : 'danger'));
+    var html = '<div class="d-flex align-items-center flex-wrap gap-2 mb-3">' +
+      '<button class="btn btn-outline-secondary btn-sm" onclick="loadModule(\'ticket\')"><i class="bi bi-arrow-left"></i> กลับรายการ</button>' +
+      '<h4 class="text-primary mb-0 ms-2">รายงานวิเคราะห์ผลแจ้งซ่อม</h4>' +
+      '<div class="ms-auto">' + tkRangeBtns() + '</div></div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('ทำได้ตาม SLA', a.slaCompliance === null ? '-' : a.slaCompliance + '%', 'จาก ' + a.slaEvaluated + ' งานที่ปิด', slaTone) +
+      kpi('เวลาตอบสนองแรก', tkHoursFmt(a.avgFirstResponseHours), 'เฉลี่ย (FRT)', 'info') +
+      kpi('เวลาปิดงานเฉลี่ย', tkHoursFmt(a.avgResolutionHours), 'หักเวลาที่หยุด SLA', 'info') +
+      kpi('ความพึงพอใจ (CSAT)', a.csatAvg === null ? '-' : ('★ ' + a.csatAvg), a.csatCount + ' รายการที่ประเมิน', 'warning') +
+      '</div>';
+    html += '<div class="row g-2 mb-3">' +
+      kpi('Ticket ทั้งหมด (ช่วงนี้)', a.total, '', 'primary') +
+      kpi('เปิดอยู่', a.open, '', 'primary') +
+      kpi('เกิน SLA (เปิดอยู่)', a.overdue, '', a.overdue ? 'danger' : 'success') +
+      kpi('ปิดงานแล้ว', a.resolved, '', 'success') +
+      '</div>';
+    html += '<div class="row g-3">' +
+      '<div class="col-lg-8"><div class="card"><div class="card-body"><h6 class="text-muted">แนวโน้ม 6 เดือน (เปิด vs ปิด)</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="tkChartTrend"></canvas></div></div></div></div>' +
+      '<div class="col-lg-4"><div class="card h-100"><div class="card-body"><h6 class="text-muted">ตามสถานะ</h6><div class="analytics-chart-frame analytics-chart-tall"><canvas id="tkChartStatus"></canvas></div></div></div></div>' +
+      '<div class="col-lg-6"><div class="card"><div class="card-body"><h6 class="text-muted">ตามหมวดหมู่</h6><div class="analytics-chart-frame"><canvas id="tkChartCat"></canvas></div></div></div></div>' +
+      '<div class="col-lg-3"><div class="card h-100"><div class="card-body"><h6 class="text-muted">ตามความเร่งด่วน</h6><div class="analytics-chart-frame"><canvas id="tkChartPri"></canvas></div></div></div></div>' +
+      '<div class="col-lg-3"><div class="card h-100"><div class="card-body"><h6 class="text-muted">คะแนน CSAT</h6><div class="analytics-chart-frame"><canvas id="tkChartCsat"></canvas></div></div></div></div>' +
+      '<div class="col-12">' + tkAssigneeTable(a.byAssignee) + '</div>' +
+      '</div>';
+    c.innerHTML = html;
+    tkDrawCharts(a);
+  }
+
+  function tkAssigneeTable(list) {
+    if (!list || !list.length) return '';
+    var rows = list.map(function (x) {
+      return '<tr><td>' + escapeHtmlJs(x.label) + '</td><td class="text-center"><span class="badge bg-primary">' + x.open + '</span></td><td class="text-center">' + x.total + '</td></tr>';
+    }).join('');
+    return '<div class="card"><div class="card-body"><h6 class="text-muted">ปริมาณงานตามผู้รับผิดชอบ</h6>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>ผู้รับผิดชอบ</th><th class="text-center">เปิดอยู่</th><th class="text-center">รวมทั้งหมด</th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+  }
+
+  function tkChart(id, cfg) {
+    var el = document.getElementById(id);
+    if (!el || typeof Chart === 'undefined') return;
+    TK_CHARTS.push(new Chart(el, cfg));
+  }
+  function tkDrawCharts(a) {
+    var noLegend = { plugins: { legend: { display: false } }, maintainAspectRatio: false };
+    tkChart('tkChartTrend', {
+      type: 'line',
+      data: {
+        labels: a.trend.map(function (t) { return t.month; }),
+        datasets: [
+          { label: 'เปิด', data: a.trend.map(function (t) { return t.created; }), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.1)', fill: true, tension: .3 },
+          { label: 'ปิด', data: a.trend.map(function (t) { return t.closed; }), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.1)', fill: true, tension: .3 }
+        ]
+      },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+    tkChart('tkChartStatus', {
+      type: 'doughnut',
+      data: { labels: a.byStatus.map(function (x) { return x.label; }), datasets: [{ data: a.byStatus.map(function (x) { return x.value; }), backgroundColor: TK_PALETTE }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } } }
+    });
+    tkChart('tkChartCat', {
+      type: 'bar',
+      data: { labels: a.byCategory.map(function (x) { return x.label; }), datasets: [{ data: a.byCategory.map(function (x) { return x.value; }), backgroundColor: '#0ea5e9' }] },
+      options: Object.assign({ indexAxis: 'y' }, noLegend)
+    });
+    tkChart('tkChartPri', {
+      type: 'doughnut',
+      data: { labels: a.byPriority.map(function (x) { return x.label; }), datasets: [{ data: a.byPriority.map(function (x) { return x.value; }), backgroundColor: ['#22c55e', '#eab308', '#f59e0b', '#ef4444'] }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } } }
+    });
+    tkChart('tkChartCsat', {
+      type: 'bar',
+      data: { labels: ['1★', '2★', '3★', '4★', '5★'], datasets: [{ data: [a.csatDist[1], a.csatDist[2], a.csatDist[3], a.csatDist[4], a.csatDist[5]], backgroundColor: ['#ef4444', '#f59e0b', '#eab308', '#84cc16', '#22c55e'] }] },
+      options: noLegend
+    });
+  }
+</script>

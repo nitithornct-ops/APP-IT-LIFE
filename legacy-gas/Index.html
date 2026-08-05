@@ -1,0 +1,532 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <?!= include_('Styles'); ?>
+  <style>
+    .login-overlay { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #0f1f3d 0%, #1e40af 100%); padding: 20px; }
+    .login-card { max-width: 420px; width: 100%; background: #fff; border-radius: 22px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.3); padding: 38px 34px; }
+    .login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+    .login-brand .logo { width: 46px; height: 46px; border-radius: 12px; color: #fff; font-weight: 800;
+      background: linear-gradient(135deg, #1e40af, #3b82f6); display: flex; align-items: center; justify-content: center; }
+    .deploy-health-alert { margin: 12px 20px 0; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <!-- ===== หน้าเข้าสู่ระบบหลังบ้าน ===== -->
+  <div class="login-overlay" id="loginOverlay" style="display:none">
+    <div class="login-card">
+      <? var _logoUrl = (typeof logoUrl !== 'undefined' && logoUrl) ? logoUrl : ''; ?>
+      <div class="login-brand">
+        <div class="logo">
+          <? if (_logoUrl) { ?><img src="<?= _logoUrl ?>" alt="logo" style="width:100%;height:100%;object-fit:contain;border-radius:12px" onerror="this.style.display='none';this.parentNode.textContent='กช'"><? } else { ?>กช<? } ?>
+        </div>
+        <div><b style="color:#15327a"><?= orgName ?></b><br><small class="text-muted">ระบบหลังบ้าน — เจ้าหน้าที่</small></div>
+      </div>
+      <div id="loginError" class="alert alert-danger py-2" style="display:none"></div>
+      <div id="loginCredentials">
+        <div class="mb-3"><label class="form-label">Username</label>
+          <input id="loginEmail" type="text" class="form-control" autocomplete="username" placeholder="Username" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+        <div class="mb-3"><label class="form-label">รหัสผ่าน</label>
+          <input id="loginPassword" type="password" class="form-control" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+        <button class="btn btn-primary w-100" onclick="submitLogin()"><i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ</button>
+      </div>
+      <div id="loginMfa" style="display:none">
+        <div class="alert alert-info py-2 small" id="loginMfaHint"></div>
+        <div class="mb-3"><label class="form-label">รหัส OTP 6 หลัก</label>
+          <input id="loginMfaOtp" type="text" inputmode="numeric" maxlength="6" class="form-control"
+            autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitMfa()"></div>
+        <button class="btn btn-primary w-100 mb-2" onclick="submitMfa()"><i class="bi bi-shield-check"></i> ยืนยัน OTP</button>
+        <button class="btn btn-link w-100 btn-sm" onclick="resetLoginStep_()">← กลับไปเข้าสู่ระบบใหม่</button>
+      </div>
+      <div class="text-center mt-3">
+        <a href="<?= publicUrl ?>" target="_top" class="small text-muted">← กลับไปหน้าแจ้งซ่อม</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ลิงก์ข้ามไปยังเนื้อหาหลัก (มาตรฐานการเข้าถึง) -->
+  <a href="#content" class="skip-link">ข้ามไปยังเนื้อหาหลัก</a>
+
+  <div class="app-shell" id="appShell" style="display:none">
+
+    <!-- ===== Sidebar (อยู่ทุกหน้า) ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo">
+          <? if (_logoUrl) { ?><img src="<?= _logoUrl ?>" alt="logo" style="width:100%;height:100%;object-fit:contain;border-radius:12px" onerror="this.style.display='none';this.parentNode.textContent='กช'"><? } else { ?>กช<? } ?>
+        </div>
+        <div class="brand-text">
+          <b><?= orgName ?></b><br>
+          <small>ISMS Governance</small>
+        </div>
+      </div>
+      <nav class="nav-menu" id="navMenu" aria-label="เมนูหลัก"></nav>
+      <div class="sidebar-footer" id="appFooterVer">ISMS</div>
+    </aside>
+    <div class="sidebar-backdrop" id="sbBackdrop" onclick="closeSidebar()"></div>
+
+    <!-- ===== Main ===== -->
+    <div class="main-area">
+      <header class="topbar">
+        <button class="icon-btn" id="sidebarToggle" onclick="toggleSidebar()" title="ย่อ/ขยายเมนู"
+          aria-label="เปิดหรือปิดเมนูหลัก" aria-controls="sidebar" aria-expanded="true"><i class="bi bi-list"></i></button>
+        <h1 class="page-title" id="pageTitle"><i class="bi bi-speedometer2"></i>แดชบอร์ดภาพรวม</h1>
+
+        <div class="topbar-tools ms-auto">
+          <!-- ค้นหาด่วน (Ctrl+K) -->
+          <button class="icon-btn" onclick="openCmdK()" title="ค้นหาด่วน (Ctrl+K)" aria-label="ค้นหาด่วน"><i class="bi bi-search"></i></button>
+          <!-- ปรับขนาดตัวอักษร -->
+          <div class="fontsize-group" role="group" aria-label="ปรับขนาดตัวอักษร">
+            <button class="fs-sm" onclick="setFontScale(-1)" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก</button>
+            <button class="fs-md" onclick="setFontScale(0)" title="ขนาดปกติ" aria-label="ขนาดปกติ">ก</button>
+            <button class="fs-lg" onclick="setFontScale(1)" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก</button>
+          </div>
+          <!-- ความคมชัดสูง -->
+          <button class="icon-btn" id="contrastBtn" onclick="toggleContrast()" title="โหมดความคมชัดสูง" aria-label="โหมดความคมชัดสูง"><i class="bi bi-circle-half"></i></button>
+          <!-- โหมดมืด/สว่าง -->
+          <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="สลับโหมดมืด/สว่าง" aria-label="สลับโหมดมืด/สว่าง"><i class="bi bi-moon-stars"></i></button>
+          <!-- กระดิ่งแจ้งเตือน -->
+          <button class="icon-btn" id="notifBtn" onclick="toggleNotifPanel()" title="การแจ้งเตือน" aria-label="การแจ้งเตือน">
+            <i class="bi bi-bell"></i><span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </button>
+        </div>
+
+        <div class="user-chip">
+          <div class="info">
+            <b id="ucName"></b><br>
+            <small id="ucRole"></small>
+          </div>
+          <div class="avatar" id="userAvatar">U</div>
+          <button class="icon-btn ms-2" onclick="logout()" title="ออกจากระบบ" aria-label="ออกจากระบบ"><i class="bi bi-box-arrow-right"></i></button>
+        </div>
+      </header>
+
+      <div id="deployHealthAlert" class="alert alert-warning deploy-health-alert py-2 px-3 mb-0"
+        role="alert" style="display:none"></div>
+
+      <div class="context-bar" id="contextBar">
+        <nav aria-label="เส้นทางหน้าปัจจุบัน">
+          <ol class="breadcrumb">
+            <li class="breadcrumb-item"><i class="bi bi-grid me-1"></i>ระบบจัดการ</li>
+            <li class="breadcrumb-item" id="breadcrumbGroup">ภาพรวม</li>
+            <li class="breadcrumb-item active" id="breadcrumbModule" aria-current="page">แดชบอร์ด</li>
+          </ol>
+        </nav>
+        <span class="context-state">ระบบพร้อมใช้งาน</span>
+      </div>
+
+      <!-- แผงการแจ้งเตือน -->
+      <div class="notif-panel" id="notifPanel" role="dialog" aria-label="การแจ้งเตือน">
+        <div class="notif-head"><i class="bi bi-bell-fill"></i> การแจ้งเตือน
+          <button class="icon-btn ms-auto" onclick="refreshNotifications()" title="รีเฟรช" aria-label="รีเฟรช" style="width:34px;height:34px;font-size:1rem"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="notif-list" id="notifList"><div class="notif-empty">กำลังโหลด...</div></div>
+      </div>
+
+      <main class="content" id="content" tabindex="-1">
+        <div class="text-center text-muted py-5">กำลังโหลด...</div>
+      </main>
+
+      <footer class="app-foot">
+        © <?= orgName ?> · ระบบบริหารความมั่นคงปลอดภัยสารสนเทศและไซเบอร์ · <span id="footVer"></span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Command palette (ค้นหา/ไปยังโมดูล ด้วย Ctrl+K) -->
+  <div class="cmdk-overlay" id="cmdkOverlay" onclick="if(event.target===this)closeCmdK()">
+    <div class="cmdk-box" role="dialog" aria-label="ค้นหาด่วน">
+      <div class="cmdk-input-wrap">
+        <i class="bi bi-search"></i>
+        <input id="cmdkInput" type="text" placeholder="ค้นหาเมนู / โมดูล..." autocomplete="off" aria-label="ค้นหาเมนู">
+      </div>
+      <div class="cmdk-results" id="cmdkResults"></div>
+      <div class="cmdk-foot"><span><kbd>↑</kbd><kbd>↓</kbd> เลื่อน</span><span><kbd>Enter</kbd> เปิด</span><span><kbd>Esc</kbd> ปิด</span></div>
+    </div>
+  </div>
+
+  <div id="loading" role="status" aria-live="polite" aria-label="กำลังประมวลผล">
+    <div class="loading-box"><div class="ring"></div><span>กำลังประมวลผล...</span></div>
+  </div>
+  <div id="toast-area" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- วันที่/ปฏิทิน/ตัวเลือกวันที่ — ใช้ในโมดูล Task และที่อื่น ๆ -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.13/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.13/plugin/customParseFormat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/th.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <script>
+    // เปิดใช้ปลั๊กอิน parse รูปแบบ dd/MM/yyyy ให้ Day.js (ถ้าโหลดสำเร็จ)
+    if (window.dayjs && window.dayjs_plugin_customParseFormat) {
+      dayjs.extend(window.dayjs_plugin_customParseFormat);
+    }
+  </script>
+  <?!= include_('JavaScript'); ?>
+  <?!= includeOptional_('Dashboard'); ?>
+  <?!= includeOptional_('Task'); ?>
+  <?!= includeOptional_('Calendar'); ?>
+  <?!= includeOptional_('Ticket'); ?>
+  <?!= includeOptional_('ServiceCatalog'); ?>
+  <?!= includeOptional_('Workflow'); ?>
+  <?!= includeOptional_('KB'); ?>
+  <?!= includeOptional_('AccessControl'); ?>
+  <?!= includeOptional_('Incident'); ?>
+  <?!= includeOptional_('Risk'); ?>
+  <?!= includeOptional_('Compliance'); ?>
+  <?!= includeOptional_('Backup'); ?>
+  <?!= includeOptional_('Logging'); ?>
+  <?!= includeOptional_('Asset'); ?>
+  <?!= includeOptional_('Employee'); ?>
+  <?!= includeOptional_('DataClass'); ?>
+  <?!= includeOptional_('Privacy'); ?>
+  <?!= includeOptional_('Assurance'); ?>
+  <?!= includeOptional_('CMDB'); ?>
+  <?!= includeOptional_('Change'); ?>
+  <?!= includeOptional_('Vendor'); ?>
+  <?!= includeOptional_('AICloud'); ?>
+  <?!= includeOptional_('Awareness'); ?>
+  <?!= includeOptional_('Evidence'); ?>
+  <?!= includeOptional_('AuditTrail'); ?>
+  <?!= includeOptional_('NotificationSettings'); ?>
+  <?!= includeOptional_('ITAssetExtras'); ?>
+
+  <script>
+    // ชื่อหน่วยงาน (ใช้ในหัวรายงานพิมพ์/PDF)
+    var ORG_NAME = '<?= orgName ?>';
+    var CLIENT_BUILD_ID = '2026.07.21.1-workflow-integration';
+
+    // ผูก renderer แบบปลอดภัย: UI partial เสีย/อัปโหลดไม่ครบ 1 ไฟล์ ต้องไม่ทำให้ Admin ทั้งหน้าหยุด boot
+    var RENDERER_NAMES = {
+      dashboard: 'renderDashboard', task: 'renderTask', calendar: 'renderCalendar', ticket: 'renderTicket', serviceCatalog: 'renderServiceCatalog', workflow: 'renderWorkflow', kb: 'renderKB', access: 'renderAccess', incident: 'renderIncident', risk: 'renderRisk', compliance: 'renderCompliance',
+      backup: 'renderBackup', logging: 'renderLogging', asset: 'renderAsset',
+      employees: 'renderEmployees',
+      dataClass: 'renderDataClass', privacy: 'renderPrivacy', problem: 'renderProblem', vulnerability: 'renderVulnerability', audit: 'renderAudit', cmdb: 'renderCmdb', change: 'renderChange', vendor: 'renderVendor',
+      ai: 'renderAI', cloud: 'renderCloud', awareness: 'renderAwareness',
+      evidence: 'renderEvidence', notification: 'renderNotificationSettings', auditTrail: 'renderAuditTrail',
+      borrow: 'renderBorrow', maintenance: 'renderMaintenance', inventory: 'renderInventory',
+      license: 'renderLicense', reports: 'renderReports', users: 'renderUsers',
+      settings: 'renderSettings', tester: 'renderTester'
+    };
+    var IMPLEMENTED = {};
+    Object.keys(RENDERER_NAMES).forEach(function (key) {
+      var name = RENDERER_NAMES[key];
+      IMPLEMENTED[key] = (typeof window[name] === 'function') ? window[name] : null;
+    });
+
+    var MODULE_ICONS = {
+      dashboard: 'bi-speedometer2', task: 'bi-check2-square', calendar: 'bi-calendar-week', asset: 'bi-pc-display-horizontal', employees: 'bi-person-vcard', dataClass: 'bi-shield-lock', privacy: 'bi-person-lock', problem: 'bi-bug', vulnerability: 'bi-shield-exclamation', audit: 'bi-clipboard2-check', cmdb: 'bi-diagram-3',
+      ticket: 'bi-ticket-detailed', serviceCatalog: 'bi-grid-1x2', workflow: 'bi-diagram-3', kb: 'bi-journal-bookmark', access: 'bi-key', change: 'bi-arrow-repeat', backup: 'bi-cloud-arrow-up', logging: 'bi-journal-text',
+      incident: 'bi-exclamation-triangle', compliance: 'bi-bank', vendor: 'bi-buildings', ai: 'bi-robot', cloud: 'bi-cloud',
+      awareness: 'bi-mortarboard', evidence: 'bi-clipboard-data', notification: 'bi-bell', auditTrail: 'bi-clock-history',
+      borrow: 'bi-arrow-left-right', maintenance: 'bi-tools', inventory: 'bi-box-seam',
+      license: 'bi-key', reports: 'bi-file-earmark-bar-graph', users: 'bi-people',
+      settings: 'bi-gear', tester: 'bi-clipboard-check'
+    };
+    var MODULE_LABELS = {};
+    var MODULE_GROUPS = {};
+    var MODULE_DESCRIPTIONS = {
+      dashboard: 'ติดตามสถานะสำคัญ งานค้าง และตัวชี้วัดของทั้งระบบ',
+      task: 'จัดลำดับงานส่วนตัวและติดตามกำหนดส่งในที่เดียว',
+      calendar: 'รวมกำหนดการและวันครบกำหนดจากทุกโมดูลไว้ในปฏิทินเดียว',
+      ticket: 'รับเรื่อง จัดลำดับความเร่งด่วน และติดตาม SLA ของงานบริการ',
+      serviceCatalog: 'เลือกบริการ ส่งคำขอ ติดตามการอนุมัติ SLA Checklist และผลดำเนินการ',
+      workflow: 'งานอนุมัติหลายขั้น Delegation Timeline และการติดตาม Workflow กลาง',
+      kb: 'ค้นหาองค์ความรู้ คู่มือ และคำตอบที่ใช้ซ้ำได้',
+      asset: 'ดูแลวงจรชีวิต ผู้รับผิดชอบ สถานที่ และสถานะของทรัพย์สิน',
+      employees: 'ดูทะเบียนพนักงาน บัญชีงาน และทรัพย์สินหรือสิทธิ์ใช้งานที่แต่ละคนครอบครอง',
+      borrow: 'บันทึกการยืม คืน และโอนย้ายทรัพย์สินอย่างตรวจสอบได้',
+      maintenance: 'วางแผนและติดตามงานบำรุงรักษาเชิงป้องกัน',
+      inventory: 'ควบคุมวัสดุคงคลัง การเบิกจ่าย และจุดสั่งซื้อ',
+      license: 'ติดตามสิทธิ์ใช้งานซอฟต์แวร์และวันหมดอายุ',
+      incident: 'แจ้ง ประเมิน และตอบสนองเหตุการณ์ด้านความมั่นคงปลอดภัย',
+      risk: 'ประเมินระดับความเสี่ยง มาตรการควบคุม และแผนลดความเสี่ยง',
+      compliance: 'เชื่อมกฎหมาย ข้อกำหนด หลักฐาน ผลประเมิน และแผนแก้ไข CAPA',
+      access: 'บริหารคำขอสิทธิ์ การอนุมัติ และการทบทวนสิทธิ์',
+      change: 'ควบคุมการเปลี่ยนแปลงระบบตั้งแต่คำขอจนถึงการปิดงาน',
+      backup: 'ติดตามการสำรอง การทดสอบกู้คืน และแผนความต่อเนื่อง',
+      logging: 'กำกับการจัดเก็บ Log และรอบการตรวจสอบความผิดปกติ',
+      dataClass: 'จัดระดับข้อมูล เจ้าของข้อมูล และข้อกำหนดการคุ้มครอง',
+      privacy: 'บริหาร RoPA ความยินยอม และคำขอใช้สิทธิตามกฎหมายคุ้มครองข้อมูลส่วนบุคคล',
+      problem: 'วิเคราะห์สาเหตุราก ปัญหาซ้ำ และ Known Error เชื่อม Ticket/Incident/KB',
+      vulnerability: 'ติดตามช่องโหว่ CVE/CVSS แผนแก้ไข ข้อยกเว้น และการตรวจยืนยัน',
+      audit: 'วางแผนงานตรวจ ขอบเขต ข้อตรวจพบ แผนแก้ไข และการตรวจยืนยันปิดประเด็น',
+      cmdb: 'บริหาร Configuration Item และแผนผังความสัมพันธ์กับ Asset Vendor Backup Incident และ Change',
+      vendor: 'บริหารผู้ให้บริการ สัญญา ความเสี่ยง และวันครบกำหนด',
+      ai: 'กำกับรายการเครื่องมือ AI ที่อนุญาตและเงื่อนไขการใช้งาน',
+      cloud: 'กำกับบริการ Cloud ผู้ให้บริการ และระดับข้อมูลที่จัดเก็บได้',
+      awareness: 'วางแผนกิจกรรมสร้างความตระหนักและติดตามผลการเรียนรู้',
+      evidence: 'รวบรวมหลักฐานควบคุม เอกสารอ้างอิง และสถานะการทบทวน',
+      notification: 'กำหนดช่องทาง ผู้รับ และเงื่อนไขการแจ้งเตือน',
+      auditTrail: 'ตรวจสอบประวัติการใช้งานและเหตุการณ์สำคัญย้อนหลัง',
+      reports: 'สรุปและส่งออกข้อมูลเพื่อการวิเคราะห์และการตัดสินใจ',
+      users: 'จัดการผู้ใช้ บทบาท และขอบเขตการเข้าถึง',
+      settings: 'กำหนดค่าระบบ โครงสร้างข้อมูล และรายการที่กู้คืนได้',
+      tester: 'ตรวจความพร้อมของฟังก์ชันและสัญญาการเชื่อมต่อระบบ'
+    };
+
+    // ===== Auth flow =====
+    function showLoginOverlay(msg) {
+      document.getElementById('appShell').style.display = 'none';
+      document.getElementById('loginOverlay').style.display = 'flex';
+      resetLoginStep_();
+      if (msg) setLoginError(msg); else hideLoginError();
+      var el = document.getElementById('loginEmail'); if (el) el.focus();
+    }
+    function hideLoginOverlay() {
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('appShell').style.display = '';
+    }
+    function setLoginError(m) { var e = document.getElementById('loginError'); e.textContent = m; e.style.display = 'block'; }
+    function hideLoginError() { document.getElementById('loginError').style.display = 'none'; }
+
+    function submitLogin() {
+      var username = document.getElementById('loginEmail').value.trim();
+      var pw = document.getElementById('loginPassword').value;
+      if (!username || !pw) { setLoginError('กรุณากรอก Username และรหัสผ่าน'); return; }
+      hideLoginError();
+      doAdminLogin(username, pw).then(function (info) {
+        if (info && info.mfaRequired) showMfaStep_(info);
+        else onAuthed(info);
+      }).catch(function (err) {
+        setLoginError(err && err.message ? err.message : 'เข้าสู่ระบบไม่สำเร็จ');
+      });
+    }
+    function showMfaStep_(info) {
+      window.__adminMfaChallenge = info.challenge || '';
+      document.getElementById('loginCredentials').style.display = 'none';
+      document.getElementById('loginMfa').style.display = '';
+      document.getElementById('loginMfaHint').textContent =
+        'ส่ง OTP ไปยัง ' + (info.emailMasked || 'อีเมลของท่าน') + ' แล้ว รหัสมีอายุ ' +
+        (info.expiresMinutes || 10) + ' นาที';
+      document.getElementById('loginMfaOtp').value = '';
+      document.getElementById('loginMfaOtp').focus();
+    }
+    function submitMfa() {
+      var otp = document.getElementById('loginMfaOtp').value.trim();
+      if (!/^\d{6}$/.test(otp)) { setLoginError('กรุณากรอก OTP เป็นตัวเลข 6 หลัก'); return; }
+      hideLoginError();
+      doAdminVerifyMfa(window.__adminMfaChallenge || '', otp).then(onAuthed).catch(function (err) {
+        setLoginError(err && err.message ? err.message : 'ยืนยัน OTP ไม่สำเร็จ');
+      });
+    }
+    function resetLoginStep_() {
+      window.__adminMfaChallenge = '';
+      var credentials = document.getElementById('loginCredentials');
+      var mfa = document.getElementById('loginMfa');
+      if (credentials) credentials.style.display = '';
+      if (mfa) mfa.style.display = 'none';
+      var otp = document.getElementById('loginMfaOtp');
+      if (otp) otp.value = '';
+    }
+    function logout() {
+      doAdminLogout();
+      showLoginOverlay('ออกจากระบบแล้ว');
+      document.getElementById('loginPassword').value = '';
+    }
+
+    function onAuthed(info) {
+      resetLoginStep_();
+      hideLoginOverlay();
+      document.getElementById('ucName').textContent = info.name || info.email;
+      document.getElementById('ucRole').textContent = info.roleLabel || info.role || '';
+      document.getElementById('userAvatar').textContent = ((info.name || info.email || 'U').trim().charAt(0) || 'U').toUpperCase();
+      var modules = Array.isArray(info.modules) ? info.modules : [];
+      buildSidebar(modules);
+      if (!modules.length) {
+        document.getElementById('pageTitle').textContent = 'ไม่พบเมนูที่เข้าถึงได้';
+        document.getElementById('content').innerHTML =
+          '<div class="alert alert-danger"><h5><i class="bi bi-exclamation-triangle"></i> ไม่พบโมดูลสำหรับบัญชีนี้</h5>' +
+          '<div>Role ที่ Server ส่งมา: <code>' + escapeHtmlJs(info.role || '(ว่าง)') + '</code></div>' +
+          '<div class="small mt-2">ตรวจค่า Role ในชีต Users และ MODULE_ACCESS ใน Config.gs แล้วเข้าสู่ระบบใหม่</div></div>';
+        return;
+      }
+      callServer('getAppVersion').then(function (v) {
+        var a = document.getElementById('footVer'); if (a) a.textContent = v;
+        var b = document.getElementById('appFooterVer'); if (b) b.textContent = v;
+      }).catch(function () {});
+      checkDeploymentHealth_();
+      var firstKey = modules.some(function (m) { return m.key === 'dashboard'; }) ? 'dashboard' : modules[0].key;
+      loadModule(firstKey);
+      refreshNotifications();
+      if (window._notifTimer) clearInterval(window._notifTimer);
+      window._notifTimer = setInterval(refreshNotifications, 300000); // อัปเดตทุก 5 นาที
+    }
+
+    function checkDeploymentHealth_() {
+      var el = document.getElementById('deployHealthAlert');
+      if (!el) return;
+      callServerQuiet('getAppBuildInfo').then(function (info) {
+        var issues = [];
+        if (!info || info.buildId !== CLIENT_BUILD_ID) {
+          issues.push('ไฟล์ Client/Server คนละ Build (Client ' + CLIENT_BUILD_ID +
+            ' / Server ' + ((info && info.buildId) || 'ไม่ทราบ') + ')');
+        }
+        if (info && !info.schemaReady) {
+          issues.push('Schema ยังไม่พร้อม รุ่นติดตั้ง ' + (info.installedSchemaVersion || 0) +
+            ' / รุ่นที่ต้องใช้ ' + info.schemaVersion);
+        }
+        if (!issues.length) {
+          el.style.display = 'none';
+          el.textContent = '';
+          return;
+        }
+        el.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i> ' +
+          escapeHtmlJs(issues.join(' · ')) +
+          '<div class="small mt-1">ถ้าเตือน Build ให้ push/upload ไฟล์ทั้งหมดพร้อมกันและ Deploy รุ่นใหม่; ถ้าเตือน Schema ให้รัน setupSystem() 1 ครั้งก่อน Deploy</div>';
+        el.style.display = 'block';
+      }).catch(function () {
+        el.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i> ' +
+          'ตรวจสอบ Build ไม่สำเร็จ อาจอัปโหลดไฟล์ฝั่ง Server ไม่ครบ Deployment เดียวกัน';
+        el.style.display = 'block';
+      });
+    }
+
+    function buildSidebar(modules) {
+      var html = '';
+      MODULE_LABELS = {};
+      MODULE_GROUPS = {};
+      if (!Array.isArray(modules) || !modules.length) {
+        document.getElementById('navMenu').innerHTML =
+          '<div class="small text-warning px-3 py-2"><i class="bi bi-exclamation-circle"></i> ไม่พบสิทธิ์โมดูล</div>';
+        return;
+      }
+      var groups = [], grouped = {};
+      modules.forEach(function (m) {
+        MODULE_LABELS[m.key] = m.label;
+        MODULE_GROUPS[m.key] = m.group || 'ระบบจัดการ';
+        var group = m.group || 'ระบบจัดการ';
+        if (!grouped[group]) { grouped[group] = []; groups.push(group); }
+        grouped[group].push(m);
+      });
+      groups.forEach(function (group, index) {
+        var sectionId = 'nav-section-' + index;
+        var collapsed = index > 0;
+        try {
+          var saved = localStorage.getItem('navGroup:' + group);
+          if (saved === 'open') collapsed = false;
+          if (saved === 'closed') collapsed = true;
+        } catch (e) {}
+        html += '<section class="nav-section' + (collapsed ? ' is-collapsed' : '') + '" data-group="' + escapeHtmlJs(group) + '">' +
+          '<button type="button" class="nav-section-toggle" aria-expanded="' + (!collapsed) + '" aria-controls="' + sectionId + '" onclick="toggleNavSection(this)">' +
+          '<i class="bi bi-folder2 nav-section-icon"></i><span class="nav-section-label">' + escapeHtmlJs(group) + '</span><i class="bi bi-chevron-down nav-chevron"></i></button>' +
+          '<div class="nav-section-items" id="' + sectionId + '">';
+        grouped[group].forEach(function (m) {
+          html += '<a href="#" class="nav-item" data-key="' + m.key + '" title="' + escapeHtmlJs(m.label) + '" aria-current="false" onclick="loadModule(\'' + m.key + '\');return false;">' +
+            '<i class="nav-ic bi ' + (MODULE_ICONS[m.key] || 'bi-dot') + '"></i><span class="nav-label">' + escapeHtmlJs(m.label) + '</span>' +
+            (m.readOnly ? '<span class="badge badge-readonly">อ่าน</span>' : '') + '</a>';
+        });
+        html += '</div></section>';
+      });
+      document.getElementById('navMenu').innerHTML = html;
+    }
+
+    function toggleNavSection(button, forceOpen) {
+      var section = button && button.closest('.nav-section');
+      if (!section) return;
+      var collapsed = forceOpen === true ? false : !section.classList.contains('is-collapsed');
+      section.classList.toggle('is-collapsed', collapsed);
+      button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      try { localStorage.setItem('navGroup:' + section.getAttribute('data-group'), collapsed ? 'closed' : 'open'); } catch (e) {}
+    }
+
+    function updatePageContext_(key) {
+      var label = MODULE_LABELS[key] || key;
+      var group = MODULE_GROUPS[key] || 'ระบบจัดการ';
+      var groupEl = document.getElementById('breadcrumbGroup');
+      var moduleEl = document.getElementById('breadcrumbModule');
+      if (groupEl) groupEl.textContent = group;
+      if (moduleEl) moduleEl.textContent = label;
+      document.title = label + ' · ' + ORG_NAME;
+      var content = document.getElementById('content');
+      if (content) content.setAttribute('aria-label', label + ' — ' + (MODULE_DESCRIPTIONS[key] || ''));
+    }
+
+    function loadModule(key) {
+      CURRENT_MODULE_KEY = key;
+      setActiveMenu(key);
+      updatePageContext_(key);
+      var t = document.getElementById('pageTitle');
+      t.innerHTML = '<i class="bi ' + (MODULE_ICONS[key] || 'bi-dot') + '"></i>' + escapeHtmlJs(MODULE_LABELS[key] || key);
+      if (window.innerWidth <= 992) closeSidebar();
+      var content = document.getElementById('content');
+      content.style.animation = 'none'; void content.offsetWidth; content.style.animation = '';
+      if (IMPLEMENTED[key]) {
+        try {
+          var maybe = IMPLEMENTED[key](content);
+          if (maybe && typeof maybe.catch === 'function') {
+            maybe.catch(function (err) { showModuleLoadError_(err && err.message ? err.message : err, true); });
+          }
+        } catch (err) {
+          showModuleLoadError_(err && err.message ? err.message : err, true);
+        }
+      } else {
+        var expectedRenderer = RENDERER_NAMES[key] || '';
+        var missingPartials = Array.isArray(window.__MISSING_HTML_PARTIALS__)
+          ? window.__MISSING_HTML_PARTIALS__
+          : [];
+        var missingHint = missingPartials.length
+          ? '<div class="small mt-2">ไฟล์ HTML ที่อัปโหลดไม่ครบ: <code>' +
+            missingPartials.map(function (name) {
+              return escapeHtmlJs(name) + '.html';
+            }).join(', ') + '</code></div>'
+          : '';
+        content.innerHTML = expectedRenderer
+          ? '<div class="alert alert-danger"><h5><i class="bi bi-exclamation-triangle"></i> โหลดหน้าโมดูลไม่สำเร็จ</h5>' +
+            '<div>ไม่พบ renderer <code>' + escapeHtmlJs(expectedRenderer) + '</code></div>' +
+            missingHint +
+            '<div class="small mt-2">กรุณาตรวจว่าอัปเดตไฟล์ HTML ของโมดูลครบ แล้ว Deploy เวอร์ชันใหม่</div></div>'
+          : '<div class="card stat-card"><div class="card-body text-center py-5">' +
+            '<i class="bi bi-cone-striped" style="font-size:3rem;color:#cbd5e1"></i>' +
+            '<h4 class="text-primary mt-3 mb-2">' + escapeHtmlJs(MODULE_LABELS[key] || key) + '</h4>' +
+            '<p class="text-muted">โมดูลนี้จะเปิดใช้งานในรอบการพัฒนาถัดไป</p></div></div>';
+      }
+    }
+
+    // ===== Sidebar control =====
+    function toggleSidebar() {
+      var shell = document.getElementById('appShell');
+      if (window.innerWidth <= 992) {
+        shell.classList.toggle('sb-open');
+      } else {
+        shell.classList.toggle('sb-collapsed');
+        try { localStorage.setItem('sbCollapsed', shell.classList.contains('sb-collapsed') ? '1' : '0'); } catch (e) {}
+      }
+      syncSidebarAria_();
+    }
+    function closeSidebar() { document.getElementById('appShell').classList.remove('sb-open'); syncSidebarAria_(); }
+    function syncSidebarAria_() {
+      var shell = document.getElementById('appShell');
+      var button = document.getElementById('sidebarToggle');
+      if (!shell || !button) return;
+      var expanded = window.innerWidth <= 992
+        ? shell.classList.contains('sb-open')
+        : !shell.classList.contains('sb-collapsed');
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+    try { if (localStorage.getItem('sbCollapsed') === '1' && window.innerWidth > 992)
+      document.getElementById('appShell').classList.add('sb-collapsed'); } catch (e) {}
+    syncSidebarAria_();
+
+    // ===== Boot: ตรวจ session แล้วแสดงหน้าเข้าสู่ระบบ/แอป =====
+    function bootApp() {
+      applyUserPrefs();        // ใช้ค่าธีม/ขนาดอักษร/ความคมชัดที่จดจำไว้
+      initCmdK();              // ผูกคีย์ลัด Ctrl+K + ปิดแผงเมื่อคลิกนอกพื้นที่
+      if (!ADMIN_TOKEN) { showLoginOverlay(); return; }
+      callServer('getSessionInfo').then(onAuthed).catch(function () { /* SESSION_REQUIRED -> overlay แสดงแล้ว */ });
+    }
+    bootApp();
+  </script>
+</body>
+</html>

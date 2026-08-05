@@ -1,0 +1,632 @@
+<!-- ServiceCatalog.html — Service Catalog + Request Fulfilment -->
+<script>
+  var SVC_DATA = null;
+  var SVC_CONTAINER = null;
+
+  function renderServiceCatalog(container) {
+    SVC_CONTAINER = container;
+    container.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border text-primary"></div><div class="mt-2">กำลังโหลด Service Catalog...</div></div>';
+    return callServer('getServiceCatalogModuleData').then(function (d) {
+      SVC_DATA = d || {};
+      svcRender_();
+    });
+  }
+
+  function svcRender_() {
+    var d = SVC_DATA || {};
+    d.catalog = Array.isArray(d.catalog) ? d.catalog : [];
+    d.myRequests = Array.isArray(d.myRequests) ? d.myRequests : [];
+    d.pendingApprovals = Array.isArray(d.pendingApprovals) ? d.pendingApprovals : [];
+    d.fulfillmentQueue = Array.isArray(d.fulfillmentQueue) ? d.fulfillmentQueue : [];
+    d.allRequests = Array.isArray(d.allRequests) ? d.allRequests : [];
+
+    var actions = d.canAdmin ?
+      '<button class="btn btn-primary" onclick="svcCatalogForm()"><i class="bi bi-plus-lg"></i> เพิ่มบริการ</button>' : '';
+    var html = pageHeader('Service Catalog / คำขอบริการ',
+      'เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว', actions,
+      'bi-grid-3x3-gap');
+    html += svcDashboard_(d);
+    html += '<ul class="nav nav-tabs mb-3" role="tablist">' +
+      svcTab_('catalog', 'รายการบริการ (' + d.catalog.filter(function (x) { return x.status === 'ใช้งาน'; }).length + ')', true) +
+      svcTab_('mine', 'คำขอของฉัน (' + d.myRequests.length + ')') +
+      (d.pendingApprovals.length || d.role === 'Approver' ? svcTab_('approve', 'รออนุมัติ (' + d.pendingApprovals.length + ')') : '') +
+      (d.canFulfill ? svcTab_('fulfill', 'คิวดำเนินการ (' + d.fulfillmentQueue.length + ')') : '') +
+      (d.canAdmin ? svcTab_('all', 'คำขอทั้งหมด (' + d.allRequests.length + ')') : '') +
+      (d.canAdmin ? svcTab_('admin', 'จัดการ Catalog') : '') +
+      '</ul>';
+    html += '<div class="tab-content">' +
+      '<div class="tab-pane fade show active" id="svc-catalog">' + svcCatalogCards_(d) + '</div>' +
+      '<div class="tab-pane fade" id="svc-mine">' + svcRequestTable_(d.myRequests, 'mine', 'svc-mine-table') + '</div>' +
+      (d.pendingApprovals.length || d.role === 'Approver' ?
+        '<div class="tab-pane fade" id="svc-approve">' + svcRequestTable_(d.pendingApprovals, 'approve', 'svc-approve-table') + '</div>' : '') +
+      (d.canFulfill ? '<div class="tab-pane fade" id="svc-fulfill">' +
+        svcRequestTable_(d.fulfillmentQueue, 'fulfill', 'svc-fulfill-table') + '</div>' : '') +
+      (d.canAdmin ? '<div class="tab-pane fade" id="svc-all">' +
+        svcRequestTable_(d.allRequests, 'all', 'svc-all-table') + '</div>' : '') +
+      (d.canAdmin ? '<div class="tab-pane fade" id="svc-admin">' + svcCatalogAdmin_(d) + '</div>' : '') +
+      '</div>';
+    SVC_CONTAINER.innerHTML = html;
+  }
+
+  function svcDashboard_(d) {
+    var openMine = d.myRequests.filter(function (r) { return !svcTerminal_(r.status); }).length;
+    var overdue = d.fulfillmentQueue.filter(function (r) { return r.overdue; }).length;
+    return moduleDashboard([
+      mdStat('บริการที่เลือกได้', d.catalog.filter(function (x) { return x.status === 'ใช้งาน'; }).length,
+        'bi-grid-3x3-gap', 'blue'),
+      mdStat('คำขอของฉันที่เปิดอยู่', openMine, 'bi-person-lines-fill', openMine ? 'amber' : 'gray'),
+      mdStat('รอฉันอนุมัติ', d.pendingApprovals.length, 'bi-person-check', d.pendingApprovals.length ? 'amber' : 'gray'),
+      mdStat('คิวเกิน SLA', overdue, 'bi-alarm', overdue ? 'danger' : 'teal')
+    ]);
+  }
+
+  function svcTab_(key, label, active) {
+    return '<li class="nav-item"><button class="nav-link' + (active ? ' active' : '') +
+      '" data-bs-toggle="tab" data-bs-target="#svc-' + key + '" type="button">' +
+      escapeHtmlJs(label) + '</button></li>';
+  }
+
+  function svcCatalogCards_(d) {
+    var rows = d.catalog.filter(function (item) { return item.status === 'ใช้งาน'; });
+    if (!rows.length) return '<div class="alert alert-secondary">ยังไม่มีบริการที่เปิดใช้งานสำหรับบัญชีของท่าน</div>';
+    var categories = {};
+    rows.forEach(function (item) {
+      var category = item.category || 'บริการทั่วไป';
+      (categories[category] = categories[category] || []).push(item);
+    });
+    return Object.keys(categories).sort().map(function (category) {
+      var cards = categories[category].map(function (item) {
+        var checklist = (item.checklist || []).filter(function (x) { return x.required; }).length;
+        return '<div class="col-md-6 col-xl-4"><div class="card stat-card h-100"><div class="card-body d-flex flex-column">' +
+          '<div class="d-flex align-items-start gap-2"><div class="mini-icon blue flex-shrink-0"><i class="bi bi-box-seam"></i></div>' +
+          '<div><div class="small text-muted">' + escapeHtmlJs(item.code || '') + '</div>' +
+          '<h5 class="mb-1">' + escapeHtmlJs(item.name) + '</h5></div></div>' +
+          '<p class="text-muted small mt-3 flex-grow-1">' + escapeHtmlJs(item.description || 'ไม่มีคำอธิบาย') + '</p>' +
+          '<div class="small mb-3"><span class="badge bg-light text-dark me-1"><i class="bi bi-alarm"></i> SLA ' +
+          escapeHtmlJs(item.slaHours) + ' ชม.ทำการ</span>' +
+          '<span class="badge bg-light text-dark me-1"><i class="bi bi-person-check"></i> ' +
+          escapeHtmlJs(item.approvalMode) + '</span>' +
+          (checklist ? '<span class="badge bg-light text-dark"><i class="bi bi-list-check"></i> ' + checklist + ' ข้อบังคับ</span>' : '') +
+          '</div><button class="btn btn-primary w-100" onclick="svcOpenRequest(\'' + svcJsArg_(item.id) + '\')">' +
+          '<i class="bi bi-send"></i> ขอรับบริการ</button></div></div></div>';
+      }).join('');
+      return '<section class="mb-4"><h5 class="text-primary mb-3"><i class="bi bi-folder2-open"></i> ' +
+        escapeHtmlJs(category) + '</h5><div class="row g-3">' + cards + '</div></section>';
+    }).join('');
+  }
+
+  function svcRequestTable_(rows, mode, tableId) {
+    rows = Array.isArray(rows) ? rows : [];
+    return dataTable({
+      id: tableId,
+      rows: rows,
+      empty: mode === 'approve' ? 'ไม่มีคำขอรออนุมัติ' : (mode === 'fulfill' ? 'ไม่มีคำขอรอดำเนินการ' : 'ยังไม่มีคำขอ'),
+      columns: [
+        { key: 'id', label: 'เลขที่', value: function (r) {
+          return '<b>' + escapeHtmlJs(r.id) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.createdAt || '') + '</small>';
+        }, raw: function (r) { return r.id; } },
+        { key: 'service', label: 'บริการ/คำขอ', value: function (r) {
+          return '<b>' + escapeHtmlJs(r.serviceName) + '</b><br><small class="text-muted">' +
+            escapeHtmlJs(r.serviceCode || '') + ' · ' + escapeHtmlJs(r.summary || '') + '</small>';
+        }, raw: function (r) { return [r.serviceName, r.serviceCode, r.summary].join(' '); } },
+        { key: 'requester', label: 'ผู้ขอ', value: function (r) {
+          return escapeHtmlJs(r.requesterName || r.requesterEmail) + '<br><small class="text-muted">' +
+            escapeHtmlJs(r.department || '') + '</small>';
+        }, raw: function (r) { return [r.requesterName, r.requesterEmail, r.department].join(' '); }, default: mode !== 'mine' },
+        { key: 'status', label: 'สถานะ/SLA', value: function (r) {
+          return '<span class="badge ' + svcTone_(r.status) + '">' + escapeHtmlJs(r.status) + '</span><br>' + svcDue_(r);
+        }, raw: function (r) { return r.status; } },
+        { key: 'approval', label: 'การอนุมัติ', value: function (r) {
+          return escapeHtmlJs(r.approvalStatus || '-') + (r.approver ? '<br><small class="text-muted">' + escapeHtmlJs(r.approver) + '</small>' : '');
+        }, raw: function (r) { return [r.approvalStatus, r.approver].join(' '); }, default: mode !== 'fulfill' },
+        { key: 'assignee', label: 'ผู้รับผิดชอบ', value: function (r) {
+          return escapeHtmlJs(r.assignee || '-') + '<br><small class="text-muted">' + escapeHtmlJs(r.assignedGroup || '') + '</small>';
+        }, raw: function (r) { return [r.assignee, r.assignedGroup].join(' '); } }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } },
+        { key: 'priority', label: 'ความเร่งด่วน', value: function (r) { return r.priority || ''; } },
+        { key: 'service', label: 'บริการ', value: function (r) { return r.serviceName || ''; } }
+      ],
+      actionsLabel: 'ดำเนินการ',
+      actions: function (r) { return svcActions_(r, mode); }
+    });
+  }
+
+  function svcActions_(r, mode) {
+    var id = svcJsArg_(r.id);
+    var html = '<button class="btn btn-sm btn-outline-dark me-1 mb-1" onclick="svcDetail(\'' + id + '\')">รายละเอียด</button>';
+    if (mode === 'mine') {
+      if (r.status === 'รอยืนยันผล') {
+        html += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="svcConfirm(\'' + id + '\',true)">ยืนยันผล</button>' +
+          '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="svcConfirm(\'' + id + '\',false)">ขอแก้ไข</button>';
+      } else if (!svcTerminal_(r.status)) {
+        html += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="svcCancel(\'' + id + '\')">ยกเลิก</button>';
+      }
+    }
+    if (mode === 'approve' && r.status === 'รออนุมัติ') {
+      html += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="svcApproval(\'' + id + '\',true)">อนุมัติ</button>' +
+        '<button class="btn btn-sm btn-outline-danger mb-1" onclick="svcApproval(\'' + id + '\',false)">ปฏิเสธ</button>';
+    }
+    if (mode === 'fulfill') {
+      if (r.status === 'รอมอบหมาย') {
+        html += '<button class="btn btn-sm btn-primary me-1 mb-1" onclick="svcAssign(\'' + id + '\')">มอบหมาย</button>';
+      }
+      if (r.status !== 'รอมอบหมาย' && r.status !== 'รอยืนยันผล') {
+        html += '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="svcUpdateStatus(\'' + id + '\')">อัปเดต</button>';
+      }
+      if ((r.tasks || []).length) {
+        html += '<button class="btn btn-sm btn-outline-secondary mb-1" onclick="svcTasks(\'' + id + '\')">Checklist</button>';
+      }
+    }
+    return html;
+  }
+
+  function svcCatalogAdmin_(d) {
+    if (!d.catalog.length) return '<div class="alert alert-secondary">ยังไม่มี Catalog</div>';
+    return dataTable({
+      id: 'svc-catalog-admin-table', rows: d.catalog, empty: 'ยังไม่มี Catalog',
+      columns: [
+        { key: 'code', label: 'รหัส', value: function (r) { return '<b>' + escapeHtmlJs(r.code) + '</b><br><small>v' + escapeHtmlJs(r.version) + '</small>'; } },
+        { key: 'name', label: 'บริการ', value: function (r) { return '<b>' + escapeHtmlJs(r.name) + '</b><br><small class="text-muted">' + escapeHtmlJs(r.category || '') + '</small>'; } },
+        { key: 'workflow', label: 'Workflow', value: function (r) {
+          return escapeHtmlJs(r.approvalMode) +
+            (r.workflowDefinitionId ? '<br><small class="text-primary">' + escapeHtmlJs(r.workflowDefinitionId) + '</small>' : '') +
+            '<br><small class="text-muted">ปิด: ' + escapeHtmlJs(r.closeMode) + '</small>';
+        } },
+        { key: 'integration', label: 'Integration', value: function (r) {
+          return r.fulfillmentTarget ? '<span class="badge bg-light text-dark">' +
+            escapeHtmlJs(r.fulfillmentTarget) + '</span><br><small class="text-muted">Auto: ' +
+            (r.autoCreateTarget ? 'Yes' : 'No') + '</small>' : '-';
+        } },
+        { key: 'sla', label: 'SLA', value: function (r) { return escapeHtmlJs(r.slaHours) + ' ชม.'; } },
+        { key: 'status', label: 'สถานะ', value: function (r) { return '<span class="badge ' + svcCatalogTone_(r.status) + '">' + escapeHtmlJs(r.status) + '</span>'; } }
+      ],
+      filters: [
+        { key: 'status', label: 'สถานะ', value: function (r) { return r.status || ''; } },
+        { key: 'category', label: 'หมวด', value: function (r) { return r.category || ''; } }
+      ],
+      actionsLabel: 'จัดการ',
+      actions: function (r) {
+        var id = svcJsArg_(r.id);
+        var html = '<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="svcCatalogForm(\'' + id + '\')">แก้ไข</button>';
+        if (r.status === 'ร่าง' || r.status === 'ระงับ') {
+          html += '<button class="btn btn-sm btn-success me-1 mb-1" onclick="svcCatalogStatus(\'' + id + '\',\'ใช้งาน\')">เปิดใช้</button>';
+        }
+        if (r.status === 'ใช้งาน') {
+          html += '<button class="btn btn-sm btn-outline-warning me-1 mb-1" onclick="svcCatalogStatus(\'' + id + '\',\'ระงับ\')">ระงับ</button>';
+        }
+        if (r.status !== 'ยกเลิก') {
+          html += '<button class="btn btn-sm btn-outline-danger mb-1" onclick="svcCatalogStatus(\'' + id + '\',\'ยกเลิก\')">ยกเลิก Catalog</button>';
+        }
+        return html;
+      }
+    });
+  }
+
+  function svcOpenRequest(id) {
+    var item = svcCatalogFind_(id);
+    if (!item || !item.id) { toast('ไม่พบบริการ', 'danger'); return; }
+    var idem = svcIdempotency_();
+    var schema = Array.isArray(item.formSchema) ? item.formSchema : [];
+    var fields = [
+      { id: 'summary', label: 'สรุปคำขอ', value: item.name, required: true, col: 'col-md-8' },
+      { id: 'requestedFor', label: 'ขอให้บุคคล/หน่วยงาน', col: 'col-md-4', help: 'เว้นว่าง = ขอให้ตนเอง' },
+      { id: 'priority', label: 'ความเร่งด่วน', type: 'select', placeholder: false, options: SVC_DATA.priorities || [], value: 'ปานกลาง', col: 'col-md-6' },
+      { id: 'impact', label: 'ผลกระทบ', type: 'select', placeholder: false, options: SVC_DATA.priorities || [], value: 'ปานกลาง', col: 'col-md-6' },
+      { id: 'businessJustification', label: 'เหตุผล/ความจำเป็นทางธุรกิจ', type: 'textarea', rows: 3, col: 'col-12' }
+    ];
+    schema.forEach(function (field, index) {
+      fields.push({
+        id: 'answer_' + index,
+        label: field.label,
+        type: svcUiFieldType_(field.type),
+        options: field.options || [],
+        required: !!field.required,
+        help: field.help || '',
+        col: field.type === 'textarea' ? 'col-12' : 'col-md-6',
+        rows: field.type === 'textarea' ? 3 : undefined
+      });
+    });
+    fields.push({ id: 'attachment', label: 'เอกสารแนบ' + (item.attachmentRequired ? ' *' : ''), type: 'file',
+      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt,.csv', col: 'col-12',
+      help: item.attachmentRequired ? 'บริการนี้กำหนดให้แนบเอกสาร' : 'ถ้ามี (ไฟล์ละไม่เกิน 15 MB)' });
+    showFormModal({
+      title: 'ขอรับบริการ: ' + item.name,
+      submitLabel: 'ส่งคำขอ', size: 'xl', fields: fields,
+      onSubmit: function (v) {
+        var fileEl = v.attachment;
+        if (item.attachmentRequired && (!fileEl || !fileEl.files || !fileEl.files[0])) {
+          toast('กรุณาแนบเอกสารประกอบ', 'warning');
+          return false;
+        }
+        var answers = {};
+        schema.forEach(function (field, index) { answers[field.key] = v['answer_' + index]; });
+        var upload = fileEl && fileEl.files && fileEl.files[0] ?
+          uploadRegisteredFileInput(fileEl, {
+            moduleKey: 'serviceCatalog', recordType: 'ServiceRequest',
+            fieldName: 'AttachmentIDsJSON', attachmentRole: 'REQUEST_EVIDENCE',
+            classification: 'Confidential', isEvidence: true
+          }) : Promise.resolve(null);
+        return upload.then(function (file) {
+          return callServer('submitServiceRequest', {
+            catalogId: item.id,
+            summary: v.summary,
+            requestedFor: v.requestedFor,
+            businessJustification: v.businessJustification,
+            priority: v.priority,
+            impact: v.impact,
+            answers: answers,
+            attachmentIds: file ? [file.attachmentId] : [],
+            idempotencyKey: idem
+          });
+        }).then(function (result) {
+          toast((result && result.duplicate ? 'พบคำขอเดิม: ' : 'ส่งคำขอแล้ว: ') + ((result && result.id) || ''), 'success');
+          loadModule('serviceCatalog');
+        });
+      }
+    });
+  }
+
+  function svcCatalogForm(id) {
+    var item = id ? svcCatalogFind_(id) : {};
+    var exampleFields = [{ key: 'systemName', label: 'ระบบงาน', type: 'text', required: true, help: '' }];
+    var exampleTasks = [{ name: 'ตรวจสอบข้อมูลคำขอ', type: 'งานดำเนินการ', required: true, evidenceRequired: false }];
+    var workflowOptions = [{ value: '', label: 'ไม่ใช้ Workflow Definition กลาง' }].concat(
+      ((SVC_DATA && SVC_DATA.workflowDefinitions) || []).map(function (row) {
+        return { value: row.id, label: (row.code || row.id) + ' · ' + (row.name || '') + ' (v' + (row.version || 1) + ')' };
+      }));
+    showFormModal({
+      title: id ? 'แก้ไข Catalog: ' + item.name : 'เพิ่มรายการบริการ', submitLabel: id ? 'บันทึกเวอร์ชันใหม่' : 'สร้าง Catalog', size: 'xl',
+      fields: [
+        { id: 'serviceCode', label: 'รหัสบริการ', value: item.code || '', required: true, col: 'col-md-3', help: 'A-Z, 0-9, _ และ -' },
+        { id: 'serviceName', label: 'ชื่อบริการ', value: item.name || '', required: true, col: 'col-md-5' },
+        { id: 'category', label: 'หมวดบริการ', value: item.category || '', col: 'col-md-4' },
+        { id: 'description', label: 'คำอธิบาย', type: 'textarea', rows: 2, value: item.description || '', col: 'col-12' },
+        { id: 'eligibility', label: 'ผู้มีสิทธิ์ขอ', value: item.eligibility || 'ทั้งหมด', col: 'col-md-6', help: 'ทั้งหมด หรือ role/department/email คั่น comma หรือ JSON' },
+        { id: 'slaHours', label: 'SLA (ชั่วโมงทำการ)', type: 'number', value: item.slaHours || 24, required: true, col: 'col-md-3' },
+        { id: 'attachmentRequired', label: 'บังคับแนบเอกสาร', type: 'checkbox', value: !!item.attachmentRequired, col: 'col-md-3' },
+        { id: 'approvalMode', label: 'รูปแบบอนุมัติ', type: 'select', placeholder: false, options: SVC_DATA.approvalModes || [], value: item.approvalMode || 'ไม่ต้องอนุมัติ', col: 'col-md-4' },
+        { id: 'approver', label: 'ผู้อนุมัติที่กำหนด (อีเมล)', type: 'email', value: item.approver || '', col: 'col-md-4' },
+        { id: 'fulfillmentGroup', label: 'กลุ่มดำเนินการ', value: item.fulfillmentGroup || 'IT Service Desk', col: 'col-md-4' },
+        { id: 'workflowDefinitionId', label: 'Workflow Definition กลาง', type: 'select', placeholder: false,
+          options: workflowOptions, value: item.workflowDefinitionId || '', col: 'col-md-6',
+          help: 'สร้าง/แก้ไข Definition ได้จากเมนู Workflow' },
+        { id: 'fulfillmentTarget', label: 'Fulfillment Target', type: 'select', placeholder: false,
+          options: [{ value:'', label:'ไม่เชื่อมโมดูล' }, { value:'access', label:'Access Request' },
+            { value:'ticket', label:'Ticket' }, { value:'asset', label:'Asset (Link)' },
+            { value:'change', label:'Change Request' }], value: item.fulfillmentTarget || '', col: 'col-md-3' },
+        { id: 'autoCreateTarget', label: 'สร้างรายการปลายทางอัตโนมัติ', type: 'checkbox',
+          value: !!item.autoCreateTarget, col: 'col-md-3' },
+        { id: 'targetMappingJSON', label: 'Target Mapping (JSON)', type: 'textarea', rows: 3,
+          value: JSON.stringify(item.targetMapping || {}, null, 2), col: 'col-12',
+          help: 'รองรับค่าคงที่, $details.field และ $request.summary/priority/impact ฯลฯ เท่านั้น' },
+        { id: 'closeMode', label: 'รูปแบบปิดงาน', type: 'select', placeholder: false, options: SVC_DATA.closeModes || [], value: item.closeMode || 'ผู้ขอยืนยัน', col: 'col-md-4' },
+        { id: 'closeCondition', label: 'เงื่อนไขปิดงาน', value: item.closeCondition || '', col: 'col-md-8', help: 'ระบบบังคับ Checklist required ให้เสร็จก่อนทุกครั้ง' },
+        { id: 'formSchemaJSON', label: 'Dynamic Form Schema (JSON array)', type: 'textarea', rows: 7,
+          value: JSON.stringify(item.formSchema || exampleFields, null, 2), required: true, col: 'col-md-6',
+          help: 'type: text, textarea, number, date, datetime-local, select, checkbox, email, url' },
+        { id: 'checklistJSON', label: 'Checklist (JSON array)', type: 'textarea', rows: 7,
+          value: JSON.stringify(item.checklist || exampleTasks, null, 2), required: true, col: 'col-md-6',
+          help: 'required และ evidenceRequired รองรับ true/false' },
+        { id: 'workflowJSON', label: 'Workflow metadata (JSON)', type: 'textarea', rows: 3,
+          value: JSON.stringify(item.workflow || {}, null, 2), col: 'col-md-6' },
+        { id: 'owner', label: 'เจ้าของบริการ', value: item.owner || (SVC_DATA.userEmail || ''), col: 'col-md-3' },
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: SVC_DATA.catalogStatuses || [], value: item.status || 'ร่าง', col: 'col-md-3' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: item.notes || '', col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('saveServiceCatalogItem', {
+          catalogId: id || '', serviceCode: v.serviceCode, serviceName: v.serviceName,
+          category: v.category, description: v.description, eligibility: v.eligibility,
+          slaHours: v.slaHours, attachmentRequired: !!v.attachmentRequired,
+          approvalMode: v.approvalMode, approver: v.approver,
+          workflowDefinitionId: v.workflowDefinitionId || '',
+          fulfillmentTarget: v.fulfillmentTarget || '', autoCreateTarget: !!v.autoCreateTarget,
+          targetMappingJSON: v.targetMappingJSON || '{}',
+          fulfillmentGroup: v.fulfillmentGroup, closeMode: v.closeMode,
+          closeCondition: v.closeCondition, formSchemaJSON: v.formSchemaJSON,
+          checklistJSON: v.checklistJSON, workflowJSON: v.workflowJSON || '{}',
+          owner: v.owner, status: v.status, notes: v.notes
+        }).then(function (result) {
+          toast('บันทึก Catalog แล้ว' + (result && result.version ? ' (v' + result.version + ')' : ''), 'success');
+          loadModule('serviceCatalog');
+        });
+      }
+    });
+  }
+
+  function svcCatalogStatus(id, status) {
+    showConfirm('ยืนยันเปลี่ยนสถานะ Catalog เป็น "' + status + '"?', function () {
+      callServer('setServiceCatalogStatus', id, status).then(function () {
+        toast('ปรับสถานะ Catalog แล้ว', 'success'); loadModule('serviceCatalog');
+      });
+    }, { title: 'ปรับสถานะ Catalog', okLabel: 'ยืนยัน', danger: status === 'ยกเลิก' });
+  }
+
+  function svcApproval(id, approved) {
+    if (approved) {
+      showConfirm('ยืนยันอนุมัติคำขอ ' + id + '?', function () {
+        callServer('approveServiceRequest', id, true, '').then(function () {
+          toast('อนุมัติคำขอแล้ว', 'success'); loadModule('serviceCatalog');
+        });
+      }, { title: 'อนุมัติคำขอ', okLabel: 'อนุมัติ' });
+      return;
+    }
+    showFormModal({ title: 'ปฏิเสธคำขอ ' + id, submitLabel: 'บันทึกการปฏิเสธ', size: 'md',
+      fields: [{ id: 'comment', label: 'เหตุผลการปฏิเสธ', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('approveServiceRequest', id, false, v.comment).then(function () {
+          toast('ปฏิเสธคำขอแล้ว', 'success'); loadModule('serviceCatalog');
+        });
+      }
+    });
+  }
+
+  function svcAssign(id) {
+    var r = svcRequestFind_(id);
+    showFormModal({ title: 'มอบหมายคำขอบริการ ' + id, submitLabel: 'มอบหมาย', size: 'md',
+      fields: [
+        { id: 'group', label: 'กลุ่มรับผิดชอบ', value: r.assignedGroup || 'IT Service Desk', col: 'col-12' },
+        { id: 'assignee', label: 'ผู้รับผิดชอบ', type: 'select', options: SVC_DATA.assignees || [], value: r.assignee || '', col: 'col-12' },
+        { id: 'comment', label: 'หมายเหตุ', type: 'textarea', rows: 2, col: 'col-12' }
+      ],
+      onSubmit: function (v) {
+        return callServer('assignServiceRequest', id, { group: v.group, assignee: v.assignee, comment: v.comment })
+          .then(function () { toast('มอบหมายแล้ว', 'success'); loadModule('serviceCatalog'); });
+      }
+    });
+  }
+
+  function svcUpdateStatus(id) {
+    var r = svcRequestFind_(id);
+    var choices = ['กำลังดำเนินการ', 'รอผู้ใช้งาน', 'รอผู้ให้บริการ'];
+    if (r.closeMode === 'ผู้ขอยืนยัน') choices.push('รอยืนยันผล');
+    else choices.push('ปิดงาน');
+    showFormModal({ title: 'อัปเดตคำขอบริการ ' + id, submitLabel: 'บันทึก',
+      fields: [
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: choices, value: r.status, required: true, col: 'col-md-6' },
+        { id: 'evidenceFile', label: 'หลักฐานการดำเนินการ', type: 'file', col: 'col-md-6', accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt,.csv' },
+        { id: 'comment', label: 'ผลการดำเนินการ/หมายเหตุ', type: 'textarea', rows: 3, col: 'col-12',
+          help: 'บังคับกรอกเมื่อส่งให้ผู้ขอยืนยันหรือปิดงาน' }
+      ],
+      onSubmit: function (v) {
+        var fileEl = v.evidenceFile;
+        var upload = fileEl && fileEl.files && fileEl.files[0] ?
+          uploadRegisteredFileInput(fileEl, {
+            moduleKey: 'serviceCatalog', recordType: 'ServiceRequest',
+            fieldName: 'CompletionAttachmentIDsJSON', attachmentRole: 'FULFILLMENT_EVIDENCE',
+            classification: 'Confidential', isEvidence: true
+          }) : Promise.resolve(null);
+        return upload.then(function (file) {
+          return callServer('updateServiceRequestStatus', id, {
+            status: v.status, comment: v.comment,
+            evidenceAttachmentIds: file ? [file.attachmentId] : []
+          });
+        }).then(function () { toast('อัปเดตสถานะแล้ว', 'success'); loadModule('serviceCatalog'); });
+      }
+    });
+  }
+
+  function svcTasks(id) {
+    var r = svcRequestFind_(id);
+    var tasks = r.tasks || [];
+    var rows = tasks.map(function (t) {
+      var action = SVC_DATA.canFulfill && !svcTerminal_(r.status) && r.status !== 'รออนุมัติ' ?
+        '<button class="btn btn-sm btn-outline-primary" onclick="svcTaskForm(\'' + svcJsArg_(t.id) + '\')">อัปเดต</button>' : '';
+      var evidenceButtons = (t.evidenceAttachmentIds || []).map(function (attachmentId, index) {
+        return registeredAttachmentButtonHtml(attachmentId, 'หลักฐาน ' + (index + 1),
+          'btn btn-sm btn-outline-success me-1 mb-1');
+      }).join('');
+      return '<tr><td>' + escapeHtmlJs(t.sequence) + '</td><td><b>' + escapeHtmlJs(t.name) + '</b>' +
+        (t.required ? ' <span class="badge bg-danger">บังคับ</span>' : '') +
+        (t.evidenceRequired ? ' <span class="badge bg-warning text-dark">ต้องมีหลักฐาน</span>' : '') +
+        '<br><small class="text-muted">' + escapeHtmlJs(t.ownerGroup || '') + '</small></td>' +
+        '<td><span class="badge ' + svcTaskTone_(t.status) + '">' + escapeHtmlJs(t.status) + '</span></td>' +
+        '<td>' + escapeHtmlJs(t.assignee || '-') + '</td><td>' + escapeHtmlJs(t.dueAt || '-') + '</td><td>' +
+        evidenceButtons + action + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="text-muted">ไม่มี Checklist</td></tr>';
+    showInfoModal('Checklist · ' + id,
+      '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>#</th><th>รายการ</th><th>สถานะ</th><th>ผู้รับผิดชอบ</th><th>กำหนด</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>', 'xl');
+  }
+
+  function svcTaskForm(taskId) {
+    var found = svcTaskFind_(taskId);
+    if (!found.task) { toast('ไม่พบ Checklist', 'danger'); return; }
+    var t = found.task;
+    showFormModal({ title: 'อัปเดต Checklist: ' + t.name, submitLabel: 'บันทึก', size: 'md',
+      fields: [
+        { id: 'status', label: 'สถานะ', type: 'select', placeholder: false, options: SVC_DATA.taskStatuses || [], value: t.status, required: true },
+        { id: 'assignee', label: 'ผู้รับผิดชอบ', type: 'select', options: SVC_DATA.assignees || [], value: t.assignee || '' },
+        { id: 'evidenceFile', label: 'หลักฐาน' + (t.evidenceRequired ? ' *' : ''), type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt,.csv' },
+        { id: 'notes', label: 'หมายเหตุ', type: 'textarea', rows: 2, value: t.notes || '' }
+      ],
+      onSubmit: function (v) {
+        var fileEl = v.evidenceFile;
+        var upload = fileEl && fileEl.files && fileEl.files[0] ?
+          uploadRegisteredFileInput(fileEl, {
+            moduleKey: 'serviceCatalog', recordType: 'ServiceRequestTask',
+            fieldName: 'EvidenceAttachmentIDsJSON', attachmentRole: 'TASK_EVIDENCE',
+            classification: 'Confidential', isEvidence: true
+          }) : Promise.resolve(null);
+        return upload.then(function (file) {
+          return callServer('updateServiceRequestTask', taskId, {
+            status: v.status, assignee: v.assignee, notes: v.notes,
+            evidenceAttachmentIds: file ? [file.attachmentId] : []
+          });
+        }).then(function () { toast('อัปเดต Checklist แล้ว', 'success'); loadModule('serviceCatalog'); });
+      }
+    });
+  }
+
+  function svcConfirm(id, accepted) {
+    if (accepted) {
+      showConfirm('ยืนยันว่าผลการดำเนินการครบถ้วนและปิดคำขอ ' + id + '?', function () {
+        callServer('confirmServiceRequest', id, true, '').then(function () {
+          toast('ยืนยันและปิดคำขอแล้ว', 'success'); loadModule('serviceCatalog');
+        });
+      }, { title: 'ยืนยันผลบริการ', okLabel: 'ยืนยันและปิดงาน' });
+      return;
+    }
+    showFormModal({ title: 'ส่งกลับให้แก้ไข ' + id, submitLabel: 'ส่งกลับ', size: 'md',
+      fields: [{ id: 'comment', label: 'สิ่งที่ต้องแก้ไขเพิ่มเติม', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('confirmServiceRequest', id, false, v.comment).then(function () {
+          toast('ส่งกลับให้แก้ไขแล้ว', 'success'); loadModule('serviceCatalog');
+        });
+      }
+    });
+  }
+
+  function svcCancel(id) {
+    showFormModal({ title: 'ยกเลิกคำขอ ' + id, submitLabel: 'ยกเลิกคำขอ', size: 'md',
+      fields: [{ id: 'reason', label: 'เหตุผลการยกเลิก', type: 'textarea', rows: 3, required: true }],
+      onSubmit: function (v) {
+        return callServer('cancelServiceRequest', id, v.reason).then(function () {
+          toast('ยกเลิกคำขอแล้ว', 'success'); loadModule('serviceCatalog');
+        });
+      }
+    });
+  }
+
+  function svcDetail(id) {
+    var r = svcRequestFind_(id);
+    if (!r || !r.id) { toast('ไม่พบคำขอ', 'danger'); return; }
+    var item = svcCatalogFind_(r.catalogId);
+    var labels = {};
+    ((item && item.formSchema) || []).forEach(function (f) { labels[f.key] = f.label; });
+    var details = Object.keys(r.requestDetails || {}).map(function (key) {
+      var value = r.requestDetails[key];
+      if (typeof value === 'boolean') value = value ? 'ใช่' : 'ไม่ใช่';
+      return '<div class="col-md-6"><div class="small text-muted">' + escapeHtmlJs(labels[key] || key) + '</div><div>' + escapeHtmlJs(value) + '</div></div>';
+    }).join('') || '<div class="col-12 text-muted">ไม่มีข้อมูลเพิ่มเติม</div>';
+    var tasksDone = (r.tasks || []).filter(function (t) { return t.status === 'เสร็จสิ้น'; }).length;
+    var tasks = '<div class="d-flex justify-content-between"><span>Checklist</span><b>' + tasksDone + '/' + (r.tasks || []).length + '</b></div>' +
+      '<div class="progress mt-1" style="height:8px"><div class="progress-bar" style="width:' +
+      ((r.tasks || []).length ? Math.round(tasksDone / r.tasks.length * 100) : 100) + '%"></div></div>';
+    var history = (r.history || []).map(function (h) {
+      return '<li class="list-group-item"><div class="small text-muted">' + escapeHtmlJs(h.date) + ' · ' + escapeHtmlJs(h.actor || '') + '</div>' +
+        '<b>' + escapeHtmlJs(h.action) + '</b>' + (h.statusTo ? ' <span class="badge bg-light text-dark">' + escapeHtmlJs(h.statusTo) + '</span>' : '') +
+        (h.comment ? '<div>' + escapeHtmlJs(h.comment) + '</div>' : '') + '</li>';
+    }).join('') || '<li class="list-group-item text-muted">ยังไม่มี Timeline</li>';
+    var link = svcSafeHref_(r.attachment);
+    var evidence = svcSafeHref_(r.completionEvidence);
+    var registeredAttachments = (r.attachmentIds || []).map(function (attachmentId, index) {
+      return registeredAttachmentButtonHtml(attachmentId, 'เอกสารแนบ ' + (index + 1),
+        'btn btn-sm btn-outline-secondary me-2 mb-2');
+    }).join('');
+    var completionAttachments = (r.completionAttachmentIds || []).map(function (attachmentId, index) {
+      return registeredAttachmentButtonHtml(attachmentId, 'หลักฐานผลดำเนินการ ' + (index + 1),
+        'btn btn-sm btn-outline-success me-2 mb-2');
+    }).join('');
+    var related = r.relatedRecords || {};
+    var relatedRows = [
+      ['Access Request', related.access], ['Ticket', related.ticket],
+      ['Asset', related.asset], ['Change', related.change]
+    ].filter(function (row) { return !!row[1]; }).map(function (row) {
+      return '<span class="badge bg-light text-dark border me-1">' + escapeHtmlJs(row[0]) + ': ' +
+        escapeHtmlJs(row[1]) + '</span>';
+    }).join('');
+    var integration = (r.integrationStatus || relatedRows) ?
+      '<div class="col-12"><div class="alert alert-light border mb-0"><div class="d-flex flex-wrap justify-content-between gap-2">' +
+      '<div><b><i class="bi bi-diagram-3"></i> Integration</b><div class="small text-muted">' +
+      escapeHtmlJs(r.integrationStatus || 'เชื่อมโยงแล้ว') +
+      (r.integratedAt ? ' · ' + escapeHtmlJs(r.integratedAt) : '') + '</div></div>' +
+      (relatedRows ? '<div>' + relatedRows + '</div>' : '') + '</div>' +
+      (r.integrationError ? '<div class="small text-danger mt-2">' + escapeHtmlJs(r.integrationError) + '</div>' : '') +
+      '</div></div>' : '';
+    var body = '<div class="row g-3 mb-3">' +
+      '<div class="col-md-8"><h5>' + escapeHtmlJs(r.serviceName) + '</h5><div class="text-muted">' + escapeHtmlJs(r.summary || '') + '</div></div>' +
+      '<div class="col-md-4 text-md-end"><span class="badge ' + svcTone_(r.status) + '">' + escapeHtmlJs(r.status) + '</span><div class="small mt-1">SLA: ' + escapeHtmlJs(r.dueAt || '-') + '</div></div>' +
+      '<div class="col-md-4"><div class="small text-muted">ผู้ขอ</div>' + escapeHtmlJs(r.requesterName || r.requesterEmail) + '</div>' +
+      '<div class="col-md-4"><div class="small text-muted">ขอให้</div>' + escapeHtmlJs(r.requestedFor || '-') + '</div>' +
+      '<div class="col-md-4"><div class="small text-muted">ผู้รับผิดชอบ</div>' + escapeHtmlJs(r.assignee || r.assignedGroup || '-') + '</div>' +
+      '<div class="col-12"><div class="small text-muted">เหตุผล/ความจำเป็น</div>' + escapeHtmlJs(r.justification || '-') + '</div>' +
+      '<div class="col-12"><div class="row g-2">' + details + '</div></div>' +
+      (registeredAttachments ? '<div class="col-12"><div class="small text-muted mb-1">เอกสารแนบที่ป้องกันด้วยสิทธิ์ระบบ</div>' + registeredAttachments + '</div>' : '') +
+      (completionAttachments ? '<div class="col-12"><div class="small text-muted mb-1">หลักฐานผลดำเนินการ</div>' + completionAttachments + '</div>' : '') +
+      (link ? '<div class="col-md-6"><a class="btn btn-sm btn-outline-secondary" href="' + escapeHtmlJs(link) + '" target="_blank" rel="noopener"><i class="bi bi-paperclip"></i> เอกสารแนบ</a></div>' : '') +
+      (evidence ? '<div class="col-md-6"><a class="btn btn-sm btn-outline-success" href="' + escapeHtmlJs(evidence) + '" target="_blank" rel="noopener"><i class="bi bi-check2-circle"></i> หลักฐานผลดำเนินการ</a></div>' : '') +
+      integration +
+      '<div class="col-12"><div class="alert alert-light border mb-0">' + tasks +
+      (r.closeCondition ? '<div class="small text-muted mt-2">เงื่อนไขปิด: ' + escapeHtmlJs(r.closeCondition) + '</div>' : '') + '</div></div></div>' +
+      '<h6>Timeline</h6><ul class="list-group list-group-flush">' + history + '</ul>';
+    showInfoModal(r.id + ' · รายละเอียดคำขอ', body, 'xl');
+  }
+
+  function svcCatalogFind_(id) {
+    return ((SVC_DATA && SVC_DATA.catalog) || []).filter(function (x) { return String(x.id) === String(id); })[0] || {};
+  }
+
+  function svcAllRequests_() {
+    var d = SVC_DATA || {};
+    var combined = [].concat(d.myRequests || [], d.pendingApprovals || [], d.fulfillmentQueue || [], d.allRequests || []);
+    var seen = {}, result = [];
+    combined.forEach(function (r) { if (r && r.id && !seen[r.id]) { seen[r.id] = true; result.push(r); } });
+    return result;
+  }
+
+  function svcRequestFind_(id) {
+    return svcAllRequests_().filter(function (x) { return String(x.id) === String(id); })[0] || {};
+  }
+
+  function svcTaskFind_(taskId) {
+    var requests = svcAllRequests_();
+    for (var i = 0; i < requests.length; i++) {
+      var task = (requests[i].tasks || []).filter(function (x) { return String(x.id) === String(taskId); })[0];
+      if (task) return { request: requests[i], task: task };
+    }
+    return {};
+  }
+
+  function svcUiFieldType_(type) {
+    return ['textarea', 'number', 'date', 'datetime-local', 'select', 'checkbox', 'email', 'url'].indexOf(type) > -1 ? type : 'text';
+  }
+
+  function svcIdempotency_() {
+    try { if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID(); } catch (e) {}
+    return 'svc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
+  function svcTerminal_(status) {
+    return ['ปิดงาน', 'ปฏิเสธ', 'ยกเลิก'].indexOf(String(status || '')) > -1;
+  }
+
+  function svcTone_(status) {
+    if (status === 'ปิดงาน') return 'bg-success';
+    if (status === 'ปฏิเสธ' || status === 'ยกเลิก') return 'bg-secondary';
+    if (status === 'รออนุมัติ' || status === 'รอมอบหมาย' || status === 'รอยืนยันผล') return 'bg-warning text-dark';
+    if (status === 'รอผู้ใช้งาน' || status === 'รอผู้ให้บริการ') return 'bg-dark';
+    return 'bg-primary';
+  }
+
+  function svcTaskTone_(status) {
+    if (status === 'เสร็จสิ้น') return 'bg-success';
+    if (status === 'ข้าม') return 'bg-secondary';
+    if (status === 'กำลังดำเนินการ') return 'bg-primary';
+    return 'bg-warning text-dark';
+  }
+
+  function svcCatalogTone_(status) {
+    if (status === 'ใช้งาน') return 'bg-success';
+    if (status === 'ร่าง') return 'bg-info text-dark';
+    if (status === 'ระงับ') return 'bg-warning text-dark';
+    return 'bg-secondary';
+  }
+
+  function svcDue_(r) {
+    if (svcTerminal_(r.status)) return '<small class="text-muted">' + escapeHtmlJs(r.closedAt || '') + '</small>';
+    if (r.dueHours === null || r.dueHours === undefined) return '<small class="text-muted">ไม่ระบุ SLA</small>';
+    if (r.dueHours < 0) return '<span class="overdue">เลย SLA ' + escapeHtmlJs(Math.abs(r.dueHours)) + ' ชม.</span>';
+    return '<span class="' + (r.dueHours <= 8 ? 'soon' : 'text-muted') + '">เหลือ ' + escapeHtmlJs(r.dueHours) + ' ชม.</span>';
+  }
+
+  function svcSafeHref_(value) {
+    value = String(value || '').trim();
+    return /^https:\/\//i.test(value) ? value : '';
+  }
+
+  function svcJsArg_(value) {
+    return String(value == null ? '' : value).replace(/[\\'"<>]/g, ' ').trim();
+  }
+</script>
