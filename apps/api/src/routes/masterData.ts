@@ -7,10 +7,14 @@ import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
+  createAssetCategorySchema,
   createDepartmentSchema,
   createPositionSchema,
+  createTicketCategorySchema,
+  updateAssetCategorySchema,
   updateDepartmentSchema,
   updatePositionSchema,
+  updateTicketCategorySchema,
 } from '../validators/masterData';
 
 export const departmentsRoute = new Hono<AppEnv>();
@@ -179,3 +183,197 @@ positionsRoute.patch('/:id', requirePermission('position.manage'), zValidator('j
 
   return c.json(ok(reqId, data));
 });
+
+/** หมวดหมู่ Ticket + ค่า SLA ตั้งต้น — Master Data ที่ Help Desk/Ticket (Phase 6 ลำดับ 4) จะอ้างอิงต่อ */
+export const ticketCategoriesRoute = new Hono<AppEnv>();
+ticketCategoriesRoute.use('*', requireAuth);
+
+ticketCategoriesRoute.get('/', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { data, error } = await supabase.from('ticket_categories').select('*').order('name', { ascending: true });
+
+  if (error) {
+    return c.json(fail(reqId, 'TICKET_CATEGORIES_LIST_FAILED', 'ดึงรายการหมวดหมู่ Ticket ไม่สำเร็จ'), 400);
+  }
+  return c.json(ok(reqId, data));
+});
+
+ticketCategoriesRoute.post(
+  '/',
+  requirePermission('ticket_category.manage'),
+  zValidator('json', createTicketCategorySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const body = c.req.valid('json');
+
+    const { data, error } = await supabase
+      .from('ticket_categories')
+      .insert({
+        name: body.name,
+        default_priority: body.defaultPriority ?? undefined,
+        response_sla_hours: body.responseSlaHours ?? null,
+        resolution_sla_hours: body.resolutionSlaHours ?? null,
+        sla_hours: body.slaHours ?? null,
+        is_security_default: body.isSecurityDefault ?? false,
+        notes: body.notes ?? null,
+        created_by: actorId,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return c.json(fail(reqId, 'TICKET_CATEGORY_CREATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'CREATE',
+      module: 'ticket_category',
+      targetTable: 'ticket_categories',
+      targetId: data.id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+ticketCategoriesRoute.patch(
+  '/:id',
+  requirePermission('ticket_category.manage'),
+  zValidator('json', updateTicketCategorySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.defaultPriority !== undefined) patch.default_priority = body.defaultPriority;
+    if (body.responseSlaHours !== undefined) patch.response_sla_hours = body.responseSlaHours;
+    if (body.resolutionSlaHours !== undefined) patch.resolution_sla_hours = body.resolutionSlaHours;
+    if (body.slaHours !== undefined) patch.sla_hours = body.slaHours;
+    if (body.isSecurityDefault !== undefined) patch.is_security_default = body.isSecurityDefault;
+    if (body.notes !== undefined) patch.notes = body.notes;
+    if (body.status !== undefined) patch.status = body.status;
+
+    const { data, error } = await supabase.from('ticket_categories').update(patch).eq('id', id).select().single();
+
+    if (error) {
+      return c.json(fail(reqId, 'TICKET_CATEGORY_UPDATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'ticket_category',
+      targetTable: 'ticket_categories',
+      targetId: id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data));
+  },
+);
+
+/** หมวดหมู่ทรัพย์สิน — Master Data ที่ Asset Management (Phase 6 ลำดับ 8) จะอ้างอิงต่อ (code_prefix ใช้ auto-gen รหัสทรัพย์สิน) */
+export const assetCategoriesRoute = new Hono<AppEnv>();
+assetCategoriesRoute.use('*', requireAuth);
+
+assetCategoriesRoute.get('/', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { data, error } = await supabase.from('asset_categories').select('*').order('name', { ascending: true });
+
+  if (error) {
+    return c.json(fail(reqId, 'ASSET_CATEGORIES_LIST_FAILED', 'ดึงรายการหมวดหมู่ทรัพย์สินไม่สำเร็จ'), 400);
+  }
+  return c.json(ok(reqId, data));
+});
+
+assetCategoriesRoute.post(
+  '/',
+  requirePermission('asset_category.manage'),
+  zValidator('json', createAssetCategorySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const body = c.req.valid('json');
+
+    const { data, error } = await supabase
+      .from('asset_categories')
+      .insert({
+        name: body.name,
+        code_prefix: body.codePrefix,
+        notes: body.notes ?? null,
+        created_by: actorId,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return c.json(fail(reqId, 'ASSET_CATEGORY_CREATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'CREATE',
+      module: 'asset_category',
+      targetTable: 'asset_categories',
+      targetId: data.id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+assetCategoriesRoute.patch(
+  '/:id',
+  requirePermission('asset_category.manage'),
+  zValidator('json', updateAssetCategorySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.codePrefix !== undefined) patch.code_prefix = body.codePrefix;
+    if (body.notes !== undefined) patch.notes = body.notes;
+    if (body.status !== undefined) patch.status = body.status;
+
+    const { data, error } = await supabase.from('asset_categories').update(patch).eq('id', id).select().single();
+
+    if (error) {
+      return c.json(fail(reqId, 'ASSET_CATEGORY_UPDATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'asset_category',
+      targetTable: 'asset_categories',
+      targetId: id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data));
+  },
+);

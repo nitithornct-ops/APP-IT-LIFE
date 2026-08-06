@@ -72,6 +72,26 @@ export interface AuditLogItem {
   created_at: string;
 }
 
+export interface TicketCategory {
+  id: string;
+  name: string;
+  default_priority: 'ต่ำ' | 'ปานกลาง' | 'สูง' | 'วิกฤต';
+  response_sla_hours: number | null;
+  resolution_sla_hours: number | null;
+  sla_hours: number | null;
+  is_security_default: boolean;
+  status: 'active' | 'inactive';
+  notes: string | null;
+}
+
+export interface AssetCategory {
+  id: string;
+  name: string;
+  code_prefix: string;
+  status: 'active' | 'inactive';
+  notes: string | null;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };

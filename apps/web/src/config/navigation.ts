@@ -1,12 +1,14 @@
-import { Activity, ClipboardList, KeyRound, LayoutDashboard, ShieldCheck, UserCircle, Users } from 'lucide-react';
+import { Activity, ClipboardList, KeyRound, LayoutDashboard, ShieldCheck, Tags, UserCircle, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   label: string;
   path: string;
   icon: LucideIcon;
-  /** ไม่ระบุ = ทุกคนที่ login แล้วเห็นได้ */
+  /** ไม่ระบุ permission และ anyPermission ทั้งคู่ = ทุกคนที่ login แล้วเห็นได้ */
   permission?: string;
+  /** เห็นเมนูถ้ามีสิทธิ์อย่างน้อยหนึ่งในรายการนี้ (ใช้เมื่อหน้าเดียวรวมหลาย permission เช่น Master Data) */
+  anyPermission?: string[];
 }
 
 export interface NavGroup {
@@ -33,6 +35,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'ผู้ใช้งาน', path: '/admin/users', icon: Users, permission: 'user.manage' },
       { label: 'บทบาท', path: '/admin/roles', icon: ShieldCheck, permission: 'role.view' },
       { label: 'Permission Matrix', path: '/admin/permission-matrix', icon: KeyRound, permission: 'role.view' },
+      {
+        label: 'Master Data',
+        path: '/admin/master-data',
+        icon: Tags,
+        anyPermission: ['ticket_category.manage', 'asset_category.manage'],
+      },
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
     ],
   },

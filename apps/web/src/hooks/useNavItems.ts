@@ -10,7 +10,11 @@ export function useNavItems(): NavGroup[] {
     if (isMeLoading) return [];
     return NAV_GROUPS.map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.permission || hasPermission(item.permission)),
+      items: group.items.filter((item) => {
+        if (item.permission) return hasPermission(item.permission);
+        if (item.anyPermission) return item.anyPermission.some((key) => hasPermission(key));
+        return true;
+      }),
     })).filter((group) => group.items.length > 0);
   }, [hasPermission, isMeLoading]);
 }

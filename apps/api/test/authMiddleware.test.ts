@@ -21,6 +21,8 @@ describe('requireAuth', () => {
     ['GET', '/api/v1/permissions'],
     ['GET', '/api/v1/departments'],
     ['GET', '/api/v1/positions'],
+    ['GET', '/api/v1/ticket-categories'],
+    ['GET', '/api/v1/asset-categories'],
     ['GET', '/api/v1/audit-logs'],
     ['GET', '/api/v1/auth/me'],
     ['GET', '/api/v1/notifications'],

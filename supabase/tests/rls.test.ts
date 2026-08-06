@@ -41,11 +41,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 20 permissions', async () => {
+  it('seeds 9 roles and 22 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(20);
+    expect((permissions.rows[0] as { count: number }).count).toBe(22);
   });
 });
 
@@ -134,6 +134,63 @@ describe('audit_logs RLS (immutable, restricted read)', () => {
         db.query(
           `insert into public.audit_logs (actor_email, action, module, result) values ($1, 'CREATE', 'ticket', 'success')`,
           ['super-admin@test.local'],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
+describe('ticket_categories / asset_categories RLS (Master Data, Phase 6)', () => {
+  it('lets any authenticated user read ticket_categories and asset_categories', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(`insert into public.ticket_categories (name) values ('เครือข่าย') on conflict do nothing`);
+      await db.query(
+        `insert into public.asset_categories (name, code_prefix) values ('โน้ตบุ๊ก', 'NB') on conflict do nothing`,
+      );
+    });
+
+    const categories = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select name from public.ticket_categories'),
+    );
+    expect(categories.rows.length).toBeGreaterThanOrEqual(1);
+
+    const assetCategories = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select name from public.asset_categories'),
+    );
+    expect(assetCategories.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects a plain user writing to ticket_categories/asset_categories without the manage permission', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.ticket_categories (name) values ('ทดสอบ-rejected')`),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.asset_categories (name, code_prefix) values ('ทดสอบ-rejected', 'RJ')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets super_admin (has ticket_category.manage/asset_category.manage) write to both tables', async () => {
+    const insertedTicketCategory = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`insert into public.ticket_categories (name) values ('ฮาร์ดแวร์') returning id`),
+    );
+    expect(insertedTicketCategory.rows).toHaveLength(1);
+
+    const insertedAssetCategory = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`insert into public.asset_categories (name, code_prefix) values ('เดสก์ท็อป', 'PC') returning id`),
+    );
+    expect(insertedAssetCategory.rows).toHaveLength(1);
+  });
+
+  it('rejects an invalid default_priority value outside the 4-level scale (ต่ำ/ปานกลาง/สูง/วิกฤต)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(
+          `insert into public.ticket_categories (name, default_priority) values ('ทดสอบ-invalid', 'ด่วนสุด')`,
         ),
       ),
     ).rejects.toThrow();
