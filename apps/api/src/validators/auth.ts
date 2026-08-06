@@ -1,0 +1,23 @@
+import { z } from 'zod';
+
+export const loginLogSchema = z.object({
+  email: z.string().email(),
+  success: z.boolean(),
+  failureReason: z.string().max(200).optional(),
+  mfaUsed: z.boolean().optional(),
+});
+
+export type LoginLogInput = z.infer<typeof loginLogSchema>;
+
+export const updateOwnProfileSchema = z.object({
+  fullName: z.string().trim().min(1).max(200),
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .regex(/^[0-9+\-() ]*$/, 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง')
+    .optional()
+    .or(z.literal('')),
+});
+
+export type UpdateOwnProfileInput = z.infer<typeof updateOwnProfileSchema>;

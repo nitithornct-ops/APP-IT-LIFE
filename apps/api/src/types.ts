@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 /** ตัวแปรที่ Cloudflare Workers ได้รับจาก wrangler.toml [vars] และ `wrangler secret` */
 export interface Bindings {
   SUPABASE_URL: string;
@@ -10,6 +12,10 @@ export interface Bindings {
 /** ค่าที่ middleware แนบไว้บน Hono Context ระหว่างการประมวลผล request */
 export interface Variables {
   requestId: string;
+  /** Supabase client ที่ผูกกับ JWT ของผู้ใช้ปัจจุบัน (ให้ RLS ทำงาน) — ตั้งค่าโดย requireAuth */
+  supabase: SupabaseClient;
+  userId: string;
+  userEmail: string;
 }
 
 export interface AppEnv {
