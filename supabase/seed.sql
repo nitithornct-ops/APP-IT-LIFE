@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (31 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (37 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -53,7 +53,13 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('service_request.update', 'service_request', 'update', 'แก้ไข/ดำเนินการคำขอบริการ', 'active'),
   ('service_request.assign', 'service_request', 'assign', 'มอบหมายผู้รับผิดชอบคำขอบริการ', 'active'),
   ('service_request.close', 'service_request', 'close', 'ปิดงานคำขอบริการ', 'active'),
-  ('service_request.approve', 'service_request', 'approve', 'อนุมัติคำขอบริการ (สิทธิ์เสริมนอกกลุ่มอนุมัติ)', 'active')
+  ('service_request.approve', 'service_request', 'approve', 'อนุมัติคำขอบริการ (สิทธิ์เสริมนอกกลุ่มอนุมัติ)', 'active'),
+  ('access_system.manage', 'access_system', 'manage', 'จัดการรายชื่อระบบงานที่ขอสิทธิ์ได้', 'active'),
+  ('access_request.view', 'access_request', 'view', 'ดูคำขอสิทธิ์ระบบทั้งหมด', 'active'),
+  ('access_request.create', 'access_request', 'create', 'ยื่นคำขอสิทธิ์ระบบใหม่', 'active'),
+  ('access_request.approve', 'access_request', 'approve', 'อนุมัติคำขอสิทธิ์ระบบ (สิทธิ์เสริมนอกเหนือหัวหน้างาน)', 'active'),
+  ('access_request.process', 'access_request', 'process', 'ดำเนินการให้สิทธิ์จริง (IT)', 'active'),
+  ('access_registry.manage', 'access_registry', 'manage', 'ทบทวน/เพิกถอนสิทธิ์ในทะเบียน RBAC', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -80,12 +86,14 @@ from (values
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
+  ('technician', 'access_request.view'),
 
   ('approver', 'dashboard.view'),
   ('approver', 'ticket.view'),
   ('approver', 'incident.view'),
   ('approver', 'report.export'),
   ('approver', 'service_request.view'),
+  ('approver', 'access_request.view'),
 
   ('manager', 'dashboard.view'),
   ('manager', 'ticket.view'),
@@ -93,6 +101,7 @@ from (values
   ('manager', 'incident.view'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
+  ('manager', 'access_request.view'),
 
   ('executive', 'dashboard.view'),
   ('executive', 'ticket.view'),
@@ -101,6 +110,7 @@ from (values
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
+  ('executive', 'access_request.view'),
 
   ('auditor', 'dashboard.view'),
   ('auditor', 'ticket.view'),
@@ -110,6 +120,7 @@ from (values
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),
   ('auditor', 'service_request.view'),
+  ('auditor', 'access_request.view'),
 
   ('dpo', 'dashboard.view'),
   ('dpo', 'incident.view'),
@@ -120,7 +131,9 @@ from (values
   ('user', 'ticket.view'),
   ('user', 'ticket.create'),
   ('user', 'service_request.view'),
-  ('user', 'service_request.create')
+  ('user', 'service_request.create'),
+  ('user', 'access_request.view'),
+  ('user', 'access_request.create')
 ) as mapping(role_key, permission_key)
 join public.roles r on r.key = mapping.role_key
 join public.permissions p on p.key = mapping.permission_key

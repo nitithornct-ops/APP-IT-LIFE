@@ -7,10 +7,12 @@ import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
+  createAccessSystemSchema,
   createAssetCategorySchema,
   createDepartmentSchema,
   createPositionSchema,
   createTicketCategorySchema,
+  updateAccessSystemSchema,
   updateAssetCategorySchema,
   updateDepartmentSchema,
   updatePositionSchema,
@@ -369,6 +371,93 @@ assetCategoriesRoute.patch(
       action: 'UPDATE',
       module: 'asset_category',
       targetTable: 'asset_categories',
+      targetId: id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data));
+  },
+);
+
+/** รายชื่อระบบงานที่ขอสิทธิ์ได้ — Master Data ที่คำขอสิทธิ์ระบบ (Phase 6 ลำดับ 6) จะอ้างอิงต่อ */
+export const accessSystemsRoute = new Hono<AppEnv>();
+accessSystemsRoute.use('*', requireAuth);
+
+accessSystemsRoute.get('/', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { data, error } = await supabase.from('access_systems').select('*').order('name', { ascending: true });
+
+  if (error) {
+    return c.json(fail(reqId, 'ACCESS_SYSTEMS_LIST_FAILED', 'ดึงรายชื่อระบบงานไม่สำเร็จ'), 400);
+  }
+  return c.json(ok(reqId, data));
+});
+
+accessSystemsRoute.post(
+  '/',
+  requirePermission('access_system.manage'),
+  zValidator('json', createAccessSystemSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const body = c.req.valid('json');
+
+    const { data, error } = await supabase
+      .from('access_systems')
+      .insert({ name: body.name, notes: body.notes ?? null, created_by: actorId })
+      .select()
+      .single();
+
+    if (error) {
+      return c.json(fail(reqId, 'ACCESS_SYSTEM_CREATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'CREATE',
+      module: 'access_system',
+      targetTable: 'access_systems',
+      targetId: data.id,
+      detail: body,
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+accessSystemsRoute.patch(
+  '/:id',
+  requirePermission('access_system.manage'),
+  zValidator('json', updateAccessSystemSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.notes !== undefined) patch.notes = body.notes;
+    if (body.status !== undefined) patch.status = body.status;
+
+    const { data, error } = await supabase.from('access_systems').update(patch).eq('id', id).select().single();
+
+    if (error) {
+      return c.json(fail(reqId, 'ACCESS_SYSTEM_UPDATE_FAILED', error.message), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'access_system',
+      targetTable: 'access_systems',
       targetId: id,
       detail: body,
       requestId: reqId,

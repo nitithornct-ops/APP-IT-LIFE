@@ -23,7 +23,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
   let query = supabase
     .from('profiles')
     .select(
-      'id, employee_code, full_name, email, phone, department_id, position_id, status, created_at',
+      'id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at',
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })

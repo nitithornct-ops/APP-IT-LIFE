@@ -37,6 +37,15 @@ const ServiceRequestsPage = lazy(() =>
 const ServiceRequestDetailPage = lazy(() =>
   import('./features/serviceRequests/ServiceRequestDetailPage').then((m) => ({ default: m.ServiceRequestDetailPage })),
 );
+const AccessRequestsPage = lazy(() =>
+  import('./features/accessRequests/AccessRequestsPage').then((m) => ({ default: m.AccessRequestsPage })),
+);
+const AccessRequestDetailPage = lazy(() =>
+  import('./features/accessRequests/AccessRequestDetailPage').then((m) => ({ default: m.AccessRequestDetailPage })),
+);
+const AccessRegistryPage = lazy(() =>
+  import('./features/admin/AccessRegistryPage').then((m) => ({ default: m.AccessRegistryPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -104,6 +113,26 @@ export function App() {
           }
         />
         <Route
+          path="/access-requests"
+          element={
+            <ProtectedRoute permission="access_request.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AccessRequestsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/access-requests/:id"
+          element={
+            <ProtectedRoute permission="access_request.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AccessRequestDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin/users"
           element={
             <ProtectedRoute permission="user.manage">
@@ -159,6 +188,16 @@ export function App() {
             <ProtectedRoute permission="service_catalog.manage">
               <Suspense fallback={<LazyPageFallback />}>
                 <ServiceCatalogPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/access-registry"
+          element={
+            <ProtectedRoute permission="access_registry.manage">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AccessRegistryPage />
               </Suspense>
             </ProtectedRoute>
           }

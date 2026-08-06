@@ -23,6 +23,7 @@ export interface UserListItem {
   phone: string | null;
   department_id: string | null;
   position_id: string | null;
+  supervisor_id: string | null;
   status: 'active' | 'inactive';
   created_at: string;
 }

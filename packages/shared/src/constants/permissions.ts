@@ -35,6 +35,12 @@ export const DEFAULT_PERMISSION_KEYS = [
   'service_request.assign',
   'service_request.close',
   'service_request.approve',
+  'access_system.manage',
+  'access_request.view',
+  'access_request.create',
+  'access_request.approve',
+  'access_request.process',
+  'access_registry.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

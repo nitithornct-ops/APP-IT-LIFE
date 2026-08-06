@@ -12,6 +12,10 @@ const NO_ROLE_USER_ID = '00000000-0000-0000-0000-000000000005';
 // role 'user' ธรรมดา ไม่มี service_request.view/approve ใดๆ — ใช้ยืนยันว่าการมองเห็น/อนุมัติคำขอ
 // รออนุมัติมาจาก "เป็นสมาชิกกลุ่มอนุมัติ" ล้วนๆ ไม่ใช่จาก permission
 const APPROVAL_GROUP_MEMBER_ID = '00000000-0000-0000-0000-000000000006';
+// หัวหน้างานของ REGULAR_USER_ID (ตั้งผ่าน profiles.supervisor_id) — role 'user' ธรรมดา ไม่มี
+// access_request.approve ใดๆ — ใช้ยืนยันว่าการอนุมัติคำขอสิทธิ์มาจาก "เป็นหัวหน้างานที่ถูก route มา"
+// ล้วนๆ ไม่ใช่จาก permission
+const SUPERVISOR_ID = '00000000-0000-0000-0000-000000000007';
 
 let db: PGlite;
 
@@ -34,9 +38,11 @@ beforeAll(async () => {
   await createUserWithRole(AUDITOR_ID, 'auditor@test.local', 'auditor');
   await createUserWithRole(SECOND_SUPER_ADMIN_ID, 'super-admin-2@test.local', 'super_admin');
   await createUserWithRole(APPROVAL_GROUP_MEMBER_ID, 'approver-member@test.local', 'user');
+  await createUserWithRole(SUPERVISOR_ID, 'supervisor@test.local', 'user');
 
   await asServiceRole(db, async () => {
     await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
+    await db.query('update public.profiles set supervisor_id = $1 where id = $2', [SUPERVISOR_ID, REGULAR_USER_ID]);
   });
 
   await asServiceRole(db, async () => {
@@ -52,11 +58,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 31 permissions', async () => {
+  it('seeds 9 roles and 37 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(31);
+    expect((permissions.rows[0] as { count: number }).count).toBe(37);
   });
 });
 
@@ -111,10 +117,21 @@ describe('has_permission()', () => {
 });
 
 describe('profiles RLS', () => {
-  it('lets a user see only their own profile row', async () => {
+  // เปิดให้อ่านได้ทุกคนที่ login แล้ว ตั้งแต่ Phase 6 Module 6 (ดู header comment ของ
+  // 20260812100000_access_requests.sql) — แก้บั๊กแฝงที่ embedded join ไปยัง profiles ของอีกฝ่าย
+  // (เช่น requester ของ Ticket/Service Request/Access Request) ถูก RLS กรองเป็น null สำหรับผู้ใช้ที่
+  // ไม่มี user.manage เขียน (update) ยังคงจำกัดเฉพาะเจ้าของแถวหรือผู้มี user.manage เหมือนเดิม
+  it('lets any authenticated user read every profile row (directory-style data)', async () => {
     const result = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.profiles'));
-    expect(result.rows).toHaveLength(1);
-    expect((result.rows[0] as { id: string }).id).toBe(REGULAR_USER_ID);
+    expect(result.rows.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('rejects a plain user updating another profile (write stays self-or-user.manage only)', async () => {
+    const result = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(`update public.profiles set full_name = 'สวมรอย' where id = $1 returning id`, [SUPER_ADMIN_ID]),
+    );
+    // RLS USING กรองแถวออกแบบเงียบๆ (ไม่ error) — ยืนยันว่าไม่มีแถวถูกแก้ไข
+    expect(result.rows).toHaveLength(0);
   });
 
   it('lets super_admin (user.manage) see every profile', async () => {
@@ -618,6 +635,125 @@ describe('service_catalog / service_requests RLS (Phase 6 Module 5)', () => {
       db.query('select id from public.file_attachments where target_id = $1', [requestId]),
     );
     expect(asUnrelated.rows).toHaveLength(0);
+  });
+});
+
+describe('access_systems / access_requests / user_access_registry RLS (Phase 6 Module 6)', () => {
+  let systemId: string;
+  let requestId: string;
+
+  it('lets any authenticated user read access_systems, but rejects a plain user writing to it', async () => {
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`insert into public.access_systems (name) values ('Google Workspace') returning id`),
+    );
+    systemId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const readBack = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.access_systems'));
+    expect(readBack.rows.length).toBeGreaterThanOrEqual(1);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.access_systems (name) values ('ทดสอบ-rejected')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester (has access_request.create, supervisor_id set) submit a request for themselves', async () => {
+    const inserted = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(
+        `insert into public.access_requests (requester_id, system_id, access_level, reason, approver_id)
+         values ($1, $2, 'Standard', 'ทดสอบยื่นคำขอ', $3) returning id`,
+        [REGULAR_USER_ID, systemId, SUPERVISOR_ID],
+      ),
+    );
+    requestId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+  });
+
+  it('rejects submitting a request on behalf of someone else (requester_id must be self)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(
+          `insert into public.access_requests (requester_id, system_id, access_level, reason, approver_id)
+           values ($1, $2, 'Standard', 'สวมรอย', $3)`,
+          [SUPER_ADMIN_ID, systemId, SUPERVISOR_ID],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester and the routed supervisor see the request, but hides it from an unrelated no-role user', async () => {
+    const ownView = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.access_requests where id = $1', [requestId]),
+    );
+    expect(ownView.rows).toHaveLength(1);
+
+    const supervisorView = await asUser(db, SUPERVISOR_ID, async () =>
+      db.query('select id from public.access_requests where id = $1', [requestId]),
+    );
+    expect(supervisorView.rows).toHaveLength(1);
+
+    const unrelatedView = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.access_requests where id = $1', [requestId]),
+    );
+    expect(unrelatedView.rows).toHaveLength(0);
+  });
+
+  it('lets the routed supervisor approve (update) the request purely via profiles.supervisor_id, not permission', async () => {
+    const updated = await asUser(db, SUPERVISOR_ID, async () =>
+      db.query(
+        `update public.access_requests set status = 'รอส่วนงานไอทีดำเนินการ', approved = true, approved_by = $1 where id = $2 returning id`,
+        [SUPERVISOR_ID, requestId],
+      ),
+    );
+    expect(updated.rows).toHaveLength(1);
+  });
+
+  it('silently updates zero rows when an unrelated user targets a request they are not the approver of', async () => {
+    const result = await asUser(db, AUDITOR_ID, async () =>
+      db.query(`update public.access_requests set status = 'ปฏิเสธ' where id = $1 returning id`, [requestId]),
+    );
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it('rejects an invalid access_requests status value outside the fixed state machine', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.access_requests set status = 'ไม่มีอยู่จริง' where id = $1`, [requestId])),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a plain user writing to user_access_registry without access_registry.manage', async () => {
+    await expect(
+      asUser(db, SUPER_ADMIN_ID, async () =>
+        db.query(
+          `insert into public.user_access_registry (user_id, system_id, access_level, source_request_id)
+           values ($1, $2, 'Standard', $3) returning id`,
+          [REGULAR_USER_ID, systemId, requestId],
+        ),
+      ),
+    ).resolves.toBeDefined();
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(
+          `insert into public.user_access_registry (user_id, system_id, access_level) values ($1, $2, 'Admin')`,
+          [REGULAR_USER_ID, systemId],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the registry owner read their own entry, hidden from an unrelated no-role user', async () => {
+    const ownView = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.user_access_registry where user_id = $1', [REGULAR_USER_ID]),
+    );
+    expect(ownView.rows.length).toBeGreaterThanOrEqual(1);
+
+    const unrelatedView = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.user_access_registry where user_id = $1', [REGULAR_USER_ID]),
+    );
+    expect(unrelatedView.rows).toHaveLength(0);
   });
 });
 

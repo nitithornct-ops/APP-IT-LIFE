@@ -201,6 +201,59 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
   );
 }
 
+function SupervisorPanel({ user, allUsers }: { user: UserListItem; allUsers: UserListItem[] }) {
+  const queryClient = useQueryClient();
+  const [supervisorId, setSupervisorId] = useState(user.supervisor_id ?? '');
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/users/${user.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ supervisorId: supervisorId || null }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setServerError(null);
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'บันทึกหัวหน้างานไม่สำเร็จ'),
+  });
+
+  return (
+    <div className="border-t border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+      <p className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+        หัวหน้างาน (Supervisor) — ใช้เป็นเส้นทางอนุมัติของโมดูล "คำขอสิทธิ์ระบบ"
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={supervisorId}
+          onChange={(e) => setSupervisorId(e.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        >
+          <option value="">— ไม่ระบุ —</option>
+          {allUsers
+            .filter((u) => u.id !== user.id)
+            .map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name} ({u.email})
+              </option>
+            ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
+          className="flex items-center gap-2 rounded-md bg-primary-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-800 disabled:opacity-60"
+        >
+          {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+          บันทึก
+        </button>
+        {serverError && <p className="text-xs text-red-600">{serverError}</p>}
+      </div>
+    </div>
+  );
+}
+
 const inviteSchema = z.object({
   email: z.string().trim().email('กรุณากรอกอีเมลให้ถูกต้อง'),
   fullName: z.string().trim().min(1, 'กรุณากรอกชื่อ-สกุล'),
@@ -461,6 +514,11 @@ export function UsersPage() {
     queryFn: () => apiFetch<Permission[]>('/api/v1/permissions'),
   });
 
+  const allUsersQuery = useQuery({
+    queryKey: ['admin', 'users', 'for-supervisor-picker'],
+    queryFn: () => apiFetch<PaginatedResult<UserListItem>>('/api/v1/users?page=1&pageSize=100'),
+  });
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
@@ -536,6 +594,7 @@ export function UsersPage() {
                     <tr>
                       <td colSpan={5} className="p-0">
                         <UserRolesPanel userId={user.id} allRoles={rolesQuery.data ?? []} />
+                        <SupervisorPanel user={user} allUsers={allUsersQuery.data?.items ?? []} />
                         <RequirePermission permission="role.manage">
                           <UserPermissionOverridesPanel userId={user.id} allPermissions={permissionsQuery.data ?? []} />
                         </RequirePermission>

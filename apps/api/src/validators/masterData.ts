@@ -62,3 +62,16 @@ export const updateAssetCategorySchema = createAssetCategorySchema.partial().ext
 });
 
 export type UpdateAssetCategoryInput = z.infer<typeof updateAssetCategorySchema>;
+
+export const createAccessSystemSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+export type CreateAccessSystemInput = z.infer<typeof createAccessSystemSchema>;
+
+export const updateAccessSystemSchema = createAccessSystemSchema.partial().extend({
+  status: z.enum(['active', 'inactive']).optional(),
+});
+
+export type UpdateAccessSystemInput = z.infer<typeof updateAccessSystemSchema>;

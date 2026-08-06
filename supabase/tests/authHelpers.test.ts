@@ -62,6 +62,8 @@ describe('my_permissions()', () => {
       viaDirectCheck.sort(),
     );
     expect(viaDirectCheck).toEqual([
+      'access_request.create',
+      'access_request.view',
       'dashboard.view',
       'service_request.create',
       'service_request.view',

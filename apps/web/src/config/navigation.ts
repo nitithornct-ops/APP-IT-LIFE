@@ -3,6 +3,7 @@ import {
   ClipboardList,
   KeyRound,
   LayoutDashboard,
+  ListChecks,
   ShieldCheck,
   ShoppingBag,
   Tags,
@@ -43,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
       { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
+      { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
     ],
   },
   {
@@ -63,6 +65,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: 'พนักงาน', path: '/admin/employees', icon: UserSquare2, permission: 'employee.manage' },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
+      { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
     ],
