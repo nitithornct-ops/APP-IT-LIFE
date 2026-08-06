@@ -2,6 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  font-size: calc(100% * var(--font-scale, 1));
+}
+
 body {
-  font-family: 'Noto Sans Thai', 'Sarabun', system-ui, -apple-system, sans-serif;
+  font-family: 'Sarabun', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+}
+
+/* Skip to content — มาตรฐานการเข้าถึง WCAG (เทียบเท่า .skip-link ของระบบเดิม) */
+.skip-link {
+  position: fixed;
+  top: -60px;
+  left: 12px;
+  z-index: 5000;
+  background: #1d4ed8;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 0 0 12px 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* โฟกัสที่มองเห็นชัดเจนเสมอ (คีย์บอร์ด/มาตรฐานภาครัฐ) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* เคารพการตั้งค่า "ลดการเคลื่อนไหว" ของผู้ใช้ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

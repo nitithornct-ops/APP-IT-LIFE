@@ -2,7 +2,7 @@ import { Loader2 } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { AppLayout } from './layouts/AppLayout';
+import { AppShell } from './layouts/AppShell';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HealthPage } from './pages/HealthPage';
 import { HomePage } from './pages/HomePage';
@@ -37,7 +37,7 @@ export function App() {
       <Route
         element={
           <ProtectedRoute>
-            <AppLayout />
+            <AppShell />
           </ProtectedRoute>
         }
       >
