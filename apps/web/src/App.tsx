@@ -24,6 +24,10 @@ const ApprovalGroupsPage = lazy(() =>
   import('./features/admin/ApprovalGroupsPage').then((m) => ({ default: m.ApprovalGroupsPage })),
 );
 const EmployeesPage = lazy(() => import('./features/admin/EmployeesPage').then((m) => ({ default: m.EmployeesPage })));
+const TicketsPage = lazy(() => import('./features/tickets/TicketsPage').then((m) => ({ default: m.TicketsPage })));
+const TicketDetailPage = lazy(() =>
+  import('./features/tickets/TicketDetailPage').then((m) => ({ default: m.TicketDetailPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -50,6 +54,26 @@ export function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route
+          path="/tickets"
+          element={
+            <ProtectedRoute permission="ticket.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <TicketsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tickets/:id"
+          element={
+            <ProtectedRoute permission="ticket.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <TicketDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/users"
           element={

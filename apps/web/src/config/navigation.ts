@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   ShieldCheck,
   Tags,
+  Ticket,
   UserCircle,
   Users,
   Users2,
@@ -35,6 +36,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'หน้าหลัก', path: '/', icon: LayoutDashboard },
       { label: 'สถานะระบบ', path: '/health', icon: Activity },
     ],
+  },
+  {
+    title: 'บริการ',
+    items: [{ label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' }],
   },
   {
     title: 'บัญชีของฉัน',

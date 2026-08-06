@@ -6,6 +6,9 @@ const SUPER_ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 const REGULAR_USER_ID = '00000000-0000-0000-0000-000000000002';
 const AUDITOR_ID = '00000000-0000-0000-0000-000000000003';
 const SECOND_SUPER_ADMIN_ID = '00000000-0000-0000-0000-000000000004';
+// ไม่มี role ใดๆ เลย จึงไม่มี permission ใดๆ เลยจาก has_permission() — ใช้ยืนยันกรณี
+// "ไม่เกี่ยวข้องกับ record นี้เลย" ที่ต้องแยกจาก auditor/user ซึ่ง seed เริ่มต้นให้ ticket.view มาด้วย
+const NO_ROLE_USER_ID = '00000000-0000-0000-0000-000000000005';
 
 let db: PGlite;
 
@@ -27,6 +30,10 @@ beforeAll(async () => {
   await createUserWithRole(REGULAR_USER_ID, 'user@test.local', 'user');
   await createUserWithRole(AUDITOR_ID, 'auditor@test.local', 'auditor');
   await createUserWithRole(SECOND_SUPER_ADMIN_ID, 'super-admin-2@test.local', 'super_admin');
+
+  await asServiceRole(db, async () => {
+    await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
+  });
 
   await asServiceRole(db, async () => {
     await db.query(
@@ -336,6 +343,115 @@ describe('employees RLS (Phase 6 Module 3)', () => {
         ),
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('tickets / ticket_worklogs RLS (Phase 6 Module 4)', () => {
+  let ticketId: string;
+
+  it('lets the requester (user role, has ticket.create) open a ticket for themselves', async () => {
+    const inserted = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(
+        `insert into public.tickets (title, requester_id, description) values ('ทดสอบเปิดเรื่อง', $1, 'รายละเอียดทดสอบ') returning id`,
+        [REGULAR_USER_ID],
+      ),
+    );
+    expect(inserted.rows).toHaveLength(1);
+    ticketId = (inserted.rows[0] as { id: string }).id;
+  });
+
+  it('rejects opening a ticket on behalf of someone else (requester_id must be self)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.tickets (title, requester_id, description) values ('สวมรอย', $1, 'x')`, [SUPER_ADMIN_ID]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester see their own ticket, but hides it from an unrelated plain user', async () => {
+    const ownView = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.tickets where id = $1', [ticketId]),
+    );
+    expect(ownView.rows).toHaveLength(1);
+
+    const otherView = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.tickets where id = $1', [ticketId]),
+    );
+    // ผู้ใช้ที่ไม่มี role เลยจึงไม่มี ticket.view และไม่ใช่ requester/assignee ของ ticket นี้
+    expect(otherView.rows).toHaveLength(0);
+  });
+
+  it('lets super_admin (has ticket.update) update the ticket, and writes a worklog entry', async () => {
+    const updated = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`update public.tickets set status = 'รับเรื่องแล้ว', assignee_id = $1 where id = $2 returning id`, [
+        SUPER_ADMIN_ID,
+        ticketId,
+      ]),
+    );
+    expect(updated.rows).toHaveLength(1);
+
+    const worklog = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(
+        `insert into public.ticket_worklogs (ticket_id, action, status_from, status_to, actor_id, is_public)
+         values ($1, 'รับเรื่อง', 'ใหม่', 'รับเรื่องแล้ว', $2, true) returning id`,
+        [ticketId, SUPER_ADMIN_ID],
+      ),
+    );
+    expect(worklog.rows).toHaveLength(1);
+  });
+
+  it('rejects a plain requester writing a worklog directly (staff-only action)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(
+          `insert into public.ticket_worklogs (ticket_id, action, actor_id) values ($1, 'แอบเขียน', $2)`,
+          [ticketId, REGULAR_USER_ID],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester read a public worklog entry on their own ticket', async () => {
+    const result = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.ticket_worklogs where ticket_id = $1', [ticketId]),
+    );
+    expect(result.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('silently updates zero rows when an unrelated plain user targets a ticket they cannot see (RLS USING filters it out, not an error)', async () => {
+    const result = await asUser(db, AUDITOR_ID, async () =>
+      db.query(`update public.tickets set status = 'ยกเลิก' where id = $1 returning id`, [ticketId]),
+    );
+    expect(result.rows).toHaveLength(0);
+
+    const stillOpen = await asServiceRole(db, async () => db.query('select status from public.tickets where id = $1', [ticketId]));
+    expect((stillOpen.rows[0] as { status: string }).status).not.toBe('ยกเลิก');
+  });
+
+  it('rejects an invalid ticket status value outside the fixed state machine', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.tickets set status = 'ไม่มีอยู่จริง' where id = $1`, [ticketId])),
+    ).rejects.toThrow();
+  });
+
+  it('lets a ticket participant (requester) see file_attachments uploaded by the assignee for that ticket', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.file_attachments (storage_path, original_filename, mime_type, size_bytes, module, target_table, target_id, uploaded_by)
+         values ($1, 'evidence.png', 'image/png', 1024, 'ticket', 'tickets', $2, $3)`,
+        [`${SUPER_ADMIN_ID}/evidence.png`, ticketId, SUPER_ADMIN_ID],
+      );
+    });
+
+    const asRequester = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.file_attachments where target_id = $1', [ticketId]),
+    );
+    expect(asRequester.rows.length).toBeGreaterThanOrEqual(1);
+
+    const asUnrelated = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.file_attachments where target_id = $1', [ticketId]),
+    );
+    expect(asUnrelated.rows).toHaveLength(0);
   });
 });
 

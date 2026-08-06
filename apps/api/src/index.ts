@@ -12,6 +12,7 @@ import { assetCategoriesRoute, departmentsRoute, positionsRoute, ticketCategorie
 import { notificationsRoute } from './routes/notifications';
 import { permissionOverridesRoute } from './routes/permissionOverrides';
 import { permissionsRoute, rolesRoute } from './routes/roles';
+import { ticketsRoute } from './routes/tickets';
 import { usersRoute } from './routes/users';
 import type { AppEnv } from './types';
 import { fail } from './utils/response';
@@ -47,6 +48,7 @@ app.route('/api/v1/asset-categories', assetCategoriesRoute);
 app.route('/api/v1/permission-overrides', permissionOverridesRoute);
 app.route('/api/v1/approval-groups', approvalGroupsRoute);
 app.route('/api/v1/employees', employeesRoute);
+app.route('/api/v1/tickets', ticketsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
