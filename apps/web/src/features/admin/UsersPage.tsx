@@ -247,7 +247,13 @@ function InviteUserForm({
     mutationFn: (values: InviteForm) =>
       apiFetch('/api/v1/users/invite', {
         method: 'POST',
-        body: JSON.stringify(values),
+        // <select> ที่ไม่ได้เลือก ("— ไม่ระบุ —") จะส่งค่าเป็น "" เสมอ — ต้องแปลงเป็น undefined
+        // ก่อนส่ง มิฉะนั้น backend (z.string().uuid().optional()) จะปฏิเสธด้วย "Invalid uuid"
+        body: JSON.stringify({
+          ...values,
+          departmentId: values.departmentId || undefined,
+          positionId: values.positionId || undefined,
+        }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });

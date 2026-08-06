@@ -41,11 +41,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 23 permissions', async () => {
+  it('seeds 9 roles and 24 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(23);
+    expect((permissions.rows[0] as { count: number }).count).toBe(24);
   });
 });
 
@@ -274,6 +274,65 @@ describe('approval_groups / approval_group_members RLS (Phase 6 Module 2)', () =
         db.query(
           `insert into public.approval_group_members (group_id, user_id) values ($1, $2)`,
           [groupId, REGULAR_USER_ID],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
+describe('employees RLS (Phase 6 Module 3)', () => {
+  it('lets any authenticated user read employees', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.employees (employee_code, first_name_th, last_name_th)
+         values ('EMP-001', 'ทดสอบ', 'ระบบ') on conflict do nothing`,
+      );
+    });
+
+    const result = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.employees'));
+    expect(result.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects a plain user writing to employees without employee.manage', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-REJECT', 'ก', 'ข')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets super_admin (has employee.manage) write to employees', async () => {
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(
+        `insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-002', 'สมชาย', 'ใจดี') returning id`,
+      ),
+    );
+    expect(inserted.rows).toHaveLength(1);
+  });
+
+  it('rejects a duplicate employee_code', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-001', 'ซ้ำ', 'รหัส')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a duplicate email but allows multiple employees with no email', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.employees (employee_code, first_name_th, last_name_th, email)
+         values ('EMP-003', 'มีอีเมล', 'หนึ่ง', 'dup@test.local')`,
+      );
+      await db.query(`insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-004', 'ไม่มี', 'อีเมล')`);
+      await db.query(`insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-005', 'ไม่มี', 'อีเมลเช่นกัน')`);
+    });
+
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(
+          `insert into public.employees (employee_code, first_name_th, last_name_th, email)
+           values ('EMP-006', 'ซ้ำ', 'อีเมล', 'dup@test.local')`,
         ),
       ),
     ).rejects.toThrow();

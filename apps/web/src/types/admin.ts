@@ -129,6 +129,25 @@ export interface ApprovalGroupMember {
   profiles: { full_name: string; email: string } | null;
 }
 
+export interface Employee {
+  id: string;
+  employee_code: string;
+  prefix_th: string | null;
+  first_name_th: string;
+  last_name_th: string;
+  nickname: string | null;
+  prefix_en: string | null;
+  first_name_en: string | null;
+  last_name_en: string | null;
+  department_id: string | null;
+  position_id: string | null;
+  username_ad: string | null;
+  upn: string | null;
+  email: string | null;
+  status: 'active' | 'inactive';
+  notes: string | null;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };

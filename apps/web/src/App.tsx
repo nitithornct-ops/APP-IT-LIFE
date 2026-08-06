@@ -23,6 +23,7 @@ const MasterDataPage = lazy(() =>
 const ApprovalGroupsPage = lazy(() =>
   import('./features/admin/ApprovalGroupsPage').then((m) => ({ default: m.ApprovalGroupsPage })),
 );
+const EmployeesPage = lazy(() => import('./features/admin/EmployeesPage').then((m) => ({ default: m.EmployeesPage })));
 
 function LazyPageFallback() {
   return (
@@ -85,6 +86,16 @@ export function App() {
             <ProtectedRoute>
               <Suspense fallback={<LazyPageFallback />}>
                 <MasterDataPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/employees"
+          element={
+            <ProtectedRoute permission="employee.manage">
+              <Suspense fallback={<LazyPageFallback />}>
+                <EmployeesPage />
               </Suspense>
             </ProtectedRoute>
           }
