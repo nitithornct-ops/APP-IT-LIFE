@@ -23,6 +23,9 @@ describe('requireAuth', () => {
     ['GET', '/api/v1/positions'],
     ['GET', '/api/v1/audit-logs'],
     ['GET', '/api/v1/auth/me'],
+    ['GET', '/api/v1/notifications'],
+    ['GET', '/api/v1/notifications/unread-count'],
+    ['POST', '/api/v1/files'],
   ])('rejects %s %s without an Authorization header', async (method, path) => {
     const res = await app.request(path, { method }, testEnv);
     expect(res.status).toBe(401);

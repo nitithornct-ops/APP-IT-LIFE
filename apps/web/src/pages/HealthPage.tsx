@@ -25,11 +25,24 @@ export function HealthPage() {
       )}
 
       {data && (
-        <div className="flex flex-col items-center gap-1 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+        <div
+          className={`flex flex-col items-center gap-1 rounded-md px-4 py-3 text-sm ${
+            data.status === 'ok'
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+              : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+          }`}
+        >
           <div className="flex items-center gap-2 font-medium">
-            <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-            <span>API พร้อมใช้งาน ({data.environment})</span>
+            {data.status === 'ok' ? (
+              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+            )}
+            <span>
+              API {data.status === 'ok' ? 'พร้อมใช้งาน' : 'ทำงานได้บางส่วน (ฐานข้อมูลมีปัญหา)'} ({data.environment})
+            </span>
           </div>
+          <span>ฐานข้อมูล: {data.checks.database === 'ok' ? 'เชื่อมต่อได้' : 'เชื่อมต่อไม่ได้'}</span>
           <span>ตรวจสอบล่าสุด: {formatThaiDate(data.timestamp, 'd MMMM yyyy HH:mm')} น.</span>
         </div>
       )}

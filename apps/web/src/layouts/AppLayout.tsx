@@ -1,5 +1,6 @@
 import { LogOut } from 'lucide-react';
 import { Link, Outlet } from 'react-router-dom';
+import { NotificationBell } from '../components/NotificationBell';
 import { RequirePermission } from '../components/RequirePermission';
 import { useAuth } from '../stores/authContext';
 
@@ -38,6 +39,7 @@ export function AppLayout() {
           </RequirePermission>
         </nav>
         <div className="flex items-center gap-3 text-sm">
+          <NotificationBell />
           <span className="text-slate-500 dark:text-slate-400">{me?.profile.full_name}</span>
           <button
             type="button"

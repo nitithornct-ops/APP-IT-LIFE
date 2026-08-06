@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, '..', 'migrations');
 const seedPath = join(__dirname, '..', 'seed.sql');
 const authStubPath = join(__dirname, 'fixtures', 'auth-stub.sql');
+const storageStubPath = join(__dirname, 'fixtures', 'storage-stub.sql');
 
 /**
  * สร้างฐานข้อมูลทดสอบด้วย pglite (Postgres จริงที่คอมไพล์เป็น WASM รันในเครื่อง ไม่ต้องใช้ Docker)
@@ -15,8 +16,9 @@ const authStubPath = join(__dirname, 'fixtures', 'auth-stub.sql');
 export async function createTestDb(): Promise<PGlite> {
   const db = new PGlite();
 
-  // เฉพาะการทดสอบ: จำลอง auth schema/role ของ Supabase (ไม่ใช่ส่วนหนึ่งของ migration จริง)
+  // เฉพาะการทดสอบ: จำลอง auth/storage schema ของ Supabase (ไม่ใช่ส่วนหนึ่งของ migration จริง)
   await db.exec(readFileSync(authStubPath, 'utf-8'));
+  await db.exec(readFileSync(storageStubPath, 'utf-8'));
 
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
@@ -35,6 +37,7 @@ export async function createTestDb(): Promise<PGlite> {
     grant select on all tables in schema public to anon;
     grant all on all tables in schema public to service_role;
     grant usage, select on all sequences in schema public to authenticated, service_role;
+    grant all on storage.buckets, storage.objects to service_role;
   `);
 
   return db;

@@ -4,7 +4,9 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
+import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { assignRoleSchema, inviteUserSchema, listUsersQuerySchema, updateUserSchema } from '../validators/users';
@@ -25,7 +27,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
-    .range((page - 1) * pageSize, page * pageSize - 1);
+    .range(...paginationRange(page, pageSize));
 
   if (search) {
     query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
@@ -37,13 +39,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
     return c.json(fail(reqId, 'USERS_LIST_FAILED', 'ดึงรายชื่อผู้ใช้ไม่สำเร็จ'), 400);
   }
 
-  const totalItems = count ?? 0;
-  return c.json(
-    ok(reqId, {
-      items: data,
-      pagination: { page, pageSize, totalItems, totalPages: Math.ceil(totalItems / pageSize) },
-    }),
-  );
+  return c.json(ok(reqId, toPaginatedData(data, count, page, pageSize)));
 });
 
 /**
@@ -155,7 +151,10 @@ usersRoute.post('/:id/roles', requirePermission('role.manage'), zValidator('json
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const targetId = c.req.param('id');
+  // requirePermission()'s MiddlewareHandler<AppEnv> ไม่มี path generic ผูกกับ '/:id/roles' ทำให้
+  // TypeScript อนุมาน c.req.param('id') เป็น string | undefined แม้ Hono จะรับประกันว่ามีค่าจริง
+  // เสมอเมื่อ handler นี้ถูกเรียก (route match แล้ว) — assert เป็น string ตรงนี้แทน
+  const targetId = c.req.param('id')!;
   const { roleId } = c.req.valid('json');
 
   const { error } = await supabase.from('user_roles').insert({ user_id: targetId, role_id: roleId, assigned_by: actorId });
@@ -175,6 +174,13 @@ usersRoute.post('/:id/roles', requirePermission('role.manage'), zValidator('json
     requestId: reqId,
   });
 
+  await sendNotification(c.env, {
+    recipientId: targetId,
+    type: 'role_changed',
+    title: 'บทบาทของท่านมีการเปลี่ยนแปลง',
+    body: 'ท่านได้รับมอบหมายบทบาทใหม่ กรุณาเข้าสู่ระบบใหม่หากเมนูยังไม่อัปเดต',
+  });
+
   return c.json(ok(reqId, { assigned: true }), 201);
 });
 
@@ -183,7 +189,7 @@ usersRoute.delete('/:id/roles/:roleId', requirePermission('role.manage'), async 
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const targetId = c.req.param('id');
+  const targetId = c.req.param('id')!; // ดูคำอธิบายที่ POST /:id/roles ด้านบน
   const roleId = c.req.param('roleId');
 
   const { error } = await supabase.from('user_roles').delete().eq('user_id', targetId).eq('role_id', roleId);
@@ -201,6 +207,13 @@ usersRoute.delete('/:id/roles/:roleId', requirePermission('role.manage'), async 
     targetId,
     detail: { roleId },
     requestId: reqId,
+  });
+
+  await sendNotification(c.env, {
+    recipientId: targetId,
+    type: 'role_changed',
+    title: 'บทบาทของท่านมีการเปลี่ยนแปลง',
+    body: 'บทบาทหนึ่งของท่านถูกถอดถอน กรุณาเข้าสู่ระบบใหม่หากเมนูยังไม่อัปเดต',
   });
 
   return c.json(ok(reqId, { removed: true }));

@@ -1,3 +1,4 @@
+import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const inviteUserSchema = z.object({
@@ -28,9 +29,7 @@ export const assignRoleSchema = z.object({
 
 export type AssignRoleInput = z.infer<typeof assignRoleSchema>;
 
-export const listUsersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+export const listUsersQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
 });
 

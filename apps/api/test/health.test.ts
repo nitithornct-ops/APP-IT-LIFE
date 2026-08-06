@@ -12,7 +12,10 @@ const testEnv: Bindings = {
 };
 
 describe('GET /api/v1/health', () => {
-  it('returns the standard success envelope', async () => {
+  it('returns the standard success envelope, reporting the database check as degraded when unreachable', async () => {
+    // testEnv ไม่ได้ชี้ไปยัง Supabase Project จริง — checkDatabase() จึงต้อง error ออกมาเป็น
+    // 'error' เสมอ (ไม่ throw/ไม่ค้าง) และ endpoint เองยังต้องตอบ 200 (ตัว API ยังทำงานอยู่ แค่
+    // dependency ล่ม) การทดสอบกับ Supabase Project จริงที่ต่อได้อยู่นอกขอบเขตของ unit test ชุดนี้
     const res = await app.request('/api/v1/health', {}, testEnv);
     expect(res.status).toBe(200);
 
@@ -20,12 +23,13 @@ describe('GET /api/v1/health', () => {
     expect(body.success).toBe(true);
     if (!body.success) throw new Error('expected a success response');
 
-    expect(body.data.status).toBe('ok');
+    expect(body.data.status).toBe('degraded');
+    expect(body.data.checks.database).toBe('error');
     expect(body.data.service).toBe('itlife-api');
     expect(body.data.environment).toBe('test');
     expect(body.meta.requestId).toBeTruthy();
     expect(body.meta.timestamp).toBeTruthy();
-  });
+  }, 10000);
 });
 
 describe('GET /unknown-route', () => {

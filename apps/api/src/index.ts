@@ -4,8 +4,10 @@ import { errorHandler } from './middleware/errorHandler';
 import { requestId } from './middleware/requestId';
 import { auditLogsRoute } from './routes/auditLogs';
 import { authRoute } from './routes/auth';
+import { filesRoute } from './routes/files';
 import { healthRoute } from './routes/health';
 import { departmentsRoute, positionsRoute } from './routes/masterData';
+import { notificationsRoute } from './routes/notifications';
 import { permissionsRoute, rolesRoute } from './routes/roles';
 import { usersRoute } from './routes/users';
 import type { AppEnv } from './types';
@@ -38,6 +40,8 @@ app.route('/api/v1/permissions', permissionsRoute);
 app.route('/api/v1/departments', departmentsRoute);
 app.route('/api/v1/positions', positionsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
+app.route('/api/v1/notifications', notificationsRoute);
+app.route('/api/v1/files', filesRoute);
 
 app.notFound((c) => c.json(fail(c.get('requestId'), 'NOT_FOUND', 'ไม่พบ endpoint ที่ร้องขอ'), 404));
 
