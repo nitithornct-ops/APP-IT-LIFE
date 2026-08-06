@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (22 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (23 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -44,7 +44,8 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('position.manage', 'position', 'manage', 'จัดการข้อมูลตำแหน่ง', 'active'),
   ('audit.view', 'audit', 'view', 'ดู Audit Log และ Login Log', 'active'),
   ('ticket_category.manage', 'ticket_category', 'manage', 'จัดการหมวดหมู่ Ticket และค่า SLA ตั้งต้น', 'active'),
-  ('asset_category.manage', 'asset_category', 'manage', 'จัดการหมวดหมู่ทรัพย์สิน', 'active')
+  ('asset_category.manage', 'asset_category', 'manage', 'จัดการหมวดหมู่ทรัพย์สิน', 'active'),
+  ('approval_group.manage', 'approval_group', 'manage', 'จัดการกลุ่มอนุมัติและสมาชิกกลุ่ม', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------

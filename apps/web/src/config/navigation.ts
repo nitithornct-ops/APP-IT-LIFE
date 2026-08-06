@@ -1,4 +1,4 @@
-import { Activity, ClipboardList, KeyRound, LayoutDashboard, ShieldCheck, Tags, UserCircle, Users } from 'lucide-react';
+import { Activity, ClipboardList, KeyRound, LayoutDashboard, ShieldCheck, Tags, UserCircle, Users, Users2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface NavItem {
@@ -41,6 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Tags,
         anyPermission: ['ticket_category.manage', 'asset_category.manage'],
       },
+      { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
     ],
   },

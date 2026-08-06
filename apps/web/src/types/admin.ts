@@ -92,6 +92,43 @@ export interface AssetCategory {
   notes: string | null;
 }
 
+export interface PermissionOverride {
+  id: string;
+  user_id: string;
+  permission_id: string;
+  effect: 'allow' | 'deny';
+  start_at: string | null;
+  end_at: string | null;
+  reason: string;
+  status: 'active' | 'inactive';
+  approved_by: string | null;
+  permissions: { key: string; module_key: string; description: string | null } | null;
+}
+
+export interface ApprovalGroup {
+  id: string;
+  code: string;
+  name: string;
+  department_id: string | null;
+  description: string | null;
+  owner_id: string | null;
+  notes: string | null;
+  status: 'active' | 'inactive';
+}
+
+export interface ApprovalGroupMember {
+  id: string;
+  group_id: string;
+  user_id: string;
+  member_role: 'primary' | 'member' | 'backup';
+  priority: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  status: 'active' | 'inactive';
+  notes: string | null;
+  profiles: { full_name: string; email: string } | null;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };

@@ -26,6 +26,7 @@ export const DEFAULT_PERMISSION_KEYS = [
   'audit.view',
   'ticket_category.manage',
   'asset_category.manage',
+  'approval_group.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

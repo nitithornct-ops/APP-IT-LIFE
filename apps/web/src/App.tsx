@@ -20,6 +20,9 @@ const AuditLogsPage = lazy(() => import('./features/admin/AuditLogsPage').then((
 const MasterDataPage = lazy(() =>
   import('./features/admin/MasterDataPage').then((m) => ({ default: m.MasterDataPage })),
 );
+const ApprovalGroupsPage = lazy(() =>
+  import('./features/admin/ApprovalGroupsPage').then((m) => ({ default: m.ApprovalGroupsPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -82,6 +85,16 @@ export function App() {
             <ProtectedRoute>
               <Suspense fallback={<LazyPageFallback />}>
                 <MasterDataPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/approval-groups"
+          element={
+            <ProtectedRoute permission="approval_group.manage">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ApprovalGroupsPage />
               </Suspense>
             </ProtectedRoute>
           }

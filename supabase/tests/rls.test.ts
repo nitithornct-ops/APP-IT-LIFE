@@ -41,11 +41,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 22 permissions', async () => {
+  it('seeds 9 roles and 23 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(22);
+    expect((permissions.rows[0] as { count: number }).count).toBe(23);
   });
 });
 
@@ -191,6 +191,89 @@ describe('ticket_categories / asset_categories RLS (Master Data, Phase 6)', () =
       asServiceRole(db, async () =>
         db.query(
           `insert into public.ticket_categories (name, default_priority) values ('ทดสอบ-invalid', 'ด่วนสุด')`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
+describe('user_permission_overrides uniqueness (Phase 6 Module 2)', () => {
+  it('rejects a second override row for the same user + permission (one governed row per key)', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.user_permission_overrides (user_id, permission_id, effect, reason, status)
+         select $1, id, 'allow', 'ทดสอบ unique ครั้งที่ 1', 'active'
+         from public.permissions where key = 'asset.view'`,
+        [AUDITOR_ID],
+      );
+    });
+
+    await expect(
+      asServiceRole(db, async () => {
+        await db.query(
+          `insert into public.user_permission_overrides (user_id, permission_id, effect, reason, status)
+           select $1, id, 'deny', 'ทดสอบ unique ครั้งที่ 2', 'active'
+           from public.permissions where key = 'asset.view'`,
+          [AUDITOR_ID],
+        );
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe('approval_groups / approval_group_members RLS (Phase 6 Module 2)', () => {
+  let groupId: string;
+
+  it('lets any authenticated user read approval_groups', async () => {
+    await asServiceRole(db, async () => {
+      const inserted = await db.query(
+        `insert into public.approval_groups (code, name) values ('IT-CHANGE', 'กลุ่มอนุมัติ Change ฝ่ายไอที') returning id`,
+      );
+      groupId = (inserted.rows[0] as { id: string }).id;
+    });
+
+    const result = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.approval_groups'));
+    expect(result.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects a plain user writing to approval_groups without approval_group.manage', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.approval_groups (code, name) values ('REJECT-1', 'ทดสอบ-rejected')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid approval_groups.code format', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.approval_groups (code, name) values ('bad code!', 'รูปแบบรหัสไม่ถูกต้อง')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets super_admin (has approval_group.manage) add a member and read it back', async () => {
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(
+        `insert into public.approval_group_members (group_id, user_id, member_role, priority)
+         values ($1, $2, 'primary', 10) returning id`,
+        [groupId, REGULAR_USER_ID],
+      ),
+    );
+    expect(inserted.rows).toHaveLength(1);
+
+    const readBack = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.approval_group_members where group_id = $1', [groupId]),
+    );
+    expect(readBack.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects a duplicate member (same user twice in the same group)', async () => {
+    await expect(
+      asUser(db, SUPER_ADMIN_ID, async () =>
+        db.query(
+          `insert into public.approval_group_members (group_id, user_id) values ($1, $2)`,
+          [groupId, REGULAR_USER_ID],
         ),
       ),
     ).rejects.toThrow();
