@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (24 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (31 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -46,7 +46,14 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('ticket_category.manage', 'ticket_category', 'manage', 'จัดการหมวดหมู่ Ticket และค่า SLA ตั้งต้น', 'active'),
   ('asset_category.manage', 'asset_category', 'manage', 'จัดการหมวดหมู่ทรัพย์สิน', 'active'),
   ('approval_group.manage', 'approval_group', 'manage', 'จัดการกลุ่มอนุมัติและสมาชิกกลุ่ม', 'active'),
-  ('employee.manage', 'employee', 'manage', 'จัดการทะเบียนพนักงาน', 'active')
+  ('employee.manage', 'employee', 'manage', 'จัดการทะเบียนพนักงาน', 'active'),
+  ('service_catalog.manage', 'service_catalog', 'manage', 'จัดการรายการบริการใน Catalog', 'active'),
+  ('service_request.view', 'service_request', 'view', 'ดูคำขอบริการทั้งหมด', 'active'),
+  ('service_request.create', 'service_request', 'create', 'ยื่นคำขอบริการใหม่', 'active'),
+  ('service_request.update', 'service_request', 'update', 'แก้ไข/ดำเนินการคำขอบริการ', 'active'),
+  ('service_request.assign', 'service_request', 'assign', 'มอบหมายผู้รับผิดชอบคำขอบริการ', 'active'),
+  ('service_request.close', 'service_request', 'close', 'ปิดงานคำขอบริการ', 'active'),
+  ('service_request.approve', 'service_request', 'approve', 'อนุมัติคำขอบริการ (สิทธิ์เสริมนอกกลุ่มอนุมัติ)', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -70,17 +77,22 @@ from (values
   ('technician', 'ticket.assign'),
   ('technician', 'asset.view'),
   ('technician', 'incident.view'),
+  ('technician', 'service_request.view'),
+  ('technician', 'service_request.update'),
+  ('technician', 'service_request.assign'),
 
   ('approver', 'dashboard.view'),
   ('approver', 'ticket.view'),
   ('approver', 'incident.view'),
   ('approver', 'report.export'),
+  ('approver', 'service_request.view'),
 
   ('manager', 'dashboard.view'),
   ('manager', 'ticket.view'),
   ('manager', 'asset.view'),
   ('manager', 'incident.view'),
   ('manager', 'report.export'),
+  ('manager', 'service_request.view'),
 
   ('executive', 'dashboard.view'),
   ('executive', 'ticket.view'),
@@ -88,6 +100,7 @@ from (values
   ('executive', 'incident.view'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
+  ('executive', 'service_request.view'),
 
   ('auditor', 'dashboard.view'),
   ('auditor', 'ticket.view'),
@@ -96,6 +109,7 @@ from (values
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),
+  ('auditor', 'service_request.view'),
 
   ('dpo', 'dashboard.view'),
   ('dpo', 'incident.view'),
@@ -104,7 +118,9 @@ from (values
 
   ('user', 'dashboard.view'),
   ('user', 'ticket.view'),
-  ('user', 'ticket.create')
+  ('user', 'ticket.create'),
+  ('user', 'service_request.view'),
+  ('user', 'service_request.create')
 ) as mapping(role_key, permission_key)
 join public.roles r on r.key = mapping.role_key
 join public.permissions p on p.key = mapping.permission_key

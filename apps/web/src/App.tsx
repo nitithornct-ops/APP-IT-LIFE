@@ -24,9 +24,18 @@ const ApprovalGroupsPage = lazy(() =>
   import('./features/admin/ApprovalGroupsPage').then((m) => ({ default: m.ApprovalGroupsPage })),
 );
 const EmployeesPage = lazy(() => import('./features/admin/EmployeesPage').then((m) => ({ default: m.EmployeesPage })));
+const ServiceCatalogPage = lazy(() =>
+  import('./features/admin/ServiceCatalogPage').then((m) => ({ default: m.ServiceCatalogPage })),
+);
 const TicketsPage = lazy(() => import('./features/tickets/TicketsPage').then((m) => ({ default: m.TicketsPage })));
 const TicketDetailPage = lazy(() =>
   import('./features/tickets/TicketDetailPage').then((m) => ({ default: m.TicketDetailPage })),
+);
+const ServiceRequestsPage = lazy(() =>
+  import('./features/serviceRequests/ServiceRequestsPage').then((m) => ({ default: m.ServiceRequestsPage })),
+);
+const ServiceRequestDetailPage = lazy(() =>
+  import('./features/serviceRequests/ServiceRequestDetailPage').then((m) => ({ default: m.ServiceRequestDetailPage })),
 );
 
 function LazyPageFallback() {
@@ -70,6 +79,26 @@ export function App() {
             <ProtectedRoute permission="ticket.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <TicketDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-requests"
+          element={
+            <ProtectedRoute permission="service_request.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ServiceRequestsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-requests/:id"
+          element={
+            <ProtectedRoute permission="service_request.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ServiceRequestDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -120,6 +149,16 @@ export function App() {
             <ProtectedRoute permission="employee.manage">
               <Suspense fallback={<LazyPageFallback />}>
                 <EmployeesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/service-catalog"
+          element={
+            <ProtectedRoute permission="service_catalog.manage">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ServiceCatalogPage />
               </Suspense>
             </ProtectedRoute>
           }

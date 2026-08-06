@@ -4,6 +4,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ShieldCheck,
+  ShoppingBag,
   Tags,
   Ticket,
   UserCircle,
@@ -39,7 +40,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'บริการ',
-    items: [{ label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' }],
+    items: [
+      { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
+      { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
+    ],
   },
   {
     title: 'บัญชีของฉัน',
@@ -58,6 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
         anyPermission: ['ticket_category.manage', 'asset_category.manage'],
       },
       { label: 'พนักงาน', path: '/admin/employees', icon: UserSquare2, permission: 'employee.manage' },
+      { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
     ],

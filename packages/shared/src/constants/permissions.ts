@@ -28,6 +28,13 @@ export const DEFAULT_PERMISSION_KEYS = [
   'asset_category.manage',
   'approval_group.manage',
   'employee.manage',
+  'service_catalog.manage',
+  'service_request.view',
+  'service_request.create',
+  'service_request.update',
+  'service_request.assign',
+  'service_request.close',
+  'service_request.approve',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

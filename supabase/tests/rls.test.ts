@@ -9,6 +9,9 @@ const SECOND_SUPER_ADMIN_ID = '00000000-0000-0000-0000-000000000004';
 // ไม่มี role ใดๆ เลย จึงไม่มี permission ใดๆ เลยจาก has_permission() — ใช้ยืนยันกรณี
 // "ไม่เกี่ยวข้องกับ record นี้เลย" ที่ต้องแยกจาก auditor/user ซึ่ง seed เริ่มต้นให้ ticket.view มาด้วย
 const NO_ROLE_USER_ID = '00000000-0000-0000-0000-000000000005';
+// role 'user' ธรรมดา ไม่มี service_request.view/approve ใดๆ — ใช้ยืนยันว่าการมองเห็น/อนุมัติคำขอ
+// รออนุมัติมาจาก "เป็นสมาชิกกลุ่มอนุมัติ" ล้วนๆ ไม่ใช่จาก permission
+const APPROVAL_GROUP_MEMBER_ID = '00000000-0000-0000-0000-000000000006';
 
 let db: PGlite;
 
@@ -30,6 +33,7 @@ beforeAll(async () => {
   await createUserWithRole(REGULAR_USER_ID, 'user@test.local', 'user');
   await createUserWithRole(AUDITOR_ID, 'auditor@test.local', 'auditor');
   await createUserWithRole(SECOND_SUPER_ADMIN_ID, 'super-admin-2@test.local', 'super_admin');
+  await createUserWithRole(APPROVAL_GROUP_MEMBER_ID, 'approver-member@test.local', 'user');
 
   await asServiceRole(db, async () => {
     await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
@@ -48,11 +52,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 24 permissions', async () => {
+  it('seeds 9 roles and 31 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(24);
+    expect((permissions.rows[0] as { count: number }).count).toBe(31);
   });
 });
 
@@ -450,6 +454,168 @@ describe('tickets / ticket_worklogs RLS (Phase 6 Module 4)', () => {
 
     const asUnrelated = await asUser(db, NO_ROLE_USER_ID, async () =>
       db.query('select id from public.file_attachments where target_id = $1', [ticketId]),
+    );
+    expect(asUnrelated.rows).toHaveLength(0);
+  });
+});
+
+describe('service_catalog / service_requests RLS (Phase 6 Module 5)', () => {
+  let groupId: string;
+  let catalogId: string;
+  let requestId: string;
+
+  it('lets any authenticated user read service_catalog, but rejects a plain user writing to it', async () => {
+    await asServiceRole(db, async () => {
+      const group = await db.query(
+        `insert into public.approval_groups (code, name) values ('SVC-APPROVE', 'กลุ่มอนุมัติคำขอบริการ') returning id`,
+      );
+      groupId = (group.rows[0] as { id: string }).id;
+      await db.query(
+        `insert into public.approval_group_members (group_id, user_id, member_role) values ($1, $2, 'primary')`,
+        [groupId, APPROVAL_GROUP_MEMBER_ID],
+      );
+    });
+
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(
+        `insert into public.service_catalog (service_code, service_name, status, approval_mode, approval_group_id)
+         values ('SVC-001', 'ขอเปลี่ยนรหัสผ่าน', 'active', 'group', $1) returning id`,
+        [groupId],
+      ),
+    );
+    catalogId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const readBack = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.service_catalog'));
+    expect(readBack.rows.length).toBeGreaterThanOrEqual(1);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.service_catalog (service_code, service_name) values ('SVC-REJECT', 'ทดสอบ-rejected')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects approval_mode = group without an approval_group_id (check constraint)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.service_catalog (service_code, service_name, approval_mode) values ('SVC-BAD', 'ไม่มีกลุ่มอนุมัติ', 'group')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester (user role, has service_request.create) submit a request for themselves', async () => {
+    const inserted = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(
+        `insert into public.service_requests
+           (catalog_id, service_code, service_name, requester_id, summary, approval_mode, approval_group_id, status, approval_status)
+         values ($1, 'SVC-001', 'ขอเปลี่ยนรหัสผ่าน', $2, 'ทดสอบยื่นคำขอ', 'group', $3, 'รออนุมัติ', 'pending')
+         returning id`,
+        [catalogId, REGULAR_USER_ID, groupId],
+      ),
+    );
+    requestId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+  });
+
+  it('rejects submitting a request on behalf of someone else (requester_id must be self)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(
+          `insert into public.service_requests (catalog_id, service_code, service_name, requester_id, summary)
+           values ($1, 'SVC-001', 'ขอเปลี่ยนรหัสผ่าน', $2, 'สวมรอย')`,
+          [catalogId, SUPER_ADMIN_ID],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the requester see their own request, hides it from an unrelated no-role user, but shows it to the approval group member', async () => {
+    const ownView = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.service_requests where id = $1', [requestId]),
+    );
+    expect(ownView.rows).toHaveLength(1);
+
+    const unrelatedView = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.service_requests where id = $1', [requestId]),
+    );
+    expect(unrelatedView.rows).toHaveLength(0);
+
+    // ไม่มี service_request.view/approve ใดๆ — มองเห็นได้เพราะเป็นสมาชิกกลุ่มอนุมัติที่ผูกกับคำขอนี้เท่านั้น
+    const approverView = await asUser(db, APPROVAL_GROUP_MEMBER_ID, async () =>
+      db.query('select id from public.service_requests where id = $1', [requestId]),
+    );
+    expect(approverView.rows).toHaveLength(1);
+  });
+
+  it('lets the approval group member approve (update) the request purely via group membership, not permission', async () => {
+    const updated = await asUser(db, APPROVAL_GROUP_MEMBER_ID, async () =>
+      db.query(
+        `update public.service_requests set status = 'รอมอบหมาย', approval_status = 'approved', approved_by = $1 where id = $2 returning id`,
+        [APPROVAL_GROUP_MEMBER_ID, requestId],
+      ),
+    );
+    expect(updated.rows).toHaveLength(1);
+
+    const historyInsert = await asUser(db, APPROVAL_GROUP_MEMBER_ID, async () =>
+      db.query(
+        `insert into public.service_request_history (request_id, action, status_from, status_to, actor_id)
+         values ($1, 'อนุมัติคำขอ', 'รออนุมัติ', 'รอมอบหมาย', $2) returning id`,
+        [requestId, APPROVAL_GROUP_MEMBER_ID],
+      ),
+    );
+    expect(historyInsert.rows).toHaveLength(1);
+  });
+
+  it('rejects a plain requester writing a service_request_tasks row directly (staff-only action)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.service_request_tasks (request_id, task_name) values ($1, 'แอบเขียน Checklist')`, [requestId]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets super_admin (has service_request.update) create a task, and the requester can read it back', async () => {
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`insert into public.service_request_tasks (request_id, task_name, sequence) values ($1, 'ตรวจสอบสิทธิ์', 1) returning id`, [
+        requestId,
+      ]),
+    );
+    expect(inserted.rows).toHaveLength(1);
+
+    const asRequester = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.service_request_tasks where request_id = $1', [requestId]),
+    );
+    expect(asRequester.rows.length).toBeGreaterThanOrEqual(1);
+
+    const asUnrelated = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.service_request_tasks where request_id = $1', [requestId]),
+    );
+    expect(asUnrelated.rows).toHaveLength(0);
+  });
+
+  it('rejects an invalid service_requests status value outside the fixed state machine', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.service_requests set status = 'ไม่มีอยู่จริง' where id = $1`, [requestId])),
+    ).rejects.toThrow();
+  });
+
+  it('lets a request participant (requester) see file_attachments uploaded by staff for that request', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.file_attachments (storage_path, original_filename, mime_type, size_bytes, module, target_table, target_id, uploaded_by)
+         values ($1, 'evidence-svc.png', 'image/png', 1024, 'service_request', 'service_requests', $2, $3)`,
+        [`${SUPER_ADMIN_ID}/evidence-svc.png`, requestId, SUPER_ADMIN_ID],
+      );
+    });
+
+    const asRequester = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.file_attachments where target_id = $1', [requestId]),
+    );
+    expect(asRequester.rows.length).toBeGreaterThanOrEqual(1);
+
+    const asUnrelated = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.file_attachments where target_id = $1', [requestId]),
     );
     expect(asUnrelated.rows).toHaveLength(0);
   });

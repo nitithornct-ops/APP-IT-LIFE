@@ -12,6 +12,8 @@ import { assetCategoriesRoute, departmentsRoute, positionsRoute, ticketCategorie
 import { notificationsRoute } from './routes/notifications';
 import { permissionOverridesRoute } from './routes/permissionOverrides';
 import { permissionsRoute, rolesRoute } from './routes/roles';
+import { serviceCatalogRoute } from './routes/serviceCatalog';
+import { serviceRequestsRoute } from './routes/serviceRequests';
 import { ticketsRoute } from './routes/tickets';
 import { usersRoute } from './routes/users';
 import type { AppEnv } from './types';
@@ -49,6 +51,8 @@ app.route('/api/v1/permission-overrides', permissionOverridesRoute);
 app.route('/api/v1/approval-groups', approvalGroupsRoute);
 app.route('/api/v1/employees', employeesRoute);
 app.route('/api/v1/tickets', ticketsRoute);
+app.route('/api/v1/service-catalog', serviceCatalogRoute);
+app.route('/api/v1/service-requests', serviceRequestsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);

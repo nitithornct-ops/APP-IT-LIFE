@@ -61,7 +61,13 @@ describe('my_permissions()', () => {
     expect((viaHelper.rows as { permission_key: string }[]).map((r) => r.permission_key)).toEqual(
       viaDirectCheck.sort(),
     );
-    expect(viaDirectCheck).toEqual(['dashboard.view', 'ticket.create', 'ticket.view']);
+    expect(viaDirectCheck).toEqual([
+      'dashboard.view',
+      'service_request.create',
+      'service_request.view',
+      'ticket.create',
+      'ticket.view',
+    ]);
   });
 
   it('returns the full permission catalog for super_admin', async () => {
