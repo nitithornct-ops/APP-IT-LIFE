@@ -58,11 +58,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 37 permissions', async () => {
+  it('seeds 9 roles and 38 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(37);
+    expect((permissions.rows[0] as { count: number }).count).toBe(38);
   });
 });
 
@@ -754,6 +754,118 @@ describe('access_systems / access_requests / user_access_registry RLS (Phase 6 M
       db.query('select id from public.user_access_registry where user_id = $1', [REGULAR_USER_ID]),
     );
     expect(unrelatedView.rows).toHaveLength(0);
+  });
+});
+
+describe('personal_tasks / task_subtasks / task_progress_logs / task_links RLS (Phase 6 Module 7)', () => {
+  let taskId: string;
+  let ownSubtaskId: string;
+
+  it('lets the owner create and read their own task', async () => {
+    const inserted = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(`insert into public.personal_tasks (owner_id, title) values ($1, 'ทดสอบงานส่วนตัว') returning id`, [REGULAR_USER_ID]),
+    );
+    taskId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const readBack = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.personal_tasks where id = $1', [taskId]),
+    );
+    expect(readBack.rows).toHaveLength(1);
+  });
+
+  it('rejects creating a task with someone else as owner_id (owner_id must be self)', async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.personal_tasks (owner_id, title) values ($1, 'สวมรอย')`, [SUPER_ADMIN_ID]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  // ต่างจากทุกโมดูลก่อนหน้า (Ticket/Service Request/Access Request) — โมดูลนี้ไม่มี staff-bypass ใดๆ
+  // เลย ระบบเดิมระบุชัดว่า "ผู้ดูแลระบบก็ไม่เห็นงานของผู้ใช้อื่นผ่านโมดูลนี้" (ดู header comment ของ
+  // 20260813100000_tasks.sql) จึงต้องยืนยันว่าแม้ super_admin (มี permission ทุกตัว) ก็ยังมองไม่เห็น
+  it('hides the task from every other user, including super_admin (no staff-bypass — fully personal module)', async () => {
+    const otherView = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.personal_tasks where id = $1', [taskId]));
+    expect(otherView.rows).toHaveLength(0);
+
+    const adminView = await asUser(db, SUPER_ADMIN_ID, async () => db.query('select id from public.personal_tasks where id = $1', [taskId]));
+    expect(adminView.rows).toHaveLength(0);
+  });
+
+  it('silently updates zero rows when a different user (even super_admin) tries to edit the task', async () => {
+    const result = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`update public.personal_tasks set title = 'แก้ไขโดยคนอื่น' where id = $1 returning id`, [taskId]),
+    );
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it('rejects an invalid status value outside the fixed list', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.personal_tasks set status = 'ไม่มีอยู่จริง' where id = $1`, [taskId])),
+    ).rejects.toThrow();
+  });
+
+  it('lets the owner add a subtask under their own task', async () => {
+    const inserted = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(`insert into public.task_subtasks (task_id, owner_id, title) values ($1, $2, 'รายการย่อย') returning id`, [
+        taskId,
+        REGULAR_USER_ID,
+      ]),
+    );
+    ownSubtaskId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+  });
+
+  // RLS ของตารางลูกตรวจแค่ owner_id = auth.uid() ระดับแถวของตัวเอง ไม่ join ไปตรวจว่า task_id เป็นของ
+  // owner คนเดียวกันจริง (ดู comment ใน migration) — Backend (routes/tasks.ts) เป็นผู้ตรวจ ownership
+  // ของ taskId ก่อน insert เสมอ ทดสอบนี้ยืนยันพฤติกรรมของ RLS ตรงๆ ไม่ใช่ช่องโหว่ด้านข้อมูล เพราะแถวที่
+  // ได้ยังคงมองเห็นได้เฉพาะเจ้าของแถว (auditor) เท่านั้น ไม่รั่วไปยังเจ้าของ task จริง
+  it('permits owner_id=self on a foreign task_id at the RLS layer (backend enforces task ownership, not RLS)', async () => {
+    const crossInsert = await asUser(db, AUDITOR_ID, async () =>
+      db.query(`insert into public.task_subtasks (task_id, owner_id, title) values ($1, $2, 'แถวของ auditor') returning id`, [
+        taskId,
+        AUDITOR_ID,
+      ]),
+    );
+    expect(crossInsert.rows).toHaveLength(1);
+
+    const ownerView = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.task_subtasks where task_id = $1', [taskId]),
+    );
+    expect(ownerView.rows).toEqual([{ id: ownSubtaskId }]);
+  });
+
+  it("rejects a plain user writing to task_progress_logs / task_links under someone else's owner_id", async () => {
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.task_progress_logs (task_id, owner_id, progress, note) values ($1, $2, 50, 'ทดสอบ')`, [
+          taskId,
+          AUDITOR_ID,
+        ]),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.task_links (task_id, owner_id, label, url) values ($1, $2, 'ลิงก์', 'https://example.test')`, [
+          taskId,
+          AUDITOR_ID,
+        ]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets the owner delete their own subtask; a different owner deleting it affects zero rows', async () => {
+    const otherAttempt = await asUser(db, AUDITOR_ID, async () =>
+      db.query('delete from public.task_subtasks where id = $1 returning id', [ownSubtaskId]),
+    );
+    expect(otherAttempt.rows).toHaveLength(0);
+
+    const ownAttempt = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('delete from public.task_subtasks where id = $1 returning id', [ownSubtaskId]),
+    );
+    expect(ownAttempt.rows).toHaveLength(1);
   });
 });
 

@@ -46,6 +46,7 @@ const AccessRequestDetailPage = lazy(() =>
 const AccessRegistryPage = lazy(() =>
   import('./features/admin/AccessRegistryPage').then((m) => ({ default: m.AccessRegistryPage })),
 );
+const TasksPage = lazy(() => import('./features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })));
 
 function LazyPageFallback() {
   return (
@@ -72,6 +73,16 @@ export function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route
+          path="/tasks"
+          element={
+            <ProtectedRoute permission="task.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <TasksPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/tickets"
           element={

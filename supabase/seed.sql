@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (37 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (38 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -59,7 +59,8 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('access_request.create', 'access_request', 'create', 'ยื่นคำขอสิทธิ์ระบบใหม่', 'active'),
   ('access_request.approve', 'access_request', 'approve', 'อนุมัติคำขอสิทธิ์ระบบ (สิทธิ์เสริมนอกเหนือหัวหน้างาน)', 'active'),
   ('access_request.process', 'access_request', 'process', 'ดำเนินการให้สิทธิ์จริง (IT)', 'active'),
-  ('access_registry.manage', 'access_registry', 'manage', 'ทบทวน/เพิกถอนสิทธิ์ในทะเบียน RBAC', 'active')
+  ('access_registry.manage', 'access_registry', 'manage', 'ทบทวน/เพิกถอนสิทธิ์ในทะเบียน RBAC', 'active'),
+  ('task.view', 'task', 'view', 'เข้าถึงงานของฉัน (Task ส่วนตัว)', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ insert into public.role_permissions (role_id, permission_id, effect)
 select r.id, p.id, 'allow'
 from (values
   ('technician', 'dashboard.view'),
+  ('technician', 'task.view'),
   ('technician', 'ticket.view'),
   ('technician', 'ticket.update'),
   ('technician', 'ticket.assign'),
@@ -89,6 +91,7 @@ from (values
   ('technician', 'access_request.view'),
 
   ('approver', 'dashboard.view'),
+  ('approver', 'task.view'),
   ('approver', 'ticket.view'),
   ('approver', 'incident.view'),
   ('approver', 'report.export'),
@@ -96,6 +99,7 @@ from (values
   ('approver', 'access_request.view'),
 
   ('manager', 'dashboard.view'),
+  ('manager', 'task.view'),
   ('manager', 'ticket.view'),
   ('manager', 'asset.view'),
   ('manager', 'incident.view'),
@@ -104,6 +108,7 @@ from (values
   ('manager', 'access_request.view'),
 
   ('executive', 'dashboard.view'),
+  ('executive', 'task.view'),
   ('executive', 'ticket.view'),
   ('executive', 'asset.view'),
   ('executive', 'incident.view'),
@@ -113,6 +118,7 @@ from (values
   ('executive', 'access_request.view'),
 
   ('auditor', 'dashboard.view'),
+  ('auditor', 'task.view'),
   ('auditor', 'ticket.view'),
   ('auditor', 'asset.view'),
   ('auditor', 'incident.view'),
@@ -123,11 +129,13 @@ from (values
   ('auditor', 'access_request.view'),
 
   ('dpo', 'dashboard.view'),
+  ('dpo', 'task.view'),
   ('dpo', 'incident.view'),
   ('dpo', 'report.export'),
   ('dpo', 'audit.view'),
 
   ('user', 'dashboard.view'),
+  ('user', 'task.view'),
   ('user', 'ticket.view'),
   ('user', 'ticket.create'),
   ('user', 'service_request.view'),

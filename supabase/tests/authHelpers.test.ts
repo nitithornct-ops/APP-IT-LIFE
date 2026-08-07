@@ -67,6 +67,7 @@ describe('my_permissions()', () => {
       'dashboard.view',
       'service_request.create',
       'service_request.view',
+      'task.view',
       'ticket.create',
       'ticket.view',
     ]);
