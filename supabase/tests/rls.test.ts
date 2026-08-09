@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 56 permissions', async () => {
+  it('seeds 9 roles and 60 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(56);
+    expect((permissions.rows[0] as { count: number }).count).toBe(60);
   });
 });
 
@@ -1560,6 +1560,68 @@ describe('change_requests RLS and workflow (Phase 6 Module 12 Change)', () => {
       `insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type)
        values ('Change', $1, 'Change', $2, 'CHANGED_BY') returning id`,
       [changeId, secondId],
+    ));
+    expect(relationship.rows).toHaveLength(1);
+  });
+});
+
+describe('vendors / contracts RLS and normalization (Phase 6 Module 13)', () => {
+  let vendorId: string;
+  let contractId: string;
+
+  it('lets a technician manage vendors and contracts with normalized ownership', async () => {
+    const vendor = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.vendors (vendor_code, name, service_type, owner_id)
+       values ('VND-RLS-001', 'ผู้ให้บริการทดสอบ RLS', 'ผู้ให้บริการ MA', $1) returning id`,
+      [TECHNICIAN_ID],
+    ));
+    vendorId = (vendor.rows[0] as { id: string }).id;
+
+    const contract = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.contracts (contract_number, name, vendor_id, contract_type, start_date, end_date, status)
+       values ('CT-RLS-001', 'สัญญาทดสอบ RLS', $1, 'Maintenance', '2026-01-01', '2026-12-31', 'Active') returning id`,
+      [vendorId],
+    ));
+    contractId = (contract.rows[0] as { id: string }).id;
+    expect(contract.rows).toHaveLength(1);
+  });
+
+  it('lets an auditor read but not modify vendor/contract records', async () => {
+    const vendors = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.vendors where id = $1', [vendorId]));
+    const contracts = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.contracts where id = $1', [contractId]));
+    expect(vendors.rows).toHaveLength(1);
+    expect(contracts.rows).toHaveLength(1);
+
+    const updated = await asUser(db, AUDITOR_ID, async () => db.query(`update public.vendors set name = 'แก้ไขไม่ได้' where id = $1 returning id`, [vendorId]));
+    expect(updated.rows).toHaveLength(0);
+  });
+
+  it('hides the registers from a plain user and rejects direct writes', async () => {
+    const hidden = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.vendors where id = $1', [vendorId]));
+    expect(hidden.rows).toHaveLength(0);
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      `insert into public.vendors (vendor_code, name) values ('VND-DENIED', 'ต้องถูกปฏิเสธ')`,
+    ))).rejects.toThrow();
+  });
+
+  it('enforces contract date/number constraints and supports normalized Asset/CMDB links', async () => {
+    await expect(asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.contracts (contract_number, name, vendor_id, start_date, end_date)
+       values ('CT-RLS-BAD', 'ช่วงวันที่ผิด', $1, '2026-12-31', '2026-01-01')`,
+      [vendorId],
+    ))).rejects.toThrow();
+
+    const asset = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.assets (asset_code, name, vendor_id, contract_id)
+       values ('AST-VND-RLS', 'Asset ที่ผูกสัญญา', $1, $2) returning vendor_id, contract_id`,
+      [vendorId, contractId],
+    ));
+    expect(asset.rows).toEqual([{ vendor_id: vendorId, contract_id: contractId }]);
+
+    const relationship = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type)
+       values ('Vendor', $1, 'Contract', $2, 'COVERED_BY_CONTRACT') returning id`,
+      [vendorId, contractId],
     ));
     expect(relationship.rows).toHaveLength(1);
   });

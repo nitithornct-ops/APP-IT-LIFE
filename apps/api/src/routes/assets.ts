@@ -33,11 +33,12 @@ export const assetsRoute = new Hono<AppEnv>();
 assetsRoute.use('*', requireAuth);
 
 const ASSET_SELECT =
-  'id, asset_code, name, asset_type, category_id, brand, model, serial_number, vendor_name, ' +
+  'id, asset_code, name, asset_type, category_id, brand, model, serial_number, vendor_name, vendor_id, contract_id, ' +
   'purchase_date, warranty_expire, price, useful_life_years, license_no, license_expiry, location, ' +
   'department_id, owner_employee_id, patch_status, patch_date, criticality, status, qr_code_url, ' +
   'last_audit_date, audit_status, loan_date, loan_due_date, notes, remark, created_at, updated_at, ' +
   'category:asset_categories(id, name, code_prefix), department:departments(id, name_th), ' +
+  'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date), ' +
   'owner:employees(id, employee_code, first_name_th, last_name_th, nickname)';
 
 function daysUntil(dateStr: string | null | undefined): number | null {
@@ -93,6 +94,7 @@ interface MovementInput {
   fromEmployeeId?: string | null;
   toEmployeeId?: string | null;
   vendorName?: string | null;
+  vendorId?: string | null;
   departmentId?: string | null;
   location?: string | null;
   statusLabel?: string | null;
@@ -109,6 +111,7 @@ async function recordMovement(supabase: SupabaseClient, m: MovementInput) {
     from_employee_id: m.fromEmployeeId ?? null,
     to_employee_id: m.toEmployeeId ?? null,
     vendor_name: m.vendorName ?? null,
+    vendor_id: m.vendorId ?? null,
     department_id: m.departmentId ?? null,
     location: m.location ?? null,
     status_label: m.statusLabel ?? null,
@@ -175,7 +178,7 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
       .from('asset_movements')
       .select(
         'id, action_type, from_employee:employees!asset_movements_from_employee_id_fkey(first_name_th, last_name_th), ' +
-          'to_employee:employees!asset_movements_to_employee_id_fkey(first_name_th, last_name_th), vendor_name, ' +
+          'to_employee:employees!asset_movements_to_employee_id_fkey(first_name_th, last_name_th), vendor_name, vendor_id, vendor:vendors(id, vendor_code, name, status), ' +
           'department:departments(name_th), location, status_label, notes, due_date, condition, action_date',
       )
       .eq('asset_id', id)
@@ -217,6 +220,8 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
       model: body.model ?? null,
       serial_number: body.serialNumber ?? null,
       vendor_name: body.vendorName ?? null,
+      vendor_id: body.vendorId || null,
+      contract_id: body.contractId || null,
       purchase_date: body.purchaseDate || null,
       warranty_expire: body.warrantyExpire || null,
       price: body.price ?? null,
@@ -282,6 +287,8 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
   if (body.model !== undefined) patch.model = body.model;
   if (body.serialNumber !== undefined) patch.serial_number = body.serialNumber;
   if (body.vendorName !== undefined) patch.vendor_name = body.vendorName;
+  if (body.vendorId !== undefined) patch.vendor_id = body.vendorId || null;
+  if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.purchaseDate !== undefined) patch.purchase_date = body.purchaseDate || null;
   if (body.warrantyExpire !== undefined) patch.warranty_expire = body.warrantyExpire || null;
   if (body.price !== undefined) patch.price = body.price;
@@ -664,7 +671,14 @@ assetsRoute.post(
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
     const id = c.req.param('id')!;
-    const { vendorName, location, notes } = c.req.valid('json');
+    const { vendorName, vendorId, location, notes } = c.req.valid('json');
+    let resolvedVendorName = vendorName;
+    if (vendorId) {
+      const { data: vendor } = await supabase.from('vendors').select('name, status').eq('id', vendorId).maybeSingle();
+      if (!vendor) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการซ่อมที่เลือก'), 400);
+      if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'ผู้ให้บริการซ่อมที่เลือกถูกปิดใช้งาน'), 400);
+      resolvedVendorName = vendor.name;
+    }
 
     const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
     if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
@@ -685,7 +699,8 @@ assetsRoute.post(
       assetId: id,
       actionType: 'ส่งซ่อม',
       fromEmployeeId: current.owner_employee_id,
-      vendorName: vendorName ?? null,
+      vendorName: resolvedVendorName ?? null,
+      vendorId: vendorId ?? null,
       location: location ?? null,
       statusLabel: 'ส่งซ่อม',
       notes: notes ?? null,

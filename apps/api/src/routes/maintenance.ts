@@ -34,8 +34,9 @@ pmTemplatesRoute.use('*', requireAuth);
 
 const PLAN_SELECT =
   'id, asset_id, plan_date, actual_date, status, recurrence, next_due_date, technician_id, checklist_json, ' +
-  'result, notes, template_id, recurring_parent_id, created_at, updated_at, ' +
-  'asset:assets(id, asset_code, name), technician:employees(id, first_name_th, last_name_th, nickname)';
+  'result, notes, template_id, recurring_parent_id, vendor_id, contract_id, created_at, updated_at, ' +
+  'asset:assets(id, asset_code, name), technician:employees(id, first_name_th, last_name_th, nickname), ' +
+  'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
 
 function computeNextPmDate(baseDate: string, recurrence: string): string | null {
   if (!baseDate) return null;
@@ -117,6 +118,8 @@ maintenancePlansRoute.post(
         plan_date: body.planDate,
         recurrence: body.recurrence ?? 'ครั้งเดียว',
         technician_id: body.technicianId ?? null,
+        vendor_id: body.vendorId ?? null,
+        contract_id: body.contractId ?? null,
         template_id: body.templateId ?? null,
         checklist_json: checklist,
         notes: body.notes ?? null,
@@ -239,6 +242,8 @@ maintenancePlansRoute.post(
               plan_date: nextDueDate,
               recurrence: current.recurrence,
               technician_id: current.technician_id,
+              vendor_id: current.vendor_id,
+              contract_id: current.contract_id,
               template_id: current.template_id,
               checklist_json: resetChecklist(checklist),
               notes: `สร้างอัตโนมัติต่อจากแผน ${id}`,

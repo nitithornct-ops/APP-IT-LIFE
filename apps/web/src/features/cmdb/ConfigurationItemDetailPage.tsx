@@ -13,11 +13,13 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { CiNodeOption, ConfigurationItemDetail } from '../../types/cmdb';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
 import {
   CI_CRITICALITIES,
   CI_DATA_CLASSIFICATIONS,
   CI_ENVIRONMENTS,
+  CI_NODE_TYPES_ENABLED,
   CI_STATUSES,
   CI_TYPES,
   RELATIONSHIP_DIRECTIONS,
@@ -51,8 +53,8 @@ const editSchema = z.object({
   ipAddress: z.string().trim().optional(),
   url: z.string().trim().optional(),
   version: z.string().trim().optional(),
-  vendorName: z.string().trim().optional(),
-  contractRef: z.string().trim().optional(),
+  vendorId: z.string().optional(),
+  contractId: z.string().optional(),
   assetId: z.string().optional(),
   cloudRef: z.string().trim().optional(),
   dataClassification: z.enum(CI_DATA_CLASSIFICATIONS),
@@ -65,7 +67,7 @@ const editSchema = z.object({
 });
 type EditForm = z.infer<typeof editSchema>;
 
-function EditCiForm({ detail, employees, assetOptions, onClose }: { detail: ConfigurationItemDetail; employees: Employee[]; assetOptions: AssetOption[]; onClose: () => void }) {
+function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOptions, onClose }: { detail: ConfigurationItemDetail; employees: Employee[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
   const ci = detail.ci;
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -85,8 +87,8 @@ function EditCiForm({ detail, employees, assetOptions, onClose }: { detail: Conf
       ipAddress: ci.ip_address ?? '',
       url: ci.url ?? '',
       version: ci.version ?? '',
-      vendorName: ci.vendor_name ?? '',
-      contractRef: ci.contract_ref ?? '',
+      vendorId: ci.vendor_id ?? '',
+      contractId: ci.contract_id ?? '',
       assetId: ci.asset_id ?? '',
       cloudRef: ci.cloud_ref ?? '',
       dataClassification: ci.data_classification,
@@ -185,11 +187,11 @@ function EditCiForm({ detail, employees, assetOptions, onClose }: { detail: Conf
 
       <div>
         <label htmlFor="ed-vendor" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Vendor</label>
-        <input id="ed-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorName')} />
+        <select id="ed-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorId')}><option value="">— ไม่ผูก —</option>{vendorOptions.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
       </div>
       <div>
         <label htmlFor="ed-contract" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Contract Ref</label>
-        <input id="ed-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractRef')} />
+        <select id="ed-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractId')}><option value="">— ไม่ผูก —</option>{contractOptions.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
       </div>
       <div>
         <label htmlFor="ed-cloud" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Cloud Ref</label>
@@ -234,7 +236,7 @@ function EditCiForm({ detail, employees, assetOptions, onClose }: { detail: Conf
 
 const createRelSchema = z
   .object({
-    targetType: z.enum(['CI', 'Asset', 'Incident', 'Change']),
+    targetType: z.enum(CI_NODE_TYPES_ENABLED),
     targetId: z.string().min(1, 'กรุณาเลือกปลายทาง'),
     relationshipType: z.enum(RELATIONSHIP_TYPES_ENABLED),
     direction: z.enum(RELATIONSHIP_DIRECTIONS).optional(),
@@ -349,6 +351,8 @@ export function ConfigurationItemDetailPage() {
   });
   const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: showEdit });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options'), enabled: showEdit });
   const nodeOptionsQuery = useQuery({ queryKey: ['cmdb', 'node-options'], queryFn: () => apiFetch<CiNodeOption[]>('/api/v1/cmdb/relationships/node-options') });
 
   const statusMutation = useCiMutation(id ?? '', '/status');
@@ -393,8 +397,8 @@ export function ConfigurationItemDetailPage() {
         </div>
       </div>
 
-      {showEdit && employeesQuery.data && assetOptionsQuery.data && (
-        <EditCiForm detail={detailQuery.data} employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} onClose={() => setShowEdit(false)} />
+      {showEdit && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
+        <EditCiForm detail={detailQuery.data} employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -410,8 +414,8 @@ export function ConfigurationItemDetailPage() {
             <Info label="IP Address" value={ci.ip_address ?? '—'} />
             <Info label="URL" value={ci.url ?? '—'} />
             <Info label="Version" value={ci.version ?? '—'} />
-            <Info label="Vendor" value={ci.vendor_name ?? '—'} />
-            <Info label="Contract Ref" value={ci.contract_ref ?? '—'} />
+            <Info label="Vendor" value={ci.vendor?.name ?? ci.vendor_name ?? '—'} />
+            <Info label="Contract Ref" value={ci.contract ? `${ci.contract.contract_number} — ${ci.contract.name}` : ci.contract_ref ?? '—'} />
             <Info label="Asset ที่ผูก" value={ci.asset ? `${ci.asset.asset_code} — ${ci.asset.name}` : '—'} />
             <Info label="Cloud Ref" value={ci.cloud_ref ?? '—'} />
             <Info label="RPO / RTO" value={`${ci.rpo_hours ?? '—'} / ${ci.rto_hours ?? '—'} ชม.`} />

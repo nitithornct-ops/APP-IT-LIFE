@@ -21,6 +21,8 @@ export const createAssetSchema = z.object({
   model: z.string().trim().max(100).optional(),
   serialNumber: z.string().trim().max(100).optional(),
   vendorName: z.string().trim().max(100).optional(),
+  vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
   purchaseDate: dateOrEmpty,
   warrantyExpire: dateOrEmpty,
   price: z.coerce.number().nonnegative().optional(),
@@ -103,6 +105,7 @@ export type TransferAssetInput = z.infer<typeof transferAssetSchema>;
 
 export const sendAssetToRepairSchema = z.object({
   vendorName: z.string().trim().max(160).optional(),
+  vendorId: z.string().uuid().optional(),
   location: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(500).optional(),
 });

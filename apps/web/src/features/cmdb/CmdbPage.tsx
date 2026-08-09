@@ -15,6 +15,7 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { CmdbDataQuality, ConfigurationItem } from '../../types/cmdb';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { CI_CRITICALITIES, CI_ENVIRONMENTS, CI_STATUSES, CI_TYPES, ciStatusTone, criticalityTone, employeeName } from './cmdbDisplay';
 
 const createCiSchema = z.object({
@@ -25,12 +26,14 @@ const createCiSchema = z.object({
   administratorEmployeeId: z.string().min(1, 'กรุณาเลือกผู้ดูแล CI'),
   criticality: z.enum(CI_CRITICALITIES).optional(),
   assetId: z.string().optional(),
+  vendorId: z.string().optional(),
+  contractId: z.string().optional(),
   ipAddress: z.string().trim().optional(),
   location: z.string().trim().optional(),
 });
 type CreateCiForm = z.infer<typeof createCiSchema>;
 
-function CreateCiForm({ employees, assetOptions, onClose }: { employees: Employee[]; assetOptions: AssetOption[]; onClose: () => void }) {
+function CreateCiForm({ employees, assetOptions, vendorOptions, contractOptions, onClose }: { employees: Employee[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -41,7 +44,7 @@ function CreateCiForm({ employees, assetOptions, onClose }: { employees: Employe
 
   const mutation = useMutation({
     mutationFn: (values: CreateCiForm) =>
-      apiFetch('/api/v1/cmdb/items', { method: 'POST', body: JSON.stringify({ ...values, assetId: values.assetId || undefined }) }),
+      apiFetch('/api/v1/cmdb/items', { method: 'POST', body: JSON.stringify({ ...values, assetId: values.assetId || undefined, vendorId: values.vendorId || undefined, contractId: values.contractId || undefined }) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['cmdb', 'items'] });
       onClose();
@@ -128,6 +131,22 @@ function CreateCiForm({ employees, assetOptions, onClose }: { employees: Employe
       </div>
 
       <div>
+        <label htmlFor="ci-vendor" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Vendor</label>
+        <select id="ci-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorId')}>
+          <option value="">— ไม่ผูก —</option>
+          {vendorOptions.map((v) => <option key={v.id} value={v.id}>{v.vendor_code} — {v.name}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="ci-contract" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Contract</label>
+        <select id="ci-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractId')}>
+          <option value="">— ไม่ผูก —</option>
+          {contractOptions.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}
+        </select>
+      </div>
+
+      <div>
         <label htmlFor="ci-ip" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">IP Address</label>
         <input id="ci-ip" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('ipAddress')} />
       </div>
@@ -189,6 +208,8 @@ export function CmdbPage() {
 
   const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: showCreate });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options'), enabled: showCreate });
 
   const itemsQuery = useQuery({
     queryKey: ['cmdb', 'items', page, ciType, environment, status, debouncedSearch],
@@ -261,8 +282,8 @@ export function CmdbPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && employeesQuery.data && assetOptionsQuery.data && (
-            <CreateCiForm employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} onClose={() => setShowCreate(false)} />
+          {showCreate && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
+            <CreateCiForm employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />
           )}
 
           <input

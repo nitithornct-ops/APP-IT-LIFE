@@ -297,7 +297,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     } catch (e) {
       return c.json(fail(reqId, 'TICKET_TRANSITION_INVALID', (e as Error).message), 400);
     }
-    if (toStatus === TICKET_STATUS.OUTSOURCE && !body.outsourceName && !current.outsource_name) {
+    if (toStatus === TICKET_STATUS.OUTSOURCE && !body.outsourceVendorId && !body.outsourceName && !current.outsource_name) {
       return c.json(
         fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุชื่อผู้ให้บริการภายนอก', [{ field: 'outsourceName', message: 'จำเป็น' }]),
         400,
@@ -334,6 +334,15 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
   if (body.isSecurity !== undefined) patch.is_security = body.isSecurity;
   if (body.assigneeId !== undefined) patch.assignee_id = body.assigneeId;
   if (body.outsourceName !== undefined) patch.outsource_name = body.outsourceName;
+  if (body.outsourceVendorId !== undefined) {
+    patch.outsource_vendor_id = body.outsourceVendorId || null;
+    if (body.outsourceVendorId) {
+      const { data: vendor } = await supabase.from('vendors').select('name, status').eq('id', body.outsourceVendorId).maybeSingle();
+      if (!vendor) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการภายนอกที่เลือก'), 400);
+      if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'ผู้ให้บริการภายนอกที่เลือกถูกปิดใช้งาน'), 400);
+      patch.outsource_name = vendor.name;
+    }
+  }
   if (body.outsourceIssueNo !== undefined) patch.outsource_issue_no = body.outsourceIssueNo;
 
   if (isReopen) {

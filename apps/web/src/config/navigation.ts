@@ -1,6 +1,7 @@
 import {
   Activity,
   Boxes,
+  Building2,
   Bug,
   ClipboardList,
   FileKey,
@@ -89,6 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'PM / บำรุงรักษา', path: '/maintenance', icon: Wrench, permission: 'maintenance.view' },
       { label: 'Inventory', path: '/inventory-items', icon: PackageSearch, permission: 'inventory.view' },
       { label: 'Software License', path: '/software-licenses', icon: FileKey, permission: 'license.view' },
+      { label: 'Vendor / Contract', path: '/vendors-contracts', icon: Building2, anyPermission: ['vendor.view', 'contract.view'] },
       { label: 'CMDB', path: '/cmdb', icon: Network, permission: 'cmdb.view' },
       { label: 'ความสัมพันธ์ CI', path: '/cmdb/relationships', icon: Waypoints, permission: 'cmdb.view' },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },

@@ -74,6 +74,9 @@ const ChangesPage = lazy(() => import('./features/changes/ChangesPage').then((m)
 const ChangeDetailPage = lazy(() =>
   import('./features/changes/ChangeDetailPage').then((m) => ({ default: m.ChangeDetailPage })),
 );
+const VendorContractsPage = lazy(() =>
+  import('./features/vendorsContracts/VendorContractsPage').then((m) => ({ default: m.VendorContractsPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -166,6 +169,16 @@ export function App() {
             <ProtectedRoute permission="change.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <ChangeDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/vendors-contracts"
+          element={
+            <ProtectedRoute anyPermission={['vendor.view', 'contract.view']}>
+              <Suspense fallback={<LazyPageFallback />}>
+                <VendorContractsPage />
               </Suspense>
             </ProtectedRoute>
           }

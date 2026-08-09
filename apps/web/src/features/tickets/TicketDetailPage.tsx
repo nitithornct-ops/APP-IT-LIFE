@@ -11,6 +11,7 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssignableStaff, TicketDetail, TicketStatus } from '../../types/tickets';
+import type { ContractVendorRef } from '../../types/vendorsContracts';
 import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, type Incident } from '../../types/incidents';
 import { formatThaiDate } from '../../utils/date';
 
@@ -55,12 +56,13 @@ const updateSchema = z.object({
   minutesSpent: z.string().optional(),
   resolution: z.string().trim().optional(),
   outsourceName: z.string().trim().optional(),
+  outsourceVendorId: z.string().optional(),
   outsourceIssueNo: z.string().trim().optional(),
 });
 
 type UpdateForm = z.infer<typeof updateSchema>;
 
-function UpdateWorkPanel({ ticket, staff }: { ticket: TicketDetail; staff: AssignableStaff[] }) {
+function UpdateWorkPanel({ ticket, staff, vendors }: { ticket: TicketDetail; staff: AssignableStaff[]; vendors: ContractVendorRef[] }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -71,7 +73,7 @@ function UpdateWorkPanel({ ticket, staff }: { ticket: TicketDetail; staff: Assig
     formState: { isSubmitting },
   } = useForm<UpdateForm>({
     resolver: zodResolver(updateSchema),
-    defaultValues: { status: ticket.status, assigneeId: ticket.assignee_id ?? '' },
+    defaultValues: { status: ticket.status, assigneeId: ticket.assignee_id ?? '', outsourceVendorId: ticket.outsource_vendor_id ?? '', outsourceName: ticket.outsource_name ?? '' },
   });
   const selectedStatus = watch('status');
 
@@ -176,8 +178,12 @@ function UpdateWorkPanel({ ticket, staff }: { ticket: TicketDetail; staff: Assig
           {selectedStatus === 'ส่งต่อ Outsource' && (
             <>
               <div>
+                <label htmlFor="upd-outsource-vendor" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">เลือกจากทะเบียน Vendor</label>
+                <select id="upd-outsource-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('outsourceVendorId')}><option value="">— ระบุชื่อเอง —</option>{vendors.filter((vendor) => vendor.status === 'Active').map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
+              </div>
+              <div>
                 <label htmlFor="upd-outsource-name" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  ชื่อผู้ให้บริการภายนอก
+                  ชื่อผู้ให้บริการภายนอก (กรณีไม่มีในทะเบียน)
                 </label>
                 <input
                   id="upd-outsource-name"
@@ -367,6 +373,7 @@ export function TicketDetailPage() {
     queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/tickets/assignable-staff'),
     enabled: hasPermission('ticket.update') || hasPermission('ticket.assign'),
   });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: hasPermission('ticket.update') && hasPermission('vendor.view') });
 
   if (ticketQuery.isLoading) {
     return (
@@ -428,7 +435,7 @@ export function TicketDetailPage() {
             </CardBody>
           </Card>
 
-          {canManage && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} />}
+          {canManage && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} />}
           {canEscalate && <EscalateIncidentPanel ticket={ticket} />}
           {ticket.incident_id && (
             <Card><CardHeader>Incident ที่เชื่อมโยง</CardHeader><CardBody><Link to={`/incidents/${ticket.incident_id}`} className="text-primary-700 hover:underline dark:text-primary-300">เปิด Incident จาก Ticket นี้</Link></CardBody></Card>

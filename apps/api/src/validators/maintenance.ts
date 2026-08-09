@@ -23,6 +23,8 @@ export const createMaintenancePlanSchema = z.object({
   planDate: isoDateString,
   recurrence: z.enum(PM_RECURRENCES).optional(),
   technicianId: z.string().uuid().optional(),
+  vendorId: z.string().uuid().optional(),
+  contractId: z.string().uuid().optional(),
   templateId: z.string().uuid().optional(),
   checklistItems: z.array(checklistItemSchema).max(50).optional(),
   notes: z.string().trim().max(1500).optional(),

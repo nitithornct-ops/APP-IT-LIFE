@@ -56,6 +56,7 @@ export interface TicketDetail extends TicketListItem {
   feedback: string | null;
   feedback_at: string | null;
   outsource_name: string | null;
+  outsource_vendor_id: string | null;
   outsource_issue_no: string | null;
   outsource_sent_at: string | null;
   notes: string | null;

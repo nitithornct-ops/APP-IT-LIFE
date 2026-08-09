@@ -11,9 +11,9 @@ export const CI_CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ลับมาก'] as const;
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
 
-/** node type ที่ DB CHECK รองรับครบ 8 ประเภทไว้ล่วงหน้า (ตรงกับ migration) และมีตารางจริงให้เลือก 4 ประเภทตอนนี้ */
+/** node type ที่ DB CHECK รองรับครบ 8 ประเภทไว้ล่วงหน้า และมีตารางจริงให้เลือก 6 ประเภทตอนนี้ */
 export const CI_NODE_TYPES = ['CI', 'Asset', 'Vendor', 'Contract', 'Cloud', 'Backup', 'Incident', 'Change'] as const;
-export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Incident', 'Change'] as const;
+export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Vendor', 'Contract', 'Incident', 'Change'] as const;
 
 export const RELATIONSHIP_TYPES = [
   'DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY',
@@ -46,6 +46,8 @@ const configurationItemFields = {
   version: z.string().trim().max(100).optional(),
   vendorName: z.string().trim().max(160).optional(),
   contractRef: z.string().trim().max(150).optional(),
+  vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
   assetId: z.string().uuid().optional(),
   cloudRef: z.string().trim().max(100).optional(),
   dataClassification: z.enum(CI_DATA_CLASSIFICATIONS).optional(),

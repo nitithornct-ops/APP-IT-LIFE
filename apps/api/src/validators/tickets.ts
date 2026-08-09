@@ -40,6 +40,7 @@ export const updateTicketSchema = z.object({
   minutesSpent: z.coerce.number().nonnegative().optional(),
   resolution: z.string().trim().max(2000).optional(),
   outsourceName: z.string().trim().max(200).optional(),
+  outsourceVendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
   outsourceIssueNo: z.string().trim().max(120).optional(),
 });
 

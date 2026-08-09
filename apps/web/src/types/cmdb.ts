@@ -9,15 +9,14 @@ export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ล�
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
 export type CiStatus = (typeof CI_STATUSES)[number];
 
-/** node type ที่มีตารางจริงให้เลือกตอนนี้ — อีก 4 ประเภทรอโมดูล Vendor/Contract/Cloud/Backup */
-export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Incident', 'Change'] as const;
+/** node type ที่มีตารางจริงให้เลือกตอนนี้ — Cloud/Backup รอโมดูลถัดไป */
+export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Vendor', 'Contract', 'Incident', 'Change'] as const;
 
 export const RELATIONSHIP_TYPES = [
   'DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY',
   'SUPPLIED_BY', 'COVERED_BY_CONTRACT', 'IMPACTED_BY', 'CHANGED_BY', 'LINKED_TO',
 ] as const;
-/** ประเภทที่มี target ให้เลือกได้จริงตอนนี้ — SUPPLIED_BY/COVERED_BY_CONTRACT รอ Vendor/Contract */
-export const RELATIONSHIP_TYPES_ENABLED = ['DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY', 'IMPACTED_BY', 'CHANGED_BY', 'LINKED_TO'] as const;
+export const RELATIONSHIP_TYPES_ENABLED = ['DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY', 'SUPPLIED_BY', 'COVERED_BY_CONTRACT', 'IMPACTED_BY', 'CHANGED_BY', 'LINKED_TO'] as const;
 export const RELATIONSHIP_DIRECTIONS = ['Forward', 'Bidirectional'] as const;
 export const RELATIONSHIP_IMPACT_LEVELS = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const RELATIONSHIP_STATUSES = ['Active', 'Inactive'] as const;
@@ -48,6 +47,10 @@ export interface ConfigurationItem {
   version: string | null;
   vendor_name: string | null;
   contract_ref: string | null;
+  vendor_id: string | null;
+  vendor: { id: string; vendor_code: string; name: string; status: string } | null;
+  contract_id: string | null;
+  contract: { id: string; contract_number: string; name: string; status: string; end_date: string | null } | null;
   asset_id: string | null;
   asset: { id: string; asset_code: string; name: string } | null;
   cloud_ref: string | null;
@@ -97,7 +100,7 @@ export interface ConfigurationItemDetail {
 }
 
 export interface CiNodeOption {
-  type: 'CI' | 'Asset' | 'Incident' | 'Change';
+  type: 'CI' | 'Asset' | 'Vendor' | 'Contract' | 'Incident' | 'Change';
   id: string;
   label: string;
   status: string;

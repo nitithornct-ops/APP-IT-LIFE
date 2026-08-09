@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (56 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (60 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -78,7 +78,11 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('license.view', 'license', 'view', 'ดูทะเบียน Software License', 'active'),
   ('license.manage', 'license', 'manage', 'จัดการทะเบียน Software License', 'active'),
   ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
-  ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active')
+  ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
+  ('vendor.view', 'vendor', 'view', 'ดูทะเบียนผู้ให้บริการภายนอก', 'active'),
+  ('vendor.manage', 'vendor', 'manage', 'จัดการทะเบียนและประเมินผู้ให้บริการภายนอก', 'active'),
+  ('contract.view', 'contract', 'view', 'ดูทะเบียนสัญญาและวันหมดอายุ', 'active'),
+  ('contract.manage', 'contract', 'manage', 'จัดการทะเบียนสัญญาและสถานะสัญญา', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -123,6 +127,10 @@ from (values
   ('technician', 'change.create'),
   ('technician', 'change.test'),
   ('technician', 'change.deploy'),
+  ('technician', 'vendor.view'),
+  ('technician', 'vendor.manage'),
+  ('technician', 'contract.view'),
+  ('technician', 'contract.manage'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
@@ -155,6 +163,8 @@ from (values
   ('manager', 'incident.view_all'),
   ('manager', 'problem.view'),
   ('manager', 'change.view'),
+  ('manager', 'vendor.view'),
+  ('manager', 'contract.view'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
   ('manager', 'access_request.view'),
@@ -171,6 +181,8 @@ from (values
   ('executive', 'incident.view_all'),
   ('executive', 'problem.view'),
   ('executive', 'change.view'),
+  ('executive', 'vendor.view'),
+  ('executive', 'contract.view'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
@@ -188,6 +200,8 @@ from (values
   ('auditor', 'incident.view_all'),
   ('auditor', 'problem.view'),
   ('auditor', 'change.view'),
+  ('auditor', 'vendor.view'),
+  ('auditor', 'contract.view'),
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),

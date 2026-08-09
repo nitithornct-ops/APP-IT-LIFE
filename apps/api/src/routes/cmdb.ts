@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
@@ -36,12 +37,13 @@ ciRelationshipsRoute.use('*', requireAuth);
 
 const CI_SELECT =
   'id, ci_code, name, ci_type, environment, business_service, owner_employee_id, administrator_employee_id, ' +
-  'criticality, ip_address, url, version, vendor_name, contract_ref, asset_id, cloud_ref, data_classification, ' +
+  'criticality, ip_address, url, version, vendor_name, contract_ref, vendor_id, contract_id, asset_id, cloud_ref, data_classification, ' +
   'rpo_hours, rto_hours, backup_required, backup_reference, location, status, status_reason, last_verified_at, ' +
   'last_verified_by, notes, created_at, updated_at, ' +
   'owner:employees!configuration_items_owner_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'administrator:employees!configuration_items_administrator_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
-  'asset:assets(id, asset_code, name)';
+  'asset:assets(id, asset_code, name), vendor:vendors(id, vendor_code, name, status), ' +
+  'contract:contracts(id, contract_number, name, status, end_date)';
 
 const REL_SELECT =
   'id, source_type, source_id, target_type, target_id, relationship_type, direction, impact_level, ' +
@@ -73,8 +75,8 @@ interface NodeStatus {
   ciType?: string;
 }
 
-/** ตรวจการมีอยู่จริง + สถานะปลดระวางของ node — ทำได้จริงสำหรับ CI/Asset/Incident/Change (มีตารางแล้ว) ส่วนอีก 4 ประเภท
- * (Vendor/Contract/Cloud/Backup) ยังไม่มีตารางจริงในระบบใหม่ จึงเชื่อว่ามีอยู่จริงไปก่อน
+/** ตรวจการมีอยู่จริง + สถานะปลดระวางของ node — ทำได้จริงสำหรับ CI/Asset/Vendor/Contract/Incident/Change ส่วนอีก 2 ประเภท
+ * (Cloud/Backup) ยังไม่มีตารางจริงในระบบใหม่ จึงเชื่อว่ามีอยู่จริงไปก่อน
  * (จะ validate ได้เมื่อโมดูลที่เกี่ยวข้องถูกย้ายตามคิว roadmap) — เดิม legacy validate ได้ครบ 8 ประเภทเพราะ
  * sheet ทั้งหมดมีอยู่แล้วตอนนั้น ไม่ใช่ข้อจำกัดถาวร แค่ลำดับการย้ายโมดูลยังไปไม่ถึง */
 async function loadNodeStatus(supabase: SupabaseClient, type: string, id: string): Promise<NodeStatus> {
@@ -97,6 +99,16 @@ async function loadNodeStatus(supabase: SupabaseClient, type: string, id: string
     const { data } = await supabase.from('change_requests').select('id, change_number, title, status').eq('id', id).maybeSingle();
     if (!data) return { exists: false, retired: false };
     return { exists: true, retired: false, name: `${data.change_number} — ${data.title}` };
+  }
+  if (type === 'Vendor') {
+    const { data } = await supabase.from('vendors').select('id, name, status').eq('id', id).maybeSingle();
+    if (!data) return { exists: false, retired: false };
+    return { exists: true, retired: data.status === 'Inactive', name: data.name };
+  }
+  if (type === 'Contract') {
+    const { data } = await supabase.from('contracts').select('id, contract_number, name, status').eq('id', id).maybeSingle();
+    if (!data) return { exists: false, retired: false };
+    return { exists: true, retired: ['Expired', 'Terminated', 'Renewed'].includes(data.status), name: `${data.contract_number} — ${data.name}` };
   }
   return { exists: true, retired: false };
 }
@@ -135,27 +147,37 @@ async function enrichRelationshipNodes<T extends RelLikeRow>(supabase: SupabaseC
   const assetIds = new Set<string>();
   const incidentIds = new Set<string>();
   const changeIds = new Set<string>();
+  const vendorIds = new Set<string>();
+  const contractIds = new Set<string>();
   for (const r of rows) {
     if (r.source_type === 'CI') ciIds.add(r.source_id);
     if (r.source_type === 'Asset') assetIds.add(r.source_id);
     if (r.source_type === 'Incident') incidentIds.add(r.source_id);
     if (r.source_type === 'Change') changeIds.add(r.source_id);
+    if (r.source_type === 'Vendor') vendorIds.add(r.source_id);
+    if (r.source_type === 'Contract') contractIds.add(r.source_id);
     if (r.target_type === 'CI') ciIds.add(r.target_id);
     if (r.target_type === 'Asset') assetIds.add(r.target_id);
     if (r.target_type === 'Incident') incidentIds.add(r.target_id);
     if (r.target_type === 'Change') changeIds.add(r.target_id);
+    if (r.target_type === 'Vendor') vendorIds.add(r.target_id);
+    if (r.target_type === 'Contract') contractIds.add(r.target_id);
   }
-  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }] = await Promise.all([
+  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }, { data: vendors }, { data: contracts }] = await Promise.all([
     ciIds.size ? supabase.from('configuration_items').select('id, name, status').in('id', [...ciIds]) : Promise.resolve({ data: [] as { id: string; name: string; status: string }[] }),
     assetIds.size ? supabase.from('assets').select('id, name, status').in('id', [...assetIds]) : Promise.resolve({ data: [] as { id: string; name: string; status: string }[] }),
     incidentIds.size ? supabase.from('incidents').select('id, incident_number, title, status').in('id', [...incidentIds]) : Promise.resolve({ data: [] as { id: string; incident_number: string; title: string; status: string }[] }),
     changeIds.size ? supabase.from('change_requests').select('id, change_number, title, status').in('id', [...changeIds]) : Promise.resolve({ data: [] as { id: string; change_number: string; title: string; status: string }[] }),
+    vendorIds.size ? supabase.from('vendors').select('id, name, status').in('id', [...vendorIds]) : Promise.resolve({ data: [] as { id: string; name: string; status: string }[] }),
+    contractIds.size ? supabase.from('contracts').select('id, contract_number, name, status').in('id', [...contractIds]) : Promise.resolve({ data: [] as { id: string; contract_number: string; name: string; status: string }[] }),
   ]);
   const ciMap = new Map((cis ?? []).map((row) => [row.id, row]));
   const assetMap = new Map((assets ?? []).map((row) => [row.id, row]));
   const incidentMap = new Map((incidents ?? []).map((row) => [row.id, { name: `${row.incident_number} — ${row.title}`, status: row.status }]));
   const changeMap = new Map((changes ?? []).map((row) => [row.id, { name: `${row.change_number} — ${row.title}`, status: row.status }]));
-  const resolve = (type: string, id: string) => (type === 'CI' ? ciMap.get(id) : type === 'Asset' ? assetMap.get(id) : type === 'Incident' ? incidentMap.get(id) : type === 'Change' ? changeMap.get(id) : undefined);
+  const vendorMap = new Map((vendors ?? []).map((row) => [row.id, row]));
+  const contractMap = new Map((contracts ?? []).map((row) => [row.id, { name: `${row.contract_number} — ${row.name}`, status: row.status }]));
+  const resolve = (type: string, id: string) => (type === 'CI' ? ciMap.get(id) : type === 'Asset' ? assetMap.get(id) : type === 'Incident' ? incidentMap.get(id) : type === 'Change' ? changeMap.get(id) : type === 'Vendor' ? vendorMap.get(id) : type === 'Contract' ? contractMap.get(id) : undefined);
 
   return rows.map((r) => {
     const source = resolve(r.source_type, r.source_id);
@@ -236,10 +258,10 @@ configurationItemsRoute.get('/data-quality', requirePermission('cmdb.view'), asy
   const today = new Date().toISOString().slice(0, 10);
   const expired = activeRelRows.filter((r) => r.valid_until && r.valid_until < today);
 
-  const enrichedRels = await enrichRelationshipNodes(supabase, activeRelRows);
+  const enrichedRels = await enrichRelationshipNodes(createAdminClient(c.env), activeRelRows);
   const orphans = enrichedRels.filter((r) => {
-    const sourceCheckable = r.source_type === 'CI' || r.source_type === 'Asset';
-    const targetCheckable = r.target_type === 'CI' || r.target_type === 'Asset';
+    const sourceCheckable = ['CI', 'Asset', 'Vendor', 'Contract', 'Incident', 'Change'].includes(r.source_type);
+    const targetCheckable = ['CI', 'Asset', 'Vendor', 'Contract', 'Incident', 'Change'].includes(r.target_type);
     return (sourceCheckable && !r.sourceName) || (targetCheckable && !r.targetName);
   });
 
@@ -295,7 +317,7 @@ configurationItemsRoute.get('/:id', requirePermission('cmdb.view'), async (c) =>
     supabase.from('ci_relationships').select(REL_SELECT).eq('target_type', 'CI').eq('target_id', id).order('created_at', { ascending: false }).limit(200),
   ]);
   const relRows = [...(asSource ?? []), ...(asTarget ?? [])] as unknown as CiRelationshipRow[];
-  const relationships = await enrichRelationshipNodes(supabase, relRows);
+  const relationships = await enrichRelationshipNodes(createAdminClient(c.env), relRows);
 
   return c.json(ok(reqId, { ci, relationships }));
 });
@@ -323,6 +345,8 @@ configurationItemsRoute.post('/', requirePermission('cmdb.manage'), zValidator('
       version: body.version || null,
       vendor_name: body.vendorName || null,
       contract_ref: body.contractRef || null,
+      vendor_id: body.vendorId || null,
+      contract_id: body.contractId || null,
       asset_id: body.assetId || null,
       cloud_ref: body.cloudRef || null,
       data_classification: body.dataClassification ?? 'ไม่ลับ',
@@ -381,6 +405,8 @@ configurationItemsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidat
   if (body.version !== undefined) patch.version = body.version || null;
   if (body.vendorName !== undefined) patch.vendor_name = body.vendorName || null;
   if (body.contractRef !== undefined) patch.contract_ref = body.contractRef || null;
+  if (body.vendorId !== undefined) patch.vendor_id = body.vendorId || null;
+  if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.assetId !== undefined) patch.asset_id = body.assetId || null;
   if (body.cloudRef !== undefined) patch.cloud_ref = body.cloudRef || null;
   if (body.dataClassification !== undefined) patch.data_classification = body.dataClassification;
@@ -483,21 +509,25 @@ configurationItemsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zV
 
 // ===== CI Relationships =====
 
-/** cross-module node catalog สำหรับฟอร์มสร้างความสัมพันธ์ — เปิด CI/Asset/Incident/Change ตามโมดูลที่มีตารางจริง */
+/** cross-module node catalog สำหรับฟอร์มสร้างความสัมพันธ์ — เปิด CI/Asset/Vendor/Contract/Incident/Change ตามโมดูลที่มีตารางจริง */
 ciRelationshipsRoute.get('/node-options', requirePermission('cmdb.view'), async (c) => {
-  const supabase = c.get('supabase');
+  const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
-  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }] = await Promise.all([
+  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }, { data: vendors }, { data: contracts }] = await Promise.all([
     supabase.from('configuration_items').select('id, ci_code, name, status').order('name', { ascending: true }).limit(2000),
     supabase.from('assets').select('id, asset_code, name, status').order('name', { ascending: true }).limit(2000),
     supabase.from('incidents').select('id, incident_number, title, status').order('report_date', { ascending: false }).limit(2000),
     supabase.from('change_requests').select('id, change_number, title, status').order('request_date', { ascending: false }).limit(2000),
+    supabase.from('vendors').select('id, vendor_code, name, status').order('name').limit(2000),
+    supabase.from('contracts').select('id, contract_number, name, status').order('contract_number').limit(2000),
   ]);
   const nodes = [
     ...(cis ?? []).map((row) => ({ type: 'CI' as const, id: row.id, label: `${row.ci_code} — ${row.name}`, status: row.status })),
     ...(assets ?? []).map((row) => ({ type: 'Asset' as const, id: row.id, label: `${row.asset_code} — ${row.name}`, status: row.status })),
     ...(incidents ?? []).map((row) => ({ type: 'Incident' as const, id: row.id, label: `${row.incident_number} — ${row.title}`, status: row.status })),
     ...(changes ?? []).map((row) => ({ type: 'Change' as const, id: row.id, label: `${row.change_number} — ${row.title}`, status: row.status })),
+    ...(vendors ?? []).map((row) => ({ type: 'Vendor' as const, id: row.id, label: `${row.vendor_code} — ${row.name}`, status: row.status })),
+    ...(contracts ?? []).map((row) => ({ type: 'Contract' as const, id: row.id, label: `${row.contract_number} — ${row.name}`, status: row.status })),
   ];
   return c.json(ok(reqId, nodes));
 });
@@ -513,7 +543,7 @@ ciRelationshipsRoute.get('/', requirePermission('cmdb.view'), zValidator('query'
 
   const { data, count, error } = await query;
   if (error) return c.json(fail(reqId, 'CMDB_REL_LIST_FAILED', 'ดึงรายการความสัมพันธ์ไม่สำเร็จ'), 400);
-  const enriched = await enrichRelationshipNodes(supabase, (data ?? []) as unknown as CiRelationshipRow[]);
+  const enriched = await enrichRelationshipNodes(createAdminClient(c.env), (data ?? []) as unknown as CiRelationshipRow[]);
   return c.json(ok(reqId, toPaginatedData(enriched, count, page, pageSize)));
 });
 
@@ -525,9 +555,10 @@ ciRelationshipsRoute.post('/', requirePermission('cmdb.manage'), zValidator('jso
   const direction = body.direction ?? 'Forward';
   const relationshipType = body.relationshipType;
 
+  const admin = createAdminClient(c.env);
   const [sourceNode, targetNode] = await Promise.all([
-    loadNodeStatus(supabase, body.sourceType, body.sourceId),
-    loadNodeStatus(supabase, body.targetType, body.targetId),
+    loadNodeStatus(admin, body.sourceType, body.sourceId),
+    loadNodeStatus(admin, body.targetType, body.targetId),
   ]);
   if (!sourceNode.exists) return c.json(fail(reqId, 'CMDB_REL_SOURCE_NOT_FOUND', 'ไม่พบ node ต้นทางที่เลือก'), 400);
   if (!targetNode.exists) return c.json(fail(reqId, 'CMDB_REL_TARGET_NOT_FOUND', 'ไม่พบ node ปลายทางที่เลือก'), 400);
@@ -536,6 +567,12 @@ ciRelationshipsRoute.post('/', requirePermission('cmdb.manage'), zValidator('jso
   }
   if (relationshipType === 'BACKED_UP_BY' && !(body.targetType === 'Backup' || (body.targetType === 'CI' && targetNode.ciType === 'Backup Job'))) {
     return c.json(fail(reqId, 'CMDB_REL_INVALID_TARGET_TYPE', 'BACKED_UP_BY ต้องชี้ไปที่ Backup หรือ CI ประเภท Backup Job เท่านั้น'), 400);
+  }
+  if (relationshipType === 'SUPPLIED_BY' && body.targetType !== 'Vendor') {
+    return c.json(fail(reqId, 'CMDB_REL_INVALID_TARGET_TYPE', 'SUPPLIED_BY ต้องชี้ไปที่ Vendor เท่านั้น'), 400);
+  }
+  if (relationshipType === 'COVERED_BY_CONTRACT' && body.targetType !== 'Contract') {
+    return c.json(fail(reqId, 'CMDB_REL_INVALID_TARGET_TYPE', 'COVERED_BY_CONTRACT ต้องชี้ไปที่ Contract เท่านั้น'), 400);
   }
 
   if (direction === 'Bidirectional' || REVERSE_DUP_CHECK_TYPES.includes(relationshipType)) {
@@ -592,7 +629,7 @@ ciRelationshipsRoute.post('/', requirePermission('cmdb.manage'), zValidator('jso
     requestId: reqId,
   });
 
-  const [enriched] = await enrichRelationshipNodes(supabase, [data as unknown as RelLikeRow]);
+  const [enriched] = await enrichRelationshipNodes(admin, [data as unknown as RelLikeRow]);
   return c.json(ok(reqId, enriched), 201);
 });
 
@@ -625,7 +662,7 @@ ciRelationshipsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidator(
 
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'cmdb', targetTable: 'ci_relationships', targetId: id, detail: body, requestId: reqId });
 
-  const [enriched] = await enrichRelationshipNodes(supabase, [data as unknown as RelLikeRow]);
+  const [enriched] = await enrichRelationshipNodes(createAdminClient(c.env), [data as unknown as RelLikeRow]);
   return c.json(ok(reqId, enriched));
 });
 
@@ -641,9 +678,10 @@ ciRelationshipsRoute.post('/:id/status', requirePermission('cmdb.manage'), zVali
   if (!current) return c.json(fail(reqId, 'CMDB_REL_NOT_FOUND', 'ไม่พบความสัมพันธ์นี้'), 404);
 
   if (status === 'Active' && current.status !== 'Active') {
+    const admin = createAdminClient(c.env);
     const [sourceNode, targetNode] = await Promise.all([
-      loadNodeStatus(supabase, current.source_type, current.source_id),
-      loadNodeStatus(supabase, current.target_type, current.target_id),
+      loadNodeStatus(admin, current.source_type, current.source_id),
+      loadNodeStatus(admin, current.target_type, current.target_id),
     ]);
     if (sourceNode.retired || targetNode.retired) {
       return c.json(fail(reqId, 'CMDB_REL_ENDPOINT_RETIRED', 'ไม่สามารถเปิดใช้งานความสัมพันธ์นี้ได้ เนื่องจาก node ต้นทาง/ปลายทางถูกปลดระวางแล้ว'), 400);
@@ -669,7 +707,7 @@ ciRelationshipsRoute.post('/:id/status', requirePermission('cmdb.manage'), zVali
     requestId: reqId,
   });
 
-  const [enriched] = await enrichRelationshipNodes(supabase, [data as unknown as RelLikeRow]);
+  const [enriched] = await enrichRelationshipNodes(createAdminClient(c.env), [data as unknown as RelLikeRow]);
   return c.json(ok(reqId, enriched));
 });
 
@@ -699,6 +737,6 @@ ciRelationshipsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zVali
 
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'VERIFY', module: 'cmdb', targetTable: 'ci_relationships', targetId: id, requestId: reqId });
 
-  const [enriched] = await enrichRelationshipNodes(supabase, [data as unknown as RelLikeRow]);
+  const [enriched] = await enrichRelationshipNodes(createAdminClient(c.env), [data as unknown as RelLikeRow]);
   return c.json(ok(reqId, enriched));
 });

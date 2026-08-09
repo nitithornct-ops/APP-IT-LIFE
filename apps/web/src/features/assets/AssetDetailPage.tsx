@@ -12,6 +12,7 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, Department, Employee, PaginatedResult } from '../../types/admin';
 import type { AssetDetail } from '../../types/assets';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
 import { ASSET_AUDIT_RESULTS, ASSET_CRITICALITIES, ASSET_STATUSES, ASSET_TYPES, assetStatusTone, employeeName, formatMoney } from './assetDisplay';
 
@@ -36,7 +37,8 @@ const editSchema = z.object({
   brand: z.string().trim().optional(),
   model: z.string().trim().optional(),
   serialNumber: z.string().trim().optional(),
-  vendorName: z.string().trim().optional(),
+  vendorId: z.string().optional(),
+  contractId: z.string().optional(),
   location: z.string().trim().optional(),
   purchaseDate: z.string().optional(),
   warrantyExpire: z.string().optional(),
@@ -52,10 +54,14 @@ type EditForm = z.infer<typeof editSchema>;
 function EditAssetForm({
   detail,
   categories,
+  vendors,
+  contracts,
   onClose,
 }: {
   detail: AssetDetail;
   categories: AssetCategory[];
+  vendors: ContractVendorRef[];
+  contracts: ContractOption[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -74,7 +80,8 @@ function EditAssetForm({
       brand: a.brand ?? '',
       model: a.model ?? '',
       serialNumber: a.serial_number ?? '',
-      vendorName: a.vendor_name ?? '',
+      vendorId: a.vendor_id ?? '',
+      contractId: a.contract_id ?? '',
       location: a.location ?? '',
       purchaseDate: a.purchase_date ?? '',
       warrantyExpire: a.warranty_expire ?? '',
@@ -150,7 +157,11 @@ function EditAssetForm({
       </div>
       <div>
         <label htmlFor="ed-vendor" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้จำหน่าย</label>
-        <input id="ed-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorName')} />
+        <select id="ed-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorId')}><option value="">— ไม่ระบุ —</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
+      </div>
+      <div>
+        <label htmlFor="ed-contract" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สัญญาที่ครอบคลุม</label>
+        <select id="ed-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractId')}><option value="">— ไม่ระบุ —</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
       </div>
       <div>
         <label htmlFor="ed-location" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่</label>
@@ -200,7 +211,7 @@ function EditAssetForm({
   );
 }
 
-function ActionPanel({ assetId, employees, departments, onDone }: { assetId: string; employees: Employee[]; departments: Department[]; onDone: () => void }) {
+function ActionPanel({ assetId, employees, departments, vendors, onDone }: { assetId: string; employees: Employee[]; departments: Department[]; vendors: ContractVendorRef[]; onDone: () => void }) {
   const [mode, setMode] = useState<ActionMode>(null);
   const assign = useAssetMutation(assetId, '/assign', ['employee-assignments']);
   const returnMut = useAssetMutation(assetId, '/return');
@@ -266,7 +277,7 @@ function ActionPanel({ assetId, employees, departments, onDone }: { assetId: str
           />
         )}
         {mode === 'repair-send' && (
-          <RepairSendForm onSubmit={(v) => repairSend.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={repairSend.isPending} error={repairSend.error instanceof ApiError ? repairSend.error.message : null} />
+          <RepairSendForm vendors={vendors} onSubmit={(v) => repairSend.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={repairSend.isPending} error={repairSend.error instanceof ApiError ? repairSend.error.message : null} />
         )}
         {mode === 'repair-return' && (
           <RepairReturnForm onSubmit={(v) => repairReturn.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={repairReturn.isPending} error={repairReturn.error instanceof ApiError ? repairReturn.error.message : null} />
@@ -415,7 +426,8 @@ function TransferForm({ employees, departments, onSubmit, isLoading, error }: { 
   );
 }
 
-function RepairSendForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
+function RepairSendForm({ vendors, onSubmit, isLoading, error }: { vendors: ContractVendorRef[]; onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
+  const [vendorId, setVendorId] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
@@ -423,8 +435,9 @@ function RepairSendForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<s
     <div data-testid="asset-form-repair-send" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้ให้บริการซ่อม</label>
-        <input value={vendorName} onChange={(e) => setVendorName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+        <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ระบุชื่อเอง —</option>{vendors.filter((vendor) => vendor.status === 'Active').map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
       </div>
+      {!vendorId && <div><label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อผู้ให้บริการ (กรณีไม่มีในทะเบียน)</label><input value={vendorName} onChange={(e) => setVendorName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" /></div>}
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่</label>
         <input value={location} onChange={(e) => setLocation(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
@@ -435,7 +448,7 @@ function RepairSendForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<s
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
       <div className="sm:col-span-2">
-        <Button size="sm" isLoading={isLoading} data-testid="asset-repair-send-submit" onClick={() => onSubmit({ vendorName: vendorName || undefined, location: location || undefined, notes: notes || undefined })}>
+        <Button size="sm" isLoading={isLoading} data-testid="asset-repair-send-submit" onClick={() => onSubmit({ vendorId: vendorId || undefined, vendorName: vendorName || undefined, location: location || undefined, notes: notes || undefined })}>
           บันทึกส่งซ่อม
         </Button>
       </div>
@@ -518,6 +531,8 @@ export function AssetDetailPage() {
   const categoriesQuery = useQuery({ queryKey: ['admin', 'asset-categories'], queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories') });
   const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
   const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const statusMutation = useMutation({
     mutationFn: (status: string) => apiFetch(`/api/v1/assets/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
@@ -565,8 +580,8 @@ export function AssetDetailPage() {
         </div>
       </div>
 
-      {showEdit && categoriesQuery.data && (
-        <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} onClose={() => setShowEdit(false)} />
+      {showEdit && categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
+        <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -577,7 +592,8 @@ export function AssetDetailPage() {
             <Info label="ประเภท (ISMS)" value={asset.asset_type} />
             <Info label="ยี่ห้อ/รุ่น" value={[asset.brand, asset.model].filter(Boolean).join(' / ') || '—'} />
             <Info label="S/N" value={asset.serial_number ?? '—'} />
-            <Info label="ผู้จำหน่าย" value={asset.vendor_name ?? '—'} />
+            <Info label="ผู้จำหน่าย" value={asset.vendor?.name ?? asset.vendor_name ?? '—'} />
+            <Info label="สัญญา" value={asset.contract ? `${asset.contract.contract_number} — ${asset.contract.name}` : '—'} />
             <Info label="สถานที่" value={asset.location ?? '—'} />
             <Info label="ผู้ถือครอง" value={employeeName(asset.owner)} />
             <Info label="หน่วยงาน" value={asset.department?.name_th ?? '—'} />
@@ -641,6 +657,7 @@ export function AssetDetailPage() {
         assetId={asset.id}
         employees={employeesQuery.data?.items ?? []}
         departments={departmentsQuery.data ?? []}
+        vendors={vendorOptionsQuery.data ?? []}
         onDone={() => void queryClient.invalidateQueries({ queryKey: ['asset', id] })}
       />
 
@@ -666,7 +683,7 @@ export function AssetDetailPage() {
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(m.action_date, 'd MMM yyyy HH:mm')}</td>
                       <td className="px-2 py-2">{m.status_label ?? m.action_type}</td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{employeeName(m.from_employee)}</td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{m.to_employee ? employeeName(m.to_employee) : (m.vendor_name ?? '—')}</td>
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{m.to_employee ? employeeName(m.to_employee) : (m.vendor?.name ?? m.vendor_name ?? '—')}</td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{m.notes ?? '—'}</td>
                     </tr>
                   ))}

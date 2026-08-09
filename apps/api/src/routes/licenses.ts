@@ -17,6 +17,8 @@ import { createLicenseSchema, listLicensesQuerySchema, setLicenseStatusSchema, u
 export const licensesRoute = new Hono<AppEnv>();
 licensesRoute.use('*', requireAuth);
 
+const LICENSE_SELECT = '*, vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
+
 licensesRoute.get('/', requirePermission('license.view'), zValidator('query', listLicensesQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -24,7 +26,7 @@ licensesRoute.get('/', requirePermission('license.view'), zValidator('query', li
 
   let query = supabase
     .from('software_licenses')
-    .select('*', { count: 'exact' })
+    .select(LICENSE_SELECT, { count: 'exact' })
     .order('software_name', { ascending: true })
     .range(...paginationRange(page, pageSize));
 
@@ -41,7 +43,7 @@ licensesRoute.get('/:id', requirePermission('license.view'), async (c) => {
   const reqId = c.get('requestId');
   const id = c.req.param('id')!;
 
-  const { data, error } = await supabase.from('software_licenses').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await supabase.from('software_licenses').select(LICENSE_SELECT).eq('id', id).maybeSingle();
   if (error) return c.json(fail(reqId, 'LICENSE_LOAD_FAILED', 'ดึงข้อมูล License ไม่สำเร็จ'), 400);
   if (!data) return c.json(fail(reqId, 'LICENSE_NOT_FOUND', 'ไม่พบ License นี้'), 404);
   return c.json(ok(reqId, data));
@@ -63,11 +65,13 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
       start_date: body.startDate || null,
       expire_date: body.expireDate || null,
       vendor_name: body.vendorName ?? null,
+      vendor_id: body.vendorId || null,
+      contract_id: body.contractId || null,
       assigned_to: body.assignedTo ?? null,
       notes: body.notes ?? null,
       created_by: actorId,
     })
-    .select()
+    .select(LICENSE_SELECT)
     .single();
 
   if (error) return c.json(fail(reqId, 'LICENSE_CREATE_FAILED', error.message), 400);
@@ -111,11 +115,13 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
   if (body.startDate !== undefined) patch.start_date = body.startDate || null;
   if (body.expireDate !== undefined) patch.expire_date = body.expireDate || null;
   if (body.vendorName !== undefined) patch.vendor_name = body.vendorName;
+  if (body.vendorId !== undefined) patch.vendor_id = body.vendorId || null;
+  if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.assignedTo !== undefined) patch.assigned_to = body.assignedTo;
   if (body.notes !== undefined) patch.notes = body.notes;
   if (body.status !== undefined) patch.status = body.status;
 
-  const { data, error } = await supabase.from('software_licenses').update(patch).eq('id', id).select().single();
+  const { data, error } = await supabase.from('software_licenses').update(patch).eq('id', id).select(LICENSE_SELECT).single();
   if (error) return c.json(fail(reqId, 'LICENSE_UPDATE_FAILED', error.message), 400);
 
   await writeAuditLog(c.env, {

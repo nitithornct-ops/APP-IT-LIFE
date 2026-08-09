@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
 import type { SoftwareLicense } from '../../types/assets';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { LICENSE_STATUSES } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
 
@@ -18,14 +19,15 @@ const statusTone: Record<string, 'success' | 'danger' | 'secondary'> = {
   Inactive: 'secondary',
 };
 
-function CreateLicenseForm({ onClose }: { onClose: () => void }) {
+function CreateLicenseForm({ vendors, contracts, onClose }: { vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [softwareName, setSoftwareName] = useState('');
   const [licenseType, setLicenseType] = useState('');
   const [totalQty, setTotalQty] = useState('1');
   const [usedQty, setUsedQty] = useState('0');
   const [expireDate, setExpireDate] = useState('');
-  const [vendorName, setVendorName] = useState('');
+  const [vendorId, setVendorId] = useState('');
+  const [contractId, setContractId] = useState('');
   const [serverError, setServerError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -38,7 +40,8 @@ function CreateLicenseForm({ onClose }: { onClose: () => void }) {
           totalQty: Number(totalQty) || 0,
           usedQty: Number(usedQty) || 0,
           expireDate: expireDate || undefined,
-          vendorName: vendorName || undefined,
+          vendorId: vendorId || undefined,
+          contractId: contractId || undefined,
         }),
       }),
     onSuccess: () => {
@@ -76,7 +79,11 @@ function CreateLicenseForm({ onClose }: { onClose: () => void }) {
       </div>
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้จำหน่าย</label>
-        <input value={vendorName} onChange={(e) => setVendorName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+        <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สัญญา</label>
+        <select value={contractId} onChange={(e) => setContractId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{contracts.filter((contract) => !vendorId || contract.vendor_id === vendorId).map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
       </div>
       {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
       <div className="sm:col-span-3">
@@ -101,6 +108,8 @@ export function LicensesPage() {
         `/api/v1/software-licenses?page=1&pageSize=50${status ? `&status=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
   });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const checkExpiryMutation = useMutation({
     mutationFn: () => apiFetch<{ updatedCount: number }>('/api/v1/software-licenses/check-expiry', { method: 'POST', body: '{}' }),
@@ -143,7 +152,7 @@ export function LicensesPage() {
           </select>
         </CardHeader>
         <CardBody>
-          {showCreate && <CreateLicenseForm onClose={() => setShowCreate(false)} />}
+          {showCreate && vendorOptionsQuery.data && contractOptionsQuery.data && <CreateLicenseForm vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />}
 
           <input
             type="search"
@@ -178,7 +187,7 @@ export function LicensesPage() {
                       <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{l.software_name}</td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.used_qty} / {l.total_qty}</td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.expire_date ? formatThaiDate(l.expire_date, 'd MMM yyyy') : '—'}</td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.vendor_name ?? '—'}</td>
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.vendor?.name ?? l.vendor_name ?? '—'}{l.contract && <p className="text-xs text-slate-400">{l.contract.contract_number}</p>}</td>
                       <td className="px-2 py-2">
                         <Badge variant={statusTone[l.status]}>{l.status}</Badge>
                       </td>

@@ -23,6 +23,10 @@ export interface Asset {
   model: string | null;
   serial_number: string | null;
   vendor_name: string | null;
+  vendor_id: string | null;
+  vendor: { id: string; vendor_code: string; name: string; status: string } | null;
+  contract_id: string | null;
+  contract: { id: string; contract_number: string; name: string; status: string; end_date: string | null } | null;
   purchase_date: string | null;
   warranty_expire: string | null;
   price: number | null;
@@ -67,6 +71,8 @@ export interface AssetMovement {
   from_employee: { first_name_th: string; last_name_th: string } | null;
   to_employee: { first_name_th: string; last_name_th: string } | null;
   vendor_name: string | null;
+  vendor_id: string | null;
+  vendor: { id: string; vendor_code: string; name: string; status: string } | null;
   department: { name_th: string } | null;
   location: string | null;
   status_label: string | null;
@@ -105,6 +111,10 @@ export interface MaintenancePlan {
   next_due_date: string | null;
   technician_id: string | null;
   technician: EmployeeRef | null;
+  vendor_id: string | null;
+  vendor: { id: string; vendor_code: string; name: string; status: string } | null;
+  contract_id: string | null;
+  contract: { id: string; contract_number: string; name: string; status: string; end_date: string | null } | null;
   checklist_json: ChecklistItem[];
   result: string | null;
   notes: string | null;
@@ -163,6 +173,10 @@ export interface SoftwareLicense {
   start_date: string | null;
   expire_date: string | null;
   vendor_name: string | null;
+  vendor_id: string | null;
+  vendor: { id: string; vendor_code: string; name: string; status: string } | null;
+  contract_id: string | null;
+  contract: { id: string; contract_number: string; name: string; status: string; end_date: string | null } | null;
   assigned_to: string | null;
   status: (typeof LICENSE_STATUSES)[number];
   notes: string | null;

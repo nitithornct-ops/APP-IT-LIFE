@@ -60,6 +60,10 @@ export const DEFAULT_PERMISSION_KEYS = [
   'license.manage',
   'cmdb.view',
   'cmdb.manage',
+  'vendor.view',
+  'vendor.manage',
+  'contract.view',
+  'contract.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

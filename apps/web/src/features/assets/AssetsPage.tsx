@@ -14,6 +14,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, PaginatedResult } from '../../types/admin';
 import type { Asset } from '../../types/assets';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { ASSET_STATUSES, ASSET_TYPES, assetStatusTone } from './assetDisplay';
 
 const createAssetSchema = z.object({
@@ -23,12 +24,14 @@ const createAssetSchema = z.object({
   brand: z.string().trim().optional(),
   model: z.string().trim().optional(),
   serialNumber: z.string().trim().optional(),
+  vendorId: z.string().optional(),
+  contractId: z.string().optional(),
   location: z.string().trim().optional(),
   price: z.coerce.number().nonnegative().optional().or(z.literal('')),
 });
 type CreateAssetForm = z.infer<typeof createAssetSchema>;
 
-function CreateAssetForm({ categories, onClose }: { categories: AssetCategory[]; onClose: () => void }) {
+function CreateAssetForm({ categories, vendors, contracts, onClose }: { categories: AssetCategory[]; vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -41,7 +44,7 @@ function CreateAssetForm({ categories, onClose }: { categories: AssetCategory[];
     mutationFn: (values: CreateAssetForm) =>
       apiFetch('/api/v1/assets', {
         method: 'POST',
-        body: JSON.stringify({ ...values, categoryId: values.categoryId || undefined, price: values.price === '' ? undefined : values.price }),
+        body: JSON.stringify({ ...values, categoryId: values.categoryId || undefined, vendorId: values.vendorId || undefined, contractId: values.contractId || undefined, price: values.price === '' ? undefined : values.price }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['assets'] });
@@ -103,6 +106,16 @@ function CreateAssetForm({ categories, onClose }: { categories: AssetCategory[];
       </div>
 
       <div>
+        <label htmlFor="as-vendor" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้จำหน่าย</label>
+        <select id="as-vendor" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('vendorId')}><option value="">— ไม่ระบุ —</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
+      </div>
+
+      <div>
+        <label htmlFor="as-contract" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สัญญาที่ครอบคลุม</label>
+        <select id="as-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractId')}><option value="">— ไม่ระบุ —</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
+      </div>
+
+      <div>
         <label htmlFor="as-model" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
           รุ่น
         </label>
@@ -153,6 +166,8 @@ export function AssetsPage() {
     queryKey: ['admin', 'asset-categories'],
     queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories'),
   });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const assetsQuery = useQuery({
     queryKey: ['assets', page, status, categoryId, debouncedSearch],
@@ -230,7 +245,7 @@ export function AssetsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && categoriesQuery.data && <CreateAssetForm categories={categoriesQuery.data} onClose={() => setShowCreate(false)} />}
+          {showCreate && categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && <CreateAssetForm categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />}
 
           <input
             type="search"

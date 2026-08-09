@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, PaginatedResult } from '../../types/admin';
 import type { AssetOption, ChecklistItem, MaintenancePlan, PmTemplate } from '../../types/assets';
+import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
 
@@ -19,13 +20,15 @@ const statusTone: Record<string, 'secondary' | 'primary' | 'success' | 'danger'>
   ยกเลิก: 'danger',
 };
 
-function CreatePlanForm({ assets, technicians, templates, onClose }: { assets: AssetOption[]; technicians: Employee[]; templates: PmTemplate[]; onClose: () => void }) {
+function CreatePlanForm({ assets, technicians, templates, vendors, contracts, onClose }: { assets: AssetOption[]; technicians: Employee[]; templates: PmTemplate[]; vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [assetId, setAssetId] = useState('');
   const [planDate, setPlanDate] = useState('');
   const [recurrence, setRecurrence] = useState<(typeof PM_RECURRENCES)[number]>('ครั้งเดียว');
   const [technicianId, setTechnicianId] = useState('');
   const [templateId, setTemplateId] = useState('');
+  const [vendorId, setVendorId] = useState('');
+  const [contractId, setContractId] = useState('');
   const [notes, setNotes] = useState('');
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -39,6 +42,8 @@ function CreatePlanForm({ assets, technicians, templates, onClose }: { assets: A
           recurrence,
           technicianId: technicianId || undefined,
           templateId: templateId || undefined,
+          vendorId: vendorId || undefined,
+          contractId: contractId || undefined,
           notes: notes || undefined,
         }),
       }),
@@ -103,6 +108,14 @@ function CreatePlanForm({ assets, technicians, templates, onClose }: { assets: A
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้ให้บริการ PM</label>
+        <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สัญญา MA</label>
+        <select value={contractId} onChange={(e) => setContractId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{contracts.filter((contract) => !vendorId || contract.vendor_id === vendorId).map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
       </div>
       <div className="sm:col-span-3">
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">หมายเหตุ</label>
@@ -318,6 +331,8 @@ export function MaintenancePage() {
   const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
   const templatesQuery = useQuery({ queryKey: ['pm-templates'], queryFn: () => apiFetch<PmTemplate[]>('/api/v1/pm-templates') });
   const templatesAdminQuery = useQuery({ queryKey: ['pm-templates', 'all'], queryFn: () => apiFetch<PmTemplate[]>('/api/v1/pm-templates?includeInactive=true') });
+  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
+  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const items = plansQuery.data?.items ?? [];
   const technicians = employeesQuery.data?.items ?? [];
@@ -348,8 +363,8 @@ export function MaintenancePage() {
           </select>
         </CardHeader>
         <CardBody>
-          {showCreate && assetsQuery.data && templatesQuery.data && (
-            <CreatePlanForm assets={assetsQuery.data} technicians={technicians} templates={templatesQuery.data} onClose={() => setShowCreate(false)} />
+          {showCreate && assetsQuery.data && templatesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
+            <CreatePlanForm assets={assetsQuery.data} technicians={technicians} templates={templatesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />
           )}
 
           {plansQuery.isLoading && (
@@ -368,6 +383,7 @@ export function MaintenancePage() {
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       วางแผน {formatThaiDate(plan.plan_date, 'd MMM yyyy')} · {plan.recurrence}
                       {plan.technician && ` · ${[plan.technician.first_name_th, plan.technician.last_name_th].join(' ')}`}
+                      {plan.vendor && ` · ${plan.vendor.name}`}{plan.contract && ` · ${plan.contract.contract_number}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

@@ -27,6 +27,7 @@ import { serviceRequestsRoute } from './routes/serviceRequests';
 import { tasksRoute } from './routes/tasks';
 import { ticketsRoute } from './routes/tickets';
 import { usersRoute } from './routes/users';
+import { contractsRoute, vendorsRoute } from './routes/vendorsContracts';
 import type { AppEnv } from './types';
 import { fail } from './utils/response';
 
@@ -79,6 +80,8 @@ app.route('/api/v1/cmdb/relationships', ciRelationshipsRoute);
 app.route('/api/v1/incidents', incidentsRoute);
 app.route('/api/v1/problems', problemsRoute);
 app.route('/api/v1/changes', changesRoute);
+app.route('/api/v1/vendors', vendorsRoute);
+app.route('/api/v1/contracts', contractsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
