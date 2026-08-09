@@ -1,23 +1,39 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { createLicenseSchema, listLicensesQuerySchema, setLicenseStatusSchema, updateLicenseSchema } from '../validators/licenses';
 
-/**
- * Software License — สืบทอดจาก SoftwareLicenses เดิม (Module_ITAssetExtras.gs) การส่งแจ้งเตือนหมดอายุ
- * ทาง Email/LINE (sendLicenseExpiryNotifications_) เลื่อนไว้ก่อน (ยังไม่มี Cron/Email/LINE infra) แต่
- * การคำนวณสถานะหมดอายุ (checkExpireLicenses_) ยังคงย้ายมาเป็น endpoint กดคำนวณเองได้
- */
+/** Software License — ทะเบียนจำนวนสิทธิ์ การผูก Vendor/Contract และการเตือนวันหมดอายุ */
 export const licensesRoute = new Hono<AppEnv>();
 licensesRoute.use('*', requireAuth);
 
 const LICENSE_SELECT = '*, vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
+
+function generatedLicenseCode(): string {
+  const now = new Date();
+  const month = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `LIC-${month}-${Math.floor(Math.random() * 9000 + 1000)}`;
+}
+
+async function normalizedVendorId(
+  admin: ReturnType<typeof createAdminClient>,
+  vendorId: string | undefined,
+  contractId: string | undefined,
+): Promise<{ vendorId: string | null; error?: 'CONTRACT_NOT_FOUND' | 'CONTRACT_VENDOR_MISMATCH' }> {
+  if (!contractId) return { vendorId: vendorId || null };
+  const { data: contract } = await admin.from('contracts').select('vendor_id').eq('id', contractId).maybeSingle();
+  if (!contract) return { vendorId: null, error: 'CONTRACT_NOT_FOUND' };
+  if (vendorId && contract.vendor_id !== vendorId) return { vendorId: null, error: 'CONTRACT_VENDOR_MISMATCH' };
+  return { vendorId: vendorId || contract.vendor_id };
+}
 
 licensesRoute.get('/', requirePermission('license.view'), zValidator('query', listLicensesQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
@@ -31,7 +47,10 @@ licensesRoute.get('/', requirePermission('license.view'), zValidator('query', li
     .range(...paginationRange(page, pageSize));
 
   if (status) query = query.eq('status', status);
-  if (search) query = query.or(`software_name.ilike.%${search}%,vendor_name.ilike.%${search}%,assigned_to.ilike.%${search}%`);
+  if (search) {
+    const safeSearch = search.replace(/[%(),]/g, ' ').trim();
+    query = query.or(`license_code.ilike.%${safeSearch}%,software_name.ilike.%${safeSearch}%,license_type.ilike.%${safeSearch}%,vendor_name.ilike.%${safeSearch}%,assigned_to.ilike.%${safeSearch}%`);
+  }
 
   const { data, count, error } = await query;
   if (error) return c.json(fail(reqId, 'LICENSES_LIST_FAILED', 'ดึงทะเบียน License ไม่สำเร็จ'), 400);
@@ -50,14 +69,18 @@ licensesRoute.get('/:id', requirePermission('license.view'), async (c) => {
 });
 
 licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', createLicenseSchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const body = c.req.valid('json');
+  const normalized = await normalizedVendorId(admin, body.vendorId, body.contractId);
+  if (normalized.error === 'CONTRACT_NOT_FOUND') return c.json(fail(reqId, 'LICENSE_CONTRACT_NOT_FOUND', 'ไม่พบสัญญาที่เลือก'), 400);
+  if (normalized.error === 'CONTRACT_VENDOR_MISMATCH') return c.json(fail(reqId, 'LICENSE_CONTRACT_VENDOR_MISMATCH', 'สัญญาไม่ได้อยู่ภายใต้ผู้จำหน่ายที่เลือก'), 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('software_licenses')
     .insert({
+      license_code: generatedLicenseCode(),
       software_name: body.softwareName,
       license_type: body.licenseType ?? null,
       total_qty: body.totalQty ?? 0,
@@ -65,11 +88,13 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
       start_date: body.startDate || null,
       expire_date: body.expireDate || null,
       vendor_name: body.vendorName ?? null,
-      vendor_id: body.vendorId || null,
+      vendor_id: normalized.vendorId,
       contract_id: body.contractId || null,
       assigned_to: body.assignedTo ?? null,
+      expiry_notice_days: body.expiryNoticeDays,
       notes: body.notes ?? null,
       created_by: actorId,
+      updated_by: actorId,
     })
     .select(LICENSE_SELECT)
     .single();
@@ -83,7 +108,7 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
     module: 'license',
     targetTable: 'software_licenses',
     targetId: data.id,
-    detail: { softwareName: body.softwareName },
+    detail: { licenseCode: data.license_code, softwareName: body.softwareName },
     requestId: reqId,
   });
 
@@ -91,13 +116,13 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
 });
 
 licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('json', updateLicenseSchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  const { data: current, error: currentError } = await supabase.from('software_licenses').select('*').eq('id', id).maybeSingle();
+  const { data: current, error: currentError } = await admin.from('software_licenses').select('*').eq('id', id).maybeSingle();
   if (currentError) return c.json(fail(reqId, 'LICENSE_LOAD_FAILED', 'ดึงข้อมูล License ไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'LICENSE_NOT_FOUND', 'ไม่พบ License นี้'), 404);
 
@@ -107,6 +132,14 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
     return c.json(fail(reqId, 'VALIDATION_ERROR', 'จำนวนที่ใช้ต้องไม่เกินจำนวนทั้งหมด', [{ field: 'usedQty', message: 'เกินจำนวนทั้งหมด' }]), 400);
   }
 
+  const normalized = await normalizedVendorId(
+    admin,
+    body.vendorId !== undefined ? body.vendorId : current.vendor_id,
+    body.contractId !== undefined ? body.contractId : current.contract_id,
+  );
+  if (normalized.error === 'CONTRACT_NOT_FOUND') return c.json(fail(reqId, 'LICENSE_CONTRACT_NOT_FOUND', 'ไม่พบสัญญาที่เลือก'), 400);
+  if (normalized.error === 'CONTRACT_VENDOR_MISMATCH') return c.json(fail(reqId, 'LICENSE_CONTRACT_VENDOR_MISMATCH', 'สัญญาไม่ได้อยู่ภายใต้ผู้จำหน่ายที่เลือก'), 400);
+
   const patch: Record<string, unknown> = { updated_by: actorId };
   if (body.softwareName !== undefined) patch.software_name = body.softwareName;
   if (body.licenseType !== undefined) patch.license_type = body.licenseType;
@@ -115,13 +148,15 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
   if (body.startDate !== undefined) patch.start_date = body.startDate || null;
   if (body.expireDate !== undefined) patch.expire_date = body.expireDate || null;
   if (body.vendorName !== undefined) patch.vendor_name = body.vendorName;
-  if (body.vendorId !== undefined) patch.vendor_id = body.vendorId || null;
+  if (body.vendorId !== undefined || body.contractId !== undefined) patch.vendor_id = normalized.vendorId;
   if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.assignedTo !== undefined) patch.assigned_to = body.assignedTo;
+  if (body.expiryNoticeDays !== undefined) patch.expiry_notice_days = body.expiryNoticeDays;
   if (body.notes !== undefined) patch.notes = body.notes;
   if (body.status !== undefined) patch.status = body.status;
+  if (body.expireDate !== undefined) patch.expiry_notified_at = null;
 
-  const { data, error } = await supabase.from('software_licenses').update(patch).eq('id', id).select(LICENSE_SELECT).single();
+  const { data, error } = await admin.from('software_licenses').update(patch).eq('id', id).select(LICENSE_SELECT).single();
   if (error) return c.json(fail(reqId, 'LICENSE_UPDATE_FAILED', error.message), 400);
 
   await writeAuditLog(c.env, {
@@ -139,13 +174,13 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
 });
 
 licensesRoute.post('/:id/status', requirePermission('license.manage'), zValidator('json', setLicenseStatusSchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id')!;
   const { status } = c.req.valid('json');
 
-  const { data, error } = await supabase.from('software_licenses').update({ status, updated_by: actorId }).eq('id', id).select().single();
+  const { data, error } = await admin.from('software_licenses').update({ status, updated_by: actorId, ...(status === 'Active' ? { expiry_notified_at: null } : {}) }).eq('id', id).select(LICENSE_SELECT).single();
   if (error) return c.json(fail(reqId, 'LICENSE_STATUS_FAILED', error.message), 400);
 
   await writeAuditLog(c.env, {
@@ -162,20 +197,48 @@ licensesRoute.post('/:id/status', requirePermission('license.manage'), zValidato
   return c.json(ok(reqId, data));
 });
 
-/** คำนวณสถานะหมดอายุใหม่ทั้งหมด (checkExpireLicenses_ เดิม) — กดเองได้ ยังไม่มีการแจ้งเตือนอัตโนมัติ */
+/** คำนวณสถานะหมดอายุและสร้าง in-app notification แบบ idempotent ให้ผู้ดูแลระบบ */
 licensesRoute.post('/check-expiry', requirePermission('license.manage'), async (c) => {
-  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
 
   const today = new Date().toISOString().slice(0, 10);
-  const { data: candidates, error: findError } = await supabase.from('software_licenses').select('id, status').lt('expire_date', today);
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  const { data: candidates, error: findError } = await admin
+    .from('software_licenses')
+    .select('id, license_code, software_name, expire_date, expiry_notice_days, expiry_notified_at, status')
+    .not('expire_date', 'is', null)
+    .neq('status', 'Inactive');
   if (findError) return c.json(fail(reqId, 'LICENSE_EXPIRY_CHECK_FAILED', findError.message), 400);
 
-  const ids = (candidates ?? []).filter((row) => row.status !== 'Expired' && row.status !== 'Inactive').map((row) => row.id);
-  if (ids.length) {
-    const { error: updateError } = await supabase.from('software_licenses').update({ status: 'Expired', updated_by: actorId }).in('id', ids);
+  const expiredIds = (candidates ?? []).filter((row) => row.status === 'Active' && row.expire_date! < today).map((row) => row.id);
+  if (expiredIds.length) {
+    const { error: updateError } = await admin.from('software_licenses').update({ status: 'Expired', updated_by: actorId }).in('id', expiredIds);
     if (updateError) return c.json(fail(reqId, 'LICENSE_EXPIRY_UPDATE_FAILED', updateError.message), 400);
+  }
+
+  const notifyRows = (candidates ?? []).filter((row) => {
+    if (row.expiry_notified_at || !row.expire_date) return false;
+    const days = Math.ceil((Date.parse(`${row.expire_date}T00:00:00Z`) - todayMs) / 86_400_000);
+    return days <= row.expiry_notice_days;
+  });
+  const { data: adminRoles } = await admin
+    .from('user_roles')
+    .select('user_id, roles!inner(key), profiles!inner(status)')
+    .in('roles.key', ['super_admin', 'it_admin'])
+    .eq('profiles.status', 'active');
+  const recipientIds = [...new Set((adminRoles ?? []).map((row) => row.user_id))];
+  const notifiedCount = recipientIds.length ? notifyRows.length : 0;
+  if (notifyRows.length && recipientIds.length) {
+    await Promise.all(notifyRows.flatMap((row) => recipientIds.map((recipientId) => sendNotification(c.env, {
+      recipientId,
+      type: 'license_expiry',
+      title: row.expire_date! < today ? `License ${row.license_code} หมดอายุแล้ว` : `License ${row.license_code} ใกล้หมดอายุ`,
+      body: `${row.software_name} · สิ้นสุด ${row.expire_date}`,
+      link: '/licenses',
+    }))));
+    await admin.from('software_licenses').update({ expiry_notified_at: new Date().toISOString(), updated_by: actorId }).in('id', notifyRows.map((row) => row.id));
   }
 
   await writeAuditLog(c.env, {
@@ -184,9 +247,9 @@ licensesRoute.post('/check-expiry', requirePermission('license.manage'), async (
     action: 'CHECK_EXPIRY',
     module: 'license',
     targetTable: 'software_licenses',
-    detail: { updatedCount: ids.length },
+    detail: { updatedCount: expiredIds.length, notifiedCount, recipientCount: recipientIds.length },
     requestId: reqId,
   });
 
-  return c.json(ok(reqId, { updatedCount: ids.length }));
+  return c.json(ok(reqId, { updatedCount: expiredIds.length, notifiedCount }));
 });

@@ -20,6 +20,7 @@ const licenseBaseSchema = z.object({
   vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
   contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
   assignedTo: z.string().trim().max(200).optional(),
+  expiryNoticeDays: z.coerce.number().int().min(0).max(3650).default(30),
   notes: z.string().trim().max(500).optional(),
 });
 

@@ -1040,9 +1040,22 @@ describe('assets / asset_movements / maintenance_plans / pm_checklist_templates 
     ).rejects.toThrow();
 
     const inserted = await asUser(db, TECHNICIAN_ID, async () =>
-      db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('Adobe Acrobat Pro', 10, 4) returning id`),
+      db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('Adobe Acrobat Pro', 10, 4) returning id, license_code, expiry_notice_days`),
     );
     expect(inserted.rows).toHaveLength(1);
+    expect((inserted.rows[0] as { license_code: string }).license_code).toMatch(/^LIC-/);
+    expect((inserted.rows[0] as { expiry_notice_days: number }).expiry_notice_days).toBe(30);
+
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.software_licenses (software_name, start_date, expire_date) values ('วันผิด', '2026-12-31', '2026-01-01')`),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.software_licenses (software_name, expiry_notice_days) values ('แจ้งเตือนผิด', 3651)`),
+      ),
+    ).rejects.toThrow();
 
     await expect(
       asUser(db, AUDITOR_ID, async () => db.query(`insert into public.software_licenses (software_name) values ('ห้ามเพิ่ม')`)),

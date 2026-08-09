@@ -1,198 +1,470 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2, Plus, RefreshCw, X } from 'lucide-react';
-import { useState } from 'react';
-import { RequirePermission } from '../../components/RequirePermission';
+import {
+  AlertTriangle,
+  Building2,
+  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  CircleGauge,
+  KeyRound,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Users,
+  X,
+} from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
-import type { SoftwareLicense } from '../../types/assets';
+import { LICENSE_STATUSES, type SoftwareLicense } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
-import { LICENSE_STATUSES } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
+import { daysUntilLicenseExpiry, licenseHealth, remainingSeats, utilizationPercent, type LicenseHealth } from './licenseDisplay';
 
-const statusTone: Record<string, 'success' | 'danger' | 'secondary'> = {
-  Active: 'success',
-  Expired: 'danger',
-  Inactive: 'secondary',
+const LICENSE_TYPES = ['Subscription', 'Perpetual', 'Volume', 'OEM', 'Named User', 'Concurrent', 'Trial', 'อื่นๆ'] as const;
+const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
+
+const healthTone: Record<LicenseHealth, 'success' | 'warning' | 'danger' | 'secondary' | 'info'> = {
+  active: 'success',
+  expiring: 'warning',
+  expired: 'danger',
+  inactive: 'secondary',
+  unlimited: 'info',
 };
 
-function CreateLicenseForm({ vendors, contracts, onClose }: { vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
+const healthLabel: Record<LicenseHealth, string> = {
+  active: 'ใช้งาน',
+  expiring: 'ใกล้หมดอายุ',
+  expired: 'หมดอายุ',
+  inactive: 'ปิดใช้งาน',
+  unlimited: 'ไม่กำหนดอายุ',
+};
+
+interface LicenseFormState {
+  softwareName: string;
+  licenseType: string;
+  totalQty: string;
+  usedQty: string;
+  startDate: string;
+  expireDate: string;
+  vendorId: string;
+  contractId: string;
+  assignedTo: string;
+  expiryNoticeDays: string;
+  notes: string;
+}
+
+function initialForm(license?: SoftwareLicense): LicenseFormState {
+  return {
+    softwareName: license?.software_name ?? '',
+    licenseType: license?.license_type ?? 'Subscription',
+    totalQty: String(license?.total_qty ?? 1),
+    usedQty: String(license?.used_qty ?? 0),
+    startDate: license?.start_date ?? '',
+    expireDate: license?.expire_date ?? '',
+    vendorId: license?.vendor_id ?? '',
+    contractId: license?.contract_id ?? '',
+    assignedTo: license?.assigned_to ?? '',
+    expiryNoticeDays: String(license?.expiry_notice_days ?? 30),
+    notes: license?.notes ?? '',
+  };
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+function LicenseForm({
+  license,
+  vendors,
+  contracts,
+  onClose,
+}: {
+  license?: SoftwareLicense;
+  vendors: ContractVendorRef[];
+  contracts: ContractOption[];
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [softwareName, setSoftwareName] = useState('');
-  const [licenseType, setLicenseType] = useState('');
-  const [totalQty, setTotalQty] = useState('1');
-  const [usedQty, setUsedQty] = useState('0');
-  const [expireDate, setExpireDate] = useState('');
-  const [vendorId, setVendorId] = useState('');
-  const [contractId, setContractId] = useState('');
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [form, setForm] = useState(() => initialForm(license));
+  const [error, setError] = useState<string | null>(null);
+  const set = (key: keyof LicenseFormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const availableContracts = contracts.filter((contract) => !form.vendorId || contract.vendor_id === form.vendorId);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/v1/software-licenses', {
-        method: 'POST',
+    mutationFn: () => {
+      const totalQty = Number(form.totalQty);
+      const usedQty = Number(form.usedQty);
+      if (!Number.isFinite(totalQty) || !Number.isFinite(usedQty) || totalQty < 0 || usedQty < 0) {
+        throw new Error('จำนวน License ต้องเป็นเลขตั้งแต่ 0 ขึ้นไป');
+      }
+      if (usedQty > totalQty) throw new Error('จำนวนที่ใช้ต้องไม่เกินจำนวนทั้งหมด');
+      if (form.startDate && form.expireDate && form.expireDate < form.startDate) {
+        throw new Error('วันหมดอายุต้องไม่ก่อนวันเริ่มต้น');
+      }
+      const expiryNoticeDays = Number(form.expiryNoticeDays);
+      if (!Number.isInteger(expiryNoticeDays) || expiryNoticeDays < 0 || expiryNoticeDays > 3650) {
+        throw new Error('จำนวนวันแจ้งเตือนต้องอยู่ระหว่าง 0–3650 วัน');
+      }
+      return apiFetch(license ? `/api/v1/software-licenses/${license.id}` : '/api/v1/software-licenses', {
+        method: license ? 'PATCH' : 'POST',
         body: JSON.stringify({
-          softwareName,
-          licenseType: licenseType || undefined,
-          totalQty: Number(totalQty) || 0,
-          usedQty: Number(usedQty) || 0,
-          expireDate: expireDate || undefined,
-          vendorId: vendorId || undefined,
-          contractId: contractId || undefined,
+          softwareName: form.softwareName,
+          licenseType: form.licenseType || undefined,
+          totalQty,
+          usedQty,
+          startDate: form.startDate,
+          expireDate: form.expireDate,
+          vendorId: form.vendorId,
+          contractId: form.contractId,
+          assignedTo: form.assignedTo,
+          expiryNoticeDays,
+          notes: form.notes,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['software-licenses'] });
       onClose();
     },
-    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'เพิ่ม License ไม่สำเร็จ'),
+    onError: (reason) => setError(reason instanceof Error ? reason.message : errorText(reason, 'บันทึก License ไม่สำเร็จ')),
   });
 
   return (
-    <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <div className="flex items-center justify-between sm:col-span-3">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่ม Software License</h3>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" aria-hidden="true" /></button>
+    <Card data-testid="license-form" className="border-primary-200 dark:border-primary-900">
+      <CardHeader className="flex items-center justify-between">
+        <div>
+          <p>{license ? `แก้ไข ${license.software_name}` : 'เพิ่ม Software License'}</p>
+          <p className="mt-0.5 text-xs font-normal text-slate-500">ข้อมูลสิทธิ์ใช้งาน ผู้จำหน่าย สัญญา และรอบอายุ</p>
+        </div>
+        <button type="button" aria-label="ปิดแบบฟอร์ม" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">
+          <X className="h-4 w-4" />
+        </button>
+      </CardHeader>
+      <CardBody>
+        <form
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setError(null);
+            mutation.mutate();
+          }}
+        >
+          <label className="text-xs font-semibold sm:col-span-2">
+            ชื่อซอฟต์แวร์
+            <input required maxLength={150} data-testid="lic-form-name" value={form.softwareName} onChange={(event) => set('softwareName', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            ประเภท License
+            <input list="license-types" maxLength={80} value={form.licenseType} onChange={(event) => set('licenseType', event.target.value)} className={fieldClass} />
+            <datalist id="license-types">{LICENSE_TYPES.map((type) => <option key={type} value={type} />)}</datalist>
+          </label>
+          <label className="text-xs font-semibold">
+            ผู้ใช้งาน / หน่วยงาน
+            <input maxLength={200} value={form.assignedTo} onChange={(event) => set('assignedTo', event.target.value)} placeholder="เช่น พนักงานทุกหน่วยงาน" className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            จำนวนทั้งหมด
+            <input required type="number" min="0" step="1" data-testid="lic-form-total" value={form.totalQty} onChange={(event) => set('totalQty', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            ใช้แล้ว
+            <input required type="number" min="0" step="1" data-testid="lic-form-used" value={form.usedQty} onChange={(event) => set('usedQty', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            วันที่เริ่มต้น
+            <input type="date" value={form.startDate} onChange={(event) => set('startDate', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            วันหมดอายุ
+            <input type="date" data-testid="lic-form-expire" value={form.expireDate} onChange={(event) => set('expireDate', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            แจ้งเตือนล่วงหน้า (วัน)
+            <input type="number" min="0" max="3650" step="1" value={form.expiryNoticeDays} onChange={(event) => set('expiryNoticeDays', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold sm:col-span-2">
+            ผู้จำหน่าย
+            <select
+              value={form.vendorId}
+              onChange={(event) => {
+                setForm((current) => ({ ...current, vendorId: event.target.value, contractId: '' }));
+              }}
+              className={fieldClass}
+            >
+              <option value="">— ไม่ระบุ —</option>
+              {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold sm:col-span-2">
+            สัญญาที่เกี่ยวข้อง
+            <select value={form.contractId} onChange={(event) => set('contractId', event.target.value)} className={fieldClass}>
+              <option value="">— ไม่ระบุ —</option>
+              {availableContracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold sm:col-span-2 lg:col-span-4">
+            หมายเหตุ
+            <textarea rows={3} maxLength={500} value={form.notes} onChange={(event) => set('notes', event.target.value)} className={fieldClass} />
+          </label>
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2 lg:col-span-4 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
+            <Button type="submit" size="sm" isLoading={mutation.isPending} disabled={!form.softwareName.trim()} data-testid="lic-form-submit">
+              <Save className="h-4 w-4" />{license ? 'บันทึกการแก้ไข' : 'บันทึก License'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>ยกเลิก</Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+function UsageEditor({ license, onClose }: { license: SoftwareLicense; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [usedQty, setUsedQty] = useState(String(license.used_qty));
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => {
+      const used = Number(usedQty);
+      if (!Number.isFinite(used) || used < 0 || used > license.total_qty) throw new Error(`จำนวนที่ใช้ต้องอยู่ระหว่าง 0–${license.total_qty}`);
+      return apiFetch(`/api/v1/software-licenses/${license.id}`, { method: 'PATCH', body: JSON.stringify({ usedQty: used }) });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['software-licenses'] });
+      onClose();
+    },
+    onError: (reason) => setError(reason instanceof Error ? reason.message : 'บันทึกจำนวนสิทธิ์ไม่สำเร็จ'),
+  });
+
+  return (
+    <div className="flex min-w-64 flex-col gap-2 rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-900 dark:bg-primary-950/30">
+      <div className="flex items-center justify-between"><p className="text-xs font-bold">ปรับจำนวนที่ใช้</p><button type="button" aria-label="ปิด" onClick={onClose}><X className="h-3.5 w-3.5" /></button></div>
+      <p className="truncate text-xs text-slate-500">{license.software_name} · ทั้งหมด {license.total_qty}</p>
+      <div className="flex gap-2">
+        <input type="number" min="0" max={license.total_qty} value={usedQty} onChange={(event) => setUsedQty(event.target.value)} className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
+        <Button size="sm" isLoading={mutation.isPending} onClick={() => { setError(null); mutation.mutate(); }}>บันทึก</Button>
       </div>
-      <div className="sm:col-span-2">
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อซอฟต์แวร์</label>
-        <input data-testid="lic-create-name" value={softwareName} onChange={(e) => setSoftwareName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ประเภท</label>
-        <input value={licenseType} onChange={(e) => setLicenseType(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">จำนวนทั้งหมด</label>
-        <input type="number" min="0" value={totalQty} onChange={(e) => setTotalQty(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">จำนวนที่ใช้แล้ว</label>
-        <input type="number" min="0" value={usedQty} onChange={(e) => setUsedQty(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">วันหมดอายุ</label>
-        <input type="date" value={expireDate} onChange={(e) => setExpireDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้จำหน่าย</label>
-        <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สัญญา</label>
-        <select value={contractId} onChange={(e) => setContractId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ไม่ระบุ —</option>{contracts.filter((contract) => !vendorId || contract.vendor_id === vendorId).map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
-      </div>
-      {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
-      <div className="sm:col-span-3">
-        <Button size="sm" isLoading={mutation.isPending} disabled={!softwareName.trim()} data-testid="lic-create-submit" onClick={() => mutation.mutate()}>
-          บันทึก License
-        </Button>
-      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function ExpiryText({ license }: { license: SoftwareLicense }) {
+  const days = daysUntilLicenseExpiry(license.expire_date);
+  if (!license.expire_date) return <span className="text-slate-400">ไม่กำหนด</span>;
+  return (
+    <div>
+      <p>{formatThaiDate(license.expire_date, 'd MMM yyyy')}</p>
+      {days !== null && days < 0 && <p className="text-xs font-semibold text-red-600">เลยกำหนด {Math.abs(days)} วัน</p>}
+      {days !== null && days >= 0 && days <= 30 && <p className="text-xs font-semibold text-amber-600">เหลือ {days} วัน</p>}
+      {days !== null && days > 30 && <p className="text-xs text-slate-400">เหลือ {days} วัน</p>}
     </div>
   );
 }
 
 export function LicensesPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('license.manage');
   const queryClient = useQueryClient();
-  const [showCreate, setShowCreate] = useState(false);
-  const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<SoftwareLicense | undefined>();
+  const [editingUsageId, setEditingUsageId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
 
   const licensesQuery = useQuery({
-    queryKey: ['software-licenses', status, search],
-    queryFn: () =>
-      apiFetch<PaginatedResult<SoftwareLicense>>(
-        `/api/v1/software-licenses?page=1&pageSize=50${status ? `&status=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
-      ),
+    queryKey: ['software-licenses', debouncedSearch],
+    queryFn: () => apiFetch<PaginatedResult<SoftwareLicense>>(`/api/v1/software-licenses?page=1&pageSize=100${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`),
   });
-  const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
-  const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
+  const vendorOptionsQuery = useQuery({
+    queryKey: ['vendors-contracts', 'vendor-options'],
+    enabled: canManage && showForm,
+    queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'),
+  });
+  const contractOptionsQuery = useQuery({
+    queryKey: ['vendors-contracts', 'contract-options'],
+    enabled: canManage && showForm,
+    queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options'),
+  });
 
-  const checkExpiryMutation = useMutation({
-    mutationFn: () => apiFetch<{ updatedCount: number }>('/api/v1/software-licenses/check-expiry', { method: 'POST', body: '{}' }),
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => apiFetch(`/api/v1/software-licenses/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['software-licenses'] }),
   });
+  const checkExpiryMutation = useMutation({
+    mutationFn: () => apiFetch<{ updatedCount: number; notifiedCount: number }>('/api/v1/software-licenses/check-expiry', { method: 'POST', body: '{}' }),
+    onSuccess: (result) => {
+      setNotice(`ตรวจสอบแล้ว · ปรับสถานะหมดอายุ ${result.updatedCount} รายการ · แจ้งเตือน ${result.notifiedCount} รายการ`);
+      void queryClient.invalidateQueries({ queryKey: ['software-licenses'] });
+    },
+    onError: (reason) => setNotice(errorText(reason, 'ตรวจสอบวันหมดอายุไม่สำเร็จ')),
+  });
 
-  const items = licensesQuery.data?.items ?? [];
+  const items = useMemo(() => licensesQuery.data?.items ?? [], [licensesQuery.data?.items]);
+  const types = useMemo(() => [...new Set([...LICENSE_TYPES, ...items.map((item) => item.license_type).filter((value): value is string => Boolean(value))])].sort(), [items]);
+  const visibleItems = items.filter((item) => (!statusFilter || item.status === statusFilter) && (!typeFilter || item.license_type === typeFilter));
+  const activeCount = items.filter((item) => licenseHealth(item) === 'active' || licenseHealth(item) === 'unlimited').length;
+  const expiringCount = items.filter((item) => licenseHealth(item) === 'expiring').length;
+  const expiredCount = items.filter((item) => licenseHealth(item) === 'expired').length;
+  const totalSeats = items.reduce((sum, item) => sum + Number(item.total_qty), 0);
+  const usedSeats = items.reduce((sum, item) => sum + Number(item.used_qty), 0);
+  const overallUtilization = utilizationPercent(usedSeats, totalSeats);
+  const resetForm = () => { setShowForm(false); setEditing(undefined); };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4" data-testid="licenses-page">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Software License</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ทะเบียนสิทธิ์การใช้งานซอฟต์แวร์และวันหมดอายุ</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">ควบคุมจำนวนสิทธิ์ ผู้ใช้งาน สัญญา และรอบการต่ออายุซอฟต์แวร์</p>
         </div>
-        <div className="flex gap-2">
-          <RequirePermission permission="license.manage">
-            <Button size="sm" variant="outline" isLoading={checkExpiryMutation.isPending} data-testid="lic-check-expiry" onClick={() => checkExpiryMutation.mutate()}>
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              ตรวจสอบวันหมดอายุ
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" isLoading={checkExpiryMutation.isPending} data-testid="lic-check-expiry" onClick={() => { setNotice(null); checkExpiryMutation.mutate(); }}>
+              <RefreshCw className="h-4 w-4" />ตรวจวันหมดอายุ
             </Button>
-          </RequirePermission>
-          <RequirePermission permission="license.manage">
-            <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="lic-create-toggle">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              เพิ่ม License
+            <Button size="sm" data-testid="lic-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}>
+              <Plus className="h-4 w-4" />เพิ่ม License
             </Button>
-          </RequirePermission>
-        </div>
+          </div>
+        )}
       </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <StatCard icon={<KeyRound className="h-5 w-5" />} label="License ทั้งหมด" value={licensesQuery.data?.pagination.totalItems ?? 0} tone="primary" />
+        <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="พร้อมใช้งาน" value={activeCount} tone="teal" />
+        <StatCard icon={<CalendarClock className="h-5 w-5" />} label="ใกล้หมดใน 30 วัน" value={expiringCount} tone={expiringCount ? 'amber' : 'gray'} />
+        <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="หมดอายุแล้ว" value={expiredCount} tone={expiredCount ? 'danger' : 'gray'} />
+        <StatCard icon={<CircleGauge className="h-5 w-5" />} label="อัตราการใช้งาน" value={`${overallUtilization}%`} note={`${usedSeats.toLocaleString('th-TH')} / ${totalSeats.toLocaleString('th-TH')} สิทธิ์`} tone={overallUtilization >= 90 ? 'amber' : 'primary'} />
+      </div>
+
+      {notice && (
+        <div className="flex items-center justify-between rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:border-primary-900 dark:bg-primary-950/30 dark:text-primary-200">
+          <span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setNotice(null)}><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {showForm && (
+        vendorOptionsQuery.isLoading || contractOptionsQuery.isLoading ? (
+          <Card><CardBody className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมข้อมูลแบบฟอร์ม</CardBody></Card>
+        ) : vendorOptionsQuery.isError || contractOptionsQuery.isError ? (
+          <Card><CardBody className="flex items-center justify-between gap-3 text-sm text-red-700 dark:text-red-300"><span>โหลดข้อมูล Vendor/Contract สำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></CardBody></Card>
+        ) : (
+          <LicenseForm license={editing} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={resetForm} />
+        )
+      )}
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-          <span>รายการ License</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900">
-            <option value="">ทุกสถานะ</option>
-            {LICENSE_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          <div>
+            <p>ทะเบียน Software License</p>
+            <p className="mt-0.5 text-xs font-normal text-slate-500">ติดตามสิทธิ์คงเหลือและรายการที่ต้องต่ออายุ</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select aria-label="กรองประเภท License" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900">
+              <option value="">ทุกประเภท</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+            <select aria-label="กรองสถานะ License" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900">
+              <option value="">ทุกสถานะ</option>{LICENSE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+          </div>
         </CardHeader>
         <CardBody>
-          {showCreate && vendorOptionsQuery.data && contractOptionsQuery.data && <CreateLicenseForm vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <input type="search" placeholder="ค้นหาชื่อซอฟต์แวร์ ผู้จำหน่าย หรือผู้ใช้งาน..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
+            {(statusFilter || typeFilter || search) && <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setStatusFilter(''); setTypeFilter(''); }}>ล้างตัวกรอง</Button>}
+          </div>
 
-          <input
-            type="search"
-            placeholder="ค้นหาชื่อซอฟต์แวร์ หรือผู้จำหน่าย..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
+          {licensesQuery.isLoading && <div className="flex justify-center py-10" role="status"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
+          {licensesQuery.isError && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{errorText(licensesQuery.error, 'โหลดทะเบียน License ไม่สำเร็จ')}</div>}
+          {!licensesQuery.isLoading && !licensesQuery.isError && visibleItems.length === 0 && <EmptyState icon={<KeyRound className="h-10 w-10" />} title="ไม่พบ Software License" message="ลองเปลี่ยนคำค้นหาหรือตัวกรองสถานะ" />}
 
-          {licensesQuery.isLoading && (
-            <div className="flex justify-center py-8" role="status">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
-            </div>
-          )}
-          {licensesQuery.data && items.length === 0 && <EmptyState icon={<KeyRound className="h-10 w-10" aria-hidden="true" />} title="ไม่พบ License" />}
-
-          {items.length > 0 && (
+          {visibleItems.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
-                    <th className="px-2 py-2">ซอฟต์แวร์</th>
-                    <th className="px-2 py-2">จำนวน (ใช้/ทั้งหมด)</th>
-                    <th className="px-2 py-2">หมดอายุ</th>
-                    <th className="px-2 py-2">ผู้จำหน่าย</th>
-                    <th className="px-2 py-2">สถานะ</th>
+                    <th className="p-2">ซอฟต์แวร์</th>
+                    <th className="p-2">การใช้งาน</th>
+                    <th className="p-2">รอบอายุ</th>
+                    <th className="p-2">Vendor / Contract</th>
+                    <th className="p-2">ผู้ใช้งาน</th>
+                    <th className="p-2">สถานะ</th>
+                    <th className="p-2 text-right">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((l) => (
-                    <tr key={l.id} data-testid={`lic-row-${l.id}`} className="border-t border-slate-100 dark:border-slate-700">
-                      <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{l.software_name}</td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.used_qty} / {l.total_qty}</td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.expire_date ? formatThaiDate(l.expire_date, 'd MMM yyyy') : '—'}</td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{l.vendor?.name ?? l.vendor_name ?? '—'}{l.contract && <p className="text-xs text-slate-400">{l.contract.contract_number}</p>}</td>
-                      <td className="px-2 py-2">
-                        <Badge variant={statusTone[l.status]}>{l.status}</Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {visibleItems.map((license) => {
+                    const health = licenseHealth(license);
+                    const utilization = utilizationPercent(license.used_qty, license.total_qty);
+                    const expanded = expandedId === license.id;
+                    return (
+                      <Fragment key={license.id}>
+                        <tr data-testid={`lic-row-${license.id}`} className="border-t border-slate-100 align-top dark:border-slate-700">
+                          <td className="p-2">
+                            <p className="font-semibold text-slate-800 dark:text-slate-100">{license.software_name}</p>
+                            <p className="font-mono text-xs text-primary-700 dark:text-primary-300">{license.license_code}</p>
+                            <p className="text-xs text-slate-400">{license.license_type || 'ไม่ระบุประเภท'}</p>
+                          </td>
+                          <td className="min-w-44 p-2">
+                            <div className="flex items-center justify-between text-xs"><span>{license.used_qty} / {license.total_qty}</span><span className="font-semibold">{utilization}%</span></div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"><div className={`h-full rounded-full ${utilization >= 90 ? 'bg-amber-500' : 'bg-primary-600'}`} style={{ width: `${utilization}%` }} /></div>
+                            <p className="mt-1 text-xs text-slate-400">คงเหลือ {remainingSeats(license.used_qty, license.total_qty)} สิทธิ์</p>
+                          </td>
+                          <td className="p-2 text-slate-500 dark:text-slate-400"><ExpiryText license={license} /></td>
+                          <td className="max-w-56 p-2 text-slate-500 dark:text-slate-400">
+                            <p className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{license.vendor?.name ?? license.vendor_name ?? '—'}</p>
+                            {license.contract && <p className="mt-1 font-mono text-xs text-primary-700 dark:text-primary-300">{license.contract.contract_number}</p>}
+                          </td>
+                          <td className="max-w-48 p-2 text-slate-500 dark:text-slate-400"><p className="flex items-start gap-1"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />{license.assigned_to || '—'}</p></td>
+                          <td className="p-2"><Badge variant={healthTone[health]}>{healthLabel[health]}</Badge></td>
+                          <td className="p-2">
+                            <div className="flex min-w-max justify-end gap-1">
+                              <Button size="sm" variant="ghost" aria-label={`รายละเอียด ${license.software_name}`} onClick={() => setExpandedId(expanded ? null : license.id)}>{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
+                              {canManage && <Button size="sm" variant="outline" onClick={() => setEditingUsageId(editingUsageId === license.id ? null : license.id)}>สิทธิ์</Button>}
+                              {canManage && <Button size="sm" variant="ghost" onClick={() => { setEditing(license); setShowForm(true); }}><Pencil className="h-3.5 w-3.5" />แก้ไข</Button>}
+                            </div>
+                            {editingUsageId === license.id && <div className="mt-2"><UsageEditor license={license} onClose={() => setEditingUsageId(null)} /></div>}
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr className="border-t border-slate-100 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/40">
+                            <td colSpan={7} className="p-4">
+                              <div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-5">
+                                <div><p className="font-semibold text-slate-500">วันที่เริ่มต้น</p><p className="mt-1">{license.start_date ? formatThaiDate(license.start_date) : '—'}</p></div>
+                                <div><p className="font-semibold text-slate-500">วันหมดอายุ</p><p className="mt-1">{license.expire_date ? formatThaiDate(license.expire_date) : 'ไม่กำหนด'}</p></div>
+                                <div><p className="font-semibold text-slate-500">สัญญา</p><p className="mt-1">{license.contract?.name ?? '—'}</p></div>
+                                <div><p className="font-semibold text-slate-500">แจ้งเตือนล่วงหน้า</p><p className="mt-1">{license.expiry_notice_days} วัน</p></div>
+                                <div><p className="font-semibold text-slate-500">หมายเหตุ</p><p className="mt-1 whitespace-pre-wrap">{license.notes || '—'}</p></div>
+                              </div>
+                              {canManage && (
+                                <div className="mt-4 flex items-center gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+                                  <label className="text-xs font-semibold">สถานะระบบ</label>
+                                  <select aria-label={`สถานะ ${license.software_name}`} value={license.status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate({ id: license.id, status: event.target.value })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900">
+                                    {LICENSE_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                                  </select>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

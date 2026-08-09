@@ -166,6 +166,7 @@ export const LICENSE_STATUSES = ['Active', 'Expired', 'Inactive'] as const;
 
 export interface SoftwareLicense {
   id: string;
+  license_code: string;
   software_name: string;
   license_type: string | null;
   total_qty: number;
@@ -178,6 +179,9 @@ export interface SoftwareLicense {
   contract_id: string | null;
   contract: { id: string; contract_number: string; name: string; status: string; end_date: string | null } | null;
   assigned_to: string | null;
+  expiry_notice_days: number;
+  expiry_notified_at: string | null;
+  legacy_id: string | null;
   status: (typeof LICENSE_STATUSES)[number];
   notes: string | null;
 }
