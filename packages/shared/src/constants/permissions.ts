@@ -42,6 +42,12 @@ export const DEFAULT_PERMISSION_KEYS = [
   'access_request.process',
   'access_registry.manage',
   'task.view',
+  'maintenance.view',
+  'maintenance.manage',
+  'inventory.view',
+  'inventory.manage',
+  'license.view',
+  'license.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

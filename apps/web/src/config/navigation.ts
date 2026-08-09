@@ -1,10 +1,14 @@
 import {
   Activity,
+  Boxes,
   ClipboardList,
+  FileKey,
   KeyRound,
+  Laptop2,
   LayoutDashboard,
   ListChecks,
   ListTodo,
+  PackageSearch,
   ShieldCheck,
   ShoppingBag,
   Tags,
@@ -13,6 +17,7 @@ import {
   Users,
   Users2,
   UserSquare2,
+  Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -66,6 +71,16 @@ export const NAV_GROUPS: NavGroup[] = [
         anyPermission: ['ticket_category.manage', 'asset_category.manage'],
       },
       { label: 'พนักงาน', path: '/admin/employees', icon: UserSquare2, permission: 'employee.manage' },
+      {
+        label: 'ทรัพย์สินพนักงาน',
+        path: '/admin/employee-assignments',
+        icon: Laptop2,
+        anyPermission: ['employee.manage', 'asset.view'],
+      },
+      { label: 'ทะเบียนทรัพย์สิน IT', path: '/assets', icon: Boxes, permission: 'asset.view' },
+      { label: 'PM / บำรุงรักษา', path: '/maintenance', icon: Wrench, permission: 'maintenance.view' },
+      { label: 'Inventory', path: '/inventory-items', icon: PackageSearch, permission: 'inventory.view' },
+      { label: 'Software License', path: '/software-licenses', icon: FileKey, permission: 'license.view' },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
       { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },

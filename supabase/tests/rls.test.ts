@@ -16,6 +16,9 @@ const APPROVAL_GROUP_MEMBER_ID = '00000000-0000-0000-0000-000000000006';
 // access_request.approve ใดๆ — ใช้ยืนยันว่าการอนุมัติคำขอสิทธิ์มาจาก "เป็นหัวหน้างานที่ถูก route มา"
 // ล้วนๆ ไม่ใช่จาก permission
 const SUPERVISOR_ID = '00000000-0000-0000-0000-000000000007';
+// role 'technician' — ตัวแทน "ช่าง IT" ที่ seed.sql (Phase 6 Module 8) ให้สิทธิ์ asset.*/maintenance.*/
+// inventory.*/license.* เต็ม (ต่างจาก auditor ที่มีแค่ฝั่ง .view) ใช้ยืนยัน happy-path ของฝั่งเขียน
+const TECHNICIAN_ID = '00000000-0000-0000-0000-000000000008';
 
 let db: PGlite;
 
@@ -39,6 +42,7 @@ beforeAll(async () => {
   await createUserWithRole(SECOND_SUPER_ADMIN_ID, 'super-admin-2@test.local', 'super_admin');
   await createUserWithRole(APPROVAL_GROUP_MEMBER_ID, 'approver-member@test.local', 'user');
   await createUserWithRole(SUPERVISOR_ID, 'supervisor@test.local', 'user');
+  await createUserWithRole(TECHNICIAN_ID, 'technician@test.local', 'technician');
 
   await asServiceRole(db, async () => {
     await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
@@ -58,11 +62,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 38 permissions', async () => {
+  it('seeds 9 roles and 44 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(38);
+    expect((permissions.rows[0] as { count: number }).count).toBe(44);
   });
 });
 
@@ -866,6 +870,214 @@ describe('personal_tasks / task_subtasks / task_progress_logs / task_links RLS (
       db.query('delete from public.task_subtasks where id = $1 returning id', [ownSubtaskId]),
     );
     expect(ownAttempt.rows).toHaveLength(1);
+  });
+});
+
+describe('assets / asset_movements / maintenance_plans / pm_checklist_templates / inventory_items / inventory_transactions / software_licenses / employee_assignments RLS (Phase 6 Module 8)', () => {
+  let assetId: string;
+  let employeeId: string;
+  let pmTemplateId: string;
+  let inventoryItemId: string;
+
+  it('lets a view-only role (auditor: asset.view) read assets but not insert one', async () => {
+    const readAttempt = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.assets'));
+    expect(readAttempt.rows).toEqual([]);
+
+    await expect(
+      asUser(db, AUDITOR_ID, async () =>
+        db.query(`insert into public.assets (asset_code, name) values ('AST-AUDITOR', 'ทดสอบ')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets a full operational role (technician: asset.create) insert an asset', async () => {
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.assets (asset_code, name) values ('AST-001', 'โน้ตบุ๊กทดสอบ') returning id`),
+    );
+    assetId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const auditorReadsAfterInsert = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.assets where id = $1', [assetId]));
+    expect(auditorReadsAfterInsert.rows).toHaveLength(1);
+  });
+
+  it('rejects a plain user (no asset.* at all) from reading or writing assets', async () => {
+    const readAttempt = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.assets where id = $1', [assetId]));
+    expect(readAttempt.rows).toEqual([]);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.assets (asset_code, name) values ('AST-REJECT', 'ห้ามเพิ่ม')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a duplicate asset_code', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.assets (asset_code, name) values ('AST-001', 'รหัสซ้ำ')`)),
+    ).rejects.toThrow();
+  });
+
+  it('lets asset.view-only auditor read but not update an asset (update needs update/transfer/dispose)', async () => {
+    // RLS ไม่โยน error เมื่อไม่มี policy อนุญาต — เงียบๆ กระทบ 0 แถวแทน (เหมือน pattern เดียวกับที่
+    // ทดสอบไว้แล้วใน personal_tasks RLS ด้านบน "silently updates zero rows...")
+    const auditorAttempt = await asUser(db, AUDITOR_ID, async () =>
+      db.query(`update public.assets set location = 'ที่ใหม่' where id = $1 returning id`, [assetId]),
+    );
+    expect(auditorAttempt.rows).toEqual([]);
+
+    const updated = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`update public.assets set location = 'คลัง IT' where id = $1 returning id`, [assetId]),
+    );
+    expect(updated.rows).toHaveLength(1);
+  });
+
+  it('rejects an invalid status value outside the fixed list', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.assets set status = 'ไม่มีอยู่จริง' where id = $1`, [assetId])),
+    ).rejects.toThrow();
+  });
+
+  it('asset_movements: insert requires an asset.* write permission; select requires asset.view (append-only — no update policy)', async () => {
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.asset_movements (asset_id, action_type, status_label) values ($1, 'Create', 'บันทึก') returning id`, [
+        assetId,
+      ]),
+    );
+    expect(inserted.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.asset_movements (asset_id, action_type) values ($1, 'Create')`, [assetId]),
+      ),
+    ).rejects.toThrow();
+
+    const regularUserRead = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.asset_movements where asset_id = $1', [assetId]));
+    expect(regularUserRead.rows).toEqual([]);
+
+    // ไม่มี update policy ให้ authenticated เลยแม้แต่คนที่ insert ได้ (asset_movements เป็น append-only
+    // history ตามที่ระบุไว้ใน comment ของ migration) — RLS ไม่โยน error แต่กระทบ 0 แถวเงียบๆ (เหมือน
+    // asset.view-only update ด้านบน) service_role ถูกยกเว้นไว้เพราะ bypassrls ตามค่าเริ่มต้นของ Supabase
+    // จึงต้องทดสอบที่ระดับ authenticated เท่านั้น
+    const updateAttempt = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`update public.asset_movements set notes = 'แก้ไข' where asset_id = $1 returning id`, [assetId]),
+    );
+    expect(updateAttempt.rows).toEqual([]);
+  });
+
+  it('pm_checklist_templates + maintenance_plans: maintenance.manage (technician) can write, maintenance.view-only (auditor) cannot', async () => {
+    const template = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.pm_checklist_templates (name, items_json) values ('เช็กลิสต์ทดสอบ', '[{"text":"ตรวจสายไฟ"}]'::jsonb) returning id`),
+    );
+    pmTemplateId = (template.rows[0] as { id: string }).id;
+    expect(template.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, AUDITOR_ID, async () =>
+        db.query(`insert into public.pm_checklist_templates (name) values ('ห้ามเพิ่ม')`),
+      ),
+    ).rejects.toThrow();
+
+    const plan = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.maintenance_plans (asset_id, plan_date, template_id) values ($1, current_date, $2) returning id`,
+        [assetId, pmTemplateId],
+      ),
+    );
+    expect(plan.rows).toHaveLength(1);
+
+    const auditorRead = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.maintenance_plans where asset_id = $1', [assetId]));
+    expect(auditorRead.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.maintenance_plans')),
+    ).resolves.toMatchObject({ rows: [] });
+  });
+
+  it('inventory_items: check constraints reject negative stock/min, RLS gates by inventory.view/manage', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.inventory_items (item_name, unit, stock_qty) values ('ทดสอบติดลบ', 'ชิ้น', -1)`)),
+    ).rejects.toThrow();
+
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.inventory_items (item_name, unit, stock_qty, min_qty) values ('หมึกพิมพ์', 'กล่อง', 10, 3) returning id`),
+    );
+    inventoryItemId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () => db.query(`insert into public.inventory_items (item_name, unit) values ('ห้ามเพิ่ม', 'ชิ้น')`)),
+    ).rejects.toThrow();
+  });
+
+  it('inventory_transactions: technician (inventory.manage) can log a transaction; append-only ledger', async () => {
+    const tx = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.inventory_transactions (item_id, transaction_type, qty, balance_after) values ($1, 'OUT', 2, 8) returning id`,
+        [inventoryItemId],
+      ),
+    );
+    expect(tx.rows).toHaveLength(1);
+
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.inventory_transactions (item_id, transaction_type, qty, balance_after) values ($1, 'MOVE', 1, 7)`, [inventoryItemId])),
+    ).rejects.toThrow();
+  });
+
+  it('software_licenses: check constraint rejects used_qty > total_qty; license.manage gates writes', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('เกินจำนวน', 5, 10)`),
+      ),
+    ).rejects.toThrow();
+
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('Adobe Acrobat Pro', 10, 4) returning id`),
+    );
+    expect(inserted.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, AUDITOR_ID, async () => db.query(`insert into public.software_licenses (software_name) values ('ห้ามเพิ่ม')`)),
+    ).rejects.toThrow();
+  });
+
+  it('employee_assignments: select allowed via employee.manage OR asset.view, write requires employee.manage only', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(`insert into public.employees (employee_code, first_name_th, last_name_th) values ('EMP-M8-001', 'ทดสอบ', 'โมดูลแปด') on conflict do nothing`);
+    });
+    const employee = await asServiceRole(db, async () => db.query(`select id from public.employees where employee_code = 'EMP-M8-001'`));
+    employeeId = (employee.rows[0] as { id: string }).id;
+
+    // technician มี asset.view โดยตรง (seed.sql) แต่ไม่มี employee.manage — insert ต้องถูกปฏิเสธ
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () =>
+        db.query(`insert into public.employee_assignments (employee_id, item_name) values ($1, 'โน้ตบุ๊ก')`, [employeeId]),
+      ),
+    ).rejects.toThrow();
+
+    const inserted = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query(`insert into public.employee_assignments (employee_id, item_name, category) values ($1, 'โน้ตบุ๊ก Dell', 'Notebook') returning id`, [
+        employeeId,
+      ]),
+    );
+    const assignmentId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    // technician ไม่มี employee.manage แต่มี asset.view จึง "อ่านได้" แม้เขียนไม่ได้ (ตามที่ RLS select
+    // policy อนุญาตด้วย OR — ดู comment ใน migration 20260814100000_assets.sql)
+    const technicianRead = await asUser(db, TECHNICIAN_ID, async () => db.query('select id from public.employee_assignments where id = $1', [assignmentId]));
+    expect(technicianRead.rows).toHaveLength(1);
+
+    const regularUserRead = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.employee_assignments where id = $1', [assignmentId]));
+    expect(regularUserRead.rows).toEqual([]);
+  });
+
+  it('rejects an invalid employee_assignments status value outside the fixed list', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`update public.employee_assignments set status = 'ไม่มีอยู่จริง' where employee_id = $1`, [employeeId]),
+      ),
+    ).rejects.toThrow();
   });
 });
 

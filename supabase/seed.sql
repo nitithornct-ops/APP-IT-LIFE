@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (38 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (44 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -60,7 +60,13 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('access_request.approve', 'access_request', 'approve', 'อนุมัติคำขอสิทธิ์ระบบ (สิทธิ์เสริมนอกเหนือหัวหน้างาน)', 'active'),
   ('access_request.process', 'access_request', 'process', 'ดำเนินการให้สิทธิ์จริง (IT)', 'active'),
   ('access_registry.manage', 'access_registry', 'manage', 'ทบทวน/เพิกถอนสิทธิ์ในทะเบียน RBAC', 'active'),
-  ('task.view', 'task', 'view', 'เข้าถึงงานของฉัน (Task ส่วนตัว)', 'active')
+  ('task.view', 'task', 'view', 'เข้าถึงงานของฉัน (Task ส่วนตัว)', 'active'),
+  ('maintenance.view', 'maintenance', 'view', 'ดูแผน PM/บำรุงรักษา', 'active'),
+  ('maintenance.manage', 'maintenance', 'manage', 'จัดการแผน PM/บำรุงรักษาและเทมเพลตเช็กลิสต์', 'active'),
+  ('inventory.view', 'inventory', 'view', 'ดูสต็อกอะไหล่/วัสดุสิ้นเปลือง', 'active'),
+  ('inventory.manage', 'inventory', 'manage', 'จัดการสต็อกและรายการเบิก-รับ-ตรวจนับ', 'active'),
+  ('license.view', 'license', 'view', 'ดูทะเบียน Software License', 'active'),
+  ('license.manage', 'license', 'manage', 'จัดการทะเบียน Software License', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -84,6 +90,16 @@ from (values
   ('technician', 'ticket.update'),
   ('technician', 'ticket.assign'),
   ('technician', 'asset.view'),
+  ('technician', 'asset.create'),
+  ('technician', 'asset.update'),
+  ('technician', 'asset.transfer'),
+  ('technician', 'asset.dispose'),
+  ('technician', 'maintenance.view'),
+  ('technician', 'maintenance.manage'),
+  ('technician', 'inventory.view'),
+  ('technician', 'inventory.manage'),
+  ('technician', 'license.view'),
+  ('technician', 'license.manage'),
   ('technician', 'incident.view'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
@@ -102,6 +118,9 @@ from (values
   ('manager', 'task.view'),
   ('manager', 'ticket.view'),
   ('manager', 'asset.view'),
+  ('manager', 'maintenance.view'),
+  ('manager', 'inventory.view'),
+  ('manager', 'license.view'),
   ('manager', 'incident.view'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
@@ -111,6 +130,9 @@ from (values
   ('executive', 'task.view'),
   ('executive', 'ticket.view'),
   ('executive', 'asset.view'),
+  ('executive', 'maintenance.view'),
+  ('executive', 'inventory.view'),
+  ('executive', 'license.view'),
   ('executive', 'incident.view'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
@@ -121,6 +143,9 @@ from (values
   ('auditor', 'task.view'),
   ('auditor', 'ticket.view'),
   ('auditor', 'asset.view'),
+  ('auditor', 'maintenance.view'),
+  ('auditor', 'inventory.view'),
+  ('auditor', 'license.view'),
   ('auditor', 'incident.view'),
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),

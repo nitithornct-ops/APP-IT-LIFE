@@ -47,6 +47,14 @@ const AccessRegistryPage = lazy(() =>
   import('./features/admin/AccessRegistryPage').then((m) => ({ default: m.AccessRegistryPage })),
 );
 const TasksPage = lazy(() => import('./features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })));
+const AssetsPage = lazy(() => import('./features/assets/AssetsPage').then((m) => ({ default: m.AssetsPage })));
+const AssetDetailPage = lazy(() => import('./features/assets/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })));
+const MaintenancePage = lazy(() => import('./features/maintenance/MaintenancePage').then((m) => ({ default: m.MaintenancePage })));
+const InventoryPage = lazy(() => import('./features/inventory/InventoryPage').then((m) => ({ default: m.InventoryPage })));
+const LicensesPage = lazy(() => import('./features/licenses/LicensesPage').then((m) => ({ default: m.LicensesPage })));
+const EmployeeAssignmentsPage = lazy(() =>
+  import('./features/employeeAssignments/EmployeeAssignmentsPage').then((m) => ({ default: m.EmployeeAssignmentsPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -79,6 +87,66 @@ export function App() {
             <ProtectedRoute permission="task.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <TasksPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/assets"
+          element={
+            <ProtectedRoute permission="asset.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AssetsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/assets/:id"
+          element={
+            <ProtectedRoute permission="asset.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AssetDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/maintenance"
+          element={
+            <ProtectedRoute permission="maintenance.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <MaintenancePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/inventory-items"
+          element={
+            <ProtectedRoute permission="inventory.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <InventoryPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/software-licenses"
+          element={
+            <ProtectedRoute permission="license.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <LicensesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/employee-assignments"
+          element={
+            <ProtectedRoute anyPermission={['employee.manage', 'asset.view']}>
+              <Suspense fallback={<LazyPageFallback />}>
+                <EmployeeAssignmentsPage />
               </Suspense>
             </ProtectedRoute>
           }

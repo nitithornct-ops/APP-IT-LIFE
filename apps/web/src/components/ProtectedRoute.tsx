@@ -14,10 +14,20 @@ function AccessDenied() {
 
 /**
  * ปิดกั้นหน้าที่ต้อง Login — พาไปหน้า Login พร้อมจำหน้าที่ตั้งใจจะเข้าไว้เพื่อ redirect กลับหลัง login สำเร็จ
- * ถ้าระบุ `permission` ไว้ด้วย จะตรวจสิทธิ์จากผล /auth/me และแสดงหน้า Access Denied หากไม่มีสิทธิ์
- * (เพื่อ UX เท่านั้น — Backend ยังตรวจสิทธิ์ซ้ำทุก request อยู่แล้ว)
+ * ถ้าระบุ `permission` (สิทธิ์เดียว) หรือ `anyPermission` (มีอย่างน้อยหนึ่งในรายการ — ใช้เมื่อหน้าเดียว
+ * เข้าถึงได้ด้วยหลายสิทธิ์ เช่น ทรัพย์สินพนักงาน ที่ทั้ง employee.manage และ asset.view เข้าดูได้) จะตรวจสิทธิ์
+ * จากผล /auth/me และแสดงหน้า Access Denied หากไม่มีสิทธิ์ (เพื่อ UX เท่านั้น — Backend ยังตรวจสิทธิ์ซ้ำทุก
+ * request อยู่แล้ว)
  */
-export function ProtectedRoute({ children, permission }: { children: ReactNode; permission?: string }) {
+export function ProtectedRoute({
+  children,
+  permission,
+  anyPermission,
+}: {
+  children: ReactNode;
+  permission?: string;
+  anyPermission?: string[];
+}) {
   const { session, isSessionLoading, hasPermission, isMeLoading } = useAuth();
   const location = useLocation();
 
@@ -33,7 +43,7 @@ export function ProtectedRoute({ children, permission }: { children: ReactNode; 
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (permission) {
+  if (permission || anyPermission?.length) {
     if (isMeLoading) {
       return (
         <div className="flex min-h-screen items-center justify-center" role="status">
@@ -41,7 +51,8 @@ export function ProtectedRoute({ children, permission }: { children: ReactNode; 
         </div>
       );
     }
-    if (!hasPermission(permission)) {
+    const allowed = permission ? hasPermission(permission) : (anyPermission ?? []).some((key) => hasPermission(key));
+    if (!allowed) {
       return <AccessDenied />;
     }
   }
