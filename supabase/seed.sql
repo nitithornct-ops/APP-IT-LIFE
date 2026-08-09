@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (44 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (46 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -66,7 +66,9 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('inventory.view', 'inventory', 'view', 'ดูสต็อกอะไหล่/วัสดุสิ้นเปลือง', 'active'),
   ('inventory.manage', 'inventory', 'manage', 'จัดการสต็อกและรายการเบิก-รับ-ตรวจนับ', 'active'),
   ('license.view', 'license', 'view', 'ดูทะเบียน Software License', 'active'),
-  ('license.manage', 'license', 'manage', 'จัดการทะเบียน Software License', 'active')
+  ('license.manage', 'license', 'manage', 'จัดการทะเบียน Software License', 'active'),
+  ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
+  ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -100,6 +102,8 @@ from (values
   ('technician', 'inventory.manage'),
   ('technician', 'license.view'),
   ('technician', 'license.manage'),
+  ('technician', 'cmdb.view'),
+  ('technician', 'cmdb.manage'),
   ('technician', 'incident.view'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
@@ -121,6 +125,7 @@ from (values
   ('manager', 'maintenance.view'),
   ('manager', 'inventory.view'),
   ('manager', 'license.view'),
+  ('manager', 'cmdb.view'),
   ('manager', 'incident.view'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
@@ -133,6 +138,7 @@ from (values
   ('executive', 'maintenance.view'),
   ('executive', 'inventory.view'),
   ('executive', 'license.view'),
+  ('executive', 'cmdb.view'),
   ('executive', 'incident.view'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
@@ -146,6 +152,7 @@ from (values
   ('auditor', 'maintenance.view'),
   ('auditor', 'inventory.view'),
   ('auditor', 'license.view'),
+  ('auditor', 'cmdb.view'),
   ('auditor', 'incident.view'),
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),
@@ -155,6 +162,7 @@ from (values
 
   ('dpo', 'dashboard.view'),
   ('dpo', 'task.view'),
+  ('dpo', 'cmdb.view'),
   ('dpo', 'incident.view'),
   ('dpo', 'report.export'),
   ('dpo', 'audit.view'),

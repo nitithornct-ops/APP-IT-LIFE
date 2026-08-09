@@ -48,6 +48,8 @@ export const DEFAULT_PERMISSION_KEYS = [
   'inventory.manage',
   'license.view',
   'license.manage',
+  'cmdb.view',
+  'cmdb.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];

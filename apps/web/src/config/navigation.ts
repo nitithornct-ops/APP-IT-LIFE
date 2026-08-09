@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ListChecks,
   ListTodo,
+  Network,
   PackageSearch,
   ShieldCheck,
   ShoppingBag,
@@ -17,6 +18,7 @@ import {
   Users,
   Users2,
   UserSquare2,
+  Waypoints,
   Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -81,6 +83,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'PM / บำรุงรักษา', path: '/maintenance', icon: Wrench, permission: 'maintenance.view' },
       { label: 'Inventory', path: '/inventory-items', icon: PackageSearch, permission: 'inventory.view' },
       { label: 'Software License', path: '/software-licenses', icon: FileKey, permission: 'license.view' },
+      { label: 'CMDB', path: '/cmdb', icon: Network, permission: 'cmdb.view' },
+      { label: 'ความสัมพันธ์ CI', path: '/cmdb/relationships', icon: Waypoints, permission: 'cmdb.view' },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
       { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },

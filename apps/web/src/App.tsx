@@ -55,6 +55,13 @@ const LicensesPage = lazy(() => import('./features/licenses/LicensesPage').then(
 const EmployeeAssignmentsPage = lazy(() =>
   import('./features/employeeAssignments/EmployeeAssignmentsPage').then((m) => ({ default: m.EmployeeAssignmentsPage })),
 );
+const CmdbPage = lazy(() => import('./features/cmdb/CmdbPage').then((m) => ({ default: m.CmdbPage })));
+const ConfigurationItemDetailPage = lazy(() =>
+  import('./features/cmdb/ConfigurationItemDetailPage').then((m) => ({ default: m.ConfigurationItemDetailPage })),
+);
+const CiRelationshipsPage = lazy(() =>
+  import('./features/cmdb/CiRelationshipsPage').then((m) => ({ default: m.CiRelationshipsPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -137,6 +144,36 @@ export function App() {
             <ProtectedRoute permission="license.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <LicensesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cmdb"
+          element={
+            <ProtectedRoute permission="cmdb.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <CmdbPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cmdb/relationships"
+          element={
+            <ProtectedRoute permission="cmdb.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <CiRelationshipsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cmdb/:id"
+          element={
+            <ProtectedRoute permission="cmdb.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ConfigurationItemDetailPage />
               </Suspense>
             </ProtectedRoute>
           }

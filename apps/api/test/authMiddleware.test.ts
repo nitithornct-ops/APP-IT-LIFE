@@ -39,6 +39,8 @@ describe('requireAuth', () => {
     ['GET', '/api/v1/inventory-items'],
     ['GET', '/api/v1/software-licenses'],
     ['GET', '/api/v1/employee-assignments'],
+    ['GET', '/api/v1/cmdb/items'],
+    ['GET', '/api/v1/cmdb/relationships'],
     ['GET', '/api/v1/audit-logs'],
     ['GET', '/api/v1/auth/me'],
     ['GET', '/api/v1/notifications'],

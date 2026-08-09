@@ -1,0 +1,345 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { Link } from 'react-router-dom';
+import { z } from 'zod';
+import { RequirePermission } from '../../components/RequirePermission';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { ApiError, apiFetch } from '../../services/apiClient';
+import type { Employee, PaginatedResult } from '../../types/admin';
+import type { AssetOption } from '../../types/assets';
+import type { CmdbDataQuality, ConfigurationItem } from '../../types/cmdb';
+import { CI_CRITICALITIES, CI_ENVIRONMENTS, CI_STATUSES, CI_TYPES, ciStatusTone, criticalityTone, employeeName } from './cmdbDisplay';
+
+const createCiSchema = z.object({
+  name: z.string().trim().min(1, 'กรุณากรอกชื่อ CI'),
+  ciType: z.enum(CI_TYPES),
+  environment: z.enum(CI_ENVIRONMENTS),
+  ownerEmployeeId: z.string().min(1, 'กรุณาเลือกเจ้าของ CI'),
+  administratorEmployeeId: z.string().min(1, 'กรุณาเลือกผู้ดูแล CI'),
+  criticality: z.enum(CI_CRITICALITIES).optional(),
+  assetId: z.string().optional(),
+  ipAddress: z.string().trim().optional(),
+  location: z.string().trim().optional(),
+});
+type CreateCiForm = z.infer<typeof createCiSchema>;
+
+function CreateCiForm({ employees, assetOptions, onClose }: { employees: Employee[]; assetOptions: AssetOption[]; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateCiForm>({ resolver: zodResolver(createCiSchema) });
+
+  const mutation = useMutation({
+    mutationFn: (values: CreateCiForm) =>
+      apiFetch('/api/v1/cmdb/items', { method: 'POST', body: JSON.stringify({ ...values, assetId: values.assetId || undefined }) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['cmdb', 'items'] });
+      onClose();
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'เพิ่ม CI ไม่สำเร็จ'),
+  });
+
+  return (
+    <form
+      onSubmit={handleSubmit((values) => mutation.mutate(values))}
+      className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40"
+      noValidate
+    >
+      <div className="flex items-center justify-between sm:col-span-3">
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่ม Configuration Item</h3>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="sm:col-span-2">
+        <label htmlFor="ci-name" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อ CI</label>
+        <input id="ci-name" data-testid="ci-create-name" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('name')} />
+        {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+      </div>
+
+      <div>
+        <label htmlFor="ci-type" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ประเภท</label>
+        <select id="ci-type" data-testid="ci-create-type" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('ciType')}>
+          {CI_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="ci-env" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Environment</label>
+        <select id="ci-env" data-testid="ci-create-environment" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('environment')}>
+          {CI_ENVIRONMENTS.map((e) => (
+            <option key={e} value={e}>{e}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="ci-criticality" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Criticality</label>
+        <select id="ci-criticality" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('criticality')}>
+          {CI_CRITICALITIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="ci-owner" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">เจ้าของ (Owner)</label>
+        <select id="ci-owner" data-testid="ci-create-owner" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('ownerEmployeeId')}>
+          <option value="">— เลือก —</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>{employeeName(e)}</option>
+          ))}
+        </select>
+        {errors.ownerEmployeeId && <p className="mt-1 text-xs text-red-600">{errors.ownerEmployeeId.message}</p>}
+      </div>
+
+      <div>
+        <label htmlFor="ci-admin" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้ดูแล (Administrator)</label>
+        <select id="ci-admin" data-testid="ci-create-administrator" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('administratorEmployeeId')}>
+          <option value="">— เลือก —</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>{employeeName(e)}</option>
+          ))}
+        </select>
+        {errors.administratorEmployeeId && <p className="mt-1 text-xs text-red-600">{errors.administratorEmployeeId.message}</p>}
+      </div>
+
+      <div>
+        <label htmlFor="ci-asset" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผูก Asset (ถ้ามี)</label>
+        <select id="ci-asset" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('assetId')}>
+          <option value="">— ไม่ผูก —</option>
+          {assetOptions.map((a) => (
+            <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="ci-ip" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">IP Address</label>
+        <input id="ci-ip" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('ipAddress')} />
+      </div>
+
+      <div>
+        <label htmlFor="ci-location" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่</label>
+        <input id="ci-location" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('location')} />
+      </div>
+
+      {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
+
+      <div className="sm:col-span-3">
+        <Button type="submit" size="sm" isLoading={isSubmitting} data-testid="ci-create-submit">
+          บันทึก
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DataQualityPanel() {
+  const dqQuery = useQuery({ queryKey: ['cmdb', 'data-quality'], queryFn: () => apiFetch<CmdbDataQuality>('/api/v1/cmdb/items/data-quality') });
+  if (!dqQuery.data) return null;
+  const dq = dqQuery.data;
+
+  return (
+    <Card>
+      <CardHeader className="flex items-center gap-2">
+        <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+        <span>คุณภาพข้อมูล CMDB (Data Quality)</span>
+      </CardHeader>
+      <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400">ยังไม่เคยตรวจสอบ (Verify)</p>
+          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.unverifiedCount}</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400">High/Critical ข้อมูลไม่ครบ</p>
+          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.incompleteCount}</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400">ความสัมพันธ์ orphan/หมดอายุ</p>
+          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.orphanCount + dq.expiredCount}</p>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+export function CmdbPage() {
+  const [showCreate, setShowCreate] = useState(false);
+  const [showDataQuality, setShowDataQuality] = useState(false);
+  const [ciType, setCiType] = useState('');
+  const [environment, setEnvironment] = useState('');
+  const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
+  const [page, setPage] = useState(1);
+
+  const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
+  const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
+
+  const itemsQuery = useQuery({
+    queryKey: ['cmdb', 'items', page, ciType, environment, status, debouncedSearch],
+    queryFn: () =>
+      apiFetch<PaginatedResult<ConfigurationItem>>(
+        `/api/v1/cmdb/items?page=${page}&pageSize=20${ciType ? `&ciType=${encodeURIComponent(ciType)}` : ''}${environment ? `&environment=${encodeURIComponent(environment)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+      ),
+  });
+
+  const items = itemsQuery.data?.items ?? [];
+  const kpi = {
+    total: itemsQuery.data?.pagination.totalItems ?? 0,
+    active: items.filter((c) => c.status === 'Active').length,
+    critical: items.filter((c) => c.criticality === 'Critical').length,
+    degraded: items.filter((c) => c.status === 'Degraded').length,
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">CMDB — Configuration Items</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">ทะเบียนโครงสร้าง IT เชิงบริการ (Server/Database/Application ฯลฯ)</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowDataQuality((v) => !v)}>
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            Data Quality
+          </Button>
+          <RequirePermission permission="cmdb.manage">
+            <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="ci-create-toggle">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              เพิ่ม CI
+            </Button>
+          </RequirePermission>
+        </div>
+      </div>
+
+      {showDataQuality && <DataQualityPanel />}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="ทั้งหมด" value={kpi.total} tone="primary" />
+        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Active (หน้านี้)" value={kpi.active} tone="teal" />
+        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Critical (หน้านี้)" value={kpi.critical} tone="amber" />
+        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Degraded (หน้านี้)" value={kpi.degraded} tone="gray" />
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+          <span>รายการ Configuration Item</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-normal">
+            <select value={ciType} onChange={(e) => { setCiType(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+              <option value="">ทุกประเภท</option>
+              {CI_TYPES.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <select value={environment} onChange={(e) => { setEnvironment(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+              <option value="">ทุก Environment</option>
+              {CI_ENVIRONMENTS.map((env) => (
+                <option key={env} value={env}>{env}</option>
+              ))}
+            </select>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+              <option value="">ทุกสถานะ</option>
+              {CI_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </CardHeader>
+        <CardBody>
+          {showCreate && employeesQuery.data && assetOptionsQuery.data && (
+            <CreateCiForm employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} onClose={() => setShowCreate(false)} />
+          )}
+
+          <input
+            type="search"
+            placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+          />
+
+          {itemsQuery.isLoading && (
+            <div className="flex justify-center py-8" role="status">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
+            </div>
+          )}
+
+          {itemsQuery.data && items.length === 0 && <EmptyState icon={<Network className="h-10 w-10" aria-hidden="true" />} title="ไม่พบ Configuration Item" />}
+
+          {itemsQuery.data && items.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th className="px-2 py-2">รหัส</th>
+                    <th className="px-2 py-2">ชื่อ CI</th>
+                    <th className="px-2 py-2">ประเภท</th>
+                    <th className="px-2 py-2">Environment</th>
+                    <th className="px-2 py-2">Criticality</th>
+                    <th className="px-2 py-2">เจ้าของ</th>
+                    <th className="px-2 py-2">สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((c) => (
+                    <tr key={c.id} data-testid={`ci-row-${c.id}`} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{c.ci_code}</td>
+                      <td className="px-2 py-2">
+                        <Link to={`/cmdb/${c.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
+                          {c.name}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{c.ci_type}</td>
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{c.environment}</td>
+                      <td className="px-2 py-2">
+                        <Badge variant={criticalityTone[c.criticality]}>{c.criticality}</Badge>
+                      </td>
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{employeeName(c.owner)}</td>
+                      <td className="px-2 py-2">
+                        <Badge variant={ciStatusTone[c.status]}>{c.status}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {itemsQuery.data && itemsQuery.data.pagination.totalPages > 1 && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-sm">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600">
+                ก่อนหน้า
+              </button>
+              <span className="text-slate-500 dark:text-slate-400">
+                หน้า {itemsQuery.data.pagination.page} / {itemsQuery.data.pagination.totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= itemsQuery.data.pagination.totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
+              >
+                ถัดไป
+              </button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}

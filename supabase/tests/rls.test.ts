@@ -19,6 +19,9 @@ const SUPERVISOR_ID = '00000000-0000-0000-0000-000000000007';
 // role 'technician' — ตัวแทน "ช่าง IT" ที่ seed.sql (Phase 6 Module 8) ให้สิทธิ์ asset.*/maintenance.*/
 // inventory.*/license.* เต็ม (ต่างจาก auditor ที่มีแค่ฝั่ง .view) ใช้ยืนยัน happy-path ของฝั่งเขียน
 const TECHNICIAN_ID = '00000000-0000-0000-0000-000000000008';
+// role 'dpo' — seed.sql (Phase 6 Module 9) ให้ cmdb.view เป็นพิเศษเฉพาะโมดูลนี้ (ไม่ได้อยู่ใน convention
+// manager/executive/auditor ทั่วไป) เพราะ CI มีฟิลด์ DataClassification/RPO/RTO ที่เกี่ยวข้องกับงาน DPO ตรง ๆ
+const DPO_ID = '00000000-0000-0000-0000-000000000009';
 
 let db: PGlite;
 
@@ -43,6 +46,7 @@ beforeAll(async () => {
   await createUserWithRole(APPROVAL_GROUP_MEMBER_ID, 'approver-member@test.local', 'user');
   await createUserWithRole(SUPERVISOR_ID, 'supervisor@test.local', 'user');
   await createUserWithRole(TECHNICIAN_ID, 'technician@test.local', 'technician');
+  await createUserWithRole(DPO_ID, 'dpo@test.local', 'dpo');
 
   await asServiceRole(db, async () => {
     await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
@@ -62,11 +66,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 44 permissions', async () => {
+  it('seeds 9 roles and 46 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(44);
+    expect((permissions.rows[0] as { count: number }).count).toBe(46);
   });
 });
 
@@ -1078,6 +1082,191 @@ describe('assets / asset_movements / maintenance_plans / pm_checklist_templates 
         db.query(`update public.employee_assignments set status = 'ไม่มีอยู่จริง' where employee_id = $1`, [employeeId]),
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('configuration_items / ci_relationships RLS (Phase 6 Module 9 CMDB)', () => {
+  let ciAId: string;
+  let ciBId: string;
+
+  it('lets a view-only role (auditor: cmdb.view) read configuration_items but not insert one', async () => {
+    const readAttempt = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.configuration_items'));
+    expect(readAttempt.rows).toEqual([]);
+
+    await expect(
+      asUser(db, AUDITOR_ID, async () =>
+        db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-AUDITOR', 'ทดสอบ', 'Server', 'Production')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets a full operational role (technician: cmdb.manage) insert a configuration_item', async () => {
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-001', 'Web Server 1', 'Server', 'UAT') returning id`),
+    );
+    ciAId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const auditorReadsAfterInsert = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.configuration_items where id = $1', [ciAId]));
+    expect(auditorReadsAfterInsert.rows).toHaveLength(1);
+  });
+
+  it('rejects a plain user (no cmdb.* at all) from reading or writing configuration_items', async () => {
+    const readAttempt = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.configuration_items where id = $1', [ciAId]));
+    expect(readAttempt.rows).toEqual([]);
+
+    await expect(
+      asUser(db, REGULAR_USER_ID, async () =>
+        db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-REJECT', 'ห้ามเพิ่ม', 'Server', 'UAT')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('dpo (cmdb.view, added specifically for this module — not the general manager/executive/auditor convention) can read but not write', async () => {
+    const dpoRead = await asUser(db, DPO_ID, async () => db.query('select id from public.configuration_items where id = $1', [ciAId]));
+    expect(dpoRead.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, DPO_ID, async () =>
+        db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-DPO', 'ห้ามเพิ่ม', 'Server', 'UAT')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a duplicate ci_code', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-001', 'รหัสซ้ำ', 'Server', 'UAT')`)),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a duplicate name within the same environment while not Retired, but allows it once Retired', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-002', 'Web Server 1', 'Server', 'UAT')`)),
+    ).rejects.toThrow();
+
+    await asServiceRole(db, async () => db.query(`update public.configuration_items set status = 'Retired' where id = $1`, [ciAId]));
+    const inserted = await asServiceRole(db, async () =>
+      db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-002', 'Web Server 1', 'Server', 'UAT') returning id`),
+    );
+    ciBId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+    // หมายเหตุ: ciAId คงสถานะ Retired ต่อไปในเทสต์ถัดไปโดยตั้งใจ — ไม่ revert กลับเป็น Active เพราะจะชน
+    // partial unique index ซ้ำ (ciBId ใช้ name/environment เดียวกันและไม่ Retired อยู่แล้ว) เทสต์ถัดไปที่ใช้
+    // ciAId ต่อ (invalid-status update, relationship creation) ไม่ต้องพึ่งพาว่า ciAId เป็น Active อยู่
+  });
+
+  it('rejects an invalid ci_type value and an invalid status value outside their fixed lists', async () => {
+    await expect(
+      asServiceRole(db, async () => db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment) values ('CI-BADTYPE', 'ทดสอบ', 'ไม่มีอยู่จริง', 'UAT')`)),
+    ).rejects.toThrow();
+    await expect(
+      asServiceRole(db, async () => db.query(`update public.configuration_items set status = 'ไม่มีอยู่จริง' where id = $1`, [ciAId])),
+    ).rejects.toThrow();
+  });
+
+  it('rejects backup_required=true without a backup_reference (CHECK constraint)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment, backup_required) values ('CI-BACKUP', 'ทดสอบ', 'Server', 'UAT', true)`),
+      ),
+    ).rejects.toThrow();
+
+    const ok = await asServiceRole(db, async () =>
+      db.query(
+        `insert into public.configuration_items (ci_code, name, ci_type, environment, backup_required, backup_reference) values ('CI-BACKUP-OK', 'ทดสอบ', 'Server', 'UAT', true, 'BKP-001') returning id`,
+      ),
+    );
+    expect(ok.rows).toHaveLength(1);
+  });
+
+  it('rejects an Active/Production/High-or-Critical CI without RPO/RTO set (CHECK constraint)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(
+          `insert into public.configuration_items (ci_code, name, ci_type, environment, criticality, status) values ('CI-RPO', 'ทดสอบ', 'Database', 'Production', 'Critical', 'Active')`,
+        ),
+      ),
+    ).rejects.toThrow();
+
+    const ok = await asServiceRole(db, async () =>
+      db.query(
+        `insert into public.configuration_items (ci_code, name, ci_type, environment, criticality, status, rpo_hours, rto_hours)
+         values ('CI-RPO-OK', 'ทดสอบ', 'Database', 'Production', 'Critical', 'Active', 4, 8) returning id`,
+      ),
+    );
+    expect(ok.rows).toHaveLength(1);
+  });
+
+  it('rejects linking the same asset_id to a second CI (partial unique index — DB-level upgrade over legacy app-only check)', async () => {
+    const asset = await asServiceRole(db, async () => db.query(`insert into public.assets (asset_code, name) values ('AST-CMDB-001', 'ทดสอบผูก CI') returning id`));
+    const assetId = (asset.rows[0] as { id: string }).id;
+
+    const first = await asServiceRole(db, async () =>
+      db.query(
+        `insert into public.configuration_items (ci_code, name, ci_type, environment, asset_id) values ('CI-ASSET-1', 'ผูก Asset ตัวแรก', 'Server', 'UAT', $1) returning id`,
+        [assetId],
+      ),
+    );
+    expect(first.rows).toHaveLength(1);
+
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.configuration_items (ci_code, name, ci_type, environment, asset_id) values ('CI-ASSET-2', 'ผูก Asset ซ้ำ', 'Server', 'UAT', $1)`, [assetId]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('ci_relationships: technician (cmdb.manage) can create a relationship; auditor (cmdb.view-only) cannot', async () => {
+    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type) values ('CI', $1, 'CI', $2, 'DEPENDS_ON') returning id`,
+        [ciAId, ciBId],
+      ),
+    );
+    expect(inserted.rows).toHaveLength(1);
+
+    await expect(
+      asUser(db, AUDITOR_ID, async () =>
+        db.query(`insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type) values ('CI', $1, 'CI', $2, 'USES')`, [ciAId, ciBId]),
+      ),
+    ).rejects.toThrow();
+
+    const auditorRead = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.ci_relationships where source_id = $1', [ciAId]));
+    expect(auditorRead.rows).toHaveLength(1);
+
+    const regularUserRead = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.ci_relationships where source_id = $1', [ciAId]));
+    expect(regularUserRead.rows).toEqual([]);
+  });
+
+  it('rejects a self-link relationship (CHECK constraint)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type) values ('CI', $1, 'CI', $1, 'LINKED_TO')`, [ciAId]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a duplicate (source, target, relationship_type) triple (unique index)', async () => {
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(`insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type) values ('CI', $1, 'CI', $2, 'DEPENDS_ON')`, [ciAId, ciBId]),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('lets cmdb.view-only auditor read but not update a relationship (update needs cmdb.manage — silently 0 rows, same pattern as assets above)', async () => {
+    const relRow = await asServiceRole(db, async () => db.query('select id from public.ci_relationships where source_id = $1 limit 1', [ciAId]));
+    const relId = (relRow.rows[0] as { id: string }).id;
+
+    const auditorAttempt = await asUser(db, AUDITOR_ID, async () =>
+      db.query(`update public.ci_relationships set description = 'แก้ไข' where id = $1 returning id`, [relId]),
+    );
+    expect(auditorAttempt.rows).toEqual([]);
+
+    const updated = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`update public.ci_relationships set description = 'แก้ไขโดย technician' where id = $1 returning id`, [relId]),
+    );
+    expect(updated.rows).toHaveLength(1);
   });
 });
 
