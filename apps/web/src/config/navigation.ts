@@ -4,6 +4,7 @@ import {
   Bug,
   ClipboardList,
   FileKey,
+  GitPullRequestArrow,
   KeyRound,
   Laptop2,
   LayoutDashboard,
@@ -58,6 +59,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
       { label: 'Incident', path: '/incidents', icon: Siren, permission: 'incident.view' },
       { label: 'Problem / Known Error', path: '/problems', icon: Bug, permission: 'problem.view' },
+      { label: 'Change Management', path: '/changes', icon: GitPullRequestArrow, permission: 'change.view' },
     ],
   },
   {

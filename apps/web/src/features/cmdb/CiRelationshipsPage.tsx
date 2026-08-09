@@ -21,9 +21,9 @@ import {
 } from './cmdbDisplay';
 
 const createRelSchema = z.object({
-  sourceType: z.enum(['CI', 'Asset', 'Incident']),
+  sourceType: z.enum(['CI', 'Asset', 'Incident', 'Change']),
   sourceId: z.string().min(1, 'กรุณาเลือกต้นทาง'),
-  targetType: z.enum(['CI', 'Asset', 'Incident']),
+  targetType: z.enum(['CI', 'Asset', 'Incident', 'Change']),
   targetId: z.string().min(1, 'กรุณาเลือกปลายทาง'),
   relationshipType: z.enum(RELATIONSHIP_TYPES_ENABLED),
   direction: z.enum(RELATIONSHIP_DIRECTIONS).optional(),
@@ -72,6 +72,7 @@ function CreateRelationshipForm({ nodeOptions, onClose }: { nodeOptions: CiNodeO
           <option value="CI">CI</option>
           <option value="Asset">Asset</option>
           <option value="Incident">Incident</option>
+          <option value="Change">Change</option>
         </select>
       </div>
       <div className="sm:col-span-2">
@@ -89,6 +90,7 @@ function CreateRelationshipForm({ nodeOptions, onClose }: { nodeOptions: CiNodeO
           <option value="CI">CI</option>
           <option value="Asset">Asset</option>
           <option value="Incident">Incident</option>
+          <option value="Change">Change</option>
         </select>
       </div>
       <div className="sm:col-span-2">

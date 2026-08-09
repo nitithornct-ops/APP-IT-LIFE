@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (49 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (56 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -41,6 +41,11 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('incident.regulatory', 'incident', 'regulatory', 'ประเมินและบันทึกการแจ้งหน่วยงานกำกับสำหรับ Incident', 'active'),
   ('problem.view', 'problem', 'view', 'ดู Problem และ Known Error', 'active'),
   ('problem.manage', 'problem', 'manage', 'สร้างและจัดการ Problem/Known Error', 'active'),
+  ('change.view', 'change', 'view', 'ดูคำขอเปลี่ยนแปลงระบบ', 'active'),
+  ('change.create', 'change', 'create', 'ยื่นคำขอเปลี่ยนแปลงระบบ', 'active'),
+  ('change.test', 'change', 'test', 'บันทึกและรับรองผลทดสอบ Change', 'active'),
+  ('change.approve', 'change', 'approve', 'อนุมัติหรือปฏิเสธ Change', 'active'),
+  ('change.deploy', 'change', 'deploy', 'บันทึกการติดตั้ง Change', 'active'),
   ('report.export', 'report', 'export', 'Export รายงาน', 'active'),
   ('user.manage', 'user', 'manage', 'จัดการบัญชีผู้ใช้งาน', 'active'),
   ('role.manage', 'role', 'manage', 'จัดการบทบาทและสิทธิ์', 'active'),
@@ -114,6 +119,10 @@ from (values
   ('technician', 'incident.manage'),
   ('technician', 'problem.view'),
   ('technician', 'problem.manage'),
+  ('technician', 'change.view'),
+  ('technician', 'change.create'),
+  ('technician', 'change.test'),
+  ('technician', 'change.deploy'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
@@ -126,6 +135,9 @@ from (values
   ('approver', 'incident.create'),
   ('approver', 'incident.view_all'),
   ('approver', 'problem.view'),
+  ('approver', 'change.view'),
+  ('approver', 'change.create'),
+  ('approver', 'change.approve'),
   ('approver', 'report.export'),
   ('approver', 'service_request.view'),
   ('approver', 'access_request.view'),
@@ -142,6 +154,7 @@ from (values
   ('manager', 'incident.create'),
   ('manager', 'incident.view_all'),
   ('manager', 'problem.view'),
+  ('manager', 'change.view'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
   ('manager', 'access_request.view'),
@@ -157,6 +170,7 @@ from (values
   ('executive', 'incident.view'),
   ('executive', 'incident.view_all'),
   ('executive', 'problem.view'),
+  ('executive', 'change.view'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
@@ -173,6 +187,7 @@ from (values
   ('auditor', 'incident.view'),
   ('auditor', 'incident.view_all'),
   ('auditor', 'problem.view'),
+  ('auditor', 'change.view'),
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),

@@ -73,8 +73,8 @@ interface NodeStatus {
   ciType?: string;
 }
 
-/** ตรวจการมีอยู่จริง + สถานะปลดระวางของ node — ทำได้จริงสำหรับ CI/Asset/Incident (มีตารางแล้ว) ส่วนอีก 5 ประเภท
- * (Vendor/Contract/Cloud/Backup/Change) ยังไม่มีตารางจริงในระบบใหม่ จึงเชื่อว่ามีอยู่จริงไปก่อน
+/** ตรวจการมีอยู่จริง + สถานะปลดระวางของ node — ทำได้จริงสำหรับ CI/Asset/Incident/Change (มีตารางแล้ว) ส่วนอีก 4 ประเภท
+ * (Vendor/Contract/Cloud/Backup) ยังไม่มีตารางจริงในระบบใหม่ จึงเชื่อว่ามีอยู่จริงไปก่อน
  * (จะ validate ได้เมื่อโมดูลที่เกี่ยวข้องถูกย้ายตามคิว roadmap) — เดิม legacy validate ได้ครบ 8 ประเภทเพราะ
  * sheet ทั้งหมดมีอยู่แล้วตอนนั้น ไม่ใช่ข้อจำกัดถาวร แค่ลำดับการย้ายโมดูลยังไปไม่ถึง */
 async function loadNodeStatus(supabase: SupabaseClient, type: string, id: string): Promise<NodeStatus> {
@@ -92,6 +92,11 @@ async function loadNodeStatus(supabase: SupabaseClient, type: string, id: string
     const { data } = await supabase.from('incidents').select('id, incident_number, title, status').eq('id', id).maybeSingle();
     if (!data) return { exists: false, retired: false };
     return { exists: true, retired: false, name: `${data.incident_number} — ${data.title}` };
+  }
+  if (type === 'Change') {
+    const { data } = await supabase.from('change_requests').select('id, change_number, title, status').eq('id', id).maybeSingle();
+    if (!data) return { exists: false, retired: false };
+    return { exists: true, retired: false, name: `${data.change_number} — ${data.title}` };
   }
   return { exists: true, retired: false };
 }
@@ -129,23 +134,28 @@ async function enrichRelationshipNodes<T extends RelLikeRow>(supabase: SupabaseC
   const ciIds = new Set<string>();
   const assetIds = new Set<string>();
   const incidentIds = new Set<string>();
+  const changeIds = new Set<string>();
   for (const r of rows) {
     if (r.source_type === 'CI') ciIds.add(r.source_id);
     if (r.source_type === 'Asset') assetIds.add(r.source_id);
     if (r.source_type === 'Incident') incidentIds.add(r.source_id);
+    if (r.source_type === 'Change') changeIds.add(r.source_id);
     if (r.target_type === 'CI') ciIds.add(r.target_id);
     if (r.target_type === 'Asset') assetIds.add(r.target_id);
     if (r.target_type === 'Incident') incidentIds.add(r.target_id);
+    if (r.target_type === 'Change') changeIds.add(r.target_id);
   }
-  const [{ data: cis }, { data: assets }, { data: incidents }] = await Promise.all([
+  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }] = await Promise.all([
     ciIds.size ? supabase.from('configuration_items').select('id, name, status').in('id', [...ciIds]) : Promise.resolve({ data: [] as { id: string; name: string; status: string }[] }),
     assetIds.size ? supabase.from('assets').select('id, name, status').in('id', [...assetIds]) : Promise.resolve({ data: [] as { id: string; name: string; status: string }[] }),
     incidentIds.size ? supabase.from('incidents').select('id, incident_number, title, status').in('id', [...incidentIds]) : Promise.resolve({ data: [] as { id: string; incident_number: string; title: string; status: string }[] }),
+    changeIds.size ? supabase.from('change_requests').select('id, change_number, title, status').in('id', [...changeIds]) : Promise.resolve({ data: [] as { id: string; change_number: string; title: string; status: string }[] }),
   ]);
   const ciMap = new Map((cis ?? []).map((row) => [row.id, row]));
   const assetMap = new Map((assets ?? []).map((row) => [row.id, row]));
   const incidentMap = new Map((incidents ?? []).map((row) => [row.id, { name: `${row.incident_number} — ${row.title}`, status: row.status }]));
-  const resolve = (type: string, id: string) => (type === 'CI' ? ciMap.get(id) : type === 'Asset' ? assetMap.get(id) : type === 'Incident' ? incidentMap.get(id) : undefined);
+  const changeMap = new Map((changes ?? []).map((row) => [row.id, { name: `${row.change_number} — ${row.title}`, status: row.status }]));
+  const resolve = (type: string, id: string) => (type === 'CI' ? ciMap.get(id) : type === 'Asset' ? assetMap.get(id) : type === 'Incident' ? incidentMap.get(id) : type === 'Change' ? changeMap.get(id) : undefined);
 
   return rows.map((r) => {
     const source = resolve(r.source_type, r.source_id);
@@ -473,19 +483,21 @@ configurationItemsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zV
 
 // ===== CI Relationships =====
 
-/** cross-module node catalog สำหรับฟอร์มสร้างความสัมพันธ์ — เปิด CI/Asset/Incident ตามโมดูลที่มีตารางจริง */
+/** cross-module node catalog สำหรับฟอร์มสร้างความสัมพันธ์ — เปิด CI/Asset/Incident/Change ตามโมดูลที่มีตารางจริง */
 ciRelationshipsRoute.get('/node-options', requirePermission('cmdb.view'), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
-  const [{ data: cis }, { data: assets }, { data: incidents }] = await Promise.all([
+  const [{ data: cis }, { data: assets }, { data: incidents }, { data: changes }] = await Promise.all([
     supabase.from('configuration_items').select('id, ci_code, name, status').order('name', { ascending: true }).limit(2000),
     supabase.from('assets').select('id, asset_code, name, status').order('name', { ascending: true }).limit(2000),
     supabase.from('incidents').select('id, incident_number, title, status').order('report_date', { ascending: false }).limit(2000),
+    supabase.from('change_requests').select('id, change_number, title, status').order('request_date', { ascending: false }).limit(2000),
   ]);
   const nodes = [
     ...(cis ?? []).map((row) => ({ type: 'CI' as const, id: row.id, label: `${row.ci_code} — ${row.name}`, status: row.status })),
     ...(assets ?? []).map((row) => ({ type: 'Asset' as const, id: row.id, label: `${row.asset_code} — ${row.name}`, status: row.status })),
     ...(incidents ?? []).map((row) => ({ type: 'Incident' as const, id: row.id, label: `${row.incident_number} — ${row.title}`, status: row.status })),
+    ...(changes ?? []).map((row) => ({ type: 'Change' as const, id: row.id, label: `${row.change_number} — ${row.title}`, status: row.status })),
   ];
   return c.json(ok(reqId, nodes));
 });

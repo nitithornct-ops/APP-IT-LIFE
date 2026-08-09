@@ -70,6 +70,10 @@ const ProblemsPage = lazy(() => import('./features/problems/ProblemsPage').then(
 const ProblemDetailPage = lazy(() =>
   import('./features/problems/ProblemDetailPage').then((m) => ({ default: m.ProblemDetailPage })),
 );
+const ChangesPage = lazy(() => import('./features/changes/ChangesPage').then((m) => ({ default: m.ChangesPage })));
+const ChangeDetailPage = lazy(() =>
+  import('./features/changes/ChangeDetailPage').then((m) => ({ default: m.ChangeDetailPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -142,6 +146,26 @@ export function App() {
             <ProtectedRoute permission="problem.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <ProblemDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/changes"
+          element={
+            <ProtectedRoute permission="change.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ChangesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/changes/:id"
+          element={
+            <ProtectedRoute permission="change.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <ChangeDetailPage />
               </Suspense>
             </ProtectedRoute>
           }

@@ -43,6 +43,7 @@ describe('requireAuth', () => {
     ['GET', '/api/v1/cmdb/relationships'],
     ['GET', '/api/v1/incidents'],
     ['GET', '/api/v1/problems'],
+    ['GET', '/api/v1/changes'],
     ['GET', '/api/v1/audit-logs'],
     ['GET', '/api/v1/auth/me'],
     ['GET', '/api/v1/notifications'],

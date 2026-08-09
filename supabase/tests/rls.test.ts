@@ -22,6 +22,8 @@ const TECHNICIAN_ID = '00000000-0000-0000-0000-000000000008';
 // role 'dpo' — seed.sql (Phase 6 Module 9) ให้ cmdb.view เป็นพิเศษเฉพาะโมดูลนี้ (ไม่ได้อยู่ใน convention
 // manager/executive/auditor ทั่วไป) เพราะ CI มีฟิลด์ DataClassification/RPO/RTO ที่เกี่ยวข้องกับงาน DPO ตรง ๆ
 const DPO_ID = '00000000-0000-0000-0000-000000000009';
+const SECOND_TECHNICIAN_ID = '00000000-0000-0000-0000-000000000010';
+const CHANGE_APPROVER_ID = '00000000-0000-0000-0000-000000000011';
 
 let db: PGlite;
 
@@ -47,6 +49,8 @@ beforeAll(async () => {
   await createUserWithRole(SUPERVISOR_ID, 'supervisor@test.local', 'user');
   await createUserWithRole(TECHNICIAN_ID, 'technician@test.local', 'technician');
   await createUserWithRole(DPO_ID, 'dpo@test.local', 'dpo');
+  await createUserWithRole(SECOND_TECHNICIAN_ID, 'technician-2@test.local', 'technician');
+  await createUserWithRole(CHANGE_APPROVER_ID, 'change-approver@test.local', 'approver');
 
   await asServiceRole(db, async () => {
     await db.query('insert into auth.users (id, email) values ($1, $2)', [NO_ROLE_USER_ID, 'no-role@test.local']);
@@ -66,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 51 permissions', async () => {
+  it('seeds 9 roles and 56 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(51);
+    expect((permissions.rows[0] as { count: number }).count).toBe(56);
   });
 });
 
@@ -1458,6 +1462,106 @@ describe('problems / known_errors RLS (Phase 6 Module 11 Problem)', () => {
     ).rejects.toThrow();
     const closed = await asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด', closed_at = now(), permanent_fix = 'แก้ถาวรแล้ว' where id = $1 returning closed_at`, [problemId]));
     expect(closed.rows).toHaveLength(1);
+  });
+});
+
+describe('change_requests RLS and workflow (Phase 6 Module 12 Change)', () => {
+  let changeId: string;
+
+  it('lets a technician submit their own request and grants view-only access by role', async () => {
+    const created = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.change_requests
+          (change_number, title, system_affected, description, requester_id, risk_level, rollback_plan)
+         values ('CHG-RLS-001', 'Deploy SSO', 'Customer Portal', 'เปิดใช้งาน SSO รุ่นใหม่', $1, 'กลาง', 'ย้อนกลับ image เดิม')
+         returning id`,
+        [TECHNICIAN_ID],
+      ),
+    );
+    changeId = (created.rows[0] as { id: string }).id;
+
+    const auditorRead = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.change_requests where id = $1', [changeId]));
+    expect(auditorRead.rows).toHaveLength(1);
+    const userRead = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.change_requests where id = $1', [changeId]));
+    expect(userRead.rows).toEqual([]);
+    const auditorUpdate = await asUser(db, AUDITOR_ID, async () => db.query(`update public.change_requests set notes = 'ห้ามแก้' where id = $1 returning id`, [changeId]));
+    expect(auditorUpdate.rows).toEqual([]);
+  });
+
+  it('prevents submitting on behalf of another user and keeps workflow updates backend-only', async () => {
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () => db.query(
+        `insert into public.change_requests (change_number, title, system_affected, description, requester_id)
+         values ('CHG-RLS-BAD', 'สวมรอย', 'ระบบ', 'รายละเอียด', $1)`,
+        [SECOND_TECHNICIAN_ID],
+      )),
+    ).rejects.toThrow();
+    const directUpdate = await asUser(db, SECOND_TECHNICIAN_ID, async () => db.query(`update public.change_requests set test_result = 'ผ่าน' where id = $1 returning id`, [changeId]));
+    expect(directUpdate.rows).toEqual([]);
+  });
+
+  it('enforces independent test, approval and deployment at database level', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.change_requests set test_result = 'self test', test_passed = true, test_signoff_by = $1, test_signoff_at = now(), status = 'ผ่านการทดสอบ' where id = $2`,
+      [TECHNICIAN_ID, changeId],
+    ))).rejects.toThrow(/CHANGE_REQUESTER_CANNOT_TEST/);
+
+    const tested = await asServiceRole(db, async () => db.query(
+      `update public.change_requests set test_result = 'ผ่าน regression test', test_passed = true, test_signoff_by = $1, test_signoff_at = now(), status = 'ผ่านการทดสอบ' where id = $2 returning status`,
+      [SECOND_TECHNICIAN_ID, changeId],
+    ));
+    expect(tested.rows).toEqual([{ status: 'ผ่านการทดสอบ' }]);
+
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.change_requests set approver_id = $1, approve_date = now(), approve_result = 'อนุมัติ', status = 'อนุมัติแล้ว' where id = $2`,
+      [SECOND_TECHNICIAN_ID, changeId],
+    ))).rejects.toThrow(/CHANGE_TESTER_CANNOT_APPROVE/);
+
+    const approved = await asServiceRole(db, async () => db.query(
+      `update public.change_requests set approver_id = $1, approve_date = now(), approve_result = 'อนุมัติ', status = 'อนุมัติแล้ว' where id = $2 returning status`,
+      [CHANGE_APPROVER_ID, changeId],
+    ));
+    expect(approved.rows).toEqual([{ status: 'อนุมัติแล้ว' }]);
+
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.change_requests set deploy_by = $1, deploy_date = now(), version = '2026.08.1', status = 'ติดตั้งใช้งานแล้ว' where id = $2`,
+      [CHANGE_APPROVER_ID, changeId],
+    ))).rejects.toThrow(/CHANGE_APPROVER_CANNOT_DEPLOY/);
+
+    const deployed = await asServiceRole(db, async () => db.query(
+      `update public.change_requests set deploy_by = $1, deploy_date = now(), version = '2026.08.1', status = 'ติดตั้งใช้งานแล้ว' where id = $2 returning status, version`,
+      [SECOND_TECHNICIAN_ID, changeId],
+    ));
+    expect(deployed.rows).toEqual([{ status: 'ติดตั้งใช้งานแล้ว', version: '2026.08.1' }]);
+  });
+
+  it('requires a reason when rejecting and supports Change CMDB relationships', async () => {
+    const second = await asUser(db, CHANGE_APPROVER_ID, async () => db.query(
+      `insert into public.change_requests (change_number, title, system_affected, description, requester_id)
+       values ('CHG-RLS-002', 'Change อ้างอิง', 'Portal', 'fixture', $1) returning id`,
+      [CHANGE_APPROVER_ID],
+    ));
+    const secondId = (second.rows[0] as { id: string }).id;
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.change_requests set test_result = 'ผ่าน', test_passed = true, test_signoff_by = $1, test_signoff_at = now(), status = 'ผ่านการทดสอบ' where id = $2`,
+      [SECOND_TECHNICIAN_ID, secondId],
+    ))).resolves.toBeDefined();
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.change_requests set approver_id = $1, approve_date = now(), approve_result = 'ปฏิเสธ', status = 'ปฏิเสธ' where id = $2`,
+      [TECHNICIAN_ID, secondId],
+    ))).rejects.toThrow();
+    const rejected = await asServiceRole(db, async () => db.query(
+      `update public.change_requests set approver_id = $1, approve_date = now(), approve_result = 'ปฏิเสธ', approval_comment = 'ผลกระทบสูงเกินไป', status = 'ปฏิเสธ' where id = $2 returning status`,
+      [TECHNICIAN_ID, secondId],
+    ));
+    expect(rejected.rows).toEqual([{ status: 'ปฏิเสธ' }]);
+
+    const relationship = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.ci_relationships (source_type, source_id, target_type, target_id, relationship_type)
+       values ('Change', $1, 'Change', $2, 'CHANGED_BY') returning id`,
+      [changeId, secondId],
+    ));
+    expect(relationship.rows).toHaveLength(1);
   });
 });
 
