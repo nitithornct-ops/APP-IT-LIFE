@@ -20,6 +20,8 @@ export const DEFAULT_PERMISSION_KEYS = [
   'incident.view_all',
   'incident.manage',
   'incident.regulatory',
+  'problem.view',
+  'problem.manage',
   'report.export',
   'user.manage',
   'role.manage',

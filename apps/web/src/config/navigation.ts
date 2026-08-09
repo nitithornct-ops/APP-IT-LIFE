@@ -1,6 +1,7 @@
 import {
   Activity,
   Boxes,
+  Bug,
   ClipboardList,
   FileKey,
   KeyRound,
@@ -56,6 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
       { label: 'Incident', path: '/incidents', icon: Siren, permission: 'incident.view' },
+      { label: 'Problem / Known Error', path: '/problems', icon: Bug, permission: 'problem.view' },
     ],
   },
   {

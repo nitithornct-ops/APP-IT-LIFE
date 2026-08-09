@@ -66,11 +66,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 49 permissions', async () => {
+  it('seeds 9 roles and 51 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(49);
+    expect((permissions.rows[0] as { count: number }).count).toBe(51);
   });
 });
 
@@ -1388,6 +1388,75 @@ describe('incidents / regulatory_notifications RLS (Phase 6 Module 10 Incident)'
     const closed = await asUser(db, TECHNICIAN_ID, async () =>
       db.query(`update public.incidents set status = 'ปิดเคส', root_cause = 'สาเหตุ', resolution = 'แก้ไข', closed_at = now() where id = $1 returning id`, [personalIncidentId]),
     );
+    expect(closed.rows).toHaveLength(1);
+  });
+});
+
+describe('problems / known_errors RLS (Phase 6 Module 11 Problem)', () => {
+  let problemId: string;
+  let incidentId: string;
+  let ticketId: string;
+
+  beforeAll(async () => {
+    await asServiceRole(db, async () => {
+      const incident = await db.query(
+        `insert into public.incidents
+          (incident_number, title, reported_by, category, description)
+         values ('INC-PRB-RLS', 'Incident สำหรับ Problem', $1, 'อื่นๆ', 'fixture') returning id`,
+        [REGULAR_USER_ID],
+      );
+      incidentId = (incident.rows[0] as { id: string }).id;
+      const ticket = await db.query(
+        `insert into public.tickets (title, requester_id, description)
+         values ('Ticket สำหรับ Problem', $1, 'fixture') returning id`,
+        [REGULAR_USER_ID],
+      );
+      ticketId = (ticket.rows[0] as { id: string }).id;
+    });
+  });
+
+  it('lets technician create and normalize Incident/Ticket links', async () => {
+    const created = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.problems
+          (problem_number, title, owner_id, priority, status, root_cause)
+         values ('PRB-RLS-001', 'ปัญหาซ้ำ', $1, 'สูง', 'กำลังวิเคราะห์', 'กำลังค้นหา') returning id`,
+        [TECHNICIAN_ID],
+      ),
+    );
+    problemId = (created.rows[0] as { id: string }).id;
+    await asUser(db, TECHNICIAN_ID, async () => {
+      await db.query(`insert into public.problem_incidents (problem_id, incident_id, created_by) values ($1, $2, $3)`, [problemId, incidentId, TECHNICIAN_ID]);
+      await db.query(`insert into public.problem_tickets (problem_id, ticket_id, created_by) values ($1, $2, $3)`, [problemId, ticketId, TECHNICIAN_ID]);
+    });
+    const links = await asUser(db, TECHNICIAN_ID, async () => db.query(`select (select count(*) from public.problem_incidents where problem_id = $1)::int as incidents, (select count(*) from public.problem_tickets where problem_id = $1)::int as tickets`, [problemId]));
+    expect(links.rows[0]).toEqual({ incidents: 1, tickets: 1 });
+  });
+
+  it('allows view-only auditor to read but not update, and hides rows from regular user', async () => {
+    const auditorRows = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.problems where id = $1', [problemId]));
+    expect(auditorRows.rows).toHaveLength(1);
+    const auditorUpdate = await asUser(db, AUDITOR_ID, async () => db.query(`update public.problems set notes = 'ห้ามแก้' where id = $1 returning id`, [problemId]));
+    expect(auditorUpdate.rows).toEqual([]);
+    const userRows = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.problems where id = $1', [problemId]));
+    expect(userRows.rows).toEqual([]);
+  });
+
+  it('requires a valid Problem and non-empty workaround for Known Error', async () => {
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () => db.query(`insert into public.known_errors (known_error_number, problem_id, title, workaround) values ('KEDB-BAD', $1, 'ไม่มี workaround', '')`, [problemId])),
+    ).rejects.toThrow();
+    const created = await asUser(db, TECHNICIAN_ID, async () => db.query(`insert into public.known_errors (known_error_number, problem_id, title, symptoms, workaround, status) values ('KEDB-RLS-001', $1, 'Memory leak', 'RAM สูง', 'Restart service', 'เผยแพร่') returning id`, [problemId]));
+    expect(created.rows).toHaveLength(1);
+    const read = await asUser(db, AUDITOR_ID, async () => db.query(`select workaround from public.known_errors where problem_id = $1`, [problemId]));
+    expect(read.rows).toEqual([{ workaround: 'Restart service' }]);
+  });
+
+  it('keeps closed_at consistent with Problem status', async () => {
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด' where id = $1`, [problemId])),
+    ).rejects.toThrow();
+    const closed = await asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด', closed_at = now(), permanent_fix = 'แก้ถาวรแล้ว' where id = $1 returning closed_at`, [problemId]));
     expect(closed.rows).toHaveLength(1);
   });
 });

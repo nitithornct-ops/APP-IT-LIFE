@@ -20,6 +20,7 @@ import { accessSystemsRoute, assetCategoriesRoute, departmentsRoute, positionsRo
 import { notificationsRoute } from './routes/notifications';
 import { permissionOverridesRoute } from './routes/permissionOverrides';
 import { permissionsRoute, rolesRoute } from './routes/roles';
+import { problemsRoute } from './routes/problems';
 import { serviceCatalogRoute } from './routes/serviceCatalog';
 import { serviceRequestsRoute } from './routes/serviceRequests';
 import { tasksRoute } from './routes/tasks';
@@ -75,6 +76,7 @@ app.route('/api/v1/employee-assignments', employeeAssignmentsRoute);
 app.route('/api/v1/cmdb/items', configurationItemsRoute);
 app.route('/api/v1/cmdb/relationships', ciRelationshipsRoute);
 app.route('/api/v1/incidents', incidentsRoute);
+app.route('/api/v1/problems', problemsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
