@@ -11,6 +11,7 @@ import {
   Network,
   PackageSearch,
   ShieldCheck,
+  Siren,
   ShoppingBag,
   Tags,
   Ticket,
@@ -54,6 +55,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
       { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
+      { label: 'Incident', path: '/incidents', icon: Siren, permission: 'incident.view' },
     ],
   },
   {

@@ -9,16 +9,16 @@ export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ล�
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
 export type CiStatus = (typeof CI_STATUSES)[number];
 
-/** node type ที่มีตารางจริงให้เลือกตอนนี้ — อีก 6 ประเภทรอโมดูล Vendor/Contract/Cloud/Backup/Incident/Change */
-export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset'] as const;
+/** node type ที่มีตารางจริงให้เลือกตอนนี้ — อีก 5 ประเภทรอโมดูล Vendor/Contract/Cloud/Backup/Change */
+export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Incident'] as const;
 
 export const RELATIONSHIP_TYPES = [
   'DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY',
   'SUPPLIED_BY', 'COVERED_BY_CONTRACT', 'IMPACTED_BY', 'CHANGED_BY', 'LINKED_TO',
 ] as const;
 /** ประเภทที่มี target ให้เลือกได้จริงตอนนี้ (ปลายทางเป็น CI/Asset ได้) — อีก 4 (SUPPLIED_BY/
- * COVERED_BY_CONTRACT/IMPACTED_BY/CHANGED_BY) ต้องชี้ Vendor/Contract/Incident/Change ที่ยังไม่มีตารางจริง */
-export const RELATIONSHIP_TYPES_ENABLED = ['DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY', 'LINKED_TO'] as const;
+ * COVERED_BY_CONTRACT/CHANGED_BY) ต้องชี้ Vendor/Contract/Change ที่ยังไม่มีตารางจริง */
+export const RELATIONSHIP_TYPES_ENABLED = ['DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY', 'IMPACTED_BY', 'LINKED_TO'] as const;
 export const RELATIONSHIP_DIRECTIONS = ['Forward', 'Bidirectional'] as const;
 export const RELATIONSHIP_IMPACT_LEVELS = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const RELATIONSHIP_STATUSES = ['Active', 'Inactive'] as const;
@@ -98,7 +98,7 @@ export interface ConfigurationItemDetail {
 }
 
 export interface CiNodeOption {
-  type: 'CI' | 'Asset';
+  type: 'CI' | 'Asset' | 'Incident';
   id: string;
   label: string;
   status: string;

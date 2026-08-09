@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (46 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (49 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -35,7 +35,10 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('asset.transfer', 'asset', 'transfer', 'โอนย้ายทรัพย์สิน', 'active'),
   ('asset.dispose', 'asset', 'dispose', 'ปลดระวางทรัพย์สิน', 'active'),
   ('incident.view', 'incident', 'view', 'ดูรายการ Incident', 'active'),
+  ('incident.create', 'incident', 'create', 'รับแจ้ง Incident ใหม่', 'active'),
+  ('incident.view_all', 'incident', 'view_all', 'ดู Incident ทุกเคสในภาพรวมองค์กร', 'active'),
   ('incident.manage', 'incident', 'manage', 'จัดการ/ปิดเคส Incident', 'active'),
+  ('incident.regulatory', 'incident', 'regulatory', 'ประเมินและบันทึกการแจ้งหน่วยงานกำกับสำหรับ Incident', 'active'),
   ('report.export', 'report', 'export', 'Export รายงาน', 'active'),
   ('user.manage', 'user', 'manage', 'จัดการบัญชีผู้ใช้งาน', 'active'),
   ('role.manage', 'role', 'manage', 'จัดการบทบาทและสิทธิ์', 'active'),
@@ -105,6 +108,8 @@ from (values
   ('technician', 'cmdb.view'),
   ('technician', 'cmdb.manage'),
   ('technician', 'incident.view'),
+  ('technician', 'incident.create'),
+  ('technician', 'incident.manage'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
@@ -114,6 +119,8 @@ from (values
   ('approver', 'task.view'),
   ('approver', 'ticket.view'),
   ('approver', 'incident.view'),
+  ('approver', 'incident.create'),
+  ('approver', 'incident.view_all'),
   ('approver', 'report.export'),
   ('approver', 'service_request.view'),
   ('approver', 'access_request.view'),
@@ -127,6 +134,8 @@ from (values
   ('manager', 'license.view'),
   ('manager', 'cmdb.view'),
   ('manager', 'incident.view'),
+  ('manager', 'incident.create'),
+  ('manager', 'incident.view_all'),
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
   ('manager', 'access_request.view'),
@@ -140,6 +149,7 @@ from (values
   ('executive', 'license.view'),
   ('executive', 'cmdb.view'),
   ('executive', 'incident.view'),
+  ('executive', 'incident.view_all'),
   ('executive', 'report.export'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
@@ -154,6 +164,7 @@ from (values
   ('auditor', 'license.view'),
   ('auditor', 'cmdb.view'),
   ('auditor', 'incident.view'),
+  ('auditor', 'incident.view_all'),
   ('auditor', 'report.export'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),
@@ -164,6 +175,8 @@ from (values
   ('dpo', 'task.view'),
   ('dpo', 'cmdb.view'),
   ('dpo', 'incident.view'),
+  ('dpo', 'incident.create'),
+  ('dpo', 'incident.regulatory'),
   ('dpo', 'report.export'),
   ('dpo', 'audit.view'),
 
@@ -171,6 +184,8 @@ from (values
   ('user', 'task.view'),
   ('user', 'ticket.view'),
   ('user', 'ticket.create'),
+  ('user', 'incident.view'),
+  ('user', 'incident.create'),
   ('user', 'service_request.view'),
   ('user', 'service_request.create'),
   ('user', 'access_request.view'),

@@ -66,11 +66,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 46 permissions', async () => {
+  it('seeds 9 roles and 49 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(46);
+    expect((permissions.rows[0] as { count: number }).count).toBe(49);
   });
 });
 
@@ -1267,6 +1267,128 @@ describe('configuration_items / ci_relationships RLS (Phase 6 Module 9 CMDB)', (
       db.query(`update public.ci_relationships set description = 'แก้ไขโดย technician' where id = $1 returning id`, [relId]),
     );
     expect(updated.rows).toHaveLength(1);
+  });
+});
+
+describe('incidents / regulatory_notifications RLS (Phase 6 Module 10 Incident)', () => {
+  let personalIncidentId: string;
+  let generalIncidentId: string;
+
+  it('lets a regular user report Incident and limits visibility to their own rows', async () => {
+    const personal = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(
+        `insert into public.incidents
+          (incident_number, title, reported_by, category, description, contains_personal_data, dpo_notify_deadline)
+         values ('INC-RLS-001', 'ข้อมูลรั่วไหล', $1, 'ข้อมูลรั่วไหล', 'ทดสอบ PII', true, now() + interval '4 hours')
+         returning id, risk_score`,
+        [REGULAR_USER_ID],
+      ),
+    );
+    personalIncidentId = (personal.rows[0] as { id: string }).id;
+    expect((personal.rows[0] as { risk_score: number | null }).risk_score).toBeNull();
+
+    const general = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query(
+        `insert into public.incidents (incident_number, title, reported_by, category, description)
+         values ('INC-RLS-002', 'ระบบล่ม', $1, 'ระบบล่ม/ใช้งานไม่ได้', 'ทดสอบทั่วไป') returning id`,
+        [REGULAR_USER_ID],
+      ),
+    );
+    generalIncidentId = (general.rows[0] as { id: string }).id;
+
+    const ownRows = await asUser(db, REGULAR_USER_ID, async () => db.query(`select id from public.incidents where id in ($1, $2)`, [personalIncidentId, generalIncidentId]));
+    expect(ownRows.rows).toHaveLength(2);
+
+    const noRoleRows = await asUser(db, NO_ROLE_USER_ID, async () => db.query(`select id from public.incidents where id in ($1, $2)`, [personalIncidentId, generalIncidentId]));
+    expect(noRoleRows.rows).toEqual([]);
+  });
+
+  it('lets DPO see PII incidents only, while auditor view_all sees both read-only', async () => {
+    const dpoRows = await asUser(db, DPO_ID, async () => db.query(`select id from public.incidents where id in ($1, $2) order by id`, [personalIncidentId, generalIncidentId]));
+    expect(dpoRows.rows).toHaveLength(1);
+    expect((dpoRows.rows[0] as { id: string }).id).toBe(personalIncidentId);
+
+    const auditorRows = await asUser(db, AUDITOR_ID, async () => db.query(`select id from public.incidents where id in ($1, $2)`, [personalIncidentId, generalIncidentId]));
+    expect(auditorRows.rows).toHaveLength(2);
+    const auditorUpdate = await asUser(db, AUDITOR_ID, async () => db.query(`update public.incidents set notes = 'ห้ามแก้' where id = $1 returning id`, [generalIncidentId]));
+    expect(auditorUpdate.rows).toEqual([]);
+  });
+
+  it('computes risk_score from likelihood x impact and lets technician manage incidents', async () => {
+    const updated = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`update public.incidents set likelihood = 4, impact = 5, severity = 'วิกฤต' where id = $1 returning risk_score`, [generalIncidentId]),
+    );
+    expect((updated.rows[0] as { risk_score: number }).risk_score).toBe(20);
+  });
+
+  it('keeps regulatory notification writes backend-only and enforces evidence constraints', async () => {
+    await expect(
+      asUser(db, DPO_ID, async () =>
+        db.query(
+          `insert into public.regulatory_notifications
+            (incident_id, destination, agency, notification_type, required, status, reference_no, notified_at)
+           values ($1, 'PDPC', 'สคส.', 'เหตุละเมิด', true, 'แจ้งแล้ว', 'PDPC-1', now())`,
+          [personalIncidentId],
+        ),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(
+          `insert into public.regulatory_notifications
+            (incident_id, destination, agency, notification_type, required, status, notified_at)
+           values ($1, 'PDPC', 'สคส.', 'เหตุละเมิด', true, 'แจ้งแล้ว', now())`,
+          [personalIncidentId],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks closure until assessment, DPO acknowledgement and required external evidence are complete', async () => {
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () =>
+        db.query(`update public.incidents set status = 'ปิดเคส', root_cause = 'สาเหตุ', resolution = 'แก้ไข', closed_at = now() where id = $1`, [personalIncidentId]),
+      ),
+    ).rejects.toThrow(/INCIDENT_REGULATORY_ASSESSMENT_INCOMPLETE/);
+
+    await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `update public.incidents set
+           regulatory_assessment_status = 'ประเมินแล้ว', breach_risk_level = 'สูง',
+           pdpc_notify_required = 'Yes', data_subject_notify_required = 'No',
+           ncsa_report_required = 'No', other_regulator_required = 'No',
+           regulatory_assessment = 'ต้องแจ้ง สคส.'
+         where id = $1`,
+        [personalIncidentId],
+      ),
+    );
+
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () =>
+        db.query(`update public.incidents set status = 'ปิดเคส', root_cause = 'สาเหตุ', resolution = 'แก้ไข', closed_at = now() where id = $1`, [personalIncidentId]),
+      ),
+    ).rejects.toThrow(/INCIDENT_DPO_NOT_NOTIFIED/);
+
+    await asUser(db, TECHNICIAN_ID, async () => db.query(`update public.incidents set dpo_notified_at = now(), dpo_notified_by = $1 where id = $2`, [DPO_ID, personalIncidentId]));
+    await expect(
+      asUser(db, TECHNICIAN_ID, async () =>
+        db.query(`update public.incidents set status = 'ปิดเคส', root_cause = 'สาเหตุ', resolution = 'แก้ไข', closed_at = now() where id = $1`, [personalIncidentId]),
+      ),
+    ).rejects.toThrow(/INCIDENT_REGULATORY_EVIDENCE_MISSING:PDPC/);
+
+    await asServiceRole(db, async () =>
+      db.query(
+        `insert into public.regulatory_notifications
+          (incident_id, destination, agency, notification_type, required, status, reference_no, notified_at)
+         values ($1, 'PDPC', 'สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล', 'แจ้งเหตุละเมิด', true, 'แจ้งแล้ว', 'PDPC-001', now())`,
+        [personalIncidentId],
+      ),
+    );
+    const closed = await asUser(db, TECHNICIAN_ID, async () =>
+      db.query(`update public.incidents set status = 'ปิดเคส', root_cause = 'สาเหตุ', resolution = 'แก้ไข', closed_at = now() where id = $1 returning id`, [personalIncidentId]),
+    );
+    expect(closed.rows).toHaveLength(1);
   });
 });
 

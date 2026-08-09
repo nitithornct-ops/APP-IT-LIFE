@@ -234,7 +234,7 @@ function EditCiForm({ detail, employees, assetOptions, onClose }: { detail: Conf
 
 const createRelSchema = z
   .object({
-    targetType: z.enum(['CI', 'Asset']),
+    targetType: z.enum(['CI', 'Asset', 'Incident']),
     targetId: z.string().min(1, 'กรุณาเลือกปลายทาง'),
     relationshipType: z.enum(RELATIONSHIP_TYPES_ENABLED),
     direction: z.enum(RELATIONSHIP_DIRECTIONS).optional(),
@@ -287,6 +287,7 @@ function CreateRelationshipForm({ ciId, nodeOptions, onClose }: { ciId: string; 
         <select id="rel-target-type" data-testid="ci-rel-target-type" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('targetType')}>
           <option value="CI">CI</option>
           <option value="Asset">Asset</option>
+          <option value="Incident">Incident</option>
         </select>
       </div>
       <div className="sm:col-span-2">

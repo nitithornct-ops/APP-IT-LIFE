@@ -11,9 +11,9 @@ export const CI_CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ลับมาก'] as const;
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
 
-/** node type ที่ DB CHECK รองรับครบ 8 ประเภทไว้ล่วงหน้า (ตรงกับ migration) แต่มีตารางจริงให้เลือกแค่ 2 ตอนนี้ */
+/** node type ที่ DB CHECK รองรับครบ 8 ประเภทไว้ล่วงหน้า (ตรงกับ migration) และมีตารางจริงให้เลือก 3 ประเภทตอนนี้ */
 export const CI_NODE_TYPES = ['CI', 'Asset', 'Vendor', 'Contract', 'Cloud', 'Backup', 'Incident', 'Change'] as const;
-export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset'] as const;
+export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Incident'] as const;
 
 export const RELATIONSHIP_TYPES = [
   'DEPENDS_ON', 'RUNS_ON', 'HOSTS', 'CONNECTS_TO', 'USES', 'BACKED_UP_BY',

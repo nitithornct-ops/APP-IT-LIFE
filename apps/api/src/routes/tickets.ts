@@ -255,6 +255,14 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
 
   const fromStatus = String(current.status);
   const toStatus = body.status ?? fromStatus;
+  // การยกระดับต้องสร้าง Incident + ความสัมพันธ์ 1:1 + worklog พร้อมกันผ่าน endpoint
+  // /incidents/from-ticket/:ticketId เท่านั้น ห้ามเปลี่ยนสถานะเปล่า ๆ จน provenance ขาด
+  if (toStatus === TICKET_STATUS.ESCALATED && toStatus !== fromStatus) {
+    return c.json(
+      fail(reqId, 'TICKET_ESCALATION_ENDPOINT_REQUIRED', 'กรุณาใช้คำสั่งยกระดับเป็น Incident เพื่อสร้างเคสและความสัมพันธ์ให้ครบถ้วน'),
+      400,
+    );
+  }
   const isReopen = (fromStatus === TICKET_STATUS.RESOLVED || fromStatus === TICKET_STATUS.CLOSED) && toStatus === TICKET_STATUS.IN_PROGRESS;
   const closingStatuses: string[] = [TICKET_STATUS.CLOSED, TICKET_STATUS.CANCELLED];
 

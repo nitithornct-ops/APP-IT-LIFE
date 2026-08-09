@@ -11,6 +11,7 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssignableStaff, TicketDetail, TicketStatus } from '../../types/tickets';
+import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, type Incident } from '../../types/incidents';
 import { formatThaiDate } from '../../utils/date';
 
 const TICKET_STATUSES: TicketStatus[] = [
@@ -23,7 +24,6 @@ const TICKET_STATUSES: TicketStatus[] = [
   'เสร็จสิ้น',
   'ปิดงาน',
   'ยกเลิก',
-  'ยกระดับเป็น Incident',
 ];
 
 const statusTone: Record<TicketStatus, 'secondary' | 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
@@ -262,6 +262,39 @@ function ReopenButton({ ticketId }: { ticketId: string }) {
   );
 }
 
+function EscalateIncidentPanel({ ticket }: { ticket: TicketDetail }) {
+  const queryClient = useQueryClient();
+  const [category, setCategory] = useState<(typeof INCIDENT_CATEGORIES)[number]>(INCIDENT_CATEGORIES[0]);
+  const [severity, setSeverity] = useState<(typeof INCIDENT_SEVERITIES)[number]>('ปานกลาง');
+  const [containsPersonalData, setContainsPersonalData] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [serverError, setServerError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<Incident>(`/api/v1/incidents/from-ticket/${ticket.id}`, { method: 'POST', body: JSON.stringify({ category, severity, containsPersonalData, notes }) }),
+    onSuccess: () => {
+      setServerError(null);
+      void queryClient.invalidateQueries({ queryKey: ['tickets', ticket.id] });
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      void queryClient.invalidateQueries({ queryKey: ['incidents'] });
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'ยกระดับเป็น Incident ไม่สำเร็จ'),
+  });
+  const fieldClass = 'w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
+  return (
+    <Card>
+      <CardHeader>ยกระดับเป็น Incident</CardHeader>
+      <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="text-xs font-semibold">ประเภท Incident<select value={category} onChange={(e) => setCategory(e.target.value as typeof category)} className={`${fieldClass} mt-1`}>{INCIDENT_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label className="text-xs font-semibold">ความรุนแรง<select value={severity} onChange={(e) => setSeverity(e.target.value as typeof severity)} className={`${fieldClass} mt-1`}>{INCIDENT_SEVERITIES.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={containsPersonalData} onChange={(e) => setContainsPersonalData(e.target.checked)} /> เกี่ยวข้องกับข้อมูลส่วนบุคคล</label>
+        <label className="text-xs font-semibold sm:col-span-2">หมายเหตุ<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${fieldClass} mt-1`} /></label>
+        {serverError && <p className="text-sm text-red-600 sm:col-span-2">{serverError}</p>}
+        <div className="sm:col-span-2"><Button size="sm" variant="danger" isLoading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="ticket-escalate-incident-submit">ยืนยันการยกระดับและสร้าง Incident</Button></div>
+      </CardBody>
+    </Card>
+  );
+}
+
 const feedbackSchema = z.object({
   rating: z.coerce.number().int().min(1).max(5),
   feedback: z.string().trim().optional(),
@@ -354,6 +387,11 @@ export function TicketDetailPage() {
     ticket.requester_id === me?.profile.id &&
     (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') &&
     !ticket.rating;
+  const canEscalate =
+    hasPermission('incident.manage') &&
+    hasPermission('ticket.update') &&
+    !ticket.incident_id &&
+    !['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(ticket.status);
 
   return (
     <div className="flex flex-col gap-4">
@@ -391,6 +429,10 @@ export function TicketDetailPage() {
           </Card>
 
           {canManage && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} />}
+          {canEscalate && <EscalateIncidentPanel ticket={ticket} />}
+          {ticket.incident_id && (
+            <Card><CardHeader>Incident ที่เชื่อมโยง</CardHeader><CardBody><Link to={`/incidents/${ticket.incident_id}`} className="text-primary-700 hover:underline dark:text-primary-300">เปิด Incident จาก Ticket นี้</Link></CardBody></Card>
+          )}
           {canRate && <FeedbackPanel ticketId={ticket.id} />}
           {ticket.rating && (
             <Card>

@@ -62,6 +62,10 @@ const ConfigurationItemDetailPage = lazy(() =>
 const CiRelationshipsPage = lazy(() =>
   import('./features/cmdb/CiRelationshipsPage').then((m) => ({ default: m.CiRelationshipsPage })),
 );
+const IncidentsPage = lazy(() => import('./features/incidents/IncidentsPage').then((m) => ({ default: m.IncidentsPage })));
+const IncidentDetailPage = lazy(() =>
+  import('./features/incidents/IncidentDetailPage').then((m) => ({ default: m.IncidentDetailPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -94,6 +98,26 @@ export function App() {
             <ProtectedRoute permission="task.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <TasksPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/incidents"
+          element={
+            <ProtectedRoute permission="incident.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <IncidentsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/incidents/:id"
+          element={
+            <ProtectedRoute permission="incident.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <IncidentDetailPage />
               </Suspense>
             </ProtectedRoute>
           }

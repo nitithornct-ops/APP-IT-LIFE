@@ -21,6 +21,7 @@ export interface TicketListItem {
   status: TicketStatus;
   assignee_id: string | null;
   is_security: boolean;
+  incident_id: string | null;
   due_at: string | null;
   created_at: string;
   ticket_categories: { name: string } | null;
