@@ -1,7 +1,7 @@
 {
   "phase": "Phase 7 Data Migration",
   "mode": "READ_ONLY_DRY_RUN",
-  "generatedAt": "2026-08-10T13:10:59.048Z",
+  "generatedAt": "2026-08-10T15:31:02.266Z",
   "safety": {
     "writesToSupabase": false,
     "rawRowsIncluded": false,
@@ -33,7 +33,7 @@
     "status": "READY_FOR_IMPORT_REHEARSAL",
     "blockers": [],
     "warnings": [
-      "PDFDesignTemplates: 1 row(s) will use mode deferred.",
+      "PDFDesignTemplates: 1 row(s) will use mode archive.",
       "RateLimits: 2 row(s) will use mode skip_ephemeral.",
       "LineSessions: 4 row(s) will use mode skip_ephemeral.",
       "BackupLog: snapshot has additive columns; map or explicitly archive them.",
@@ -495,7 +495,7 @@
     {
       "sheet": "PDFDesignTemplates",
       "sourceRows": 1,
-      "mode": "deferred",
+      "mode": "archive",
       "legacyKey": [
         "TemplateID"
       ],
@@ -505,7 +505,7 @@
       "missingHeaders": [],
       "extraHeaders": [],
       "sensitiveColumnsExcluded": [],
-      "note": "Designer is explicitly deferred until after go-live."
+      "note": "Feature cut permanently (R-05) — preserve as a read-only export, never activate."
     },
     {
       "sheet": "GovernanceDocuments",
@@ -1284,7 +1284,7 @@
     {
       "sheet": "FieldDefinitions",
       "sourceRows": 0,
-      "mode": "deferred",
+      "mode": "archive",
       "legacyKey": [
         "FieldID"
       ],
@@ -1294,7 +1294,7 @@
       "missingHeaders": [],
       "extraHeaders": [],
       "sensitiveColumnsExcluded": [],
-      "note": "Designer metadata is explicitly deferred until after go-live."
+      "note": "Feature cut permanently (R-05) — preserve as a read-only export, never activate."
     },
     {
       "sheet": "QATestCases",

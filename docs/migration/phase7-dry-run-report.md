@@ -1,6 +1,6 @@
 # Phase 7 — Migration Dry-Run Report
 
-Generated: 2026-08-10T13:10:59.048Z
+Generated: 2026-08-10T15:31:02.266Z
 
 Source: ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY (2026-08-09T19:27:54.773Z)  
 Mode: **read-only** — no Supabase writes, raw rows, PII, or secrets are included.  
@@ -25,7 +25,7 @@ Mapping strategy: **header name**, never column position.
 
 ### Warnings
 
-- PDFDesignTemplates: 1 row(s) will use mode deferred.
+- PDFDesignTemplates: 1 row(s) will use mode archive.
 - RateLimits: 2 row(s) will use mode skip_ephemeral.
 - LineSessions: 4 row(s) will use mode skip_ephemeral.
 - BackupLog: snapshot has additive columns; map or explicitly archive them.
@@ -88,7 +88,7 @@ Missing targets: None
 | TaskLinks | 0 | transform | LinkID | task_links | exact | yes |
 | TaskProgressLogs | 0 | transform | ProgressLogID | task_progress_logs | exact | yes |
 | TaskSubtasks | 0 | transform | SubtaskID | task_subtasks | exact | yes |
-| PDFDesignTemplates | 1 | deferred | TemplateID | — | exact | yes |
+| PDFDesignTemplates | 1 | archive | TemplateID | — | exact | yes |
 | GovernanceDocuments | 0 | transform | DocumentID | governance_documents | exact | yes |
 | RegulatoryNotifications | 0 | transform | NotificationID | regulatory_notifications | exact | yes |
 | LegalRegister | 6 | transform | LawID | legal_register | exact | yes |
@@ -137,7 +137,7 @@ Missing targets: None
 | PolicyAcknowledgements | 0 | transform | AckID | policy_acknowledgements | exact | yes |
 | NotificationLog | 97 | archive | NotifyID | — | exact | yes |
 | Settings | 57 | transform | Key | system_settings | exact | yes |
-| FieldDefinitions | 0 | deferred | FieldID | — | exact | yes |
+| FieldDefinitions | 0 | archive | FieldID | — | exact | yes |
 | QATestCases | 39 | archive | CaseID | — | additive | yes |
 | PolicyMapping | 25 | transform | MapID | governance_controls | exact | yes |
 | PrivacyROPA | 0 | transform | RopaID | privacy_ropa | exact | yes |

@@ -82,12 +82,19 @@ describe('buildImportPlan', () => {
     expect(Object.values(plan.phases).flat()).toHaveLength(0);
   });
 
-  it('routes deferred sheets (Designer, schema-gap PM tables) to deferred, never into a phase', () => {
+  it('routes schema-gap PM tables to deferred (target table not built yet), never into a phase', () => {
+    const plan = buildImportPlan({ PMSchedules: [{ ScheduleID: 'S1' }] }, migrationManifest);
+    expect(plan.deferred).toHaveLength(1);
+    expect(Object.values(plan.phases).flat()).toHaveLength(0);
+  });
+
+  it('routes Field/PDF Designer sheets to archived — cut permanently per R-05, not deferred', () => {
     const plan = buildImportPlan({
       PDFDesignTemplates: [{ TemplateID: 'T1' }],
-      PMSchedules: [{ ScheduleID: 'S1' }],
+      FieldDefinitions: [{ FieldID: 'F1' }],
     }, migrationManifest);
-    expect(plan.deferred).toHaveLength(2);
+    expect(plan.archived).toHaveLength(2);
+    expect(plan.deferred).toHaveLength(0);
     expect(Object.values(plan.phases).flat()).toHaveLength(0);
   });
 

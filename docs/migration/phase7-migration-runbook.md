@@ -25,7 +25,7 @@ The expected target operation count is 958 because 862 `RetentionLog` detail row
 - Historical notifications: archive 97 `NotificationLog` rows. Do not replay queues or create unread in-app notifications.
 - Sessions and counters: skip four `LineSessions` rows and two `RateLimits` rows. Recreate runtime state in the new system.
 - Soft deletion: archive four soft-deleted rows instead of activating them.
-- Designer: defer the one `PDFDesignTemplates` row until after go-live. Its invalid `DesignJSON` is isolated from active imports.
+- Designer: Field Designer / PDF Designer are cut permanently (R-05 resolved) — archive `PDFDesignTemplates` and `FieldDefinitions` as a read-only export, never activate. Its invalid `DesignJSON` is isolated from active imports either way.
 - Retention: aggregate by `RunID`; keep the original per-sheet/action details in target JSON.
 - LINE identity: migrate the one `LineUsers` registry row to `line_users`; never migrate legacy session hashes.
 

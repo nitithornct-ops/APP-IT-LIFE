@@ -59,11 +59,11 @@ const archive: Record<string, string> = {
   NotificationQueue: 'Do not replay queued messages from the legacy system.',
   NotificationLog: 'Preserve delivery history as a read-only export; do not create new in-app notifications.',
   QATestCases: 'Superseded by source-controlled automated tests.',
-};
-
-const deferred: Record<string, string> = {
-  PDFDesignTemplates: 'Designer is explicitly deferred until after go-live.',
-  FieldDefinitions: 'Designer metadata is explicitly deferred until after go-live.',
+  // Decision gate resolved (R-05): Field Designer / PDF Designer (Word-like) are cut permanently,
+  // not rebuilt — high complexity vs ROI. Master Data uses fixed fields per module (React Hook
+  // Form); documents/evidence use the Cloudflare Browser Rendering PDF pipeline instead.
+  PDFDesignTemplates: 'Feature cut permanently (R-05) — preserve as a read-only export, never activate.',
+  FieldDefinitions: 'Feature cut permanently (R-05) — preserve as a read-only export, never activate.',
 };
 
 export const migrationManifest: ManifestEntry[] = [
@@ -77,7 +77,6 @@ export const migrationManifest: ManifestEntry[] = [
     note: 'Target table is not present. Import must stop if this sheet becomes populated.',
   })),
   ...Object.entries(archive).map(([sheet, note]) => ({ sheet, mode: 'archive' as const, targetTables: [], note })),
-  ...Object.entries(deferred).map(([sheet, note]) => ({ sheet, mode: 'deferred' as const, targetTables: [], note })),
   { sheet: 'LineSessions', mode: 'skip_ephemeral', targetTables: [], note: 'Never migrate legacy session hashes.' },
   { sheet: 'RateLimits', mode: 'skip_ephemeral', targetTables: [], note: 'Recreate counters in the new runtime.' },
 ];

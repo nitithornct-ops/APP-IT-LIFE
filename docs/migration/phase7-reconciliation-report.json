@@ -1,7 +1,7 @@
 {
   "phase": "Phase 7 Data Migration",
   "mode": "READ_ONLY_RECONCILIATION_PLAN",
-  "generatedAt": "2026-08-10T13:10:59.056Z",
+  "generatedAt": "2026-08-10T15:31:02.274Z",
   "sourceTitle": "ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY",
   "safety": {
     "writesToSupabase": false,
@@ -10,9 +10,9 @@
   "summary": {
     "sourceRows": 1932,
     "importCandidateRows": 1782,
-    "archiveRows": 143,
+    "archiveRows": 144,
     "skippedRows": 6,
-    "deferredRows": 1,
+    "deferredRows": 0,
     "expectedTargetRowOperations": 958
   },
   "sheets": [
@@ -367,13 +367,13 @@
     {
       "sheet": "PDFDesignTemplates",
       "sourceRows": 1,
-      "mode": "deferred",
+      "mode": "archive",
       "importCandidateRows": 0,
-      "archiveRows": 0,
+      "archiveRows": 1,
       "skippedRows": 0,
-      "deferredRows": 1,
+      "deferredRows": 0,
       "expectedTargetRows": {},
-      "rule": "Designer is explicitly deferred until after go-live."
+      "rule": "Feature cut permanently (R-05) — preserve as a read-only export, never activate."
     },
     {
       "sheet": "GovernanceDocuments",
@@ -994,13 +994,13 @@
     {
       "sheet": "FieldDefinitions",
       "sourceRows": 0,
-      "mode": "deferred",
+      "mode": "archive",
       "importCandidateRows": 0,
       "archiveRows": 0,
       "skippedRows": 0,
       "deferredRows": 0,
       "expectedTargetRows": {},
-      "rule": "Designer metadata is explicitly deferred until after go-live."
+      "rule": "Feature cut permanently (R-05) — preserve as a read-only export, never activate."
     },
     {
       "sheet": "QATestCases",

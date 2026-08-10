@@ -102,11 +102,11 @@ Accessibility, Command Palette) เป็นข้อมูลอ้างอิ
 
 ## จุดตัดสินใจ (Decision Gates) ที่ต้องได้คำตอบก่อนเริ่ม Phase ถัดไป
 
-| Gate | ต้องตัดสินใจก่อน Phase | อ้างอิง |
-|---|---|---|
-| ขอบเขตโมดูลกลุ่ม E (GRC/ISMS/PDPA) | Phase 1 (กำหนดขนาด Monorepo/Schema) | R-01, คำถามข้อ 1 |
-| Role Mapping 5→9 บทบาท | Phase 3 | R-02, คำถามข้อ 2 |
-| เครื่องมือสร้าง PDF ในระบบใหม่ | Phase 4 | R-13 |
-| ชะตากรรมของ Field Designer/PDF Designer | Phase 6 (ก่อนกำหนดลำดับท้าย) | R-05, คำถามข้อ 3 |
-| สิทธิ์เข้าถึง Production Spreadsheet/Drive จริง | Phase 7 | R-10, A-06 |
-| ค่า LINE Channel ID/Secret และ Script Properties อื่น | Phase 3 | R-11 |
+| Gate | ต้องตัดสินใจก่อน Phase | อ้างอิง | สถานะ |
+|---|---|---|---|
+| ขอบเขตโมดูลกลุ่ม E (GRC/ISMS/PDPA) | Phase 1 (กำหนดขนาด Monorepo/Schema) | R-01, คำถามข้อ 1 | ✅ ตัดสินใจแล้วโดยพฤตินัย — สร้างโมดูลกลุ่ม E ครบแล้วใน Phase 6 ลำดับ 19 |
+| Role Mapping 5→9 บทบาท | Phase 3 | R-02, คำถามข้อ 2 | ✅ เสร็จแล้ว — ดู `LEGACY_ROLE_MAP` ใน `packages/migration/src/importPlan.ts` |
+| เครื่องมือสร้าง PDF ในระบบใหม่ | Phase 4 | R-13 | ✅ ตัดสินใจแล้ว (2026-08-10): Cloudflare Browser Rendering API |
+| ชะตากรรมของ Field Designer/PDF Designer | Phase 6 (ก่อนกำหนดลำดับท้าย) | R-05, คำถามข้อ 3 | ✅ ตัดสินใจแล้ว (2026-08-10): **ตัดออกถาวร ไม่สร้างใหม่** ตามที่ R-05 แนะนำ |
+| สิทธิ์เข้าถึง Production Spreadsheet/Drive จริง | Phase 7 | R-10, A-06 | ⬜ ยังรอ — ดู `docs/migration/phase7-migration-runbook.md` § Running the rehearsal |
+| ค่า LINE Channel ID/Secret และ Script Properties อื่น | Phase 3 | R-11 | 🔶 ตัดสินใจแล้วว่าจะทำ (2026-08-10) — เจ้าของระบบจะใส่ค่าเองใน `.dev.vars`/`.env` โดยตรง ไม่ผ่าน chat |
