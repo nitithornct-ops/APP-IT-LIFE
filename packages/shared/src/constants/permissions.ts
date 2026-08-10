@@ -58,6 +58,8 @@ export const DEFAULT_PERMISSION_KEYS = [
   'inventory.manage',
   'license.view',
   'license.manage',
+  'vulnerability.view',
+  'vulnerability.manage',
   'cmdb.view',
   'cmdb.manage',
   'vendor.view',

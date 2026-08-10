@@ -28,6 +28,7 @@ import { tasksRoute } from './routes/tasks';
 import { ticketsRoute } from './routes/tickets';
 import { usersRoute } from './routes/users';
 import { contractsRoute, vendorsRoute } from './routes/vendorsContracts';
+import { vulnerabilitiesRoute } from './routes/vulnerabilities';
 import type { AppEnv } from './types';
 import { fail } from './utils/response';
 
@@ -74,6 +75,7 @@ app.route('/api/v1/maintenance-plans', maintenancePlansRoute);
 app.route('/api/v1/pm-templates', pmTemplatesRoute);
 app.route('/api/v1/inventory-items', inventoryItemsRoute);
 app.route('/api/v1/software-licenses', licensesRoute);
+app.route('/api/v1/vulnerabilities', vulnerabilitiesRoute);
 app.route('/api/v1/employee-assignments', employeeAssignmentsRoute);
 app.route('/api/v1/cmdb/items', configurationItemsRoute);
 app.route('/api/v1/cmdb/relationships', ciRelationshipsRoute);

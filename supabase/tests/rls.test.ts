@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 60 permissions', async () => {
+  it('seeds 9 roles and 62 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(60);
+    expect((permissions.rows[0] as { count: number }).count).toBe(62);
   });
 });
 
@@ -1637,6 +1637,86 @@ describe('vendors / contracts RLS and normalization (Phase 6 Module 13)', () => 
       [vendorId, contractId],
     ));
     expect(relationship.rows).toHaveLength(1);
+  });
+});
+
+describe('vulnerability_findings RLS and verification controls (Phase 6 Module 15)', () => {
+  let findingId: string;
+
+  it('lets a technician create and manage a normalized finding', async () => {
+    const inserted = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.vulnerability_findings
+       (vulnerability_code, title, cve, cvss, severity, detected_at, due_date, owner_id, remediation_plan, status)
+       values ('VUL-RLS-001', 'ช่องโหว่ทดสอบ RLS', 'CVE-2026-12345', 9.8, 'วิกฤต', '2026-08-01', '2026-08-10', $1, 'ติดตั้งแพตช์ผู้ผลิต', 'กำลังแก้ไข')
+       returning id, vulnerability_code`,
+      [TECHNICIAN_ID],
+    ));
+    findingId = (inserted.rows[0] as { id: string }).id;
+    expect(inserted.rows).toHaveLength(1);
+
+    const updated = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `update public.vulnerability_findings set status = 'รอตรวจยืนยัน', remediated_at = now() where id = $1 returning status`,
+      [findingId],
+    ));
+    expect(updated.rows).toEqual([{ status: 'รอตรวจยืนยัน' }]);
+  });
+
+  it('lets auditor and DPO read but not modify findings', async () => {
+    const auditorRows = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.vulnerability_findings where id = $1', [findingId]));
+    const dpoRows = await asUser(db, DPO_ID, async () => db.query('select id from public.vulnerability_findings where id = $1', [findingId]));
+    expect(auditorRows.rows).toHaveLength(1);
+    expect(dpoRows.rows).toHaveLength(1);
+
+    const updated = await asUser(db, AUDITOR_ID, async () => db.query(
+      `update public.vulnerability_findings set title = 'แก้ไม่ได้' where id = $1 returning id`,
+      [findingId],
+    ));
+    expect(updated.rows).toHaveLength(0);
+  });
+
+  it('hides findings from a plain user and denies writes', async () => {
+    const hidden = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.vulnerability_findings where id = $1', [findingId]));
+    expect(hidden.rows).toHaveLength(0);
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      `insert into public.vulnerability_findings (vulnerability_code, title, owner_id) values ('VUL-DENIED', 'ต้องถูกปฏิเสธ', $1)`,
+      [REGULAR_USER_ID],
+    ))).rejects.toThrow();
+  });
+
+  it('enforces CVSS, date, HTTPS and completed-verification invariants', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.vulnerability_findings (vulnerability_code, title, cvss, owner_id) values ('VUL-BAD-CVSS', 'CVSS ผิด', 10.1, $1)`,
+      [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.vulnerability_findings (vulnerability_code, title, detected_at, due_date, owner_id) values ('VUL-BAD-DATE', 'วันที่ผิด', '2026-08-10', '2026-08-01', $1)`,
+      [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.vulnerability_findings set evidence_link = 'http://unsafe.example.test' where id = $1`,
+      [findingId],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.vulnerability_findings set status = 'ปิด' where id = $1`,
+      [findingId],
+    ))).rejects.toThrow();
+  });
+
+  it('prevents owner self-verification and permits an independent verifier', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.vulnerability_findings
+       set status = 'ปิด', verified_at = now(), verified_by = $1, evidence_link = 'https://evidence.example.test/self'
+       where id = $2`,
+      [TECHNICIAN_ID, findingId],
+    ))).rejects.toThrow();
+
+    const closed = await asServiceRole(db, async () => db.query(
+      `update public.vulnerability_findings
+       set status = 'ปิด', verified_at = now(), verified_by = $1, evidence_link = 'https://evidence.example.test/independent'
+       where id = $2 returning status, verified_by`,
+      [SECOND_TECHNICIAN_ID, findingId],
+    ));
+    expect(closed.rows).toEqual([{ status: 'ปิด', verified_by: SECOND_TECHNICIAN_ID }]);
   });
 });
 
