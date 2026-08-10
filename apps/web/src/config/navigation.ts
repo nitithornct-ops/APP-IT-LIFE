@@ -9,6 +9,7 @@ import {
   GitPullRequestArrow,
   GitBranch,
   KeyRound,
+  BookOpenCheck,
   Laptop2,
   LayoutDashboard,
   ListChecks,
@@ -65,6 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Problem / Known Error', path: '/problems', icon: Bug, permission: 'problem.view' },
       { label: 'Change Management', path: '/changes', icon: GitPullRequestArrow, permission: 'change.view' },
       { label: 'Workflow / งานอนุมัติ', path: '/workflows', icon: GitBranch, permission: 'workflow.view' },
+      { label: 'ฐานความรู้', path: '/knowledge', icon: BookOpenCheck, permission: 'knowledge.view' },
     ],
   },
   {

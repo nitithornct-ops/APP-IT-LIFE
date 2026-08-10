@@ -6,6 +6,7 @@ export interface ProfileRef { id: string; full_name: string | null; email: strin
 export interface IncidentRef { id: string; incident_number: string; title: string; status: string; }
 export interface TicketRef { id: string; title: string; status: string; }
 export interface ProblemRef { id: string; problem_number: string; title: string; status: string; }
+export interface KnowledgeArticleRef { id: string; article_code: string; title: string; }
 
 export interface Problem {
   id: string;
@@ -56,6 +57,7 @@ export interface ProblemReferences {
   incidents: IncidentRef[];
   tickets: TicketRef[];
   problems: ProblemRef[];
+  knowledgeArticles: KnowledgeArticleRef[];
 }
 
 export interface ProblemDetail {

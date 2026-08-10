@@ -86,6 +86,9 @@ const BackupMonitoringPage = lazy(() =>
 const WorkflowsPage = lazy(() =>
   import('./features/workflows/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })),
 );
+const KnowledgePage = lazy(() =>
+  import('./features/knowledge/KnowledgePage').then((m) => ({ default: m.KnowledgePage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -268,6 +271,16 @@ export function App() {
             <ProtectedRoute permission="workflow.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <WorkflowsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/knowledge"
+          element={
+            <ProtectedRoute permission="knowledge.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <KnowledgePage />
               </Suspense>
             </ProtectedRoute>
           }

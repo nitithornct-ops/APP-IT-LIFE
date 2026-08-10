@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 71 permissions', async () => {
+  it('seeds 9 roles and 74 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(71);
+    expect((permissions.rows[0] as { count: number }).count).toBe(74);
   });
 });
 
@@ -1913,6 +1913,140 @@ describe('workflow approval engine RLS and invariants (Phase 6 Module 17)', () =
        (delegator_id, delegate_id, start_at, end_at, reason)
        values ($1, $1, now(), now() + interval '1 day', 'มอบให้ตนเอง')`, [REGULAR_USER_ID],
     ))).rejects.toThrow();
+  });
+});
+
+describe('knowledge base RLS, counters and lifecycle (Phase 6 Module 18)', () => {
+  let categoryId: string;
+  let publishedId: string;
+  let draftId: string;
+
+  it('creates governed published and draft articles as service role', async () => {
+    await asServiceRole(db, async () => {
+      const category = await db.query(
+        `insert into public.ticket_categories (name)
+         values ('ฐานความรู้ RLS')
+         on conflict (name) do update set status = 'active'
+         returning id`,
+      );
+      categoryId = (category.rows[0] as { id: string }).id;
+
+      const published = await db.query(
+        `insert into public.knowledge_articles
+         (article_code, title, category_id, symptom, solution, tags, status, author_id, published_at)
+         values ('KB-20260810-1001', 'เชื่อมต่อ Wi-Fi ไม่ได้', $1, 'ไม่พบเครือข่ายสำนักงาน',
+                 'ปิดและเปิด Wi-Fi แล้วเลือกเครือข่ายใหม่', array['wifi', 'network'],
+                 'เผยแพร่', $2, now()) returning id`,
+        [categoryId, TECHNICIAN_ID],
+      );
+      publishedId = (published.rows[0] as { id: string }).id;
+
+      const draft = await db.query(
+        `insert into public.knowledge_articles
+         (article_code, title, category_id, solution, status, author_id)
+         values ('KB-20260810-1002', 'คู่มือฉบับร่าง', $1, 'อยู่ระหว่างการตรวจทาน', 'ร่าง', $2)
+         returning id`,
+        [categoryId, TECHNICIAN_ID],
+      );
+      draftId = (draft.rows[0] as { id: string }).id;
+    });
+    expect([categoryId, publishedId, draftId].every(Boolean)).toBe(true);
+  });
+
+  it('shows only published articles to readers and all articles to managers', async () => {
+    const reader = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query('select id from public.knowledge_articles where id in ($1, $2) order by id', [publishedId, draftId]),
+    );
+    expect(reader.rows).toHaveLength(1);
+    expect((reader.rows[0] as { id: string }).id).toBe(publishedId);
+
+    const manager = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query('select id from public.knowledge_articles where id in ($1, $2)', [publishedId, draftId]),
+    );
+    expect(manager.rows).toHaveLength(2);
+
+    const noRole = await asUser(db, NO_ROLE_USER_ID, async () =>
+      db.query('select id from public.knowledge_articles where id = $1', [publishedId]),
+    );
+    expect(noRole.rows).toHaveLength(0);
+  });
+
+  it('allows technicians to manage articles but keeps readers and auditors read-only', async () => {
+    const technicianUpdate = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `update public.knowledge_articles set title = 'คู่มือฉบับร่างที่ช่างแก้ไข' where id = $1 returning id`,
+      [draftId],
+    ));
+    expect(technicianUpdate.rows).toEqual([{ id: draftId }]);
+
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      `insert into public.knowledge_articles
+       (article_code, title, solution, status, author_id)
+       values ('KB-20260810-1999', 'บทความที่ไม่ได้รับอนุญาต', 'ห้ามสร้าง', 'ร่าง', $1)`,
+      [REGULAR_USER_ID],
+    ))).rejects.toThrow();
+
+    const auditorUpdate = await asUser(db, AUDITOR_ID, async () => db.query(
+      `update public.knowledge_articles set title = 'แก้ไขไม่ได้' where id = $1 returning id`,
+      [publishedId],
+    ));
+    expect(auditorUpdate.rows).toHaveLength(0);
+  });
+
+  it('counts one helpful vote per permitted user and rejects read-only auditors', async () => {
+    const first = await asUser(db, REGULAR_USER_ID, async () => db.query(
+      'select * from public.mark_knowledge_article_helpful($1)', [publishedId],
+    ));
+    const duplicate = await asUser(db, REGULAR_USER_ID, async () => db.query(
+      'select * from public.mark_knowledge_article_helpful($1)', [publishedId],
+    ));
+    expect(first.rows).toEqual([{ helpful_count: 1, already_voted: false }]);
+    expect(duplicate.rows).toEqual([{ helpful_count: 1, already_voted: true }]);
+
+    await expect(asUser(db, AUDITOR_ID, async () => db.query(
+      'select * from public.mark_knowledge_article_helpful($1)', [publishedId],
+    ))).rejects.toThrow(/knowledge.feedback permission required/);
+  });
+
+  it('deduplicates authenticated and anonymous views independently each day', async () => {
+    await asUser(db, REGULAR_USER_ID, async () => {
+      await db.query('select public.record_knowledge_article_view($1, null)', [publishedId]);
+      await db.query('select public.record_knowledge_article_view($1, null)', [publishedId]);
+    });
+    const visitorHash = 'a'.repeat(64);
+    await asAnon(db, async () => {
+      await db.query('select public.record_knowledge_article_view($1, $2)', [publishedId, visitorHash]);
+      await db.query('select public.record_knowledge_article_view($1, $2)', [publishedId, visitorHash]);
+    });
+
+    const counter = await asServiceRole(db, async () => db.query(
+      'select views_count from public.knowledge_articles where id = $1', [publishedId],
+    ));
+    expect(counter.rows).toEqual([{ views_count: 2 }]);
+  });
+
+  it('does not expose article rows directly to anonymous visitors', async () => {
+    const direct = await asAnon(db, async () =>
+      db.query('select id from public.knowledge_articles where id = $1', [publishedId]),
+    );
+    expect(direct.rows).toHaveLength(0);
+  });
+
+  it('enforces publish consistency, tag limits and published-only metrics', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.knowledge_articles
+       (article_code, title, solution, status, author_id)
+       values ('KB-20260810-2001', 'เผยแพร่ไม่สมบูรณ์', 'ไม่มีวันเผยแพร่', 'เผยแพร่', $1)`,
+      [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.knowledge_articles
+       (article_code, title, solution, tags, status, author_id)
+       values ('KB-20260810-2002', 'แท็กเกินจำนวน', 'ต้องถูกปฏิเสธ', $1, 'ร่าง', $2)`,
+      [Array.from({ length: 21 }, (_, index) => `tag-${index}`), TECHNICIAN_ID],
+    ))).rejects.toThrow();
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      'select public.record_knowledge_article_view($1, null)', [draftId],
+    ))).rejects.toThrow(/published knowledge article not found/);
   });
 });
 

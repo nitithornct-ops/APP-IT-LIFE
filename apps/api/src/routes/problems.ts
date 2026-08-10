@@ -82,18 +82,30 @@ async function replaceLinks(
   return null;
 }
 
+async function knowledgeReferenceError(env: AppEnv['Bindings'], articleCode?: string): Promise<string | null> {
+  if (!articleCode) return null;
+  const { data } = await createAdminClient(env)
+    .from('knowledge_articles')
+    .select('id')
+    .eq('article_code', articleCode)
+    .eq('status', 'เผยแพร่')
+    .maybeSingle();
+  return data ? null : 'ไม่พบบทความฐานความรู้ที่เผยแพร่ตามรหัสอ้างอิง';
+}
+
 problemsRoute.get('/references', requirePermission('problem.manage'), async (c) => {
   const reqId = c.get('requestId');
   const admin = createAdminClient(c.env);
-  const [owners, incidents, tickets, problems] = await Promise.all([
+  const [owners, incidents, tickets, problems, knowledgeArticles] = await Promise.all([
     admin.from('profiles').select('id, full_name, email').eq('status', 'active').order('full_name').limit(500),
     admin.from('incidents').select('id, incident_number, title, status').order('report_date', { ascending: false }).limit(500),
     admin.from('tickets').select('id, title, status').order('created_at', { ascending: false }).limit(500),
     admin.from('problems').select('id, problem_number, title, status').order('created_at', { ascending: false }).limit(500),
+    admin.from('knowledge_articles').select('id, article_code, title').eq('status', 'เผยแพร่').order('title').limit(500),
   ]);
-  const error = owners.error ?? incidents.error ?? tickets.error ?? problems.error;
+  const error = owners.error ?? incidents.error ?? tickets.error ?? problems.error ?? knowledgeArticles.error;
   if (error) return c.json(fail(reqId, 'PROBLEM_REFERENCES_LOAD_FAILED', 'ดึงข้อมูลอ้างอิงไม่สำเร็จ'), 400);
-  return c.json(ok(reqId, { owners: owners.data ?? [], incidents: incidents.data ?? [], tickets: tickets.data ?? [], problems: problems.data ?? [] }));
+  return c.json(ok(reqId, { owners: owners.data ?? [], incidents: incidents.data ?? [], tickets: tickets.data ?? [], problems: problems.data ?? [], knowledgeArticles: knowledgeArticles.data ?? [] }));
 });
 
 problemsRoute.get('/known-errors', zValidator('query', listKnownErrorsQuerySchema, zodValidationHook), async (c) => {
@@ -116,6 +128,8 @@ problemsRoute.post('/known-errors', requirePermission('problem.manage'), zValida
   const actorId = c.get('userId');
   const body = c.req.valid('json');
   const admin = createAdminClient(c.env);
+  const referenceError = await knowledgeReferenceError(c.env, body.knowledgeArticleRef);
+  if (referenceError) return c.json(fail(reqId, 'KNOWN_ERROR_KNOWLEDGE_INVALID', referenceError), 400);
   const { data, error } = await admin.from('known_errors').insert({
     known_error_number: generateNumber('KEDB'), problem_id: body.problemId, title: body.title,
     symptoms: body.symptoms || null, root_cause: body.rootCause || null, workaround: body.workaround,
@@ -132,6 +146,8 @@ problemsRoute.patch('/known-errors/:id', requirePermission('problem.manage'), zV
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const body = c.req.valid('json');
+  const referenceError = await knowledgeReferenceError(c.env, body.knowledgeArticleRef);
+  if (referenceError) return c.json(fail(reqId, 'KNOWN_ERROR_KNOWLEDGE_INVALID', referenceError), 400);
   const patch: Record<string, unknown> = { updated_by: actorId };
   const fields = {
     problemId: 'problem_id', title: 'title', symptoms: 'symptoms', rootCause: 'root_cause', workaround: 'workaround',

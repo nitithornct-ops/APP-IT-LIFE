@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (71 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (74 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -88,6 +88,9 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('workflow.manage', 'workflow', 'manage', 'สร้างและออกเวอร์ชันแบบ Workflow รวมถึงเริ่มกระบวนการ', 'active'),
   ('workflow.approve', 'workflow', 'approve', 'ตัดสินใจงาน Workflow ที่ได้รับมอบหมาย', 'active'),
   ('workflow.delegate', 'workflow', 'delegate', 'ตั้งผู้อนุมัติแทนตามช่วงเวลาและขอบเขต', 'active'),
+  ('knowledge.view', 'knowledge', 'view', 'ดูบทความฐานความรู้ที่เผยแพร่แล้ว', 'active'),
+  ('knowledge.manage', 'knowledge', 'manage', 'สร้าง แก้ไข เผยแพร่ และลบบทความฐานความรู้', 'active'),
+  ('knowledge.feedback', 'knowledge', 'feedback', 'ให้คะแนนว่าบทความฐานความรู้มีประโยชน์', 'active'),
   ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('vendor.view', 'vendor', 'view', 'ดูทะเบียนผู้ให้บริการภายนอก', 'active'),
@@ -136,6 +139,9 @@ from (values
   ('technician', 'workflow.view'),
   ('technician', 'workflow.approve'),
   ('technician', 'workflow.delegate'),
+  ('technician', 'knowledge.view'),
+  ('technician', 'knowledge.manage'),
+  ('technician', 'knowledge.feedback'),
   ('technician', 'cmdb.view'),
   ('technician', 'cmdb.manage'),
   ('technician', 'incident.view'),
@@ -172,6 +178,8 @@ from (values
   ('approver', 'workflow.view'),
   ('approver', 'workflow.approve'),
   ('approver', 'workflow.delegate'),
+  ('approver', 'knowledge.view'),
+  ('approver', 'knowledge.feedback'),
 
   ('manager', 'dashboard.view'),
   ('manager', 'task.view'),
@@ -198,6 +206,8 @@ from (values
   ('manager', 'workflow.view_all'),
   ('manager', 'workflow.approve'),
   ('manager', 'workflow.delegate'),
+  ('manager', 'knowledge.view'),
+  ('manager', 'knowledge.feedback'),
 
   ('executive', 'dashboard.view'),
   ('executive', 'task.view'),
@@ -224,6 +234,8 @@ from (values
   ('executive', 'workflow.view_all'),
   ('executive', 'workflow.approve'),
   ('executive', 'workflow.delegate'),
+  ('executive', 'knowledge.view'),
+  ('executive', 'knowledge.feedback'),
 
   ('auditor', 'dashboard.view'),
   ('auditor', 'task.view'),
@@ -249,6 +261,7 @@ from (values
   ('auditor', 'access_request.view'),
   ('auditor', 'workflow.view'),
   ('auditor', 'workflow.view_all'),
+  ('auditor', 'knowledge.view'),
 
   ('dpo', 'dashboard.view'),
   ('dpo', 'task.view'),
@@ -262,6 +275,8 @@ from (values
   ('dpo', 'workflow.view'),
   ('dpo', 'workflow.approve'),
   ('dpo', 'workflow.delegate'),
+  ('dpo', 'knowledge.view'),
+  ('dpo', 'knowledge.feedback'),
 
   ('user', 'dashboard.view'),
   ('user', 'task.view'),
@@ -275,6 +290,8 @@ from (values
   ('user', 'workflow.view'),
   ('user', 'workflow.approve'),
   ('user', 'workflow.delegate'),
+  ('user', 'knowledge.view'),
+  ('user', 'knowledge.feedback'),
   ('user', 'access_request.create')
 ) as mapping(role_key, permission_key)
 join public.roles r on r.key = mapping.role_key
