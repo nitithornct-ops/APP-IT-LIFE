@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 62 permissions', async () => {
+  it('seeds 9 roles and 66 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(62);
+    expect((permissions.rows[0] as { count: number }).count).toBe(66);
   });
 });
 
@@ -1717,6 +1717,103 @@ describe('vulnerability_findings RLS and verification controls (Phase 6 Module 1
       [SECOND_TECHNICIAN_ID, findingId],
     ));
     expect(closed.rows).toEqual([{ status: 'ปิด', verified_by: SECOND_TECHNICIAN_ID }]);
+  });
+});
+
+describe('backup, recovery and monitoring RLS (Phase 6 Module 16)', () => {
+  let backupId: string;
+  let recoveryId: string;
+  let bcpId: string;
+  let logSystemId: string;
+  let logReviewId: string;
+
+  it('lets a technician manage all five normalized registers', async () => {
+    const backup = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.backup_logs
+       (backup_code, system_name, backup_type, backup_date, result, operator_id, next_backup_due, evidence_link)
+       values ('BKP-RLS-001', 'Core ERP', 'Full', '2026-08-10', 'สำเร็จ', $1, '2026-08-11', 'https://evidence.example.test/backup') returning id`,
+      [TECHNICIAN_ID],
+    ));
+    backupId = (backup.rows[0] as { id: string }).id;
+
+    const recovery = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.recovery_tests
+       (recovery_code, backup_log_id, system_name, test_date, result, tester_id, next_test_due)
+       values ('RCV-RLS-001', $1, 'Core ERP', '2026-08-12', 'ผ่าน', $2, '2026-09-12') returning id`,
+      [backupId, TECHNICIAN_ID],
+    ));
+    recoveryId = (recovery.rows[0] as { id: string }).id;
+
+    const bcp = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.bcp_plans
+       (plan_code, plan_name, owner_id, last_review_date, next_review_due, document_link)
+       values ('BCP-RLS-001', 'Core ERP DR Plan', $1, '2026-08-10', '2027-08-10', 'https://evidence.example.test/bcp') returning id`,
+      [TECHNICIAN_ID],
+    ));
+    bcpId = (bcp.rows[0] as { id: string }).id;
+
+    const logSystem = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.logging_systems
+       (log_system_code, system_name, review_frequency, responsible_id, next_review_due)
+       values ('LOGSYS-RLS-001', 'Core ERP SIEM', 'รายวัน', $1, '2026-08-11') returning id`,
+      [TECHNICIAN_ID],
+    ));
+    logSystemId = (logSystem.rows[0] as { id: string }).id;
+
+    const review = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `insert into public.log_reviews
+       (review_code, logging_system_id, review_date, reviewer_id, period, anomaly_found, anomaly_detail, status)
+       values ('LGR-RLS-001', $1, '2026-08-10', $2, '10 Aug 2026', true, 'Failed login spike', 'กำลังดำเนินการ') returning id`,
+      [logSystemId, TECHNICIAN_ID],
+    ));
+    logReviewId = (review.rows[0] as { id: string }).id;
+    expect([backupId, recoveryId, bcpId, logSystemId, logReviewId].every(Boolean)).toBe(true);
+  });
+
+  it('lets an auditor read every register but not modify it', async () => {
+    for (const [table, id] of [
+      ['backup_logs', backupId], ['recovery_tests', recoveryId], ['bcp_plans', bcpId],
+      ['logging_systems', logSystemId], ['log_reviews', logReviewId],
+    ]) {
+      const read = await asUser(db, AUDITOR_ID, async () => db.query(`select id from public.${table} where id = $1`, [id]));
+      expect(read.rows).toHaveLength(1);
+      const update = await asUser(db, AUDITOR_ID, async () => db.query(`update public.${table} set notes = 'แก้ไม่ได้' where id = $1 returning id`, [id]));
+      expect(update.rows).toHaveLength(0);
+    }
+  });
+
+  it('hides every register from a plain user and rejects writes', async () => {
+    for (const [table, id] of [['backup_logs', backupId], ['recovery_tests', recoveryId], ['bcp_plans', bcpId], ['logging_systems', logSystemId], ['log_reviews', logReviewId]]) {
+      const read = await asUser(db, REGULAR_USER_ID, async () => db.query(`select id from public.${table} where id = $1`, [id]));
+      expect(read.rows).toHaveLength(0);
+    }
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      `insert into public.backup_logs (backup_code, system_name, backup_type, backup_date, result, operator_id)
+       values ('BKP-DENIED', 'Denied', 'Full', '2026-08-10', 'สำเร็จ', $1)`, [REGULAR_USER_ID],
+    ))).rejects.toThrow();
+  });
+
+  it('enforces date, HTTPS and anomaly invariants', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.backup_logs (backup_code, system_name, backup_type, backup_date, result, operator_id, next_backup_due)
+       values ('BKP-BAD-DATE', 'Bad', 'Full', '2026-08-10', 'สำเร็จ', $1, '2026-08-09')`, [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `update public.recovery_tests set evidence_link = 'http://unsafe.example.test' where id = $1`, [recoveryId],
+    ))).rejects.toThrow();
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.log_reviews
+       (review_code, logging_system_id, review_date, reviewer_id, period, anomaly_found, status)
+       values ('LGR-BAD', $1, '2026-08-10', $2, 'bad', true, 'กำลังดำเนินการ')`, [logSystemId, TECHNICIAN_ID],
+    ))).rejects.toThrow();
+  });
+
+  it('keeps referenced operational records and cascades log reviews with their logging system', async () => {
+    await asServiceRole(db, async () => db.query('delete from public.logging_systems where id = $1', [logSystemId]));
+    const review = await asServiceRole(db, async () => db.query('select id from public.log_reviews where id = $1', [logReviewId]));
+    expect(review.rows).toHaveLength(0);
+    const recovery = await asServiceRole(db, async () => db.query('select id from public.recovery_tests where id = $1', [recoveryId]));
+    expect(recovery.rows).toHaveLength(1);
   });
 });
 

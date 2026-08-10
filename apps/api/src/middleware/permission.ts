@@ -44,6 +44,6 @@ export function requireAnyPermission(permissionKeys: string[]): MiddlewareHandle
         return;
       }
     }
-    await denyAndAudit(c, permissionKeys);
+    return denyAndAudit(c, permissionKeys);
   };
 }
