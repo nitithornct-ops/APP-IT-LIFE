@@ -27,6 +27,7 @@ export const DEFAULT_PERMISSION_KEYS = [
   'change.test',
   'change.approve',
   'change.deploy',
+  'report.view',
   'report.export',
   'user.manage',
   'role.manage',

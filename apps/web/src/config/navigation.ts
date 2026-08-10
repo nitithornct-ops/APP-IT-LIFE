@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   Boxes,
   Building2,
   Bug,
@@ -75,10 +76,13 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'ธรรมาภิบาล กฎหมาย และ ISMS',
-    items: [{
-      label: 'Governance Center', path: '/governance', icon: ShieldCheck,
-      anyPermission: ['data_class.view', 'compliance.view', 'privacy.view', 'risk.view', 'ai_cloud.view', 'awareness.view', 'evidence.view', 'audit_management.view', 'governance_document.view', 'operations.view', 'integration.view'],
-    }],
+    items: [
+      { label: 'Report Center', path: '/reports', icon: BarChart3, permission: 'report.view' },
+      {
+        label: 'Governance Center', path: '/governance', icon: ShieldCheck,
+        anyPermission: ['data_class.view', 'compliance.view', 'privacy.view', 'risk.view', 'ai_cloud.view', 'awareness.view', 'evidence.view', 'audit_management.view', 'governance_document.view', 'operations.view', 'integration.view'],
+      },
+    ],
   },
   {
     title: 'การดูแลระบบ',

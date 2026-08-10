@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (99 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (100 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -46,6 +46,7 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('change.test', 'change', 'test', 'บันทึกและรับรองผลทดสอบ Change', 'active'),
   ('change.approve', 'change', 'approve', 'อนุมัติหรือปฏิเสธ Change', 'active'),
   ('change.deploy', 'change', 'deploy', 'บันทึกการติดตั้ง Change', 'active'),
+  ('report.view', 'report', 'view', 'ดู Report Center และรายงานมาตรฐานตามสิทธิ์ของแหล่งข้อมูล', 'active'),
   ('report.export', 'report', 'export', 'Export รายงาน', 'active'),
   ('user.manage', 'user', 'manage', 'จัดการบัญชีผู้ใช้งาน', 'active'),
   ('role.manage', 'role', 'manage', 'จัดการบทบาทและสิทธิ์', 'active'),
@@ -226,6 +227,8 @@ from (values
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
   ('technician', 'access_request.view'),
+  ('technician', 'report.view'),
+  ('technician', 'report.export'),
 
   ('approver', 'dashboard.view'),
   ('approver', 'task.view'),
@@ -238,6 +241,7 @@ from (values
   ('approver', 'change.create'),
   ('approver', 'change.approve'),
   ('approver', 'report.export'),
+  ('approver', 'report.view'),
   ('approver', 'service_request.view'),
   ('approver', 'access_request.view'),
   ('approver', 'workflow.view'),
@@ -265,6 +269,7 @@ from (values
   ('manager', 'vendor.view'),
   ('manager', 'contract.view'),
   ('manager', 'report.export'),
+  ('manager', 'report.view'),
   ('manager', 'service_request.view'),
   ('manager', 'access_request.view'),
   ('manager', 'workflow.view'),
@@ -292,6 +297,7 @@ from (values
   ('executive', 'vendor.view'),
   ('executive', 'contract.view'),
   ('executive', 'report.export'),
+  ('executive', 'report.view'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
   ('executive', 'access_request.view'),
@@ -320,6 +326,7 @@ from (values
   ('auditor', 'vendor.view'),
   ('auditor', 'contract.view'),
   ('auditor', 'report.export'),
+  ('auditor', 'report.view'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),
   ('auditor', 'service_request.view'),
@@ -336,6 +343,7 @@ from (values
   ('dpo', 'incident.create'),
   ('dpo', 'incident.regulatory'),
   ('dpo', 'report.export'),
+  ('dpo', 'report.view'),
   ('dpo', 'audit.view'),
   ('dpo', 'workflow.view'),
   ('dpo', 'workflow.approve'),
