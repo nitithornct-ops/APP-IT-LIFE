@@ -73,3 +73,59 @@ Generated evidence:
 - `phase7-data-quality-profile.json`
 - `phase7-dry-run-report.json` and `.md`
 - `phase7-reconciliation-report.json`
+
+## Import engine (built; waiting on real data)
+
+`packages/migration/src/importPlan.ts` (planner) and `executor.ts` (batched transactional
+writer) implement every policy above in code, not just prose. Coverage as of this writing:
+
+- **Hand-verified against the real target schema** — `Users`, `ActionPermissions`,
+  `RoleActionPermissions`, `ApprovalGroups`, `ApprovalGroupMembers`, `Employees`,
+  `TicketCategories`, `LineUsers`, `Settings`, `RetentionLog`, `LegalRegister`, `AuditTrail`,
+  `PolicyMapping`, `ServiceCatalog`, `ComplianceObligations`, `AssetCategories`, `BackupLog`,
+  `PersonalTasks`, `Ticket_Worklogs`, `RecoveryTests`, `WorkflowDefinitions`,
+  `WorkflowSteps`, `Tickets` — every sheet that is currently populated in the snapshot
+  (`phase7-source-profile.json`'s `sourceRows > 0`), each proven against the actual
+  accumulated Postgres schema via pglite in `supabase/tests/importExecution.test.ts` (not
+  just fixtures — this test caught and fixed three real bugs: a missing partial-index
+  predicate on the legacy-identity `ON CONFLICT`, an untyped `jsonb_build_object` parameter,
+  and a jsonb `CHECK` constraint mismatch).
+- **Generic snake_case fallback** — every other transform-mode sheet. These are currently
+  empty in the snapshot, so there is nothing to get wrong yet; `ImportPlan.unverifiedSheets`
+  lists exactly which ones so this is never silently mistaken for full coverage. Hand-verify
+  a sheet here the same way as the others (real headers from `phase7-source-profile.json` +
+  real target columns from `supabase/migrations/*.sql`) before it is expected to hold data.
+- **Soft-deleted rows** (`IsDeleted` truthy, seen on `BackupLog`/`RecoveryTests`) are routed
+  to `archived` automatically, for any sheet.
+- `PolicyMapping` → `governance_controls` is a lower-confidence, best-effort mapping — the
+  legacy sheet's shape (Module/Feature/PolicyDocument/PolicyClause) is only a loose match for
+  the target's (control_code/domain/title/requirement). Worth a human review before trusting it.
+
+### Running the rehearsal
+
+Still blocked on two things only the system owner can supply:
+
+1. **Real legacy row data.** `phase7-source-profile.json` intentionally stores no raw values
+   (`rawDataStored: false`) — the source is a live Google Sheet with no credentials
+   configured in this environment. Export it to a JSON file shaped like `LegacyWorkbook`
+   (`{ "SheetName": [ {row}, ... ], ... }`, using the exact headers from
+   `phase7-source-profile.json`) and point `LEGACY_WORKBOOK_PATH` at it.
+2. **The real Settings allowlist** (52 keys per the last dry-run) — not stored in this repo
+   either. Supply it as a JSON array via `SETTINGS_ALLOWLIST_PATH`, or every `Settings` row
+   is archived rather than activated (safe default, not a bug).
+
+```powershell
+cd packages/migration
+copy .env.example .env   # fill in LEGACY_WORKBOOK_PATH, SETTINGS_ALLOWLIST_PATH,
+                          # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL
+npm.cmd run rehearse
+```
+
+This writes `docs/migration/phase7-rehearsal-report.json` (plan summary + per-row
+inserted/failed counts) and exits non-zero if anything failed, so it's safe to gate on in a
+script. `SUPABASE_DB_URL` must be Supabase's direct connection string (Settings → Database →
+Connection string → URI) — the executor holds one persistent connection so batched
+transactions actually commit/rollback together, which a pooled connection would break. This
+writes real rows through the Supabase Auth Admin API and a direct Postgres connection —
+point it at a disposable rehearsal project, never Production, until the owner has reviewed
+the report and explicitly approves a Production run (see "Acceptance criteria" above).

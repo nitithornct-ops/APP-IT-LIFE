@@ -103,7 +103,7 @@ describe('buildImportPlan', () => {
       ApprovalGroupMembers: [{ MemberID: 'M1', GroupID: 'G1', UserEmail: 'lead@example.com', MemberRole: 'Primary', Priority: '1', Status: 'Active' }],
     }, migrationManifest);
     const group = plan.phases.reference_data.find((op) => op.table === 'approval_groups')!;
-    expect(group.refs?.department_id).toEqual({ kind: 'byDepartmentName', name: 'IT' });
+    expect(group.refs?.department_id).toEqual({ kind: 'byDepartmentName', name: 'IT', optional: true });
     const member = plan.phases.reference_data.find((op) => op.table === 'approval_group_members')!;
     expect(member.values.member_role).toBe('primary');
     expect(member.refs?.group_id).toEqual({ kind: 'byLegacyId', table: 'approval_groups', legacySource: 'ApprovalGroups', legacyId: 'G1' });
@@ -112,12 +112,66 @@ describe('buildImportPlan', () => {
 
   it('falls back to a generic snake_case mapper for sheets without a hand-verified transform, and says so', () => {
     const plan = buildImportPlan({
+      RiskRegister: [{ RiskID: 'R1', RiskName: 'ความเสี่ยง', Status: 'เปิด' }],
+    }, migrationManifest);
+    expect(plan.unverifiedSheets).toContain('RiskRegister');
+    const op = plan.phases.governance.find((o) => o.table === 'governance_risks')!;
+    expect(op.values.risk_name).toBe('ความเสี่ยง');
+    expect(op.values.risk_id).toBe('R1');
+  });
+
+  it('hand-verifies ComplianceObligations with a required law_id reference (LawID is NOT NULL on the target table)', () => {
+    const plan = buildImportPlan({
       ComplianceObligations: [{ ObligationID: 'O1', LawID: 'L1', Requirement: 'ต้องทำ', ApplicabilityStatus: 'บังคับใช้' }],
     }, migrationManifest);
-    expect(plan.unverifiedSheets).toContain('ComplianceObligations');
+    expect(plan.unverifiedSheets).not.toContain('ComplianceObligations');
     const op = plan.phases.governance.find((o) => o.table === 'compliance_obligations')!;
     expect(op.values.requirement).toBe('ต้องทำ');
-    expect(op.values.obligation_id).toBe('O1');
+    expect(op.values.obligation_code).toBe('O1');
+    expect(op.refs?.law_id).toEqual({ kind: 'byLegacyId', table: 'legal_register', legacySource: 'LegalRegister', legacyId: 'L1' });
+  });
+
+  it('archives soft-deleted rows (IsDeleted) instead of importing them, for any sheet', () => {
+    const plan = buildImportPlan({
+      BackupLog: [
+        { BackupID: 'B1', SystemName: 'sys', BackupType: 'Full', BackupDate: '2026-01-01', Result: 'สำเร็จ', Operator: 'op@example.com' },
+        { BackupID: 'B2', SystemName: 'sys', BackupType: 'Full', BackupDate: '2026-01-01', Result: 'สำเร็จ', Operator: 'op@example.com', IsDeleted: 'TRUE' },
+      ],
+    }, migrationManifest);
+    expect(plan.phases.operational.filter((op) => op.table === 'backup_logs')).toHaveLength(1);
+    expect(plan.phases.operational.find((op) => op.table === 'backup_logs')?.legacyId).toBe('B1');
+    expect(plan.archived.find((a) => a.legacyId === 'B2')).toBeTruthy();
+  });
+
+  it('coerces an unsupported WorkflowDefinitions.Mode to SEQUENTIAL (the only value the engine accepts) and warns', () => {
+    const plan = buildImportPlan({
+      WorkflowDefinitions: [{ DefinitionID: 'D1', WorkflowCode: 'wf-1', WorkflowName: 'n', ModuleKey: 'TICKET', Mode: 'PARALLEL', Status: 'ใช้งาน' }],
+    }, migrationManifest);
+    const op = plan.phases.operational.find((o) => o.table === 'workflow_definitions')!;
+    expect(op.values.mode).toBe('SEQUENTIAL');
+    expect(op.values.workflow_code).toBe('WF-1');
+    expect(op.values.module_key).toBe('ticket');
+    expect(plan.warnings.some((w) => w.includes('PARALLEL'))).toBe(true);
+  });
+
+  it('resolves WorkflowSteps.definition_id as a required reference to WorkflowDefinitions', () => {
+    const plan = buildImportPlan({
+      WorkflowSteps: [{ StepID: 'S1', DefinitionID: 'D1', StepCode: 'step-1', StepName: 'n', ApprovalType: 'user', ApproverValue: 'x' }],
+    }, migrationManifest);
+    const op = plan.phases.operational.find((o) => o.table === 'workflow_steps')!;
+    expect(op.refs?.definition_id).toEqual({ kind: 'byLegacyId', table: 'workflow_definitions', legacySource: 'WorkflowDefinitions', legacyId: 'D1' });
+    expect(op.values.approval_type).toBe('USER');
+  });
+
+  it('hand-verifies Tickets with a required requester and optional category/assignee refs', () => {
+    const plan = buildImportPlan({
+      Tickets: [{ TicketID: 'T1', Title: 't', RequesterEmail: 'req@example.com', Description: 'd', Category: 'TC1', Assignee: '' }],
+    }, migrationManifest);
+    expect(plan.unverifiedSheets).not.toContain('Tickets');
+    const op = plan.phases.operational.find((o) => o.table === 'tickets')!;
+    expect(op.refs?.requester_id).toEqual({ kind: 'byEmail', table: 'profiles', email: 'req@example.com' });
+    expect(op.refs?.category_id).toEqual({ kind: 'byLegacyId', table: 'ticket_categories', legacySource: 'TicketCategories', legacyId: 'TC1', optional: true });
+    expect(op.refs?.assignee_id).toBeUndefined();
   });
 
   it('places AuditTrail in the audit_history phase, run strictly last', () => {
@@ -144,6 +198,18 @@ describe('buildImportPlan', () => {
       Settings: [{ Key: 'K', Value: 'v', Description: 'd', Group: 'g' }],
       RetentionLog: [{ RunID: 'R1', RunAt: '2026-01-01', Mode: 'apply', SheetName: 's', Action: 'a', MatchedRows: '1', AffectedRows: '1', Status: 'Completed' }],
       LegalRegister: [{ LawID: 'LW1', LawName: 'n', ApplicabilityStatus: 'x' }],
+      AuditTrail: [{ LogID: 'AT1', Action: 'login', Module: 'auth', Result: 'Success' }],
+      PolicyMapping: [{ MapID: 'PM1', Module: 'ticket', Feature: 'x', PolicyDocument: 'doc', PolicyClause: 'c1' }],
+      ServiceCatalog: [{ CatalogID: 'SC1', ServiceCode: 'code1', ServiceName: 'n' }],
+      ComplianceObligations: [{ ObligationID: 'CO1', LawID: 'LW1', Requirement: 'req' }],
+      AssetCategories: [{ CategoryID: 'AC1', CategoryName: 'n', CodePrefix: 'PFX' }],
+      BackupLog: [{ BackupID: 'BL1', SystemName: 'sys', BackupType: 'Full', BackupDate: '2026-01-01', Result: 'สำเร็จ', Operator: 'a@example.com' }],
+      PersonalTasks: [{ TaskID: 'PT1', OwnerEmail: 'a@example.com', Title: 't' }],
+      Ticket_Worklogs: [{ WorklogID: 'TW1', TicketID: 'T1', Action: 'update', ActorEmail: 'a@example.com' }],
+      RecoveryTests: [{ TestID: 'RT1', SystemName: 'sys', TestDate: '2026-01-01', Result: 'ผ่าน', Tester: 'a@example.com' }],
+      WorkflowDefinitions: [{ DefinitionID: 'WD1', WorkflowCode: 'wf-1', WorkflowName: 'n', ModuleKey: 'ticket' }],
+      WorkflowSteps: [{ StepID: 'WS1', DefinitionID: 'WD1', StepCode: 'step-1', StepName: 'n', ApprovalType: 'USER', ApproverValue: 'x' }],
+      Tickets: [{ TicketID: 'T1', Title: 't', RequesterEmail: 'a@example.com', Description: 'd' }],
     };
     const plan = buildImportPlan(workbook, migrationManifest, { settingsAllowlist: new Set(['K']) });
     for (const sheet of HAND_VERIFIED_SHEETS) expect(plan.unverifiedSheets).not.toContain(sheet);

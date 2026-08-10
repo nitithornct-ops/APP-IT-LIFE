@@ -106,7 +106,10 @@ async function runOp(db: Queryable, idMap: IdMap, op: SqlOp): Promise<void> {
   const resolved: Record<string, string | number | boolean | null> = {};
   for (const [column, ref] of Object.entries(op.refs ?? {})) {
     const id = await resolveRef(db, idMap, ref);
-    if (!id) throw new Error(`could not resolve reference for column "${column}"`);
+    if (!id) {
+      if (ref.optional) { resolved[column] = null; continue; }
+      throw new Error(`could not resolve reference for column "${column}"`);
+    }
     resolved[column] = id;
   }
   const usesNaturalKey = Boolean(op.naturalConflictColumns);

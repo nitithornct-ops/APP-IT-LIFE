@@ -34,6 +34,18 @@ function buildWorkbook(): LegacyWorkbook {
     ],
     ApprovalGroups: [{ GroupID: 'G1', GroupCode: 'IT-TEST', GroupName: 'กลุ่มทดสอบ', Department: 'ไอที', OwnerEmail: 'itadmin@example.test', Status: 'Active' }],
     ApprovalGroupMembers: [{ MemberID: 'M1', GroupID: 'G1', UserEmail: 'itadmin@example.test', MemberRole: 'Primary', Priority: '1', Status: 'Active' }],
+    AuditTrail: [{ LogID: 'AT1', Timestamp: '2026-01-01T00:00:00Z', ActorEmail: 'itadmin@example.test', Action: 'login', Module: 'auth', Result: 'Success', Detail: 'plain text detail, not JSON' }],
+    PolicyMapping: [{ MapID: 'PM1', Module: 'ticket', Feature: 'สร้าง Ticket', PolicyDocument: 'ISMS-01', PolicyClause: '5.1' }],
+    ServiceCatalog: [{ CatalogID: 'SC1', ServiceCode: 'sc-1', ServiceName: 'ขอเข้าถึงระบบ', ApprovalMode: 'group', Approver: 'G1', FulfillmentGroup: 'ไอที', Owner: 'itadmin@example.test', Status: 'active' }],
+    ComplianceObligations: [{ ObligationID: 'CO1', LawID: 'LW1', Requirement: 'ต้องปฏิบัติตาม' }],
+    AssetCategories: [{ CategoryID: 'AC1', CategoryName: 'โน้ตบุ๊ก', CodePrefix: 'NB' }],
+    BackupLog: [{ BackupID: 'BL1', SystemName: 'core-db', BackupType: 'Full', BackupDate: '2026-01-01', Result: 'สำเร็จ', Operator: 'itadmin@example.test' }],
+    PersonalTasks: [{ TaskID: 'PT1', OwnerEmail: 'itadmin@example.test', Title: 'ทดสอบงาน' }],
+    Tickets: [{ TicketID: 'T1', Title: 'เครื่องพิมพ์เสีย', RequesterEmail: 'itadmin@example.test', Description: 'เครื่องพิมพ์ใช้งานไม่ได้', Category: 'TC1' }],
+    Ticket_Worklogs: [{ WorklogID: 'TW1', TicketID: 'T1', Action: 'รับเรื่อง', ActorEmail: 'itadmin@example.test' }],
+    RecoveryTests: [{ TestID: 'RT1', SystemName: 'core-db', TestDate: '2026-01-01', Result: 'ผ่าน', Tester: 'itadmin@example.test' }],
+    WorkflowDefinitions: [{ DefinitionID: 'WD1', WorkflowCode: 'wf-access', WorkflowName: 'อนุมัติสิทธิ์', ModuleKey: 'ACCESS_REQUEST', Mode: 'PARALLEL', Status: 'ใช้งาน' }],
+    WorkflowSteps: [{ StepID: 'WS1', DefinitionID: 'WD1', StepCode: 'step-1', StepName: 'หัวหน้าอนุมัติ', ApprovalType: 'role', ApproverValue: 'manager' }],
   };
 }
 
@@ -107,6 +119,60 @@ describe('Phase 7 import execution (pglite, real accumulated schema)', () => {
         `select user_id, group_id from public.approval_group_members where legacy_source = 'ApprovalGroupMembers' and legacy_id = 'M1'`,
       );
       expect(groupMember.rows).toEqual([{ user_id: profileId, group_id: (await db.query<{ id: string }>(`select id from public.approval_groups where legacy_source = 'ApprovalGroups' and legacy_id = 'G1'`)).rows[0]!.id }]);
+    });
+  });
+
+  it('writes the second batch of hand-verified sheets (added when the user asked to finish the system before real data arrives)', async () => {
+    const plan = buildImportPlan(buildWorkbook(), migrationManifest, { settingsAllowlist: new Set(['MIGRATION_TEST_KEY']) });
+    const result = await asServiceRole(db, async () => executeImportPlan(plan, db as unknown as Queryable, fakeAuthAdmin));
+    expect(result.failed).toEqual([]);
+
+    await asServiceRole(db, async () => {
+      const audit = await db.query<{ result: string; detail: string }>(
+        `select result, detail::text as detail from public.audit_logs where legacy_source = 'AuditTrail' and legacy_id = 'AT1'`,
+      );
+      expect(audit.rows[0]?.result).toBe('success');
+      expect(JSON.parse(audit.rows[0]!.detail)).toBe('plain text detail, not JSON'); // non-JSON legacy text must not break the jsonb column
+
+      const control = await db.query(`select 1 from public.governance_controls where legacy_source = 'PolicyMapping' and legacy_id = 'PM1'`);
+      expect(control.rows).toHaveLength(1);
+
+      const catalog = await db.query<{ approval_mode: string; approval_group_id: string; fulfillment_group_id: string }>(
+        `select approval_mode, approval_group_id, fulfillment_group_id from public.service_catalog where legacy_source = 'ServiceCatalog' and legacy_id = 'SC1'`,
+      );
+      const approvalGroupId = (await db.query<{ id: string }>(`select id from public.approval_groups where legacy_source = 'ApprovalGroups' and legacy_id = 'G1'`)).rows[0]!.id;
+      expect(catalog.rows).toEqual([{ approval_mode: 'group', approval_group_id: approvalGroupId, fulfillment_group_id: departmentId }]);
+
+      const obligation = await db.query<{ law_id: string }>(`select law_id from public.compliance_obligations where legacy_source = 'ComplianceObligations' and legacy_id = 'CO1'`);
+      const lawId = (await db.query<{ id: string }>(`select id from public.legal_register where legacy_source = 'LegalRegister' and legacy_id = 'LW1'`)).rows[0]!.id;
+      expect(obligation.rows).toEqual([{ law_id: lawId }]);
+
+      const assetCategory = await db.query(`select 1 from public.asset_categories where legacy_source = 'AssetCategories' and legacy_id = 'AC1'`);
+      expect(assetCategory.rows).toHaveLength(1);
+
+      const backup = await db.query<{ result: string; backup_type: string }>(`select result, backup_type from public.backup_logs where legacy_source = 'BackupLog' and legacy_id = 'BL1'`);
+      expect(backup.rows).toEqual([{ result: 'สำเร็จ', backup_type: 'Full' }]);
+
+      const task = await db.query(`select 1 from public.personal_tasks where legacy_source = 'PersonalTasks' and legacy_id = 'PT1'`);
+      expect(task.rows).toHaveLength(1);
+
+      const ticket = await db.query<{ id: string; requester_id: string; category_id: string }>(`select id, requester_id, category_id from public.tickets where legacy_source = 'Tickets' and legacy_id = 'T1'`);
+      const profileId = (await db.query<{ id: string }>(`select id from public.profiles where legacy_source = 'Users' and legacy_id = 'U1'`)).rows[0]!.id;
+      const categoryId = (await db.query<{ id: string }>(`select id from public.ticket_categories where legacy_source = 'TicketCategories' and legacy_id = 'TC1'`)).rows[0]!.id;
+      expect(ticket.rows).toEqual([{ id: ticket.rows[0]!.id, requester_id: profileId, category_id: categoryId }]);
+
+      const worklog = await db.query<{ ticket_id: string }>(`select ticket_id from public.ticket_worklogs where legacy_source = 'Ticket_Worklogs' and legacy_id = 'TW1'`);
+      expect(worklog.rows).toEqual([{ ticket_id: ticket.rows[0]!.id }]); // proves cross-sheet FK resolution within the same batch (Tickets runs before Ticket_Worklogs)
+
+      const recovery = await db.query(`select 1 from public.recovery_tests where legacy_source = 'RecoveryTests' and legacy_id = 'RT1'`);
+      expect(recovery.rows).toHaveLength(1);
+
+      const workflowDef = await db.query<{ mode: string; module_key: string }>(`select mode, module_key from public.workflow_definitions where legacy_source = 'WorkflowDefinitions' and legacy_id = 'WD1'`);
+      expect(workflowDef.rows).toEqual([{ mode: 'SEQUENTIAL', module_key: 'access_request' }]); // legacy "PARALLEL" is coerced — the engine only supports SEQUENTIAL
+
+      const workflowStep = await db.query<{ definition_id: string; approval_type: string }>(`select definition_id, approval_type from public.workflow_steps where legacy_source = 'WorkflowSteps' and legacy_id = 'WS1'`);
+      const definitionId = (await db.query<{ id: string }>(`select id from public.workflow_definitions where legacy_source = 'WorkflowDefinitions' and legacy_id = 'WD1'`)).rows[0]!.id;
+      expect(workflowStep.rows).toEqual([{ definition_id: definitionId, approval_type: 'ROLE' }]);
     });
   });
 
