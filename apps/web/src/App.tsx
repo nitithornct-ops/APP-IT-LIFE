@@ -119,7 +119,7 @@ export function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<ProtectedRoute permission="dashboard.view"><HomePage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route
           path="/tasks"
