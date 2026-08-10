@@ -73,6 +73,27 @@ export interface AuditLogItem {
   created_at: string;
 }
 
+export interface LoginLogItem {
+  id: string;
+  user_id: string | null;
+  email_attempted: string;
+  success: boolean;
+  failure_reason: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  mfa_used: boolean;
+  created_at: string;
+}
+
+export interface AuditOverview {
+  days: number;
+  auditTotal: number;
+  denied: number;
+  failedActions: number;
+  loginTotal: number;
+  failedLogins: number;
+}
+
 export interface TicketCategory {
   id: string;
   name: string;

@@ -54,6 +54,8 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('department.manage', 'department', 'manage', 'จัดการข้อมูลหน่วยงาน', 'active'),
   ('position.manage', 'position', 'manage', 'จัดการข้อมูลตำแหน่ง', 'active'),
   ('audit.view', 'audit', 'view', 'ดู Audit Log และ Login Log', 'active'),
+  ('setting.view', 'setting', 'view', 'ดูการตั้งค่าระบบที่ไม่ใช่ความลับ', 'active'),
+  ('setting.manage', 'setting', 'manage', 'แก้ไขการตั้งค่าระบบผ่าน allowlist', 'active'),
   ('ticket_category.manage', 'ticket_category', 'manage', 'จัดการหมวดหมู่ Ticket และค่า SLA ตั้งต้น', 'active'),
   ('asset_category.manage', 'asset_category', 'manage', 'จัดการหมวดหมู่ทรัพย์สิน', 'active'),
   ('approval_group.manage', 'approval_group', 'manage', 'จัดการกลุ่มอนุมัติและสมาชิกกลุ่ม', 'active'),

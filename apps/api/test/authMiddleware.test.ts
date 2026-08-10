@@ -51,6 +51,7 @@ describe('requireAuth', () => {
     ['GET', '/api/v1/problems'],
     ['GET', '/api/v1/changes'],
     ['GET', '/api/v1/audit-logs'],
+    ['GET', '/api/v1/settings'],
     ['GET', '/api/v1/auth/me'],
     ['GET', '/api/v1/notifications'],
     ['GET', '/api/v1/notifications/unread-count'],

@@ -17,6 +17,7 @@ const PermissionMatrixPage = lazy(() =>
   import('./features/admin/PermissionMatrixPage').then((m) => ({ default: m.PermissionMatrixPage })),
 );
 const AuditLogsPage = lazy(() => import('./features/admin/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })));
+const SettingsPage = lazy(() => import('./features/admin/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const MasterDataPage = lazy(() =>
   import('./features/admin/MasterDataPage').then((m) => ({ default: m.MasterDataPage })),
 );
@@ -497,6 +498,16 @@ export function App() {
             <ProtectedRoute permission="audit.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <AuditLogsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute permission="setting.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <SettingsPage />
               </Suspense>
             </ProtectedRoute>
           }

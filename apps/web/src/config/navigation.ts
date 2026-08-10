@@ -19,6 +19,7 @@ import {
   PackageSearch,
   ShieldCheck,
   ShieldAlert,
+  Settings,
   Siren,
   ShoppingBag,
   Tags,
@@ -116,6 +117,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
+      { label: 'System Settings', path: '/admin/settings', icon: Settings, permission: 'setting.view' },
     ],
   },
 ];
