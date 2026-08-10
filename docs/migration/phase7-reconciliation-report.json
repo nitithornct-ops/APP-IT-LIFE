@@ -1,0 +1,1212 @@
+{
+  "phase": "Phase 7 Data Migration",
+  "mode": "READ_ONLY_RECONCILIATION_PLAN",
+  "generatedAt": "2026-08-10T13:10:59.056Z",
+  "sourceTitle": "ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY",
+  "safety": {
+    "writesToSupabase": false,
+    "rawValuesIncluded": false
+  },
+  "summary": {
+    "sourceRows": 1932,
+    "importCandidateRows": 1782,
+    "archiveRows": 143,
+    "skippedRows": 6,
+    "deferredRows": 1,
+    "expectedTargetRowOperations": 958
+  },
+  "sheets": [
+    {
+      "sheet": "Users",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "profiles": 1,
+        "user_roles": 1
+      },
+      "rule": "Create/invite Supabase Auth users; never migrate PasswordHash or PasswordSalt; map the legacy role."
+    },
+    {
+      "sheet": "WorkflowDefinitions",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_definitions": 1
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "WorkflowSteps",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_steps": 1
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "WorkflowInstances",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_instances": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "WorkflowApprovals",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_approvals": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "WorkflowHistory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_history": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "WorkflowDelegations",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "workflow_delegations": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AttachmentRegistry",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "file_attachments": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AttachmentLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "file_attachments": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AttachmentAccessLog",
+      "sourceRows": 0,
+      "mode": "archive",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Preserve as a read-only export; there is no runtime target table."
+    },
+    {
+      "sheet": "RecordLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "record_links": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "IntegrationOutbox",
+      "sourceRows": 0,
+      "mode": "archive",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Do not replay historical integration events."
+    },
+    {
+      "sheet": "ActionPermissions",
+      "sourceRows": 25,
+      "mode": "transform",
+      "importCandidateRows": 25,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "permissions": 25
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "RoleActionPermissions",
+      "sourceRows": 66,
+      "mode": "transform",
+      "importCandidateRows": 66,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "role_permissions": 66
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "UserPermissionOverrides",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "user_permission_overrides": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ApprovalGroups",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "approval_groups": 1
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ApprovalGroupMembers",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "approval_group_members": 1
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PMSchedules",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_schedules": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMWorkOrders",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_work_orders": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMChecklistResults",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_checklist_results": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMFindings",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_findings": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMStatusHistory",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_status_history": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "TaskReminders",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "task_reminders": 0
+      },
+      "rule": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "TaskAttachments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "file_attachments": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TaskLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "task_links": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TaskProgressLogs",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "task_progress_logs": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TaskSubtasks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "task_subtasks": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PDFDesignTemplates",
+      "sourceRows": 1,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 1,
+      "expectedTargetRows": {},
+      "rule": "Designer is explicitly deferred until after go-live."
+    },
+    {
+      "sheet": "GovernanceDocuments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_documents": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "RegulatoryNotifications",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "regulatory_notifications": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "LegalRegister",
+      "sourceRows": 6,
+      "mode": "transform",
+      "importCandidateRows": 6,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "legal_register": 6
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ComplianceObligations",
+      "sourceRows": 9,
+      "mode": "transform",
+      "importCandidateRows": 9,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "compliance_obligations": 9
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ComplianceAssessments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "compliance_assessments": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "CorrectiveActions",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "compliance_corrective_actions": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "RateLimits",
+      "sourceRows": 2,
+      "mode": "skip_ephemeral",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 2,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Recreate counters in the new runtime."
+    },
+    {
+      "sheet": "NotificationQueue",
+      "sourceRows": 0,
+      "mode": "archive",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Do not replay queued messages from the legacy system."
+    },
+    {
+      "sheet": "RetentionLog",
+      "sourceRows": 862,
+      "mode": "transform",
+      "importCandidateRows": 862,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_retention_runs": 37
+      },
+      "rule": "Aggregate source detail rows by RunID and retain per-sheet/action details in JSON."
+    },
+    {
+      "sheet": "EmployeeLifecycle",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "employee_lifecycle_events": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "EmployeeAssignments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "employee_assignments": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Employees",
+      "sourceRows": 3,
+      "mode": "transform",
+      "importCandidateRows": 3,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "employees": 3
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "LineUsers",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "line_users": 1
+      },
+      "rule": "Import LINE identity registry only; do not migrate LineSessions."
+    },
+    {
+      "sheet": "LineSessions",
+      "sourceRows": 4,
+      "mode": "skip_ephemeral",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 4,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Never migrate legacy session hashes."
+    },
+    {
+      "sheet": "AuditTrail",
+      "sourceRows": 690,
+      "mode": "transform",
+      "importCandidateRows": 690,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "audit_logs": 690
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PersonalTasks",
+      "sourceRows": 3,
+      "mode": "transform",
+      "importCandidateRows": 3,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "personal_tasks": 3
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Tickets",
+      "sourceRows": 1,
+      "mode": "transform",
+      "importCandidateRows": 1,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "tickets": 1
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TicketCategories",
+      "sourceRows": 7,
+      "mode": "transform",
+      "importCandidateRows": 7,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "ticket_categories": 7
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Ticket_Worklogs",
+      "sourceRows": 3,
+      "mode": "transform",
+      "importCandidateRows": 3,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "ticket_worklogs": 3
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "KnowledgeBase",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "knowledge_articles": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AssetRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "assets": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AssetCategories",
+      "sourceRows": 7,
+      "mode": "transform",
+      "importCandidateRows": 7,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "asset_categories": 7
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Asset_History",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "asset_movements": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "MaintenancePlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "maintenance_plans": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PMChecklistTemplates",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "pm_checklist_templates": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Inventory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "inventory_items": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "InventoryTransactions",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "inventory_transactions": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "SoftwareLicenses",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "software_licenses": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "DataClassification",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_data_assets": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "DataDestructionRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "data_destruction_requests": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AccessRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "access_requests": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "UserAccessRegistry",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "user_access_registry": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ChangeRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "change_requests": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "BackupLog",
+      "sourceRows": 5,
+      "mode": "transform",
+      "importCandidateRows": 5,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "backup_logs": 5
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "RecoveryTests",
+      "sourceRows": 2,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 2,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "recovery_tests": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "BCPPlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "bcp_plans": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "LoggingRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "logging_systems": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "LogReviews",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "log_reviews": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Incidents",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "incidents": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "RiskRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_risks": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "VendorRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "vendors": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AIRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_ai_tools": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "CloudRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_cloud_services": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TrainingPlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_training_plans": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "TrainingRecords",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_training_records": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PolicyAcknowledgements",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "policy_acknowledgements": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "NotificationLog",
+      "sourceRows": 97,
+      "mode": "archive",
+      "importCandidateRows": 0,
+      "archiveRows": 97,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Preserve delivery history as a read-only export; do not create new in-app notifications."
+    },
+    {
+      "sheet": "Settings",
+      "sourceRows": 57,
+      "mode": "transform",
+      "importCandidateRows": 52,
+      "archiveRows": 5,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "system_settings": 52
+      },
+      "rule": "Upsert only allowlisted keys; never activate unsupported settings."
+    },
+    {
+      "sheet": "FieldDefinitions",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Designer metadata is explicitly deferred until after go-live."
+    },
+    {
+      "sheet": "QATestCases",
+      "sourceRows": 39,
+      "mode": "archive",
+      "importCandidateRows": 0,
+      "archiveRows": 39,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {},
+      "rule": "Superseded by source-controlled automated tests."
+    },
+    {
+      "sheet": "PolicyMapping",
+      "sourceRows": 25,
+      "mode": "transform",
+      "importCandidateRows": 25,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "governance_controls": 25
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PrivacyROPA",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "privacy_ropa": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PrivacyConsents",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "privacy_consents": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "PrivacyDSR",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "privacy_dsr": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "Problems",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "problems": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "KnownErrors",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "known_errors": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "VulnerabilityFindings",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "vulnerability_findings": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AuditEngagements",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "audit_engagements": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "AuditFindings",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "audit_findings": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ConfigurationItems",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "configuration_items": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "CIRelationships",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "ci_relationships": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ServiceCatalog",
+      "sourceRows": 12,
+      "mode": "transform",
+      "importCandidateRows": 12,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "service_catalog": 12
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ServiceRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "service_requests": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ServiceRequestTasks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "service_request_tasks": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    },
+    {
+      "sheet": "ServiceRequestHistory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "importCandidateRows": 0,
+      "archiveRows": 0,
+      "skippedRows": 0,
+      "deferredRows": 0,
+      "expectedTargetRows": {
+        "service_request_history": 0
+      },
+      "rule": "Transform by header name and preserve the legacy identity."
+    }
+  ]
+}

@@ -1,0 +1,733 @@
+{
+  "phase": "Phase 7 Data Migration",
+  "mode": "READ_ONLY_DATA_QUALITY_PROFILE",
+  "capturedAt": "2026-08-10T13:01:23.234Z",
+  "source": {
+    "id": "1BXLC1i3l1-3MupfxhFkKQ_PPyJxrmEnBkwCuBqa4_sA",
+    "title": "ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY",
+    "immutableSnapshot": true
+  },
+  "safety": {
+    "writesToSource": false,
+    "writesToSupabase": false,
+    "rawRowsStored": false,
+    "piiStored": false,
+    "secretsStored": false,
+    "valuesStored": false,
+    "onlyCountsColumnsAndRowNumbersStored": true
+  },
+  "validationPolicy": {
+    "identityKeys": "Canonical key columns; RetentionLog uses RunID + SheetName + Action.",
+    "emailColumns": "Only fields whose contract requires an email; polymorphic system/LINE actors are excluded.",
+    "roles": "Legacy role constants are mapped to target role keys; source role values are not stored.",
+    "attachments": "Both registry-based attachments and legacy direct-reference fields are counted."
+  },
+  "settingsAllowlist": {
+    "sourceSettingCount": 57,
+    "allowlistedRows": 52,
+    "unsupportedCount": 5,
+    "unsupportedRows": [
+      3,
+      6,
+      9,
+      43,
+      44
+    ],
+    "missingTargetKeyCount": 0,
+    "sensitiveLikeCount": 0,
+    "sensitiveLikeRows": [],
+    "sourceKeysStored": false,
+    "sourceValuesStored": false,
+    "importPolicy": "Import only allowlisted keys; archive unsupported rows without activating them."
+  },
+  "transformMetrics": {
+    "RetentionLog": {
+      "sourceDetailRows": 862,
+      "uniqueRunCount": 37,
+      "targetTable": "governance_retention_runs",
+      "policy": "Aggregate detail rows by RunID; preserve SheetName and Action details in JSON."
+    }
+  },
+  "summary": {
+    "sheetsRead": 28,
+    "rowsRead": 1932,
+    "blankKeyRows": 0,
+    "duplicateKeyGroups": 0,
+    "invalidEmails": 0,
+    "invalidDates": 0,
+    "invalidJsonValues": 1,
+    "softDeletedRows": 4,
+    "orphanForeignKeys": 0,
+    "directAttachmentReferenceCells": 8,
+    "registryAttachmentRows": 0,
+    "attachmentLinkRows": 0,
+    "taskAttachmentRows": 0,
+    "unmappedRoles": 0
+  },
+  "roleValidation": {
+    "checkedCount": 1,
+    "unmappedCount": 0,
+    "unmappedRows": [],
+    "legacyToTargetMap": {
+      "User": "user",
+      "Approver": "approver",
+      "ITAdmin": "it_admin",
+      "Executive": "executive",
+      "DPO": "dpo"
+    },
+    "sourceValuesStored": false
+  },
+  "attachmentPaths": {
+    "registryAttachmentRows": 0,
+    "attachmentLinkRows": 0,
+    "taskAttachmentRows": 0,
+    "directReferenceColumns": [
+      {
+        "sheet": "Tickets",
+        "column": "EvidenceLink",
+        "populatedCells": 1
+      },
+      {
+        "sheet": "BackupLog",
+        "column": "EvidenceLink",
+        "populatedCells": 5
+      },
+      {
+        "sheet": "RecoveryTests",
+        "column": "EvidenceLink",
+        "populatedCells": 2
+      }
+    ]
+  },
+  "relationships": [
+    {
+      "childSheet": "WorkflowSteps",
+      "childColumn": "DefinitionID",
+      "parentSheet": "WorkflowDefinitions",
+      "parentColumn": "DefinitionID",
+      "checkedCount": 1,
+      "orphanCount": 0,
+      "orphanRows": []
+    },
+    {
+      "childSheet": "ApprovalGroupMembers",
+      "childColumn": "GroupID",
+      "parentSheet": "ApprovalGroups",
+      "parentColumn": "GroupID",
+      "checkedCount": 1,
+      "orphanCount": 0,
+      "orphanRows": []
+    },
+    {
+      "childSheet": "ComplianceObligations",
+      "childColumn": "LawID",
+      "parentSheet": "LegalRegister",
+      "parentColumn": "LawID",
+      "checkedCount": 9,
+      "orphanCount": 0,
+      "orphanRows": []
+    },
+    {
+      "childSheet": "LineUsers",
+      "childColumn": "LinkedUserID",
+      "parentSheet": "Users",
+      "parentColumn": "UserID",
+      "checkedCount": 0,
+      "orphanCount": 0,
+      "orphanRows": []
+    },
+    {
+      "childSheet": "LineSessions",
+      "childColumn": "LineUserID",
+      "parentSheet": "LineUsers",
+      "parentColumn": "LineUserID",
+      "checkedCount": 4,
+      "orphanCount": 0,
+      "orphanRows": []
+    },
+    {
+      "childSheet": "Ticket_Worklogs",
+      "childColumn": "TicketID",
+      "parentSheet": "Tickets",
+      "parentColumn": "TicketID",
+      "checkedCount": 3,
+      "orphanCount": 0,
+      "orphanRows": []
+    }
+  ],
+  "sheets": [
+    {
+      "sheet": "Users",
+      "rowsRead": 1,
+      "keyColumns": [
+        "UserID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "WorkflowDefinitions",
+      "rowsRead": 1,
+      "keyColumns": [
+        "DefinitionID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "WorkflowSteps",
+      "rowsRead": 1,
+      "keyColumns": [
+        "StepID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "ActionPermissions",
+      "rowsRead": 25,
+      "keyColumns": [
+        "PermissionKey"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "RoleActionPermissions",
+      "rowsRead": 66,
+      "keyColumns": [
+        "MappingID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "ApprovalGroups",
+      "rowsRead": 1,
+      "keyColumns": [
+        "GroupID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "ApprovalGroupMembers",
+      "rowsRead": 1,
+      "keyColumns": [
+        "MemberID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "PDFDesignTemplates",
+      "rowsRead": 1,
+      "keyColumns": [
+        "TemplateID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 1,
+      "invalidJsonRows": [
+        {
+          "rowNumber": 2,
+          "column": "DesignJSON"
+        }
+      ],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "LegalRegister",
+      "rowsRead": 6,
+      "keyColumns": [
+        "LawID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "ComplianceObligations",
+      "rowsRead": 9,
+      "keyColumns": [
+        "ObligationID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "RateLimits",
+      "rowsRead": 2,
+      "keyColumns": [
+        "RateKey"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "RetentionLog",
+      "rowsRead": 862,
+      "keyColumns": [
+        "RunID",
+        "SheetName",
+        "Action"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "Employees",
+      "rowsRead": 3,
+      "keyColumns": [
+        "EmployeeID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "LineUsers",
+      "rowsRead": 1,
+      "keyColumns": [
+        "LineUserID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "LineSessions",
+      "rowsRead": 4,
+      "keyColumns": [
+        "SessionHash"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "AuditTrail",
+      "rowsRead": 690,
+      "keyColumns": [
+        "LogID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "PersonalTasks",
+      "rowsRead": 3,
+      "keyColumns": [
+        "TaskID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "Tickets",
+      "rowsRead": 1,
+      "keyColumns": [
+        "TicketID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "TicketCategories",
+      "rowsRead": 7,
+      "keyColumns": [
+        "CategoryID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "Ticket_Worklogs",
+      "rowsRead": 3,
+      "keyColumns": [
+        "WorklogID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "AssetCategories",
+      "rowsRead": 7,
+      "keyColumns": [
+        "CategoryID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "BackupLog",
+      "rowsRead": 5,
+      "keyColumns": [
+        "BackupID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "RecoveryTests",
+      "rowsRead": 2,
+      "keyColumns": [
+        "TestID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 2,
+      "softDeletedRows": [
+        2,
+        3
+      ]
+    },
+    {
+      "sheet": "NotificationLog",
+      "rowsRead": 97,
+      "keyColumns": [
+        "NotifyID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "Settings",
+      "rowsRead": 57,
+      "keyColumns": [
+        "Key"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "QATestCases",
+      "rowsRead": 39,
+      "keyColumns": [
+        "CaseID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 2,
+      "softDeletedRows": [
+        2,
+        3
+      ]
+    },
+    {
+      "sheet": "PolicyMapping",
+      "rowsRead": 25,
+      "keyColumns": [
+        "MapID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    },
+    {
+      "sheet": "ServiceCatalog",
+      "rowsRead": 12,
+      "keyColumns": [
+        "CatalogID"
+      ],
+      "blankKeyCount": 0,
+      "blankKeyRows": [],
+      "duplicateKeyGroupCount": 0,
+      "duplicateKeyRowCount": 0,
+      "duplicateKeyRows": [],
+      "invalidEmailCount": 0,
+      "invalidEmailRows": [],
+      "invalidDateCount": 0,
+      "invalidDateRows": [],
+      "invalidJsonCount": 0,
+      "invalidJsonRows": [],
+      "softDeletedCount": 0,
+      "softDeletedRows": []
+    }
+  ]
+}

@@ -1,0 +1,1578 @@
+{
+  "phase": "Phase 7 Data Migration",
+  "mode": "READ_ONLY_DRY_RUN",
+  "generatedAt": "2026-08-10T13:10:59.048Z",
+  "safety": {
+    "writesToSupabase": false,
+    "rawRowsIncluded": false,
+    "piiIncluded": false,
+    "secretsIncluded": false,
+    "mappingStrategy": "HEADER_NAME"
+  },
+  "source": {
+    "id": "1BXLC1i3l1-3MupfxhFkKQ_PPyJxrmEnBkwCuBqa4_sA",
+    "title": "ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY",
+    "createdAt": "2026-08-09T19:27:54.773Z",
+    "timeZone": "Asia/Bangkok",
+    "locale": "th_TH",
+    "immutableSnapshot": true
+  },
+  "summary": {
+    "sheetCount": 93,
+    "totalRows": 1932,
+    "populatedSheets": 28,
+    "emptySheets": 65,
+    "manifestEntries": 93,
+    "exactHeaders": 76,
+    "reorderedHeaders": 14,
+    "additiveHeaders": 3,
+    "driftedHeaders": 0,
+    "targetSchemaGaps": 6
+  },
+  "decisionGate": {
+    "status": "READY_FOR_IMPORT_REHEARSAL",
+    "blockers": [],
+    "warnings": [
+      "PDFDesignTemplates: 1 row(s) will use mode deferred.",
+      "RateLimits: 2 row(s) will use mode skip_ephemeral.",
+      "LineSessions: 4 row(s) will use mode skip_ephemeral.",
+      "BackupLog: snapshot has additive columns; map or explicitly archive them.",
+      "RecoveryTests: snapshot has additive columns; map or explicitly archive them.",
+      "NotificationLog: 97 row(s) will use mode archive.",
+      "QATestCases: snapshot has additive columns; map or explicitly archive them.",
+      "QATestCases: 39 row(s) will use mode archive.",
+      "1 invalid JSON value(s) are confined to deferred/archive sheets.",
+      "4 soft-deleted row(s) must be archived, not activated.",
+      "5 unsupported setting row(s) must be archived, not activated.",
+      "8 direct attachment reference(s) require the legacy-link migration path."
+    ]
+  },
+  "manifestCoverage": {
+    "missing": [],
+    "extra": []
+  },
+  "sheets": [
+    {
+      "sheet": "Users",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "UserID"
+      ],
+      "targetTables": [
+        "profiles",
+        "user_roles"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [
+        "PasswordHash",
+        "PasswordSalt"
+      ]
+    },
+    {
+      "sheet": "WorkflowDefinitions",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "DefinitionID"
+      ],
+      "targetTables": [
+        "workflow_definitions"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "WorkflowSteps",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "StepID"
+      ],
+      "targetTables": [
+        "workflow_steps"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "WorkflowInstances",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "InstanceID"
+      ],
+      "targetTables": [
+        "workflow_instances"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "WorkflowApprovals",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ApprovalID"
+      ],
+      "targetTables": [
+        "workflow_approvals"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "WorkflowHistory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "HistoryID"
+      ],
+      "targetTables": [
+        "workflow_history"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "WorkflowDelegations",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "DelegationID"
+      ],
+      "targetTables": [
+        "workflow_delegations"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AttachmentRegistry",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AttachmentID"
+      ],
+      "targetTables": [
+        "file_attachments"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AttachmentLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LinkID"
+      ],
+      "targetTables": [
+        "file_attachments"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AttachmentAccessLog",
+      "sourceRows": 0,
+      "mode": "archive",
+      "legacyKey": [
+        "AccessLogID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Preserve as a read-only export; there is no runtime target table."
+    },
+    {
+      "sheet": "RecordLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LinkID"
+      ],
+      "targetTables": [
+        "record_links"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "IntegrationOutbox",
+      "sourceRows": 0,
+      "mode": "archive",
+      "legacyKey": [
+        "IntegrationID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Do not replay historical integration events."
+    },
+    {
+      "sheet": "ActionPermissions",
+      "sourceRows": 25,
+      "mode": "transform",
+      "legacyKey": [
+        "PermissionKey"
+      ],
+      "targetTables": [
+        "permissions"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "RoleActionPermissions",
+      "sourceRows": 66,
+      "mode": "transform",
+      "legacyKey": [
+        "MappingID"
+      ],
+      "targetTables": [
+        "role_permissions"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "UserPermissionOverrides",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "OverrideID"
+      ],
+      "targetTables": [
+        "user_permission_overrides"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ApprovalGroups",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "GroupID"
+      ],
+      "targetTables": [
+        "approval_groups"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ApprovalGroupMembers",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "MemberID"
+      ],
+      "targetTables": [
+        "approval_group_members"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PMSchedules",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "ScheduleID"
+      ],
+      "targetTables": [
+        "pm_schedules"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMWorkOrders",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "WorkOrderID"
+      ],
+      "targetTables": [
+        "pm_work_orders"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMChecklistResults",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "ResultID"
+      ],
+      "targetTables": [
+        "pm_checklist_results"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMFindings",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "FindingID"
+      ],
+      "targetTables": [
+        "pm_findings"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "PMStatusHistory",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "HistoryID"
+      ],
+      "targetTables": [
+        "pm_status_history"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "TaskReminders",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "ReminderID"
+      ],
+      "targetTables": [
+        "task_reminders"
+      ],
+      "targetTablesReady": false,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Target table is not present. Import must stop if this sheet becomes populated."
+    },
+    {
+      "sheet": "TaskAttachments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AttachmentID"
+      ],
+      "targetTables": [
+        "file_attachments"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TaskLinks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LinkID"
+      ],
+      "targetTables": [
+        "task_links"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TaskProgressLogs",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ProgressLogID"
+      ],
+      "targetTables": [
+        "task_progress_logs"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TaskSubtasks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "SubtaskID"
+      ],
+      "targetTables": [
+        "task_subtasks"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PDFDesignTemplates",
+      "sourceRows": 1,
+      "mode": "deferred",
+      "legacyKey": [
+        "TemplateID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Designer is explicitly deferred until after go-live."
+    },
+    {
+      "sheet": "GovernanceDocuments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "DocumentID"
+      ],
+      "targetTables": [
+        "governance_documents"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "RegulatoryNotifications",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "NotificationID"
+      ],
+      "targetTables": [
+        "regulatory_notifications"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "LegalRegister",
+      "sourceRows": 6,
+      "mode": "transform",
+      "legacyKey": [
+        "LawID"
+      ],
+      "targetTables": [
+        "legal_register"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ComplianceObligations",
+      "sourceRows": 9,
+      "mode": "transform",
+      "legacyKey": [
+        "ObligationID"
+      ],
+      "targetTables": [
+        "compliance_obligations"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ComplianceAssessments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AssessmentID"
+      ],
+      "targetTables": [
+        "compliance_assessments"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "CorrectiveActions",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ActionID"
+      ],
+      "targetTables": [
+        "compliance_corrective_actions"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "RateLimits",
+      "sourceRows": 2,
+      "mode": "skip_ephemeral",
+      "legacyKey": [
+        "RateKey"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Recreate counters in the new runtime."
+    },
+    {
+      "sheet": "NotificationQueue",
+      "sourceRows": 0,
+      "mode": "archive",
+      "legacyKey": [
+        "QueueID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Do not replay queued messages from the legacy system."
+    },
+    {
+      "sheet": "RetentionLog",
+      "sourceRows": 862,
+      "mode": "transform",
+      "legacyKey": [
+        "RunID",
+        "SheetName",
+        "Action"
+      ],
+      "targetTables": [
+        "governance_retention_runs"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "EmployeeLifecycle",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LifecycleID"
+      ],
+      "targetTables": [
+        "employee_lifecycle_events"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "EmployeeAssignments",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AssignmentID"
+      ],
+      "targetTables": [
+        "employee_assignments"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Employees",
+      "sourceRows": 3,
+      "mode": "transform",
+      "legacyKey": [
+        "EmployeeID"
+      ],
+      "targetTables": [
+        "employees"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "LineUsers",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "LineUserID"
+      ],
+      "targetTables": [
+        "line_users"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "LineSessions",
+      "sourceRows": 4,
+      "mode": "skip_ephemeral",
+      "legacyKey": [
+        "SessionHash"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Never migrate legacy session hashes."
+    },
+    {
+      "sheet": "AuditTrail",
+      "sourceRows": 690,
+      "mode": "transform",
+      "legacyKey": [
+        "LogID"
+      ],
+      "targetTables": [
+        "audit_logs"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PersonalTasks",
+      "sourceRows": 3,
+      "mode": "transform",
+      "legacyKey": [
+        "TaskID"
+      ],
+      "targetTables": [
+        "personal_tasks"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Tickets",
+      "sourceRows": 1,
+      "mode": "transform",
+      "legacyKey": [
+        "TicketID"
+      ],
+      "targetTables": [
+        "tickets"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TicketCategories",
+      "sourceRows": 7,
+      "mode": "transform",
+      "legacyKey": [
+        "CategoryID"
+      ],
+      "targetTables": [
+        "ticket_categories"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Ticket_Worklogs",
+      "sourceRows": 3,
+      "mode": "transform",
+      "legacyKey": [
+        "WorklogID"
+      ],
+      "targetTables": [
+        "ticket_worklogs"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "KnowledgeBase",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ArticleID"
+      ],
+      "targetTables": [
+        "knowledge_articles"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AssetRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AssetID"
+      ],
+      "targetTables": [
+        "assets"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AssetCategories",
+      "sourceRows": 7,
+      "mode": "transform",
+      "legacyKey": [
+        "CategoryID"
+      ],
+      "targetTables": [
+        "asset_categories"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Asset_History",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "MovementID"
+      ],
+      "targetTables": [
+        "asset_movements"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "MaintenancePlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "MaintenanceID"
+      ],
+      "targetTables": [
+        "maintenance_plans"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PMChecklistTemplates",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "TemplateID"
+      ],
+      "targetTables": [
+        "pm_checklist_templates"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Inventory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ItemID"
+      ],
+      "targetTables": [
+        "inventory_items"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "InventoryTransactions",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "TransactionID"
+      ],
+      "targetTables": [
+        "inventory_transactions"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "SoftwareLicenses",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LicenseID"
+      ],
+      "targetTables": [
+        "software_licenses"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "DataClassification",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "DataID"
+      ],
+      "targetTables": [
+        "governance_data_assets"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "DataDestructionRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ReqID"
+      ],
+      "targetTables": [
+        "data_destruction_requests"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AccessRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ReqID"
+      ],
+      "targetTables": [
+        "access_requests"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "UserAccessRegistry",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AccessID"
+      ],
+      "targetTables": [
+        "user_access_registry"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ChangeRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ChangeID"
+      ],
+      "targetTables": [
+        "change_requests"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "BackupLog",
+      "sourceRows": 5,
+      "mode": "transform",
+      "legacyKey": [
+        "BackupID"
+      ],
+      "targetTables": [
+        "backup_logs"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "additive",
+      "missingHeaders": [],
+      "extraHeaders": [
+        "IsDeleted",
+        "DeletedAt",
+        "DeletedBy"
+      ],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "RecoveryTests",
+      "sourceRows": 2,
+      "mode": "transform",
+      "legacyKey": [
+        "TestID"
+      ],
+      "targetTables": [
+        "recovery_tests"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "additive",
+      "missingHeaders": [],
+      "extraHeaders": [
+        "IsDeleted",
+        "DeletedAt",
+        "DeletedBy"
+      ],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "BCPPlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "PlanID"
+      ],
+      "targetTables": [
+        "bcp_plans"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "LoggingRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "LogSysID"
+      ],
+      "targetTables": [
+        "logging_systems"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "LogReviews",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ReviewID"
+      ],
+      "targetTables": [
+        "log_reviews"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Incidents",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "IncidentID"
+      ],
+      "targetTables": [
+        "incidents"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "RiskRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RiskID"
+      ],
+      "targetTables": [
+        "governance_risks"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "VendorRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "VendorID"
+      ],
+      "targetTables": [
+        "vendors"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AIRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AIID"
+      ],
+      "targetTables": [
+        "governance_ai_tools"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "CloudRegister",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "CloudID"
+      ],
+      "targetTables": [
+        "governance_cloud_services"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TrainingPlans",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "PlanID"
+      ],
+      "targetTables": [
+        "governance_training_plans"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "TrainingRecords",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RecID"
+      ],
+      "targetTables": [
+        "governance_training_records"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PolicyAcknowledgements",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AckID"
+      ],
+      "targetTables": [
+        "policy_acknowledgements"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "NotificationLog",
+      "sourceRows": 97,
+      "mode": "archive",
+      "legacyKey": [
+        "NotifyID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Preserve delivery history as a read-only export; do not create new in-app notifications."
+    },
+    {
+      "sheet": "Settings",
+      "sourceRows": 57,
+      "mode": "transform",
+      "legacyKey": [
+        "Key"
+      ],
+      "targetTables": [
+        "system_settings"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "FieldDefinitions",
+      "sourceRows": 0,
+      "mode": "deferred",
+      "legacyKey": [
+        "FieldID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": [],
+      "note": "Designer metadata is explicitly deferred until after go-live."
+    },
+    {
+      "sheet": "QATestCases",
+      "sourceRows": 39,
+      "mode": "archive",
+      "legacyKey": [
+        "CaseID"
+      ],
+      "targetTables": [],
+      "targetTablesReady": true,
+      "headerStatus": "additive",
+      "missingHeaders": [],
+      "extraHeaders": [
+        "IsDeleted",
+        "DeletedAt",
+        "DeletedBy"
+      ],
+      "sensitiveColumnsExcluded": [],
+      "note": "Superseded by source-controlled automated tests."
+    },
+    {
+      "sheet": "PolicyMapping",
+      "sourceRows": 25,
+      "mode": "transform",
+      "legacyKey": [
+        "MapID"
+      ],
+      "targetTables": [
+        "governance_controls"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PrivacyROPA",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RopaID"
+      ],
+      "targetTables": [
+        "privacy_ropa"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PrivacyConsents",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ConsentID"
+      ],
+      "targetTables": [
+        "privacy_consents"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "PrivacyDSR",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RequestID"
+      ],
+      "targetTables": [
+        "privacy_dsr"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "Problems",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "ProblemID"
+      ],
+      "targetTables": [
+        "problems"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "KnownErrors",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "KnownErrorID"
+      ],
+      "targetTables": [
+        "known_errors"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "VulnerabilityFindings",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "VulnerabilityID"
+      ],
+      "targetTables": [
+        "vulnerability_findings"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AuditEngagements",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "AuditID"
+      ],
+      "targetTables": [
+        "audit_engagements"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "AuditFindings",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "FindingID"
+      ],
+      "targetTables": [
+        "audit_findings"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ConfigurationItems",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "CIID"
+      ],
+      "targetTables": [
+        "configuration_items"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "CIRelationships",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RelationshipID"
+      ],
+      "targetTables": [
+        "ci_relationships"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ServiceCatalog",
+      "sourceRows": 12,
+      "mode": "transform",
+      "legacyKey": [
+        "CatalogID"
+      ],
+      "targetTables": [
+        "service_catalog"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ServiceRequests",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "RequestID"
+      ],
+      "targetTables": [
+        "service_requests"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ServiceRequestTasks",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "TaskID"
+      ],
+      "targetTables": [
+        "service_request_tasks"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "reordered",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    },
+    {
+      "sheet": "ServiceRequestHistory",
+      "sourceRows": 0,
+      "mode": "transform",
+      "legacyKey": [
+        "HistoryID"
+      ],
+      "targetTables": [
+        "service_request_history"
+      ],
+      "targetTablesReady": true,
+      "headerStatus": "exact",
+      "missingHeaders": [],
+      "extraHeaders": [],
+      "sensitiveColumnsExcluded": []
+    }
+  ],
+  "dataQuality": {
+    "rowsChecked": 1932,
+    "blankKeyRows": 0,
+    "duplicateKeyGroups": 0,
+    "invalidEmails": 0,
+    "invalidDates": 0,
+    "invalidJsonValues": 1,
+    "softDeletedRows": 4,
+    "orphanForeignKeys": 0,
+    "directAttachmentReferenceCells": 8,
+    "unmappedRoles": 0,
+    "unsupportedSettings": 5,
+    "suspectedSecretSettings": 0
+  },
+  "schemaReadiness": {
+    "requiredTargets": 76,
+    "preparedTargets": 76,
+    "missingTargets": []
+  }
+}
