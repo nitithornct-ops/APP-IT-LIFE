@@ -6,6 +6,8 @@ import { AppShell } from './layouts/AppShell';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HealthPage } from './pages/HealthPage';
 import { HomePage } from './pages/HomePage';
+import { LineCallbackPage } from './pages/LineCallbackPage';
+import { LinePortalPage } from './pages/LinePortalPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -96,6 +98,9 @@ const GovernancePage = lazy(() =>
 const ReportCenterPage = lazy(() =>
   import('./features/reports/ReportCenterPage').then((m) => ({ default: m.ReportCenterPage })),
 );
+const LineLinksPage = lazy(() =>
+  import('./features/admin/LineLinksPage').then((m) => ({ default: m.LineLinksPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -112,6 +117,8 @@ export function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/health" element={<HealthPage />} />
+      <Route path="/line" element={<LinePortalPage />} />
+      <Route path="/line/callback" element={<LineCallbackPage />} />
 
       <Route
         element={
@@ -508,6 +515,16 @@ export function App() {
             <ProtectedRoute permission="setting.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <SettingsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/line-links"
+          element={
+            <ProtectedRoute permission="line.manage">
+              <Suspense fallback={<LazyPageFallback />}>
+                <LineLinksPage />
               </Suspense>
             </ProtectedRoute>
           }

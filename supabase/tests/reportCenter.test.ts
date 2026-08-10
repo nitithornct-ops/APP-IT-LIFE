@@ -82,4 +82,18 @@ describe('Module 20 Report Center controls', () => {
     ));
     expect(update.rows).toHaveLength(0);
   });
+
+  it('accepts the PDF export format (R-13: Cloudflare Browser Rendering, migration 20260830100000) alongside CSV/PRINT, and still rejects anything else', async () => {
+    const pdf = await asServiceRole(db, async () => db.query<{ format: string }>(
+      `insert into public.report_exports(export_code,report_key,format,row_count,actor_id,actor_email)
+       values ('RPT-PDF-01','service-desk','PDF',3,$1,'report-tech@test.local') returning format`,
+      [TECHNICIAN_ID],
+    ));
+    expect(pdf.rows).toEqual([{ format: 'PDF' }]);
+
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.report_exports(export_code,report_key,format,actor_id) values ('RPT-BAD','service-desk','XLSX',$1)`,
+      [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+  });
 });

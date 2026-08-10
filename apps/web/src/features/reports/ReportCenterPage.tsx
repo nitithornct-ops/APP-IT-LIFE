@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Activity, BarChart3, Download, FileText, Loader2, Printer, RefreshCw, Search } from 'lucide-react';
+import { Activity, BarChart3, Download, FileDown, FileText, Loader2, Printer, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -23,6 +23,16 @@ function errorText(reason: unknown): string {
 
 function downloadCsv(filename: string, csv: string) {
   const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPdf(filename: string, pdfBase64: string) {
+  const bytes = Uint8Array.from(atob(pdfBase64), (char) => char.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -72,6 +82,12 @@ export function ReportCenterPage() {
     }),
     onSuccess: () => window.print(),
   });
+  const pdfMutation = useMutation({
+    mutationFn: () => apiFetch<{ filename: string; pdfBase64: string }>(`/api/v1/reports/${activeKey}/exports/pdf`, {
+      method: 'POST', body: JSON.stringify({ rangeDays }),
+    }),
+    onSuccess: ({ filename, pdfBase64 }) => downloadPdf(filename, pdfBase64),
+  });
 
   return (
     <div className="space-y-5" data-testid="report-center-page">
@@ -99,7 +115,7 @@ export function ReportCenterPage() {
       </div>
 
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200" data-print-hide>
-        โมดูลนี้ใช้รายงานมาตรฐานที่ตรวจสอบย้อนหลังได้ พร้อม CSV และ Print / Save as PDF ส่วน Field/PDF Designer แบบลากวางจะดำเนินการหลัง Go-live
+        โมดูลนี้ใช้รายงานมาตรฐานที่ตรวจสอบย้อนหลังได้ พร้อม CSV, พิมพ์ผ่านเบราว์เซอร์ และดาวน์โหลด PDF จริง (Cloudflare Browser Rendering) — Field/PDF Designer แบบลากวางถูกตัดออกจากขอบเขตถาวรตามการตัดสินใจ R-05
       </div>
 
       {overviewQuery.isLoading && <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>}
@@ -134,9 +150,13 @@ export function ReportCenterPage() {
                     <p className="mt-2 text-xs text-slate-400">สร้างเมื่อ {new Date(reportQuery.data.generatedAt).toLocaleString('th-TH')} · {reportQuery.data.totalRows.toLocaleString('th-TH')} รายการ</p>
                   </div>
                   {hasPermission('report.export') && (
-                    <div className="flex gap-2" data-print-hide>
-                      <Button size="sm" variant="outline" isLoading={csvMutation.isPending} onClick={() => csvMutation.mutate()}><Download className="h-4 w-4" />CSV</Button>
-                      <Button size="sm" variant="outline" isLoading={printMutation.isPending} onClick={() => printMutation.mutate()}><Printer className="h-4 w-4" />พิมพ์ / PDF</Button>
+                    <div className="flex flex-col items-end gap-1" data-print-hide>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" isLoading={csvMutation.isPending} onClick={() => csvMutation.mutate()}><Download className="h-4 w-4" />CSV</Button>
+                        <Button size="sm" variant="outline" isLoading={printMutation.isPending} onClick={() => printMutation.mutate()}><Printer className="h-4 w-4" />พิมพ์</Button>
+                        <Button size="sm" variant="outline" isLoading={pdfMutation.isPending} onClick={() => pdfMutation.mutate()}><FileDown className="h-4 w-4" />ดาวน์โหลด PDF</Button>
+                      </div>
+                      {pdfMutation.isError && <p className="text-xs text-red-600">{errorText(pdfMutation.error)}</p>}
                     </div>
                   )}
                 </CardBody>

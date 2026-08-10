@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 102 permissions', async () => {
+  it('seeds 9 roles and 103 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(102);
+    expect((permissions.rows[0] as { count: number }).count).toBe(103);
   });
 });
 

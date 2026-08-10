@@ -7,7 +7,21 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "development"
 
+# Cloudflare Browser Rendering — headless Chromium binding สำหรับสร้าง PDF (R-13, ตัดสินใจแล้ว
+# 2026-08-10) ไม่ใช่ secret แต่ห้ามประกาศไว้ที่ระดับบนสุด: `wrangler dev` (ธรรมดา ไม่ใส่ --remote/
+# --env) จะ "ปฏิเสธ boot ทั้ง Worker ทันที" ถ้าเจอ [browser] ที่ระดับบนสุด (ยืนยันแล้วจากการรันจริง
+# กับ wrangler เวอร์ชันที่ repo นี้ pin ไว้ — error: "Browser Rendering is not supported locally.
+# Please use `wrangler dev --remote` instead.") จึงต้องแยกไว้ใต้ [env.production] เท่านั้น ทำให้
+# local dev ปกติไม่เห็น binding นี้เลย (MYBROWSER เป็น undefined — routes/reports.ts จัดการ
+# กรณีนี้อยู่แล้วด้วย 503 PDF_EXPORT_NOT_CONFIGURED) ทดสอบจริงต้องรัน
+# `wrangler dev --env production --remote` หรือ deploy จริงเท่านั้น
+[env.production.browser]
+binding = "MYBROWSER"
+
 # ค่าต่อไปนี้เป็นความลับ/เฉพาะสภาพแวดล้อม — ห้ามใส่ค่าจริงในไฟล์นี้:
-#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, ALLOWED_ORIGINS
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, ALLOWED_ORIGINS, PUBLIC_APP_URL
+#   LINE_LOGIN_ENABLED, LINE_LOGIN_CHANNEL_ID, LINE_LOGIN_CHANNEL_SECRET, LINE_LOGIN_CALLBACK_URL,
+#   LINE_SESSION_SECRET, LINE_SESSION_HOURS, LINE_AUTO_APPROVE_EMPLOYEE_LINK,
+#   NOTIFY_LINE_ENABLED, LINE_CHANNEL_ACCESS_TOKEN, LINE_DEFAULT_TO
 # Local dev  : คัดลอก .dev.vars.example เป็น .dev.vars แล้วกรอกค่าจริง (.dev.vars ถูก gitignore แล้ว)
 # Production : ตั้งค่าด้วยคำสั่ง `wrangler secret put <ชื่อตัวแปร>` เท่านั้น

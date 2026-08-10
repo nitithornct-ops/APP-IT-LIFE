@@ -1,6 +1,8 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { renderHtmlToPdf } from '../lib/pdf';
+import { renderReportHtml } from '../lib/reportPdfTemplate';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -280,7 +282,7 @@ reportsRoute.get('/:key', zValidator('query', reportRangeQuerySchema, zodValidat
   return c.json(ok(requestId, result.dataset));
 });
 
-async function logExport(c: Context<AppEnv>, key: string, format: 'CSV' | 'PRINT', rangeDays: number, rowCount: number) {
+async function logExport(c: Context<AppEnv>, key: string, format: 'CSV' | 'PRINT' | 'PDF', rangeDays: number, rowCount: number) {
   const admin = createAdminClient(c.env);
   const exportCode = `RPT-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.floor(Math.random() * 9000 + 1000)}`;
   const { error } = await admin.from('report_exports').insert({ export_code: exportCode, report_key: key, format, filters: { rangeDays }, row_count: rowCount, actor_id: c.get('userId'), actor_email: c.get('userEmail') });
@@ -306,4 +308,28 @@ reportsRoute.post('/:key/exports/print', requirePermission('report.export'), zVa
   const logError = await logExport(c, key, 'PRINT', rangeDays, result.dataset.totalRows);
   if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
   return c.json(ok(requestId, { recorded: true, generatedAt: result.dataset.generatedAt }));
+});
+
+/**
+ * Real server-rendered PDF (R-13: Cloudflare Browser Rendering), distinct from /exports/print's
+ * browser print dialog. Not locally testable — see lib/pdf.ts's header comment.
+ */
+reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zValidator('json', reportExportSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays } = c.req.valid('json');
+  if (!c.env.MYBROWSER) return c.json(fail(requestId, 'PDF_EXPORT_NOT_CONFIGURED', 'ยังไม่ได้ตั้งค่า Browser Rendering สำหรับสร้าง PDF'), 503);
+  const result = await datasetFor(c, key, rangeDays);
+  if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_EXPORT_FAILED', result.error), result.status);
+
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await renderHtmlToPdf(c.env.MYBROWSER, renderReportHtml(result.dataset));
+  } catch (error) {
+    return c.json(fail(requestId, 'PDF_RENDER_FAILED', error instanceof Error ? error.message : 'สร้าง PDF ไม่สำเร็จ'), 502);
+  }
+
+  const logError = await logExport(c, key, 'PDF', rangeDays, result.dataset.totalRows);
+  if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  return c.json(ok(requestId, { filename: `${key}-${stamp}.pdf`, pdfBase64: Buffer.from(pdfBytes).toString('base64') }));
 });

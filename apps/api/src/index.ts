@@ -20,6 +20,7 @@ import { incidentsRoute } from './routes/incidents';
 import { inventoryItemsRoute } from './routes/inventory';
 import { licensesRoute } from './routes/licenses';
 import { knowledgeRoute, publicKnowledgeRoute } from './routes/knowledge';
+import { lineRoute } from './routes/line';
 import { maintenancePlansRoute, pmTemplatesRoute } from './routes/maintenance';
 import { accessSystemsRoute, assetCategoriesRoute, departmentsRoute, positionsRoute, ticketCategoriesRoute } from './routes/masterData';
 import { notificationsRoute } from './routes/notifications';
@@ -102,6 +103,7 @@ app.route('/api/v1/contracts', contractsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
+app.route('/api/v1/line', lineRoute);
 
 app.notFound((c) => c.json(fail(c.get('requestId'), 'NOT_FOUND', 'ไม่พบ endpoint ที่ร้องขอ'), 404));
 

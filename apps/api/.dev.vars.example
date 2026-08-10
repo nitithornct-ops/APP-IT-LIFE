@@ -3,3 +3,18 @@ SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ALLOWED_ORIGINS=http://localhost:5173
 ENVIRONMENT=development
+PUBLIC_APP_URL=http://localhost:5173
+
+# LINE Login public ticket portal — optional. Leave LINE_LOGIN_ENABLED unset/false to keep it
+# off. Get these from LINE Developers Console + LINE Official Account Manager; see
+# docs/migration/phase7-migration-runbook.md and legacy-gas/docs/06_SETUP_LINE_OA_TICKET.md.
+LINE_LOGIN_ENABLED=false
+LINE_LOGIN_CHANNEL_ID=
+LINE_LOGIN_CHANNEL_SECRET=
+LINE_LOGIN_CALLBACK_URL=http://localhost:8787/api/v1/line/callback
+LINE_SESSION_SECRET=
+LINE_SESSION_HOURS=24
+LINE_AUTO_APPROVE_EMPLOYEE_LINK=false
+NOTIFY_LINE_ENABLED=false
+LINE_CHANNEL_ACCESS_TOKEN=
+LINE_DEFAULT_TO=

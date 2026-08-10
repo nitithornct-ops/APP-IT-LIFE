@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -14,7 +15,8 @@ import { createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema,
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
- * ผู้ใช้ที่ login แล้ว (ไม่รวมหน้าแจ้งซ่อมสาธารณะ/LINE ซึ่งรอ Channel Secret จากเจ้าของระบบ — R-11)
+ * ผู้ใช้ที่ login ผ่าน Supabase Auth แล้ว — เส้นทางแจ้งซ่อมสาธารณะผ่าน LINE อยู่ที่ routes/line.ts
+ * แยกกันเพราะผู้ใช้ LINE ไม่มี Supabase JWT (ดู R-11, ตัดสินใจแล้ว 2026-08-10)
  * SLA due date คำนวณแบบชั่วโมงปฏิทินธรรมดา (ยังไม่ใช่ "เวลาทำการ" แบบระบบเดิม ซึ่งอยู่ในกลุ่ม
  * Operations Hardening cross-cutting service ที่จะทำภายหลัง)
  */
@@ -419,6 +421,10 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
       title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
       link: `/tickets/${id}`,
     });
+    const lineTarget = await resolveTicketRequesterLineTarget(c.env, current.requester_line_user_id);
+    if (lineTarget) {
+      await sendLinePush(c.env, lineTarget.target, `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`, lineTarget.lineUserId);
+    }
   }
 
   return c.json(ok(reqId, updated));

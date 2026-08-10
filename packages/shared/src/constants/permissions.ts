@@ -104,6 +104,7 @@ export const DEFAULT_PERMISSION_KEYS = [
   'vendor.manage',
   'contract.view',
   'contract.manage',
+  'line.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];
