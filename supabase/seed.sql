@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (74 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (99 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -91,6 +91,31 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('knowledge.view', 'knowledge', 'view', 'ดูบทความฐานความรู้ที่เผยแพร่แล้ว', 'active'),
   ('knowledge.manage', 'knowledge', 'manage', 'สร้าง แก้ไข เผยแพร่ และลบบทความฐานความรู้', 'active'),
   ('knowledge.feedback', 'knowledge', 'feedback', 'ให้คะแนนว่าบทความฐานความรู้มีประโยชน์', 'active'),
+  ('data_class.view', 'data_class', 'view', 'ดูทะเบียนและชั้นความลับของข้อมูล', 'active'),
+  ('data_class.manage', 'data_class', 'manage', 'จัดการทะเบียนและคำขอทำลายข้อมูล', 'active'),
+  ('data_class.approve', 'data_class', 'approve', 'อนุมัติหรือปฏิเสธคำขอทำลายข้อมูล', 'active'),
+  ('compliance.view', 'compliance', 'view', 'ดูกฎหมาย ข้อกำหนด การประเมิน และ CAPA', 'active'),
+  ('compliance.manage', 'compliance', 'manage', 'จัดการ Legal Compliance และ CAPA', 'active'),
+  ('privacy.view', 'privacy', 'view', 'ดู RoPA, Consent และ DSR', 'active'),
+  ('privacy.manage', 'privacy', 'manage', 'จัดการ RoPA, Consent และ DSR', 'active'),
+  ('risk.view', 'risk', 'view', 'ดู Risk Register และคะแนนความเสี่ยง', 'active'),
+  ('risk.manage', 'risk', 'manage', 'จัดการ Risk Register และแผนตอบสนอง', 'active'),
+  ('ai_cloud.view', 'ai_cloud', 'view', 'ดูทะเบียน AI และ Cloud ที่องค์กรอนุญาต', 'active'),
+  ('ai_cloud.manage', 'ai_cloud', 'manage', 'จัดการทะเบียน AI และ Cloud', 'active'),
+  ('awareness.view', 'awareness', 'view', 'ดูแผนอบรมและนโยบายที่ต้องรับทราบ', 'active'),
+  ('awareness.manage', 'awareness', 'manage', 'จัดการแผนอบรมและผลการอบรม', 'active'),
+  ('awareness.participate', 'awareness', 'participate', 'เข้าร่วมอบรมและลงนามรับทราบนโยบาย', 'active'),
+  ('evidence.view', 'evidence', 'view', 'ดู Evidence Center และสถานะ Operational Control', 'active'),
+  ('evidence.export', 'evidence', 'export', 'Export ชุดหลักฐานสำหรับผู้ตรวจสอบ', 'active'),
+  ('audit_management.view', 'audit_management', 'view', 'ดูแผน Audit และข้อค้นพบ', 'active'),
+  ('audit_management.manage', 'audit_management', 'manage', 'จัดการแผน Audit และ Corrective Action', 'active'),
+  ('audit_management.verify', 'audit_management', 'verify', 'ตรวจยืนยันปิดข้อค้นพบอย่างเป็นอิสระ', 'active'),
+  ('governance_document.view', 'governance_document', 'view', 'ดูเอกสาร Governance และเวอร์ชันที่ใช้งาน', 'active'),
+  ('governance_document.manage', 'governance_document', 'manage', 'จัดการเอกสาร Governance และ metadata', 'active'),
+  ('operations.view', 'operations', 'view', 'ดู Retention, JML และ Operational Health', 'active'),
+  ('operations.manage', 'operations', 'manage', 'จัดการ Retention, JML และ Operational Health', 'active'),
+  ('integration.view', 'integration', 'view', 'ดู Integration Outbox และ Record Links', 'active'),
+  ('integration.manage', 'integration', 'manage', 'จัดการ Retry/Cancel ของ Integration Outbox', 'active'),
   ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('vendor.view', 'vendor', 'view', 'ดูทะเบียนผู้ให้บริการภายนอก', 'active'),
@@ -109,6 +134,46 @@ select r.id, p.id, 'allow'
 from public.roles r
 cross join public.permissions p
 where r.key in ('super_admin', 'it_admin')
+on conflict (role_id, permission_id) do nothing;
+
+-- Governance/ISMS/PDPA permission matrix. Designer UI is deferred post Go-live;
+-- document metadata permissions remain active and configurable.
+insert into public.role_permissions (role_id, permission_id, effect)
+select r.id, p.id, 'allow'
+from (values
+  ('technician','data_class.view'), ('technician','data_class.manage'),
+  ('technician','risk.view'), ('technician','ai_cloud.view'), ('technician','ai_cloud.manage'),
+  ('technician','awareness.view'), ('technician','awareness.manage'), ('technician','awareness.participate'),
+  ('technician','evidence.view'), ('technician','audit_management.view'), ('technician','governance_document.view'),
+  ('technician','operations.view'), ('technician','operations.manage'), ('technician','integration.view'), ('technician','integration.manage'),
+
+  ('approver','data_class.view'), ('approver','data_class.approve'), ('approver','compliance.view'),
+  ('approver','risk.view'), ('approver','risk.manage'), ('approver','ai_cloud.view'),
+  ('approver','awareness.view'), ('approver','awareness.participate'), ('approver','evidence.view'),
+
+  ('manager','data_class.view'), ('manager','compliance.view'), ('manager','privacy.view'), ('manager','risk.view'),
+  ('manager','ai_cloud.view'), ('manager','awareness.view'), ('manager','awareness.participate'),
+  ('manager','evidence.view'), ('manager','audit_management.view'), ('manager','governance_document.view'),
+
+  ('executive','data_class.view'), ('executive','data_class.approve'), ('executive','compliance.view'),
+  ('executive','privacy.view'), ('executive','risk.view'), ('executive','ai_cloud.view'),
+  ('executive','awareness.view'), ('executive','awareness.participate'), ('executive','evidence.view'),
+  ('executive','evidence.export'), ('executive','audit_management.view'), ('executive','governance_document.view'),
+
+  ('auditor','data_class.view'), ('auditor','compliance.view'), ('auditor','privacy.view'), ('auditor','risk.view'),
+  ('auditor','ai_cloud.view'), ('auditor','awareness.view'), ('auditor','awareness.participate'),
+  ('auditor','evidence.view'), ('auditor','evidence.export'), ('auditor','audit_management.view'),
+  ('auditor','audit_management.verify'), ('auditor','governance_document.view'),
+
+  ('dpo','data_class.view'), ('dpo','compliance.view'), ('dpo','compliance.manage'),
+  ('dpo','privacy.view'), ('dpo','privacy.manage'), ('dpo','risk.view'), ('dpo','ai_cloud.view'),
+  ('dpo','awareness.view'), ('dpo','awareness.participate'), ('dpo','evidence.view'),
+  ('dpo','audit_management.view'), ('dpo','governance_document.view'),
+
+  ('user','ai_cloud.view'), ('user','awareness.view'), ('user','awareness.participate')
+) as mapping(role_key, permission_key)
+join public.roles r on r.key = mapping.role_key
+join public.permissions p on p.key = mapping.permission_key
 on conflict (role_id, permission_id) do nothing;
 
 insert into public.role_permissions (role_id, permission_id, effect)

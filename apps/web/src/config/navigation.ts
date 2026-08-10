@@ -74,6 +74,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [{ label: 'โปรไฟล์', path: '/profile', icon: UserCircle }],
   },
   {
+    title: 'ธรรมาภิบาล กฎหมาย และ ISMS',
+    items: [{
+      label: 'Governance Center', path: '/governance', icon: ShieldCheck,
+      anyPermission: ['data_class.view', 'compliance.view', 'privacy.view', 'risk.view', 'ai_cloud.view', 'awareness.view', 'evidence.view', 'audit_management.view', 'governance_document.view', 'operations.view', 'integration.view'],
+    }],
+  },
+  {
     title: 'การดูแลระบบ',
     items: [
       { label: 'ผู้ใช้งาน', path: '/admin/users', icon: Users, permission: 'user.manage' },

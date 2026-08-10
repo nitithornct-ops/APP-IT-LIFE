@@ -64,6 +64,9 @@ describe('my_permissions()', () => {
     expect(viaDirectCheck).toEqual([
       'access_request.create',
       'access_request.view',
+      'ai_cloud.view',
+      'awareness.participate',
+      'awareness.view',
       'dashboard.view',
       'incident.create',
       'incident.view',

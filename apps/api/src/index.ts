@@ -14,6 +14,7 @@ import { employeeAssignmentsRoute } from './routes/employeeAssignments';
 import { employeesRoute } from './routes/employees';
 import { filesRoute } from './routes/files';
 import { healthRoute } from './routes/health';
+import { governanceRoute } from './routes/governance';
 import { incidentsRoute } from './routes/incidents';
 import { inventoryItemsRoute } from './routes/inventory';
 import { licensesRoute } from './routes/licenses';
@@ -55,6 +56,7 @@ function parseAllowedOrigins(raw: string | undefined): string[] {
 }
 
 app.route('/api/v1/health', healthRoute);
+app.route('/api/v1/governance', governanceRoute);
 app.route('/api/v1/auth', authRoute);
 app.route('/api/v1/users', usersRoute);
 app.route('/api/v1/roles', rolesRoute);

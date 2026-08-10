@@ -89,6 +89,9 @@ const WorkflowsPage = lazy(() =>
 const KnowledgePage = lazy(() =>
   import('./features/knowledge/KnowledgePage').then((m) => ({ default: m.KnowledgePage })),
 );
+const GovernancePage = lazy(() =>
+  import('./features/governance/GovernancePage').then((m) => ({ default: m.GovernancePage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -281,6 +284,16 @@ export function App() {
             <ProtectedRoute permission="knowledge.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <KnowledgePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/governance"
+          element={
+            <ProtectedRoute anyPermission={['data_class.view', 'compliance.view', 'privacy.view', 'risk.view', 'ai_cloud.view', 'awareness.view', 'evidence.view', 'audit_management.view', 'governance_document.view', 'operations.view', 'integration.view']}>
+              <Suspense fallback={<LazyPageFallback />}>
+                <GovernancePage />
               </Suspense>
             </ProtectedRoute>
           }
