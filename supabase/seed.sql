@@ -20,7 +20,7 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (60 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions (71 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
@@ -83,6 +83,11 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('backup.manage', 'backup', 'manage', 'จัดการ Backup, Recovery และแผน BCP/DR', 'active'),
   ('monitoring.view', 'monitoring', 'view', 'ดูทะเบียนระบบ Log และผลการตรวจสอบ', 'active'),
   ('monitoring.manage', 'monitoring', 'manage', 'จัดการระบบ Log, รอบตรวจและ Anomaly', 'active'),
+  ('workflow.view', 'workflow', 'view', 'เข้าถึง Workflow และดูคำขอ/งานอนุมัติที่เกี่ยวข้องกับตนเอง', 'active'),
+  ('workflow.view_all', 'workflow', 'view_all', 'ดู Workflow ทุก Instance ในองค์กร', 'active'),
+  ('workflow.manage', 'workflow', 'manage', 'สร้างและออกเวอร์ชันแบบ Workflow รวมถึงเริ่มกระบวนการ', 'active'),
+  ('workflow.approve', 'workflow', 'approve', 'ตัดสินใจงาน Workflow ที่ได้รับมอบหมาย', 'active'),
+  ('workflow.delegate', 'workflow', 'delegate', 'ตั้งผู้อนุมัติแทนตามช่วงเวลาและขอบเขต', 'active'),
   ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('cmdb.manage', 'cmdb', 'manage', 'จัดการ Configuration Item และความสัมพันธ์ใน CMDB', 'active'),
   ('vendor.view', 'vendor', 'view', 'ดูทะเบียนผู้ให้บริการภายนอก', 'active'),
@@ -128,6 +133,9 @@ from (values
   ('technician', 'backup.manage'),
   ('technician', 'monitoring.view'),
   ('technician', 'monitoring.manage'),
+  ('technician', 'workflow.view'),
+  ('technician', 'workflow.approve'),
+  ('technician', 'workflow.delegate'),
   ('technician', 'cmdb.view'),
   ('technician', 'cmdb.manage'),
   ('technician', 'incident.view'),
@@ -161,6 +169,9 @@ from (values
   ('approver', 'report.export'),
   ('approver', 'service_request.view'),
   ('approver', 'access_request.view'),
+  ('approver', 'workflow.view'),
+  ('approver', 'workflow.approve'),
+  ('approver', 'workflow.delegate'),
 
   ('manager', 'dashboard.view'),
   ('manager', 'task.view'),
@@ -183,6 +194,10 @@ from (values
   ('manager', 'report.export'),
   ('manager', 'service_request.view'),
   ('manager', 'access_request.view'),
+  ('manager', 'workflow.view'),
+  ('manager', 'workflow.view_all'),
+  ('manager', 'workflow.approve'),
+  ('manager', 'workflow.delegate'),
 
   ('executive', 'dashboard.view'),
   ('executive', 'task.view'),
@@ -205,6 +220,10 @@ from (values
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
   ('executive', 'access_request.view'),
+  ('executive', 'workflow.view'),
+  ('executive', 'workflow.view_all'),
+  ('executive', 'workflow.approve'),
+  ('executive', 'workflow.delegate'),
 
   ('auditor', 'dashboard.view'),
   ('auditor', 'task.view'),
@@ -228,6 +247,8 @@ from (values
   ('auditor', 'audit.view'),
   ('auditor', 'service_request.view'),
   ('auditor', 'access_request.view'),
+  ('auditor', 'workflow.view'),
+  ('auditor', 'workflow.view_all'),
 
   ('dpo', 'dashboard.view'),
   ('dpo', 'task.view'),
@@ -238,6 +259,9 @@ from (values
   ('dpo', 'incident.regulatory'),
   ('dpo', 'report.export'),
   ('dpo', 'audit.view'),
+  ('dpo', 'workflow.view'),
+  ('dpo', 'workflow.approve'),
+  ('dpo', 'workflow.delegate'),
 
   ('user', 'dashboard.view'),
   ('user', 'task.view'),
@@ -248,6 +272,9 @@ from (values
   ('user', 'service_request.view'),
   ('user', 'service_request.create'),
   ('user', 'access_request.view'),
+  ('user', 'workflow.view'),
+  ('user', 'workflow.approve'),
+  ('user', 'workflow.delegate'),
   ('user', 'access_request.create')
 ) as mapping(role_key, permission_key)
 join public.roles r on r.key = mapping.role_key

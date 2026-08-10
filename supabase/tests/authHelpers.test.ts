@@ -72,6 +72,9 @@ describe('my_permissions()', () => {
       'task.view',
       'ticket.create',
       'ticket.view',
+      'workflow.approve',
+      'workflow.delegate',
+      'workflow.view',
     ]);
   });
 

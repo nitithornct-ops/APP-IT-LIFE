@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 66 permissions', async () => {
+  it('seeds 9 roles and 71 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(66);
+    expect((permissions.rows[0] as { count: number }).count).toBe(71);
   });
 });
 
@@ -1814,6 +1814,105 @@ describe('backup, recovery and monitoring RLS (Phase 6 Module 16)', () => {
     expect(review.rows).toHaveLength(0);
     const recovery = await asServiceRole(db, async () => db.query('select id from public.recovery_tests where id = $1', [recoveryId]));
     expect(recovery.rows).toHaveLength(1);
+  });
+});
+
+describe('workflow approval engine RLS and invariants (Phase 6 Module 17)', () => {
+  let definitionId: string;
+  let stepId: string;
+  let instanceId: string;
+  let approvalId: string;
+
+  it('creates a versioned definition and workflow transaction as service role', async () => {
+    await asServiceRole(db, async () => {
+      const definition = await db.query(
+        `insert into public.workflow_definitions
+         (workflow_code, workflow_name, module_key, version, sla_hours, status)
+         values ('RLS_APPROVAL', 'อนุมัติสำหรับทดสอบ RLS', 'change', 1, 48, 'ใช้งาน') returning id`,
+      );
+      definitionId = (definition.rows[0] as { id: string }).id;
+      const step = await db.query(
+        `insert into public.workflow_steps
+         (definition_id, definition_version, step_order, step_code, step_name, approval_type, approver_value, mode, min_approvals, sla_hours)
+         values ($1, 1, 1, 'APPROVER', 'ผู้อนุมัติ', 'USER', $2, 'ANY', 1, 24) returning id`,
+        [definitionId, CHANGE_APPROVER_ID],
+      );
+      stepId = (step.rows[0] as { id: string }).id;
+      const instance = await db.query(
+        `insert into public.workflow_instances
+         (instance_code, definition_id, definition_version, module_key, record_id, record_label, requester_id, current_step_order)
+         values ('WF-RLS-001', $1, 1, 'change', 'CHG-RLS-001', 'ทดสอบ Workflow', $2, 1) returning id`,
+        [definitionId, REGULAR_USER_ID],
+      );
+      instanceId = (instance.rows[0] as { id: string }).id;
+      const approval = await db.query(
+        `insert into public.workflow_approvals
+         (instance_id, step_id, step_order, approver_id, original_approver_id, due_at)
+         values ($1, $2, 1, $3, $3, now() + interval '24 hours') returning id`,
+        [instanceId, stepId, CHANGE_APPROVER_ID],
+      );
+      approvalId = (approval.rows[0] as { id: string }).id;
+      await db.query(
+        `insert into public.workflow_history (instance_id, action, actor_id, status_to)
+         values ($1, 'START', $2, 'กำลังดำเนินการ')`,
+        [instanceId, REGULAR_USER_ID],
+      );
+    });
+    expect([definitionId, stepId, instanceId, approvalId].every(Boolean)).toBe(true);
+  });
+
+  it('lets the requester and assigned approver see the same instance and timeline', async () => {
+    for (const userId of [REGULAR_USER_ID, CHANGE_APPROVER_ID]) {
+      const instance = await asUser(db, userId, async () => db.query('select id from public.workflow_instances where id = $1', [instanceId]));
+      const approval = await asUser(db, userId, async () => db.query('select id from public.workflow_approvals where id = $1', [approvalId]));
+      const timeline = await asUser(db, userId, async () => db.query('select id from public.workflow_history where instance_id = $1', [instanceId]));
+      expect(instance.rows).toHaveLength(1);
+      expect(approval.rows).toHaveLength(1);
+      expect(timeline.rows).toHaveLength(1);
+    }
+  });
+
+  it('lets only the assigned actor update a pending decision directly', async () => {
+    const denied = await asUser(db, REGULAR_USER_ID, async () => db.query(
+      `update public.workflow_approvals set comment = 'สวมสิทธิ์' where id = $1 returning id`, [approvalId],
+    ));
+    expect(denied.rows).toHaveLength(0);
+
+    const decided = await asUser(db, CHANGE_APPROVER_ID, async () => db.query(
+      `update public.workflow_approvals
+       set status = 'อนุมัติ', decision = 'APPROVE', decided_at = now(), decision_by = $1
+       where id = $2 returning status`, [CHANGE_APPROVER_ID, approvalId],
+    ));
+    expect(decided.rows).toEqual([{ status: 'อนุมัติ' }]);
+  });
+
+  it('lets an auditor view all instances but keeps the register read-only', async () => {
+    const read = await asUser(db, AUDITOR_ID, async () => db.query('select id from public.workflow_instances where id = $1', [instanceId]));
+    expect(read.rows).toHaveLength(1);
+    const update = await asUser(db, AUDITOR_ID, async () => db.query(
+      `update public.workflow_instances set notes = 'แก้ไม่ได้' where id = $1 returning id`, [instanceId],
+    ));
+    expect(update.rows).toHaveLength(0);
+  });
+
+  it('hides workflow records from an authenticated user without workflow.view', async () => {
+    const instance = await asUser(db, NO_ROLE_USER_ID, async () => db.query('select id from public.workflow_instances where id = $1', [instanceId]));
+    const definition = await asUser(db, NO_ROLE_USER_ID, async () => db.query('select id from public.workflow_definitions where id = $1', [definitionId]));
+    expect(instance.rows).toHaveLength(0);
+    expect(definition.rows).toHaveLength(0);
+  });
+
+  it('enforces immutable generation uniqueness and delegation safety', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.workflow_steps
+       (definition_id, definition_version, step_order, step_code, step_name, approval_type, approver_value)
+       values ($1, 1, 1, 'DUPLICATE', 'ซ้ำ', 'USER', $2)`, [definitionId, CHANGE_APPROVER_ID],
+    ))).rejects.toThrow();
+    await expect(asUser(db, REGULAR_USER_ID, async () => db.query(
+      `insert into public.workflow_delegations
+       (delegator_id, delegate_id, start_at, end_at, reason)
+       values ($1, $1, now(), now() + interval '1 day', 'มอบให้ตนเอง')`, [REGULAR_USER_ID],
+    ))).rejects.toThrow();
   });
 });
 

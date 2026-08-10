@@ -30,6 +30,7 @@ import { ticketsRoute } from './routes/tickets';
 import { usersRoute } from './routes/users';
 import { contractsRoute, vendorsRoute } from './routes/vendorsContracts';
 import { vulnerabilitiesRoute } from './routes/vulnerabilities';
+import { workflowsRoute } from './routes/workflows';
 import type { AppEnv } from './types';
 import { fail } from './utils/response';
 
@@ -78,6 +79,7 @@ app.route('/api/v1/inventory-items', inventoryItemsRoute);
 app.route('/api/v1/software-licenses', licensesRoute);
 app.route('/api/v1/vulnerabilities', vulnerabilitiesRoute);
 app.route('/api/v1/backup-monitoring', backupMonitoringRoute);
+app.route('/api/v1/workflows', workflowsRoute);
 app.route('/api/v1/employee-assignments', employeeAssignmentsRoute);
 app.route('/api/v1/cmdb/items', configurationItemsRoute);
 app.route('/api/v1/cmdb/relationships', ciRelationshipsRoute);
