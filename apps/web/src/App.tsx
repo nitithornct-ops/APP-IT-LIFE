@@ -10,6 +10,7 @@ import { LineCallbackPage } from './pages/LineCallbackPage';
 import { LinePortalPage } from './pages/LinePortalPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { PublicTicketPortalPage } from './pages/PublicTicketPortalPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 
 // หน้าฝั่งผู้ดูแลระบบใช้งานไม่บ่อยเท่าหน้าหลัก — แยก bundle ด้วย lazy loading (Code Splitting)
@@ -119,6 +120,7 @@ export function App() {
       <Route path="/health" element={<HealthPage />} />
       <Route path="/line" element={<LinePortalPage />} />
       <Route path="/line/callback" element={<LineCallbackPage />} />
+      <Route path="/report" element={<PublicTicketPortalPage />} />
 
       <Route
         element={

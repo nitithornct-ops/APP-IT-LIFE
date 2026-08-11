@@ -87,37 +87,57 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: 'การดูแลระบบ',
+    title: 'บุคคลและสิทธิ์การเข้าถึง',
     items: [
       { label: 'ผู้ใช้งาน', path: '/admin/users', icon: Users, permission: 'user.manage' },
+      { label: 'พนักงาน', path: '/admin/employees', icon: UserSquare2, permission: 'employee.manage' },
       { label: 'บทบาท', path: '/admin/roles', icon: ShieldCheck, permission: 'role.view' },
       { label: 'Permission Matrix', path: '/admin/permission-matrix', icon: KeyRound, permission: 'role.view' },
-      {
-        label: 'Master Data',
-        path: '/admin/master-data',
-        icon: Tags,
-        anyPermission: ['ticket_category.manage', 'asset_category.manage'],
-      },
-      { label: 'พนักงาน', path: '/admin/employees', icon: UserSquare2, permission: 'employee.manage' },
+      { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
+      { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
+      { label: 'บัญชี LINE ที่ผูก', path: '/admin/line-links', icon: MessageCircle, permission: 'line.manage' },
+    ],
+  },
+  {
+    title: 'ทรัพย์สิน IT',
+    items: [
+      { label: 'ทะเบียนทรัพย์สิน IT', path: '/assets', icon: Boxes, permission: 'asset.view' },
       {
         label: 'ทรัพย์สินพนักงาน',
         path: '/admin/employee-assignments',
         icon: Laptop2,
         anyPermission: ['employee.manage', 'asset.view'],
       },
-      { label: 'ทะเบียนทรัพย์สิน IT', path: '/assets', icon: Boxes, permission: 'asset.view' },
       { label: 'PM / บำรุงรักษา', path: '/maintenance', icon: Wrench, permission: 'maintenance.view' },
       { label: 'Inventory', path: '/inventory-items', icon: PackageSearch, permission: 'inventory.view' },
       { label: 'Software License', path: '/software-licenses', icon: FileKey, permission: 'license.view' },
-      { label: 'Vulnerability / Patch', path: '/vulnerabilities', icon: ShieldAlert, permission: 'vulnerability.view' },
-      { label: 'Backup / Monitoring', path: '/backup-monitoring', icon: CloudCog, anyPermission: ['backup.view', 'monitoring.view'] },
-      { label: 'Vendor / Contract', path: '/vendors-contracts', icon: Building2, anyPermission: ['vendor.view', 'contract.view'] },
+    ],
+  },
+  {
+    title: 'โครงสร้างพื้นฐานและความปลอดภัย',
+    items: [
       { label: 'CMDB', path: '/cmdb', icon: Network, permission: 'cmdb.view' },
       { label: 'ความสัมพันธ์ CI', path: '/cmdb/relationships', icon: Waypoints, permission: 'cmdb.view' },
+      { label: 'Backup / Monitoring', path: '/backup-monitoring', icon: CloudCog, anyPermission: ['backup.view', 'monitoring.view'] },
+      { label: 'Vulnerability / Patch', path: '/vulnerabilities', icon: ShieldAlert, permission: 'vulnerability.view' },
+      { label: 'Vendor / Contract', path: '/vendors-contracts', icon: Building2, anyPermission: ['vendor.view', 'contract.view'] },
+    ],
+  },
+  {
+    title: 'ข้อมูลหลักระบบ',
+    items: [
+      {
+        label: 'Master Data',
+        path: '/admin/master-data',
+        icon: Tags,
+        anyPermission: ['ticket_category.manage', 'asset_category.manage'],
+      },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
-      { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
-      { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
-      { label: 'บัญชี LINE ที่ผูก', path: '/admin/line-links', icon: MessageCircle, permission: 'line.manage' },
+    ],
+  },
+  {
+    title: 'การตั้งค่าและตรวจสอบระบบ',
+    items: [
       { label: 'Audit Log', path: '/admin/audit-logs', icon: ClipboardList, permission: 'audit.view' },
       { label: 'System Settings', path: '/admin/settings', icon: Settings, permission: 'setting.view' },
     ],

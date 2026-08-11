@@ -1,11 +1,15 @@
 name = "itlife-api"
-main = "src/index.ts"
+main = "src/worker.ts"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
 
 # ค่าที่ไม่ใช่ความลับ ตั้งไว้ตรงนี้ได้ (ไม่ commit ค่าจริงที่เป็นความลับลงไฟล์นี้)
 [vars]
 ENVIRONMENT = "development"
+PUBLIC_TICKET_FORM_ENABLED = "true"
+
+[triggers]
+crons = ["*/5 * * * *"]
 
 # Cloudflare Browser Rendering — headless Chromium binding สำหรับสร้าง PDF (R-13, ตัดสินใจแล้ว
 # 2026-08-10) ไม่ใช่ secret แต่ห้ามประกาศไว้ที่ระดับบนสุด: `wrangler dev` (ธรรมดา ไม่ใส่ --remote/

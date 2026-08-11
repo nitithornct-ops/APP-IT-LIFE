@@ -1,5 +1,6 @@
 import { Bell } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
@@ -13,6 +14,7 @@ import { formatThaiDate } from '../utils/date';
  * ดีไซน์เต็มรูปแบบ (Toast/Sound/Real-time) จะอยู่ใน Phase 5 (Frontend Core)
  */
 export function NotificationBell() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: unread } = useUnreadNotificationCount();
@@ -71,7 +73,13 @@ export function NotificationBell() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => !item.is_read && markRead.mutate(item.id)}
+                onClick={() => {
+                  if (!item.is_read) markRead.mutate(item.id);
+                  if (item.link) {
+                    setOpen(false);
+                    navigate(item.link);
+                  }
+                }}
                 className={`block w-full border-b border-slate-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700 ${
                   item.is_read ? 'text-slate-500' : 'font-medium text-slate-800 dark:text-slate-100'
                 }`}

@@ -23,6 +23,8 @@ export interface Bindings {
   LINE_DEFAULT_TO?: string;
   /** Cloudflare Browser Rendering — declared in wrangler.toml's [browser] block, not a secret. Used for PDF report exports (R-13). */
   MYBROWSER?: BrowserWorker;
+  /** Kill switch for the public no-login ticket report page (routes/publicTickets.ts) — unset/anything but 'false' means enabled. */
+  PUBLIC_TICKET_FORM_ENABLED?: string;
 }
 
 export interface LineUserProfile {

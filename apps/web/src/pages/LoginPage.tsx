@@ -108,6 +108,12 @@ export function LoginPage() {
             ลืมรหัสผ่าน?
           </Link>
         </form>
+
+        <div className="mt-4 border-t border-slate-200 pt-4 text-center dark:border-slate-700">
+          <Link to="/report" className="text-sm text-slate-500 hover:text-blue-600 hover:underline dark:text-slate-400">
+            แจ้งปัญหา IT โดยไม่ต้องเข้าสู่ระบบ →
+          </Link>
+        </div>
       </div>
     </main>
   );

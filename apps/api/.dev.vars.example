@@ -18,3 +18,7 @@ LINE_AUTO_APPROVE_EMPLOYEE_LINK=false
 NOTIFY_LINE_ENABLED=false
 LINE_CHANNEL_ACCESS_TOKEN=
 LINE_DEFAULT_TO=
+
+# Public no-login ticket report page (routes/publicTickets.ts) — always enabled unless set to
+# "false" (ops kill switch to pause public intake without a redeploy, e.g. legacy's limits.enabled).
+PUBLIC_TICKET_FORM_ENABLED=true

@@ -27,6 +27,7 @@ import { notificationsRoute } from './routes/notifications';
 import { permissionOverridesRoute } from './routes/permissionOverrides';
 import { permissionsRoute, rolesRoute } from './routes/roles';
 import { problemsRoute } from './routes/problems';
+import { publicTicketsRoute } from './routes/publicTickets';
 import { reportsRoute } from './routes/reports';
 import { serviceCatalogRoute } from './routes/serviceCatalog';
 import { serviceRequestsRoute } from './routes/serviceRequests';
@@ -104,6 +105,7 @@ app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
 app.route('/api/v1/line', lineRoute);
+app.route('/api/v1/public/tickets', publicTicketsRoute);
 
 app.notFound((c) => c.json(fail(c.get('requestId'), 'NOT_FOUND', 'ไม่พบ endpoint ที่ร้องขอ'), 404));
 
