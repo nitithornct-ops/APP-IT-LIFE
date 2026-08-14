@@ -7,13 +7,23 @@ describe('toBuddhistYear', () => {
   });
 });
 
+/**
+ * ทุกเคสต้องสร้าง input จาก "จุดเวลาสัมบูรณ์" (สตริงลงท้าย Z) เสมอ
+ *
+ * ห้ามใช้ new Date(2026, 7, 6, 9, 6) เพราะตัวสร้างแบบนั้นอ่านค่าตามนาฬิกาของเครื่อง ตัว input
+ * จึงเปลี่ยนไปตาม timezone ของเครื่องที่รัน แล้วเทสต์จะผ่านเฉพาะบนเครื่องที่ตั้งโซนเป็น UTC+7
+ * และล้มบน CI ที่รันด้วย UTC — ซึ่งเป็นความผิดพลาดชนิดเดียวกับบั๊กที่ date.ts ถูกเขียนขึ้นมาแก้
+ * (เทสต์เดิมล้มจริงบน CI ตอนเตรียม go-live 2026-08-14)
+ */
 describe('formatThaiDate', () => {
   it('formats a date with the Thai month name and Buddhist year', () => {
-    expect(formatThaiDate(new Date(2026, 7, 5))).toBe('5 สิงหาคม 2569');
+    // 2026-08-05T03:00Z = 5 ส.ค. 2569 10:00 ตามเวลาไทย
+    expect(formatThaiDate(new Date('2026-08-05T03:00:00.000Z'))).toBe('5 สิงหาคม 2569');
   });
 
   it('substitutes a yyyy token in the pattern instead of appending a duplicate year', () => {
-    const result = formatThaiDate(new Date(2026, 7, 6, 9, 6), 'd MMMM yyyy HH:mm');
+    // 2026-08-06T02:06Z = 6 ส.ค. 2569 09:06 ตามเวลาไทย
+    const result = formatThaiDate(new Date('2026-08-06T02:06:00.000Z'), 'd MMMM yyyy HH:mm');
     expect(result).toBe('6 สิงหาคม 2569 09:06');
     expect(result).not.toContain('2026');
   });
