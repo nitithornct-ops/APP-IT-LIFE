@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowLeftRight,
   BarChart3,
   Boxes,
   Building2,
@@ -7,6 +8,7 @@ import {
   CloudCog,
   ClipboardList,
   FileKey,
+  FilePenLine,
   GitPullRequestArrow,
   GitBranch,
   KeyRound,
@@ -54,8 +56,9 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'ภาพรวม',
     items: [
-      { label: 'หน้าหลัก', path: '/', icon: LayoutDashboard },
-      { label: 'สถานะระบบ', path: '/health', icon: Activity },
+      // route '/' ต้องมี dashboard.view อยู่แล้ว เมนูจึงต้องประกาศให้ตรงกัน ไม่งั้นบาง role กดแล้วเจอ Access Denied
+      { label: 'หน้าหลัก', path: '/', icon: LayoutDashboard, permission: 'dashboard.view' },
+      { label: 'สถานะระบบ', path: '/system-status', icon: Activity },
     ],
   },
   {
@@ -63,12 +66,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'งานของฉัน', path: '/tasks', icon: ListTodo, permission: 'task.view' },
       { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
-      { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
+      { label: 'Service Catalog / คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
       { label: 'Incident', path: '/incidents', icon: Siren, permission: 'incident.view' },
       { label: 'Problem / Known Error', path: '/problems', icon: Bug, permission: 'problem.view' },
       { label: 'Change Management', path: '/changes', icon: GitPullRequestArrow, permission: 'change.view' },
       { label: 'Workflow / งานอนุมัติ', path: '/workflows', icon: GitBranch, permission: 'workflow.view' },
+      { label: 'Form Studio / แบบฟอร์มงาน', path: '/forms', icon: FilePenLine, permission: 'form.view' },
       { label: 'ฐานความรู้', path: '/knowledge', icon: BookOpenCheck, permission: 'knowledge.view' },
     ],
   },
@@ -102,8 +106,9 @@ export const NAV_GROUPS: NavGroup[] = [
     title: 'ทรัพย์สิน IT',
     items: [
       { label: 'ทะเบียนทรัพย์สิน IT', path: '/assets', icon: Boxes, permission: 'asset.view' },
+      { label: 'ยืม / คืน Asset', path: '/asset-borrow', icon: ArrowLeftRight, permission: 'asset.view' },
       {
-        label: 'ทรัพย์สินพนักงาน',
+        label: 'เบิกจ่าย / คืนทรัพย์สินพนักงาน',
         path: '/admin/employee-assignments',
         icon: Laptop2,
         anyPermission: ['employee.manage', 'asset.view'],
@@ -130,7 +135,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Master Data',
         path: '/admin/master-data',
         icon: Tags,
-        anyPermission: ['ticket_category.manage', 'asset_category.manage'],
+        anyPermission: ['ticket_category.manage', 'asset_category.manage', 'access_system.manage'],
       },
       { label: 'Service Catalog', path: '/admin/service-catalog', icon: ShoppingBag, permission: 'service_catalog.manage' },
     ],

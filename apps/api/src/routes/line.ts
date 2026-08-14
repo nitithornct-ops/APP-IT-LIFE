@@ -10,7 +10,9 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, LineUserProfile } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -111,7 +113,7 @@ lineRoute.get('/ticket-categories', async (c) => {
   const reqId = c.get('requestId');
   const admin = createAdminClient(c.env);
   const { data, error } = await admin.from('ticket_categories').select('id, name').eq('status', 'active').order('name');
-  if (error) return c.json(fail(reqId, 'LINE_CATEGORIES_LOAD_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'LINE_CATEGORIES_LOAD_FAILED', error);
   return c.json(ok(reqId, data ?? []));
 });
 
@@ -125,7 +127,7 @@ lineRoute.get(
       const url = await createLineLoginUrl(c.env, c.req.valid('query').returnMode);
       return c.json(ok(reqId, { url }));
     } catch (error) {
-      return c.json(fail(reqId, 'LINE_LOGIN_NOT_CONFIGURED', error instanceof Error ? error.message : 'LINE Login ยังใช้งานไม่ได้'), 400);
+      return dbFailJson(c, 'LINE_LOGIN_NOT_CONFIGURED', error instanceof Error ? error : { message: String(error) }, 'LINE Login ยังใช้งานไม่ได้');
     }
   },
 );
@@ -233,7 +235,7 @@ lineRoute.post(
       .eq('id', lineUser.id)
       .select('*')
       .single();
-    if (error || !updated) return c.json(fail(reqId, 'LINE_LINK_FAILED', error?.message ?? 'ผูกบัญชีไม่สำเร็จ'), 400);
+    if (error || !updated) return dbFailJson(c, 'LINE_LINK_FAILED', error, 'ผูกบัญชีไม่สำเร็จ');
 
     await writeAuditLog(c.env, {
       actorEmail: `LINE:${lineUser.line_user_id}`, action: 'LINE_LINK_EMPLOYEE', module: 'ticket',
@@ -273,6 +275,13 @@ lineRoute.post(
     const responseSlaHours = Number(category.response_sla_hours ?? 4);
     const resolutionSlaHours = Number(category.resolution_sla_hours ?? category.sla_hours ?? 24);
     const now = new Date();
+    const { data: slaSettingRows } = await admin
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['SLA_BUSINESS_START', 'SLA_BUSINESS_END', 'SLA_BUSINESS_DAYS', 'SLA_HOLIDAYS']);
+    const businessCalendar = parseTicketBusinessCalendar(
+      Object.fromEntries((slaSettingRows ?? []).map((row) => [row.key, row.value])),
+    );
 
     const { data: ticket, error } = await admin
       .from('tickets')
@@ -283,8 +292,8 @@ lineRoute.post(
         priority,
         response_sla_hours: responseSlaHours,
         resolution_sla_hours: resolutionSlaHours,
-        response_due_at: new Date(now.getTime() + responseSlaHours * 3600_000).toISOString(),
-        due_at: new Date(now.getTime() + resolutionSlaHours * 3600_000).toISOString(),
+        response_due_at: addTicketBusinessHours(now, responseSlaHours, businessCalendar).toISOString(),
+        due_at: addTicketBusinessHours(now, resolutionSlaHours, businessCalendar).toISOString(),
         description: body.description,
         is_security: body.isSecurity ?? category.is_security_default ?? false,
         status: 'ใหม่',
@@ -294,7 +303,7 @@ lineRoute.post(
       })
       .select()
       .single();
-    if (error || !ticket) return c.json(fail(reqId, 'TICKET_CREATE_FAILED', error?.message ?? 'สร้าง Ticket ไม่สำเร็จ'), 400);
+    if (error || !ticket) return dbFailJson(c, 'TICKET_CREATE_FAILED', error, 'สร้าง Ticket ไม่สำเร็จ');
 
     await admin.from('ticket_worklogs').insert({
       ticket_id: ticket.id, action: 'เปิด Ticket', status_to: 'ใหม่', detail: 'สร้างผ่าน LINE',
@@ -304,7 +313,7 @@ lineRoute.post(
       actorEmail: `LINE:${user.line_user_id}`, action: 'CREATE', module: 'ticket', targetTable: 'tickets',
       targetId: ticket.id, detail: { title: body.title, categoryId: body.categoryId, channel: 'line' }, requestId: reqId,
     });
-    await notifyTicketTeam(c.env, `Ticket ใหม่จาก LINE: ${ticket.title} (${ticket.id})`);
+    await notifyTicketTeam(c.env, `Ticket ใหม่จาก LINE: ${ticket.title} (${ticket.ticket_no})`);
 
     return c.json(ok(reqId, ticket), 201);
   },
@@ -314,13 +323,16 @@ lineRoute.get('/tickets', requireActiveLineSession, async (c) => {
   const reqId = c.get('requestId');
   const { user } = c.get('lineSession')!;
   const admin = createAdminClient(c.env);
-  const { data, error } = await admin
+  let ticketQuery = admin
     .from('tickets')
-    .select('id, title, priority, status, created_at')
-    .eq('requester_line_user_id', user.id)
+    .select('id, ticket_no, title, priority, status, created_at, category:ticket_categories(name)')
     .order('created_at', { ascending: false })
     .limit(50);
-  if (error) return c.json(fail(reqId, 'LINE_TICKET_LIST_FAILED', error.message), 400);
+  ticketQuery = user.linked_user_id
+    ? ticketQuery.or(`requester_line_user_id.eq.${user.id},requester_id.eq.${user.linked_user_id}`)
+    : ticketQuery.eq('requester_line_user_id', user.id);
+  const { data, error } = await ticketQuery;
+  if (error) return dbFailJson(c, 'LINE_TICKET_LIST_FAILED', error);
   return c.json(ok(reqId, data ?? []));
 });
 
@@ -333,7 +345,9 @@ lineRoute.get(
     const { user } = c.get('lineSession')!;
     const admin = createAdminClient(c.env);
     const { data: ticket } = await admin.from('tickets').select('*, category:ticket_categories(name)').eq('id', c.req.param('id')).maybeSingle();
-    if (!ticket || ticket.requester_line_user_id !== user.id) {
+    const belongsToLineUser = ticket?.requester_line_user_id === user.id
+      || (Boolean(user.linked_user_id) && ticket?.requester_id === user.linked_user_id);
+    if (!ticket || !belongsToLineUser) {
       return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
     }
     const { data: worklogs } = await admin
@@ -351,8 +365,10 @@ lineRoute.post(
     const reqId = c.get('requestId');
     const { user } = c.get('lineSession')!;
     const admin = createAdminClient(c.env);
-    const { data: ticket } = await admin.from('tickets').select('id, status, rating, requester_line_user_id').eq('id', c.req.param('id')).maybeSingle();
-    if (!ticket || ticket.requester_line_user_id !== user.id) {
+    const { data: ticket } = await admin.from('tickets').select('id, status, rating, requester_id, requester_line_user_id').eq('id', c.req.param('id')).maybeSingle();
+    const belongsToLineUser = ticket?.requester_line_user_id === user.id
+      || (Boolean(user.linked_user_id) && ticket?.requester_id === user.linked_user_id);
+    if (!ticket || !belongsToLineUser) {
       return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
     }
     if (!['เสร็จสิ้น', 'ปิดงาน'].includes(ticket.status) || ticket.rating != null) {
@@ -360,7 +376,7 @@ lineRoute.post(
     }
     const { rating, comment } = c.req.valid('json');
     const { error } = await admin.from('tickets').update({ rating, feedback: comment ?? null, feedback_at: new Date().toISOString() }).eq('id', ticket.id);
-    if (error) return c.json(fail(reqId, 'LINE_TICKET_FEEDBACK_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'LINE_TICKET_FEEDBACK_FAILED', error);
     return c.json(ok(reqId, { submitted: true }));
   },
 );
@@ -378,7 +394,7 @@ lineRoute.get(
     let query = c.get('supabase').from('line_users').select('*').order('last_login_at', { ascending: false }).limit(200);
     if (status) query = query.eq('link_status', status);
     const { data, error } = await query;
-    if (error) return c.json(fail(reqId, 'LINE_ADMIN_LIST_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'LINE_ADMIN_LIST_FAILED', error);
     return c.json(ok(reqId, data ?? []));
   },
 );
@@ -391,7 +407,7 @@ lineRoute.post(
     const { status } = c.req.valid('json');
     const admin = createAdminClient(c.env);
     const { data: updated, error } = await admin.from('line_users').update({ link_status: status }).eq('id', c.req.param('id')).select('*').maybeSingle();
-    if (error) return c.json(fail(reqId, 'LINE_ADMIN_UPDATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'LINE_ADMIN_UPDATE_FAILED', error);
     if (!updated) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
     await writeAuditLog(c.env, {
       actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'LINE_ADMIN_UPDATE_LINK_STATUS',

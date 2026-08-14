@@ -1,13 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Waypoints, X } from 'lucide-react';
+import { TablePagination } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
+import { AlertTriangle, CheckCircle2, GitBranch, Loader2, Network, Plus, Waypoints, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
@@ -179,13 +181,14 @@ export function CiRelationshipsPage() {
   const [status, setStatus] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const nodeOptionsQuery = useQuery({ queryKey: ['cmdb', 'node-options'], queryFn: () => apiFetch<CiNodeOption[]>('/api/v1/cmdb/relationships/node-options') });
   const relationshipsQuery = useQuery({
-    queryKey: ['cmdb', 'relationships', page, relationshipType, status],
+    queryKey: ['cmdb', 'relationships', page, pageSize, relationshipType, status],
     queryFn: () =>
       apiFetch<PaginatedResult<CiRelationship>>(
-        `/api/v1/cmdb/relationships?page=${page}&pageSize=20${relationshipType ? `&relationshipType=${encodeURIComponent(relationshipType)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`,
+        `/api/v1/cmdb/relationships?page=${page}&pageSize=${pageSize}${relationshipType ? `&relationshipType=${encodeURIComponent(relationshipType)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`,
       ),
   });
 
@@ -206,6 +209,13 @@ export function CiRelationshipsPage() {
         </RequirePermission>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<GitBranch className="h-5 w-5" />} label="ความสัมพันธ์ทั้งหมด" value={relationshipsQuery.data?.pagination.totalItems ?? 0} tone="primary" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Active (หน้านี้)" value={items.filter((item) => item.status === 'Active').length} tone="teal" />
+        <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="High / Critical (หน้านี้)" value={items.filter((item) => item.impact_level === 'High' || item.impact_level === 'Critical').length} tone="amber" />
+        <StatCard icon={<Network className="h-5 w-5" />} label="โหนดที่เลือกได้" value={nodeOptionsQuery.data?.length ?? 0} tone="gray" />
+      </div>
+
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <span>รายการความสัมพันธ์</span>
@@ -221,7 +231,7 @@ export function CiRelationshipsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && nodeOptionsQuery.data && <CreateRelationshipForm nodeOptions={nodeOptionsQuery.data} onClose={() => setShowCreate(false)} />}
+          {showCreate && nodeOptionsQuery.data && <FormModal title="เพิ่มความสัมพันธ์ CI" description="เชื่อมโยงต้นทาง ปลายทาง และชนิดความสัมพันธ์" size="lg" onClose={() => setShowCreate(false)}><CreateRelationshipForm nodeOptions={nodeOptionsQuery.data} onClose={() => setShowCreate(false)} /></FormModal>}
 
           {relationshipsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -259,24 +269,7 @@ export function CiRelationshipsPage() {
             ))}
           </div>
 
-          {relationshipsQuery.data && relationshipsQuery.data.pagination.totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-center gap-3 text-sm">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600">
-                ก่อนหน้า
-              </button>
-              <span className="text-slate-500 dark:text-slate-400">
-                หน้า {relationshipsQuery.data.pagination.page} / {relationshipsQuery.data.pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= relationshipsQuery.data.pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ถัดไป
-              </button>
-            </div>
-          )}
+          {relationshipsQuery.data && <TablePagination page={relationshipsQuery.data.pagination.page} pageSize={pageSize} totalItems={relationshipsQuery.data.pagination.totalItems} totalPages={relationshipsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
     </div>

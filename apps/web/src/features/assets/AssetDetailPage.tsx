@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, QrCode } from 'lucide-react';
@@ -9,8 +10,9 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Modal } from '../../components/ui/Modal';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import type { AssetCategory, Department, Employee, PaginatedResult } from '../../types/admin';
+import type { AssetCategory, Department, EmployeeOption } from '../../types/admin';
 import type { AssetDetail } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
@@ -118,7 +120,7 @@ function EditAssetForm({
     <form
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       data-testid="asset-edit-form"
-      className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40"
+      className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-3"
       noValidate
     >
       <div className="sm:col-span-2">
@@ -203,15 +205,15 @@ function EditAssetForm({
 
       {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
 
-      <div className="flex gap-2 sm:col-span-3">
-        <Button type="submit" size="sm" isLoading={isSubmitting} data-testid="asset-edit-save">บันทึกการแก้ไข</Button>
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>ยกเลิก</Button>
+      <div className="-mx-5 -mb-5 mt-2 flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:col-span-3 dark:border-slate-700 dark:bg-slate-900/40">
+        <Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button>
+        <Button type="submit" size="sm" isLoading={isSubmitting || mutation.isPending} data-testid="asset-edit-save">บันทึกการแก้ไข</Button>
       </div>
     </form>
   );
 }
 
-function ActionPanel({ assetId, employees, departments, vendors, onDone }: { assetId: string; employees: Employee[]; departments: Department[]; vendors: ContractVendorRef[]; onDone: () => void }) {
+function ActionPanel({ assetId, employees, departments, vendors, onDone }: { assetId: string; employees: EmployeeOption[]; departments: Department[]; vendors: ContractVendorRef[]; onDone: () => void }) {
   const [mode, setMode] = useState<ActionMode>(null);
   const assign = useAssetMutation(assetId, '/assign', ['employee-assignments']);
   const returnMut = useAssetMutation(assetId, '/return');
@@ -229,23 +231,34 @@ function ActionPanel({ assetId, employees, departments, vendors, onDone }: { ass
     { key: 'verify', label: 'ตรวจนับ (Stocktake)', permission: 'asset.update' },
   ];
 
-  const done = (mutation: { isSuccess: boolean }) => {
-    if (mutation.isSuccess) {
-      setMode(null);
-      onDone();
-    }
+  const done = () => {
+    setMode(null);
+    onDone();
   };
 
+  const actionTitle: Record<Exclude<ActionMode, null>, string> = {
+    assign: 'ยืม / มอบหมายทรัพย์สิน',
+    return: 'รับคืนทรัพย์สิน',
+    transfer: 'โอนย้ายทรัพย์สิน',
+    'repair-send': 'ส่งทรัพย์สินซ่อม',
+    'repair-return': 'รับคืนทรัพย์สินจากซ่อม',
+    verify: 'ตรวจนับทรัพย์สิน (Stocktake)',
+  };
+
+  const actionPending = assign.isPending || returnMut.isPending || transfer.isPending || repairSend.isPending || repairReturn.isPending || verify.isPending;
+
   return (
-    <Card>
-      <CardHeader>ดำเนินการทรัพย์สิน</CardHeader>
-      <CardBody>
-        <div className="mb-3 flex flex-wrap gap-2">
+    <>
+      <Card>
+        <CardHeader>ดำเนินการทรัพย์สิน</CardHeader>
+        <CardBody>
+          <div className="flex flex-wrap gap-2">
           {tabs.map((tab) => (
             <RequirePermission key={tab.key} permission={tab.permission}>
               <button
                 type="button"
                 data-testid={`asset-action-${tab.key}`}
+                aria-haspopup="dialog"
                 onClick={() => setMode(mode === tab.key ? null : tab.key)}
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${mode === tab.key ? 'bg-primary-700 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
               >
@@ -253,44 +266,51 @@ function ActionPanel({ assetId, employees, departments, vendors, onDone }: { ass
               </button>
             </RequirePermission>
           ))}
-        </div>
+          </div>
+        </CardBody>
+      </Card>
 
-        {mode === 'assign' && (
-          <AssignForm
-            employees={employees}
-            departments={departments}
-            onSubmit={(v) => assign.mutate(v, { onSuccess: () => done({ isSuccess: true }) })}
-            isLoading={assign.isPending}
-            error={assign.error instanceof ApiError ? assign.error.message : null}
-          />
-        )}
-        {mode === 'return' && (
-          <ReturnForm onSubmit={(v) => returnMut.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={returnMut.isPending} error={returnMut.error instanceof ApiError ? returnMut.error.message : null} />
-        )}
-        {mode === 'transfer' && (
-          <TransferForm
-            employees={employees}
-            departments={departments}
-            onSubmit={(v) => transfer.mutate(v, { onSuccess: () => done({ isSuccess: true }) })}
-            isLoading={transfer.isPending}
-            error={transfer.error instanceof ApiError ? transfer.error.message : null}
-          />
-        )}
-        {mode === 'repair-send' && (
-          <RepairSendForm vendors={vendors} onSubmit={(v) => repairSend.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={repairSend.isPending} error={repairSend.error instanceof ApiError ? repairSend.error.message : null} />
-        )}
-        {mode === 'repair-return' && (
-          <RepairReturnForm onSubmit={(v) => repairReturn.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={repairReturn.isPending} error={repairReturn.error instanceof ApiError ? repairReturn.error.message : null} />
-        )}
-        {mode === 'verify' && (
-          <VerifyForm onSubmit={(v) => verify.mutate(v, { onSuccess: () => done({ isSuccess: true }) })} isLoading={verify.isPending} error={verify.error instanceof ApiError ? verify.error.message : null} />
-        )}
-      </CardBody>
-    </Card>
+      {mode && (
+        <Modal title={actionTitle[mode]} size="lg" closeDisabled={actionPending} onClose={() => setMode(null)} testId={`asset-action-dialog-${mode}`}>
+          <div className="p-5">
+            {mode === 'assign' && (
+              <AssignForm
+                employees={employees}
+                departments={departments}
+                onSubmit={(v) => assign.mutate(v, { onSuccess: done })}
+                isLoading={assign.isPending}
+                error={assign.error instanceof ApiError ? assign.error.message : null}
+              />
+            )}
+            {mode === 'return' && (
+              <ReturnForm onSubmit={(v) => returnMut.mutate(v, { onSuccess: done })} isLoading={returnMut.isPending} error={returnMut.error instanceof ApiError ? returnMut.error.message : null} />
+            )}
+            {mode === 'transfer' && (
+              <TransferForm
+                employees={employees}
+                departments={departments}
+                onSubmit={(v) => transfer.mutate(v, { onSuccess: done })}
+                isLoading={transfer.isPending}
+                error={transfer.error instanceof ApiError ? transfer.error.message : null}
+              />
+            )}
+            {mode === 'repair-send' && (
+              <RepairSendForm vendors={vendors} onSubmit={(v) => repairSend.mutate(v, { onSuccess: done })} isLoading={repairSend.isPending} error={repairSend.error instanceof ApiError ? repairSend.error.message : null} />
+            )}
+            {mode === 'repair-return' && (
+              <RepairReturnForm onSubmit={(v) => repairReturn.mutate(v, { onSuccess: done })} isLoading={repairReturn.isPending} error={repairReturn.error instanceof ApiError ? repairReturn.error.message : null} />
+            )}
+            {mode === 'verify' && (
+              <VerifyForm onSubmit={(v) => verify.mutate(v, { onSuccess: done })} isLoading={verify.isPending} error={verify.error instanceof ApiError ? verify.error.message : null} />
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
-function AssignForm({ employees, departments, onSubmit, isLoading, error }: { employees: Employee[]; departments: Department[]; onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
+function AssignForm({ employees, departments, onSubmit, isLoading, error }: { employees: EmployeeOption[]; departments: Department[]; onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
   const [toEmployeeId, setToEmployeeId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [location, setLocation] = useState('');
@@ -329,7 +349,7 @@ function AssignForm({ employees, departments, onSubmit, isLoading, error }: { em
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button
           size="sm"
           isLoading={isLoading}
@@ -363,7 +383,7 @@ function ReturnForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button size="sm" isLoading={isLoading} data-testid="asset-return-submit" onClick={() => onSubmit({ location: location || undefined, condition: condition || undefined, notes: notes || undefined })}>
           บันทึกการคืน
         </Button>
@@ -372,7 +392,7 @@ function ReturnForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
   );
 }
 
-function TransferForm({ employees, departments, onSubmit, isLoading, error }: { employees: Employee[]; departments: Department[]; onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
+function TransferForm({ employees, departments, onSubmit, isLoading, error }: { employees: EmployeeOption[]; departments: Department[]; onSubmit: (v: Record<string, unknown>) => void; isLoading: boolean; error: string | null }) {
   const [toEmployeeId, setToEmployeeId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [location, setLocation] = useState('');
@@ -411,7 +431,7 @@ function TransferForm({ employees, departments, onSubmit, isLoading, error }: { 
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button
           size="sm"
           isLoading={isLoading}
@@ -447,7 +467,7 @@ function RepairSendForm({ vendors, onSubmit, isLoading, error }: { vendors: Cont
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button size="sm" isLoading={isLoading} data-testid="asset-repair-send-submit" onClick={() => onSubmit({ vendorId: vendorId || undefined, vendorName: vendorName || undefined, location: location || undefined, notes: notes || undefined })}>
           บันทึกส่งซ่อม
         </Button>
@@ -475,7 +495,7 @@ function RepairReturnForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button size="sm" isLoading={isLoading} data-testid="asset-repair-return-submit" onClick={() => onSubmit({ location: location || undefined, condition: condition || undefined, notes: notes || undefined })}>
           บันทึกรับคืนจากซ่อม
         </Button>
@@ -507,7 +527,7 @@ function VerifyForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
         <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </div>
       {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
-      <div className="sm:col-span-2">
+      <div className="flex justify-end sm:col-span-2">
         <Button size="sm" isLoading={isLoading} data-testid="asset-verify-submit" onClick={() => onSubmit({ result, location: location || undefined, note: note || undefined })}>
           บันทึกผลตรวจนับ
         </Button>
@@ -529,7 +549,7 @@ export function AssetDetailPage() {
     enabled: Boolean(id),
   });
   const categoriesQuery = useQuery({ queryKey: ['admin', 'asset-categories'], queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories') });
-  const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
+  const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
@@ -573,15 +593,24 @@ export function AssetDetailPage() {
         <div className="flex items-center gap-2">
           <Badge variant={assetStatusTone[asset.status]}>{asset.status}</Badge>
           <RequirePermission permission="asset.update">
-            <Button size="sm" variant="outline" onClick={() => setShowEdit((v) => !v)} data-testid="asset-detail-edit-toggle">
+            <Button size="sm" variant="outline" onClick={() => setShowEdit(true)} data-testid="asset-detail-edit-toggle" aria-haspopup="dialog">
               แก้ไข
             </Button>
           </RequirePermission>
         </div>
       </div>
 
-      {showEdit && categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
-        <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
+      {showEdit && (
+        <Modal title={`แก้ไขทรัพย์สิน: ${asset.name}`} size="xl" onClose={() => setShowEdit(false)} testId="asset-edit-dialog">
+          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data ? (
+            <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
+          ) : (
+            <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              กำลังเตรียมแบบฟอร์ม...
+            </div>
+          )}
+        </Modal>
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -655,7 +684,7 @@ export function AssetDetailPage() {
 
       <ActionPanel
         assetId={asset.id}
-        employees={employeesQuery.data?.items ?? []}
+        employees={employeesQuery.data ?? []}
         departments={departmentsQuery.data ?? []}
         vendors={vendorOptionsQuery.data ?? []}
         onDone={() => void queryClient.invalidateQueries({ queryKey: ['asset', id] })}
@@ -667,7 +696,7 @@ export function AssetDetailPage() {
           {movements.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีประวัติ</p>}
           {movements.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">วันที่</th>
@@ -688,7 +717,7 @@ export function AssetDetailPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
         </CardBody>

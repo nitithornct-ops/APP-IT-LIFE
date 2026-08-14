@@ -1,8 +1,10 @@
+import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, MinusCircle, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, Layers3, Loader2, MinusCircle, ShieldCheck, XCircle } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Permission, Role, RolePermissionEntry } from '../../types/admin';
+import { StatCard } from '../../components/ui/Card';
 
 type Effect = 'allow' | 'deny' | 'none';
 
@@ -136,10 +138,17 @@ export function PermissionMatrixPage() {
         (บทบาท super_admin มีสิทธิ์เต็มเสมอโดยออกแบบ แก้ไขไม่ได้)
       </p>
 
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="บทบาท" value={roles.length} tone="primary" />
+        <StatCard icon={<KeyRound className="h-5 w-5" />} label="สิทธิ์ทั้งหมด" value={permissions.length} tone="teal" />
+        <StatCard icon={<Layers3 className="h-5 w-5" />} label="โมดูลสิทธิ์" value={permissionsByModule.size} tone="amber" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="บทบาทระบบ" value={roles.filter((role) => role.is_system).length} tone="gray" />
+      </div>
+
       {saveError && <p className="mb-3 text-sm text-red-600">{saveError}</p>}
 
       <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-        <table className="w-full border-collapse text-sm">
+        <DataTable className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800">
               <th className="sticky left-0 bg-slate-50 px-4 py-2 text-left text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -195,7 +204,7 @@ export function PermissionMatrixPage() {
               </Fragment>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       </div>
     </div>
   );

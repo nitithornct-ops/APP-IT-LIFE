@@ -39,6 +39,8 @@ export type Ref = (
   | { kind: 'byRoleKey'; roleKey: string }
   | { kind: 'byDepartmentName'; name: string }
   | { kind: 'byPositionName'; name: string }
+  | { kind: 'byTicketCategoryName'; name: string }
+  | { kind: 'byLineUserProfile'; lineUserId: string }
 ) & {
   /** When the target column is nullable and an unresolved lookup should leave it null instead of failing the whole row. */
   optional?: boolean;
@@ -198,6 +200,10 @@ function isSoftDeleted(row: LegacyRow): boolean {
 function historicalCreatedAt(row: LegacyRow): { created_at?: string } {
   const timestamp = optText(row, 'Timestamp');
   return timestamp ? { created_at: timestamp } : {};
+}
+function historicalUpdatedAt(row: LegacyRow): { updated_at?: string } {
+  const timestamp = optText(row, 'LastUpdatedAt') ?? optText(row, 'Timestamp');
+  return timestamp ? { updated_at: timestamp } : {};
 }
 /** jsonb columns reject non-JSON text outright; legacy free text becomes a valid JSON string instead of failing the insert. */
 function toJsonbText(raw: string): string {
@@ -503,18 +509,32 @@ function transformPersonalTasks(rows: LegacyRow[], warnings: string[]): SqlOp[] 
 }
 
 function transformTicketWorklogs(rows: LegacyRow[]): SqlOp[] {
-  return rows.map((row) => ({
-    table: 'ticket_worklogs', legacySource: 'Ticket_Worklogs', legacyId: text(row, 'WorklogID'),
-    values: {
-      action: text(row, 'Action') || 'update', detail: optText(row, 'Detail'), status_from: optText(row, 'StatusFrom'),
-      status_to: optText(row, 'StatusTo'), minutes_spent: numOrNull(text(row, 'MinutesSpent')), is_public: text(row, 'IsPublic') === '' ? true : toBool(text(row, 'IsPublic')),
-      ...historicalCreatedAt(row),
-    },
-    refs: {
-      ticket_id: { kind: 'byLegacyId', table: 'tickets', legacySource: 'Tickets', legacyId: text(row, 'TicketID') },
-      actor_id: { kind: 'byEmail', table: 'profiles', email: text(row, 'ActorEmail') },
-    },
-  }));
+  return rows.map((row) => {
+    const actorEmail = text(row, 'ActorEmail');
+    const actorLineUserId = text(row, 'ActorLineUserID');
+    return {
+      table: 'ticket_worklogs', legacySource: 'Ticket_Worklogs', legacyId: text(row, 'WorklogID'),
+      values: {
+        action: text(row, 'Action') || 'update', detail: optText(row, 'Detail'), status_from: optText(row, 'StatusFrom'),
+        status_to: optText(row, 'StatusTo'), minutes_spent: numOrNull(text(row, 'MinutesSpent')),
+        attachment_url_legacy: optText(row, 'AttachmentURL'),
+        is_public: text(row, 'IsPublic') === '' ? true : toBool(text(row, 'IsPublic')),
+        actor_label: optText(row, 'ActorName') ?? (actorEmail || null), actor_email_snapshot: actorEmail || null,
+        actor_identity_type: optText(row, 'ActorIdentityType'),
+        metadata: JSON.stringify({
+          legacyCreatedBy: optText(row, 'CreatedBy'),
+          legacyLastUpdatedBy: optText(row, 'LastUpdatedBy'),
+        }),
+        ...historicalCreatedAt(row),
+        ...historicalUpdatedAt(row),
+      },
+      refs: {
+        ticket_id: { kind: 'byLegacyId', table: 'tickets', legacySource: 'Tickets', legacyId: text(row, 'TicketID') },
+        ...(actorEmail ? { actor_id: { kind: 'byEmail' as const, table: 'profiles' as const, email: actorEmail, optional: true } } : {}),
+        ...(actorLineUserId ? { actor_line_user_id: { kind: 'byLegacyId' as const, table: 'line_users', legacySource: 'LineUsers', legacyId: actorLineUserId, optional: true } } : {}),
+      },
+    };
+  });
 }
 
 function transformRecoveryTests(rows: LegacyRow[], warnings: string[]): SqlOp[] {
@@ -578,13 +598,28 @@ function transformWorkflowSteps(rows: LegacyRow[], warnings: string[]): SqlOp[] 
 function transformTickets(rows: LegacyRow[], warnings: string[]): SqlOp[] {
   return rows.map((row) => {
     const context = `Tickets ${text(row, 'TicketID')}`;
+    const requesterEmail = text(row, 'RequesterEmail');
+    const requesterLineUserId = text(row, 'RequesterLineUserID');
+    const categoryName = text(row, 'Category');
+    const sourceChannelRaw = text(row, 'SourceChannel').toUpperCase();
+    const sourceChannel = sourceChannelRaw.includes('LINE') || requesterLineUserId
+      ? 'line'
+      : sourceChannelRaw.includes('PUBLIC') || (!requesterEmail && text(row, 'PublicTokenHash'))
+        ? 'guest'
+        : 'web';
     return {
       table: 'tickets', legacySource: 'Tickets', legacyId: text(row, 'TicketID'),
       values: {
-        title: text(row, 'Title'), requester_phone: optText(row, 'RequesterPhone'), location: optText(row, 'Location'),
+        ticket_no: text(row, 'TicketID'), title: text(row, 'Title'), requester_phone: optText(row, 'RequesterPhone'),
+        requester_email_snapshot: requesterEmail || null, requester_name_snapshot: optText(row, 'RequesterName'),
+        department_name_snapshot: optText(row, 'Department'), location: optText(row, 'Location'),
+        asset_name_snapshot: optText(row, 'AssetName'), assignee_name_snapshot: optText(row, 'Assignee'),
+        guest_name: sourceChannel === 'guest' ? optText(row, 'RequesterName') : null,
+        guest_department: sourceChannel === 'guest' ? optText(row, 'Department') : null,
         priority: mapEnumExact(text(row, 'Priority') || 'ปานกลาง', ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'], 'ปานกลาง', warnings, context),
-        response_sla_hours: numOrNull(text(row, 'ResponseSLAHours')) ?? numOrNull(text(row, 'SLAHours')),
-        resolution_sla_hours: numOrNull(text(row, 'ResolutionSLAHours')), response_due_at: optText(row, 'ResponseDueAt'), due_at: optText(row, 'DueAt'),
+        response_sla_hours: numOrNull(text(row, 'ResponseSLAHours')),
+        resolution_sla_hours: numOrNull(text(row, 'ResolutionSLAHours')) ?? numOrNull(text(row, 'SLAHours')),
+        response_due_at: optText(row, 'ResponseDueAt'), due_at: optText(row, 'DueAt'),
         description: text(row, 'Description') || text(row, 'Title'), is_security: toBool(text(row, 'IsSecurity')),
         status: mapEnumExact(text(row, 'Status') || 'ใหม่', [
           'ใหม่', 'รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน',
@@ -593,13 +628,34 @@ function transformTickets(rows: LegacyRow[], warnings: string[]): SqlOp[] {
         acknowledged_at: optText(row, 'AcknowledgedAt'), resolved_at: optText(row, 'ResolvedAt'), resolution: optText(row, 'Resolution'),
         closed_at: optText(row, 'CloseDate'), rating: numOrNull(text(row, 'Rating')), feedback: optText(row, 'Feedback'),
         feedback_at: optText(row, 'FeedbackAt'), outsource_name: optText(row, 'OutsourceName'), outsource_issue_no: optText(row, 'OutsourceIssueNo'),
-        outsource_sent_at: optText(row, 'OutsourceSentAt'), notes: optText(row, 'Notes'), reopen_count: numOrNull(text(row, 'ReopenCount')) ?? 0,
+        outsource_sent_at: optText(row, 'OutsourceSentAt'), notes: optText(row, 'Notes'),
+        evidence_link_legacy: optText(row, 'EvidenceLink'), public_tracking_token_hash: optText(row, 'PublicTokenHash'),
+        requester_identity_type: optText(row, 'RequesterIdentityType'), source_channel: sourceChannel,
+        sla_paused_at: optText(row, 'SLAPausedAt'),
+        legacy_sla_paused_ms: numOrNull(text(row, 'SLAPausedMs')),
+        sla_paused_minutes: numOrNull(text(row, 'SLAPausedBusinessMinutes')) ?? 0,
+        reopen_count: numOrNull(text(row, 'ReopenCount')) ?? 0,
+        idempotency_key: optText(row, 'IdempotencyKey'),
+        legacy_attachment_ids_json: text(row, 'AttachmentIDsJSON') ? toJsonbOrEmptyObject(text(row, 'AttachmentIDsJSON')) : null,
         ...historicalCreatedAt(row),
+        ...historicalUpdatedAt(row),
       },
       refs: {
-        requester_id: { kind: 'byEmail', table: 'profiles', email: text(row, 'RequesterEmail') },
-        ...(text(row, 'Category') ? { category_id: { kind: 'byLegacyId', table: 'ticket_categories', legacySource: 'TicketCategories', legacyId: text(row, 'Category'), optional: true } } : {}),
+        ...(requesterEmail
+          ? { requester_id: { kind: 'byEmail' as const, table: 'profiles' as const, email: requesterEmail } }
+          : requesterLineUserId
+            ? { requester_id: { kind: 'byLineUserProfile' as const, lineUserId: requesterLineUserId } }
+            : {}),
+        ...(categoryName ? { category_id: { kind: 'byTicketCategoryName' as const, name: categoryName, optional: true } } : {}),
+        ...(text(row, 'Department') ? { department_id: { kind: 'byDepartmentName' as const, name: text(row, 'Department'), optional: true } } : {}),
+        ...(text(row, 'AssetID') ? { asset_id: { kind: 'byLegacyId' as const, table: 'assets', legacySource: 'AssetRegister', legacyId: text(row, 'AssetID'), optional: true } } : {}),
         ...(text(row, 'Assignee') ? { assignee_id: { kind: 'byEmail', table: 'profiles', email: text(row, 'Assignee'), optional: true } } : {}),
+        ...(text(row, 'IncidentID') ? { incident_id: { kind: 'byLegacyId' as const, table: 'incidents', legacySource: 'Incidents', legacyId: text(row, 'IncidentID'), optional: true } } : {}),
+        ...(requesterLineUserId ? { requester_line_user_id: { kind: 'byLegacyId' as const, table: 'line_users', legacySource: 'LineUsers', legacyId: requesterLineUserId, optional: true } } : {}),
+        ...(text(row, 'OutsourceVendorID') ? { outsource_vendor_id: { kind: 'byLegacyId' as const, table: 'vendors', legacySource: 'VendorRegister', legacyId: text(row, 'OutsourceVendorID'), optional: true } } : {}),
+        ...(text(row, 'SourceServiceRequestID') ? { source_service_request_id: { kind: 'byLegacyId' as const, table: 'service_requests', legacySource: 'ServiceRequests', legacyId: text(row, 'SourceServiceRequestID'), optional: true } } : {}),
+        ...(text(row, 'CreatedBy') ? { created_by: { kind: 'byEmail' as const, table: 'profiles' as const, email: text(row, 'CreatedBy'), optional: true } } : {}),
+        ...(text(row, 'LastUpdatedBy') ? { updated_by: { kind: 'byEmail' as const, table: 'profiles' as const, email: text(row, 'LastUpdatedBy'), optional: true } } : {}),
       },
     };
   });

@@ -1,3 +1,4 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -52,7 +53,6 @@ import { TASK_CATEGORIES, TASK_PRIORITIES, TASK_STATUSES, TASK_TYPES, priorityTo
 type View = 'list' | 'kanban' | 'calendar' | 'table';
 type Scope = 'focus' | 'today' | 'todayOnly' | 'all' | 'inProgress' | 'calendar' | 'recurring' | 'completed' | 'overdue' | 'dueSoon' | 'next7';
 const VIEW_STORAGE_KEY = 'itlife-my-tasks-view';
-const PAGE_SIZE = 12;
 
 const quickAddSchema = z.object({
   title: z.string().trim().min(1, 'กรุณาระบุชื่องาน'),
@@ -267,6 +267,7 @@ export function TasksPage() {
   const [dueTo, setDueTo] = useState(() => searchParams.get('dueTo') ?? '');
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get('page')) || 1));
+  const [pageSize, setPageSize] = useState(10);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -335,9 +336,9 @@ export function TasksPage() {
     });
   }, [category, debouncedSearch, dueFrom, dueTo, priority, scope, status, taskType, tasks, today]);
 
-  const pageCount = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const pagedTasks = filteredTasks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedTasks = filteredTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const dashboard = dashboardQuery.data;
   const summary = dashboard?.summary ?? {
     open: openTasks.length,
@@ -405,7 +406,7 @@ export function TasksPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] space-y-3">
+    <div className="w-full space-y-3">
       <header className="relative overflow-hidden rounded-lg bg-gradient-to-r from-[#162b63] via-[#30339b] to-primary-600 px-5 py-5 text-white shadow-elevated sm:px-7">
         <div className="absolute right-0 top-0 h-full w-40 skew-x-[-14deg] bg-white/10" aria-hidden="true" />
         <div className="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -566,23 +567,15 @@ export function TasksPage() {
 
           {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'table' && (
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
-              <table className="w-full min-w-[850px] text-left text-xs">
+              <DataTable pagination={false} className="w-full min-w-[850px] text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">งาน</th><th className="px-3 py-3">ประเภท</th><th className="px-3 py-3">ความสำคัญ</th><th className="px-3 py-3">ครบกำหนด</th><th className="px-3 py-3">ความคืบหน้า</th><th className="px-3 py-3">สถานะ</th><th className="px-3 py-3">จัดการ</th></tr></thead>
                 <tbody>{pagedTasks.map((task) => <tr key={task.id} onClick={() => setSelectedTaskId(task.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-slate-400">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} pending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setSelectedTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} /></td></tr>)}</tbody>
-              </table>
+              </DataTable>
               <div className="border-t border-slate-100 px-4 py-3 text-right text-xs text-slate-400 dark:border-slate-700">แสดง {filteredTasks.length} จาก {tasks.length} งาน</div>
             </div>
           )}
 
-          {tasksQuery.data && scope !== 'today' && filteredTasks.length > PAGE_SIZE && (view === 'list' || view === 'table') && (
-            <nav className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs shadow-card dark:border-slate-700 dark:bg-slate-800" aria-label="แบ่งหน้ารายการงาน">
-              <span className="text-slate-500 dark:text-slate-400">หน้า {currentPage} จาก {pageCount} · ทั้งหมด {filteredTasks.length} งาน</span>
-              <div className="flex items-center gap-2">
-                <button type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 rounded-md border border-slate-300 px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">ก่อนหน้า</button>
-                <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 rounded-md border border-slate-300 px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">ถัดไป</button>
-              </div>
-            </nav>
-          )}
+          {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && (view === 'list' || view === 'table') && <TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredTasks.length} totalPages={pageCount} itemLabel="งาน" onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </main>
       </div>
 

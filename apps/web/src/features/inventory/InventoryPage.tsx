@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FormModal } from '../../components/ui/Modal';
 import { Loader2, PackageSearch, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import { RequirePermission } from '../../components/RequirePermission';
@@ -212,7 +213,7 @@ export function InventoryPage() {
           </button>
         </CardHeader>
         <CardBody>
-          {showCreate && <CreateItemForm onClose={() => setShowCreate(false)} />}
+          {showCreate && <FormModal title="เพิ่มรายการคลัง" description="บันทึกอะไหล่หรือวัสดุเข้าสู่ทะเบียนคลัง" size="lg" onClose={() => setShowCreate(false)}><CreateItemForm onClose={() => setShowCreate(false)} /></FormModal>}
 
           <input
             type="search"

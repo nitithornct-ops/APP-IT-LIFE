@@ -8,6 +8,14 @@ compatibility_flags = ["nodejs_compat"]
 ENVIRONMENT = "development"
 PUBLIC_TICKET_FORM_ENABLED = "true"
 
+[[ratelimits]]
+name = "PUBLIC_RATE_LIMITER"
+namespace_id = "810001"
+
+[ratelimits.simple]
+limit = 10
+period = 60
+
 [triggers]
 crons = ["*/5 * * * *"]
 
@@ -19,8 +27,23 @@ crons = ["*/5 * * * *"]
 # local dev ปกติไม่เห็น binding นี้เลย (MYBROWSER เป็น undefined — routes/reports.ts จัดการ
 # กรณีนี้อยู่แล้วด้วย 503 PDF_EXPORT_NOT_CONFIGURED) ทดสอบจริงต้องรัน
 # `wrangler dev --env production --remote` หรือ deploy จริงเท่านั้น
+[env.production.triggers]
+crons = ["*/5 * * * *"]
+
 [env.production.browser]
 binding = "MYBROWSER"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+PUBLIC_TICKET_FORM_ENABLED = "true"
+
+[[env.production.ratelimits]]
+name = "PUBLIC_RATE_LIMITER"
+namespace_id = "810002"
+
+[env.production.ratelimits.simple]
+limit = 10
+period = 60
 
 # ค่าต่อไปนี้เป็นความลับ/เฉพาะสภาพแวดล้อม — ห้ามใส่ค่าจริงในไฟล์นี้:
 #   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, ALLOWED_ORIGINS, PUBLIC_APP_URL

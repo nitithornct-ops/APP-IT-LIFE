@@ -11,12 +11,14 @@ export async function uploadFile(
   supabase: SupabaseClient,
   userId: string,
   file: File,
+  /** ชนิดที่ยืนยันจากลายเซ็นในตัวไฟล์แล้ว — ใช้แทน file.type ซึ่งเป็นค่าที่ Client อ้างมาเอง */
+  verifiedContentType?: string,
 ): Promise<{ path: string } | { error: string }> {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-150);
   const path = `${userId}/${crypto.randomUUID()}-${safeName}`;
 
   const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, file, {
-    contentType: file.type || 'application/octet-stream',
+    contentType: verifiedContentType ?? file.type ?? 'application/octet-stream',
     upsert: false,
   });
 

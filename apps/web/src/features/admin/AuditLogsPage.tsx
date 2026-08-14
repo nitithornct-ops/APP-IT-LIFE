@@ -1,3 +1,4 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -27,6 +28,7 @@ function detailText(detail: Record<string, unknown> | null): string {
 export function AuditLogsPage() {
   const [tab, setTab] = useState<LogTab>('audit');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [actor, setActor] = useState('');
@@ -35,7 +37,7 @@ export function AuditLogsPage() {
   const [result, setResult] = useState('');
 
   const queryString = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     if (actor.trim()) params.set(tab === 'audit' ? 'actor' : 'email', actor.trim());
@@ -45,7 +47,7 @@ export function AuditLogsPage() {
       if (result) params.set('result', result);
     } else if (result) params.set('success', result);
     return params.toString();
-  }, [action, actor, from, module, page, result, tab, to]);
+  }, [action, actor, from, module, page, pageSize, result, tab, to]);
 
   const overviewQuery = useQuery({
     queryKey: ['admin', 'audit-overview'],
@@ -110,21 +112,15 @@ export function AuditLogsPage() {
         ? <AuditTable items={logsQuery.data.items as AuditLogItem[]} />
         : <LoginTable items={logsQuery.data.items as LoginLogItem[]} />)}
 
-      {logsQuery.data && logsQuery.data.pagination.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 text-sm">
-          <button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-40 dark:border-slate-600">ก่อนหน้า</button>
-          <span className="text-slate-500">หน้า {logsQuery.data.pagination.page} / {logsQuery.data.pagination.totalPages}</span>
-          <button type="button" disabled={page >= logsQuery.data.pagination.totalPages} onClick={() => setPage((current) => current + 1)} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-40 dark:border-slate-600">ถัดไป</button>
-        </div>
-      )}
+      {logsQuery.data && <TablePagination page={logsQuery.data.pagination.page} pageSize={pageSize} totalItems={logsQuery.data.pagination.totalItems} totalPages={logsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
     </div>
   );
 }
 
 function AuditTable({ items }: { items: AuditLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">ผู้ดำเนินการ</th><th className="px-4 py-3">การกระทำ / โมดูล</th><th className="px-4 py-3">เป้าหมาย</th><th className="px-4 py-3">รายละเอียด</th><th className="px-4 py-3">ผลลัพธ์</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td><td className="px-4 py-3"><code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code><p className="mt-1 text-xs text-slate-500">{log.module}</p></td><td className="px-4 py-3 text-xs text-slate-500">{log.target_table ?? '—'}{log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}</td><td className="max-w-xs px-4 py-3"><span className="block truncate text-xs text-slate-500" title={detailText(log.detail)}>{detailText(log.detail)}</span></td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td></tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">ผู้ดำเนินการ</th><th className="px-4 py-3">การกระทำ / โมดูล</th><th className="px-4 py-3">เป้าหมาย</th><th className="px-4 py-3">รายละเอียด</th><th className="px-4 py-3">ผลลัพธ์</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td><td className="px-4 py-3"><code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code><p className="mt-1 text-xs text-slate-500">{log.module}</p></td><td className="px-4 py-3 text-xs text-slate-500">{log.target_table ?? '—'}{log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}</td><td className="max-w-xs px-4 py-3"><span className="block truncate text-xs text-slate-500" title={detailText(log.detail)}>{detailText(log.detail)}</span></td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td></tr>)}</tbody></DataTable></div>;
 }
 
 function LoginTable({ items }: { items: LoginLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.success ? resultStyles.success : resultStyles.fail}`}>{log.success ? 'success' : 'fail'}</span></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.success ? resultStyles.success : resultStyles.fail}`}>{log.success ? 'success' : 'fail'}</span></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></DataTable></div>;
 }

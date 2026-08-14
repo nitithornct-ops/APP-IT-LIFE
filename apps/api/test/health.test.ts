@@ -29,7 +29,25 @@ describe('GET /api/v1/health', () => {
     expect(body.data.environment).toBe('test');
     expect(body.meta.requestId).toBeTruthy();
     expect(body.meta.timestamp).toBeTruthy();
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
   }, 10000);
+});
+
+describe('public edge rate limiting', () => {
+  it('returns 429 before executing a public endpoint when the Cloudflare limiter rejects it', async () => {
+    const env: Bindings = {
+      ...testEnv,
+      PUBLIC_RATE_LIMITER: { limit: async () => ({ success: false }) },
+    };
+    const res = await app.request('/api/v1/public/tickets/not-a-ticket?token=12345678901234567890123456789012', {}, env);
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as ApiResponse<never>;
+    expect(body.success).toBe(false);
+    if (body.success) throw new Error('expected an error response');
+    expect(body.error.code).toBe('RATE_LIMITED');
+  });
 });
 
 describe('GET /unknown-route', () => {

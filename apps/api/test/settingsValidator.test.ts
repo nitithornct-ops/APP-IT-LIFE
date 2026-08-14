@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSettingValue } from '../src/routes/settings';
+import { brandingStoragePath, normalizeSettingValue } from '../src/routes/settings';
 import { updateSystemSettingSchema } from '../src/validators/settings';
 
 describe('System Settings validation', () => {
@@ -24,5 +24,11 @@ describe('System Settings validation', () => {
     expect(updateSystemSettingSchema.safeParse({ value: '30' }).success).toBe(true);
     expect(updateSystemSettingSchema.safeParse({ value: '30', secret: 'no' }).success).toBe(false);
     expect(updateSystemSettingSchema.safeParse({ value: 'x'.repeat(4001) }).success).toBe(false);
+  });
+
+  it('only extracts organization logo paths from the branding bucket', () => {
+    expect(brandingStoragePath('https://example.supabase.co/storage/v1/object/public/branding/organization/logo.png?v=1')).toBe('organization/logo.png');
+    expect(brandingStoragePath('https://example.supabase.co/storage/v1/object/public/attachments/organization/logo.png')).toBeNull();
+    expect(brandingStoragePath('https://example.supabase.co/storage/v1/object/public/branding/users/logo.png')).toBeNull();
   });
 });

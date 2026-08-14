@@ -28,6 +28,9 @@ export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 
 export const listEmployeesQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+  departmentId: z.string().uuid().optional(),
+  ownership: z.enum(['with', 'without']).optional(),
 });
 
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;

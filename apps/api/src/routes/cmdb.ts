@@ -4,10 +4,13 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   createCiRelationshipSchema,
@@ -56,7 +59,7 @@ const REVERSE_DUP_CHECK_TYPES = ['CONNECTS_TO', 'LINKED_TO'];
 function generateCiCode(): string {
   const now = new Date();
   const datePart = `${String(now.getUTCFullYear()).slice(2)}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const rand = Math.floor(Math.random() * 9000 + 1000);
+  const rand = randomCodeSuffix();
   return `CI-GEN-${datePart}${rand}`;
 }
 
@@ -293,7 +296,8 @@ configurationItemsRoute.get(
     if (environment) query = query.eq('environment', environment);
     if (criticality) query = query.eq('criticality', criticality);
     if (status) query = query.eq('status', status);
-    if (search) query = query.or(`name.ilike.%${search}%,ci_code.ilike.%${search}%,ip_address.ilike.%${search}%`);
+    const safeSearch = search ? cleanSearch(search) : '';
+    if (safeSearch) query = query.or(`name.ilike.%${safeSearch}%,ci_code.ilike.%${safeSearch}%,ip_address.ilike.%${safeSearch}%`);
 
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'CMDB_CI_LIST_FAILED', 'ดึงรายการ CI ไม่สำเร็จ'), 400);
@@ -362,7 +366,7 @@ configurationItemsRoute.post('/', requirePermission('cmdb.manage'), zValidator('
     .select(CI_SELECT)
     .single();
 
-  if (error) return c.json(fail(reqId, 'CMDB_CI_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_CI_CREATE_FAILED', error);
   const createdId = (data as unknown as { id: string }).id;
 
   await writeAuditLog(c.env, {
@@ -417,8 +421,9 @@ configurationItemsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidat
   if (body.location !== undefined) patch.location = body.location || null;
   if (body.notes !== undefined) patch.notes = body.notes || null;
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'configuration_items', id);
   const { data, error } = await supabase.from('configuration_items').update(patch).eq('id', id).select(CI_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CMDB_CI_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_CI_UPDATE_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -429,7 +434,9 @@ configurationItemsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidat
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, data));
 });
@@ -462,7 +469,7 @@ configurationItemsRoute.post('/:id/status', requirePermission('cmdb.manage'), zV
     .eq('id', id)
     .select(CI_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'CMDB_CI_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_CI_STATUS_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -500,7 +507,7 @@ configurationItemsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zV
     .eq('id', id)
     .select(CI_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'CMDB_CI_VERIFY_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_CI_VERIFY_FAILED', error);
 
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'VERIFY', module: 'cmdb', targetTable: 'configuration_items', targetId: id, requestId: reqId });
 
@@ -614,7 +621,7 @@ ciRelationshipsRoute.post('/', requirePermission('cmdb.manage'), zValidator('jso
 
   if (error) {
     if (error.code === '23505') return c.json(fail(reqId, 'CMDB_REL_DUPLICATE', 'มีความสัมพันธ์นี้อยู่แล้ว'), 400);
-    return c.json(fail(reqId, 'CMDB_REL_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'CMDB_REL_CREATE_FAILED', error);
   }
   const createdId = (data as unknown as { id: string }).id;
 
@@ -657,10 +664,11 @@ ciRelationshipsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidator(
   if (body.validUntil !== undefined) patch.valid_until = body.validUntil || null;
   if (body.notes !== undefined) patch.notes = body.notes || null;
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'ci_relationships', id);
   const { data, error } = await supabase.from('ci_relationships').update(patch).eq('id', id).select(REL_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CMDB_REL_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_REL_UPDATE_FAILED', error);
 
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'cmdb', targetTable: 'ci_relationships', targetId: id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'cmdb', targetTable: 'ci_relationships', targetId: id, detail: body, requestId: reqId, before: auditBefore, after: data });
 
   const [enriched] = await enrichRelationshipNodes(createAdminClient(c.env), [data as unknown as RelLikeRow]);
   return c.json(ok(reqId, enriched));
@@ -694,7 +702,7 @@ ciRelationshipsRoute.post('/:id/status', requirePermission('cmdb.manage'), zVali
     .eq('id', id)
     .select(REL_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'CMDB_REL_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_REL_STATUS_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -733,7 +741,7 @@ ciRelationshipsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zVali
     .eq('id', id)
     .select(REL_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'CMDB_REL_VERIFY_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CMDB_REL_VERIFY_FAILED', error);
 
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'VERIFY', module: 'cmdb', targetTable: 'ci_relationships', targetId: id, requestId: reqId });
 

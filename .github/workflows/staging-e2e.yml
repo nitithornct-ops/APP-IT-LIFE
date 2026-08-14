@@ -1,0 +1,62 @@
+name: Staging Live E2E
+
+on:
+  workflow_dispatch:
+  # ชุดนี้เคยรันเฉพาะตอนกดเอง จึงไปพบว่า locator ไม่ตรง UI เอาตอนจะ deploy แล้ว (3 เคสล้มใน
+  # Pre-production QA audit 2026-08-13) — ให้รันกับ PR ที่แตะหน้าจอหรือ API ด้วย เพื่อให้ E2E
+  # ที่ตามการ refactor ไม่ทันถูกจับตั้งแต่ตอนรีวิว ไม่ใช่ตอน release gate
+  pull_request:
+    branches: [master]
+    paths:
+      - 'apps/web/src/**'
+      - 'apps/web/e2e/**'
+      - 'apps/web/index.html'
+      - 'apps/api/src/**'
+
+concurrency:
+  # ใช้ staging จริงร่วมกัน จึงต้องต่อคิวทีละงาน ห้ามยกเลิกกลางคันเพราะจะเหลือข้อมูลทดสอบค้างไว้
+  group: staging-live-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-e2e:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Create ephemeral staging configuration
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); fs.writeFileSync('apps/api/.dev.vars', ['SUPABASE_URL='+process.env.SUPABASE_URL,'SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'SUPABASE_SERVICE_ROLE_KEY='+process.env.SUPABASE_SERVICE_ROLE_KEY,'ALLOWED_ORIGINS=http://localhost:5173','ENVIRONMENT=staging','PUBLIC_APP_URL=http://localhost:5173','PUBLIC_TICKET_FORM_ENABLED=true'].join('\n')+'\n')"
+          node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY].join('\n')+'\n')"
+      - name: Run all live browser and API flows
+        env:
+          LIVE_E2E: "1"
+          LIVE_DASHBOARD_E2E: "1"
+          LIVE_REPORT_E2E: "1"
+          LIVE_SETTINGS_E2E: "1"
+          LIVE_TASKS_E2E: "1"
+        run: npm run test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-evidence
+          path: |
+            test-results/
+            apps/web/playwright-report/
+          retention-days: 14

@@ -3,11 +3,13 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import { assignRoleSchema, inviteUserSchema, listUsersQuerySchema, updateUserSchema } from '../validators/users';
 
@@ -16,11 +18,12 @@ export const usersRoute = new Hono<AppEnv>();
 usersRoute.use('*', requireAuth);
 
 usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUsersQuerySchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const { page, pageSize, search } = c.req.valid('query');
 
-  let query = supabase
+  // ใช้ Admin Client เพราะหน้าจัดการผู้ใช้ต้องเห็น phone ซึ่งถูกตัดออกจาก GRANT ของ authenticated
+  // (ดู 20260908100000_tighten_directory_access.sql) — สิทธิ์ถูกตรวจด้วย user.manage ที่ middleware แล้ว
+  let query = createAdminClient(c.env)
     .from('profiles')
     .select(
       'id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at',
@@ -29,8 +32,9 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
     .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
 
-  if (search) {
-    query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
+  const safeSearch = search ? cleanSearch(search) : '';
+  if (safeSearch) {
+    query = query.or(`full_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`);
   }
 
   const { data, count, error } = await query;
@@ -58,7 +62,7 @@ usersRoute.post('/invite', requirePermission('user.manage'), zValidator('json', 
   });
 
   if (inviteError || !invited.user) {
-    return c.json(fail(reqId, 'USER_INVITE_FAILED', inviteError?.message ?? 'เชิญผู้ใช้ไม่สำเร็จ'), 400);
+    return dbFailJson(c, 'USER_INVITE_FAILED', inviteError, 'เชิญผู้ใช้ไม่สำเร็จ');
   }
 
   const supabase = c.get('supabase');
@@ -110,11 +114,23 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
   if (body.supervisorId !== undefined) patch.supervisor_id = body.supervisorId;
   if (body.status !== undefined) patch.status = body.status;
 
-  const { data, error } = await supabase.from('profiles').update(patch).eq('id', targetId).select().single();
+  // เขียนผ่าน Client ของผู้ใช้เพื่อให้ RLS ตรวจซ้ำอีกชั้น แล้วค่อยอ่านค่ากลับด้วย Admin Client
+  // เพราะ RETURNING ของ update จะแตะคอลัมน์ phone ที่ authenticated ไม่มีสิทธิ์อ่าน
+  // ใช้ Admin client เพราะ authenticated ไม่มีสิทธิ์อ่านทุกคอลัมน์ของ profiles คนอื่น (20260908100000)
+  // สิทธิ์ที่แท้จริงถูกตรวจไปแล้วที่ middleware ของเส้นทางนี้ (user.manage)
+  const auditBefore = await loadAuditSnapshot(createAdminClient(c.env), 'profiles', targetId);
+
+  const { error } = await supabase.from('profiles').update(patch).eq('id', targetId);
 
   if (error) {
     return c.json(fail(reqId, 'USER_UPDATE_FAILED', 'บันทึกข้อมูลผู้ใช้ไม่สำเร็จ'), 400);
   }
+
+  const { data } = await createAdminClient(c.env)
+    .from('profiles')
+    .select('id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at')
+    .eq('id', targetId)
+    .maybeSingle();
 
   await writeAuditLog(c.env, {
     actorId,
@@ -125,6 +141,8 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
     targetId,
     detail: body,
     requestId: reqId,
+    before: auditBefore,
+    after: data,
   });
 
   return c.json(ok(reqId, data));
@@ -160,7 +178,7 @@ usersRoute.post('/:id/roles', requirePermission('role.manage'), zValidator('json
   const { error } = await supabase.from('user_roles').insert({ user_id: targetId, role_id: roleId, assigned_by: actorId });
 
   if (error) {
-    return c.json(fail(reqId, 'ROLE_ASSIGN_FAILED', error.message), 400);
+    return dbFailJson(c, 'ROLE_ASSIGN_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -195,7 +213,7 @@ usersRoute.delete('/:id/roles/:roleId', requirePermission('role.manage'), async 
   const { error } = await supabase.from('user_roles').delete().eq('user_id', targetId).eq('role_id', roleId);
 
   if (error) {
-    return c.json(fail(reqId, 'ROLE_REMOVE_FAILED', error.message), 400);
+    return dbFailJson(c, 'ROLE_REMOVE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {

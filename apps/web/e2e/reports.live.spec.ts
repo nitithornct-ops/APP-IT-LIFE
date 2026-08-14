@@ -106,7 +106,9 @@ test('admin UI renders report controls, data and all report tabs', async ({ page
   }
   await expect(page.getByText(`LIVE20 Report Ticket ${runId}`, { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'CSV', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'พิมพ์ / PDF', exact: true })).toBeVisible();
+  // ปุ่มพิมพ์กับดาวน์โหลด PDF ถูกแยกเป็นสองปุ่มตอน refactor — ผูกกับ data-testid ไม่ใช่ข้อความบนปุ่ม
+  await expect(page.getByTestId('report-print')).toBeVisible();
+  await expect(page.getByTestId('report-pdf')).toBeVisible();
   await page.screenshot({ path: 'test-results/module20-report-center-admin.png', fullPage: true });
 });
 

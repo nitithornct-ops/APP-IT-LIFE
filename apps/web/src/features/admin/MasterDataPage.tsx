@@ -1,13 +1,15 @@
+import { DataTable } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Tags, X } from 'lucide-react';
+import { CheckCircle2, Database, FolderTree, KeyRound, Loader2, Plus, Tags, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, TicketCategory } from '../../types/admin';
@@ -165,7 +167,7 @@ function TicketCategoriesSection() {
         </RequirePermission>
       </CardHeader>
       <CardBody>
-        {showCreate && <CreateTicketCategoryForm onClose={() => setShowCreate(false)} />}
+        {showCreate && <FormModal title="เพิ่มหมวดหมู่ Ticket" size="md" onClose={() => setShowCreate(false)}><CreateTicketCategoryForm onClose={() => setShowCreate(false)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -179,7 +181,7 @@ function TicketCategoriesSection() {
 
         {query.data && query.data.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <DataTable className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-2 py-2">ชื่อหมวดหมู่</th>
@@ -222,7 +224,7 @@ function TicketCategoriesSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         )}
       </CardBody>
@@ -331,7 +333,7 @@ function AssetCategoriesSection() {
         </RequirePermission>
       </CardHeader>
       <CardBody>
-        {showCreate && <CreateAssetCategoryForm onClose={() => setShowCreate(false)} />}
+        {showCreate && <FormModal title="เพิ่มหมวดหมู่ทรัพย์สิน" size="md" onClose={() => setShowCreate(false)}><CreateAssetCategoryForm onClose={() => setShowCreate(false)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -345,7 +347,7 @@ function AssetCategoriesSection() {
 
         {query.data && query.data.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <DataTable className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-2 py-2">ชื่อหมวดหมู่</th>
@@ -378,7 +380,7 @@ function AssetCategoriesSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         )}
       </CardBody>
@@ -467,7 +469,7 @@ function AccessSystemsSection() {
         </RequirePermission>
       </CardHeader>
       <CardBody>
-        {showCreate && <CreateAccessSystemForm onClose={() => setShowCreate(false)} />}
+        {showCreate && <FormModal title="เพิ่มระบบงาน" description="สร้างข้อมูลระบบสำหรับคำขอสิทธิ์" size="md" onClose={() => setShowCreate(false)}><CreateAccessSystemForm onClose={() => setShowCreate(false)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -481,7 +483,7 @@ function AccessSystemsSection() {
 
         {query.data && query.data.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <DataTable className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-2 py-2">ชื่อระบบงาน</th>
@@ -512,7 +514,7 @@ function AccessSystemsSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         )}
       </CardBody>
@@ -521,12 +523,24 @@ function AccessSystemsSection() {
 }
 
 export function MasterDataPage() {
+  const ticketCategoriesQuery = useQuery({ queryKey: ['admin', 'ticket-categories'], queryFn: () => apiFetch<TicketCategory[]>('/api/v1/ticket-categories') });
+  const assetCategoriesQuery = useQuery({ queryKey: ['admin', 'asset-categories'], queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories') });
+  const accessSystemsQuery = useQuery({ queryKey: ['admin', 'access-systems'], queryFn: () => apiFetch<AccessSystem[]>('/api/v1/access-systems') });
+  const totalMasterData = (ticketCategoriesQuery.data?.length ?? 0) + (assetCategoriesQuery.data?.length ?? 0) + (accessSystemsQuery.data?.length ?? 0);
+  const activeMasterData = [...(ticketCategoriesQuery.data ?? []), ...(assetCategoriesQuery.data ?? []), ...(accessSystemsQuery.data ?? [])].filter((item) => item.status === 'active').length;
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Master Data</h1>
       <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">
         หมวดหมู่กลางที่โมดูล Ticket, Asset และคำขอสิทธิ์ระบบ จะอ้างอิงต่อ
       </p>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<Database className="h-5 w-5" />} label="Master Data ทั้งหมด" value={totalMasterData} tone="primary" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="รายการที่ใช้งาน" value={activeMasterData} tone="teal" />
+        <StatCard icon={<FolderTree className="h-5 w-5" />} label="หมวด Ticket / Asset" value={(ticketCategoriesQuery.data?.length ?? 0) + (assetCategoriesQuery.data?.length ?? 0)} tone="amber" />
+        <StatCard icon={<KeyRound className="h-5 w-5" />} label="ระบบที่ขอสิทธิ์ได้" value={accessSystemsQuery.data?.length ?? 0} tone="gray" />
+      </div>
       <TicketCategoriesSection />
       <AssetCategoriesSection />
       <AccessSystemsSection />

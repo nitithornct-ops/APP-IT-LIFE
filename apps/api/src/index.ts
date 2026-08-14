@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { errorHandler } from './middleware/errorHandler';
 import { requestId } from './middleware/requestId';
+import { securityHeaders } from './middleware/securityHeaders';
 import { accessRegistryRoute, accessRequestsRoute } from './routes/accessRequests';
 import { approvalGroupsRoute } from './routes/approvalGroups';
 import { assetsRoute } from './routes/assets';
@@ -14,6 +15,7 @@ import { dashboardRoute } from './routes/dashboard';
 import { employeeAssignmentsRoute } from './routes/employeeAssignments';
 import { employeesRoute } from './routes/employees';
 import { filesRoute } from './routes/files';
+import { formsRoute, publicFormsRoute } from './routes/forms';
 import { healthRoute } from './routes/health';
 import { governanceRoute } from './routes/governance';
 import { incidentsRoute } from './routes/incidents';
@@ -44,6 +46,7 @@ import { fail } from './utils/response';
 const app = new Hono<AppEnv>();
 
 app.use('*', requestId);
+app.use('*', securityHeaders);
 
 app.use('*', (c, next) =>
   cors({
@@ -104,6 +107,8 @@ app.route('/api/v1/contracts', contractsRoute);
 app.route('/api/v1/audit-logs', auditLogsRoute);
 app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
+app.route('/api/v1/forms', formsRoute);
+app.route('/api/v1/public/forms', publicFormsRoute);
 app.route('/api/v1/line', lineRoute);
 app.route('/api/v1/public/tickets', publicTicketsRoute);
 

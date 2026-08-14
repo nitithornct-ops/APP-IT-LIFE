@@ -3,11 +3,14 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import { createLicenseSchema, listLicensesQuerySchema, setLicenseStatusSchema, updateLicenseSchema } from '../validators/licenses';
 
@@ -20,7 +23,7 @@ const LICENSE_SELECT = '*, vendor:vendors(id, vendor_code, name, status), contra
 function generatedLicenseCode(): string {
   const now = new Date();
   const month = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  return `LIC-${month}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `LIC-${month}-${randomCodeSuffix()}`;
 }
 
 async function normalizedVendorId(
@@ -48,7 +51,7 @@ licensesRoute.get('/', requirePermission('license.view'), zValidator('query', li
 
   if (status) query = query.eq('status', status);
   if (search) {
-    const safeSearch = search.replace(/[%(),]/g, ' ').trim();
+    const safeSearch = cleanSearch(search);
     query = query.or(`license_code.ilike.%${safeSearch}%,software_name.ilike.%${safeSearch}%,license_type.ilike.%${safeSearch}%,vendor_name.ilike.%${safeSearch}%,assigned_to.ilike.%${safeSearch}%`);
   }
 
@@ -99,7 +102,7 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
     .select(LICENSE_SELECT)
     .single();
 
-  if (error) return c.json(fail(reqId, 'LICENSE_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'LICENSE_CREATE_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -156,8 +159,9 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
   if (body.status !== undefined) patch.status = body.status;
   if (body.expireDate !== undefined) patch.expiry_notified_at = null;
 
+  const auditBefore = await loadAuditSnapshot(admin, 'software_licenses', id);
   const { data, error } = await admin.from('software_licenses').update(patch).eq('id', id).select(LICENSE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'LICENSE_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'LICENSE_UPDATE_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -168,7 +172,9 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, data));
 });
@@ -181,7 +187,7 @@ licensesRoute.post('/:id/status', requirePermission('license.manage'), zValidato
   const { status } = c.req.valid('json');
 
   const { data, error } = await admin.from('software_licenses').update({ status, updated_by: actorId, ...(status === 'Active' ? { expiry_notified_at: null } : {}) }).eq('id', id).select(LICENSE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'LICENSE_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'LICENSE_STATUS_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -210,12 +216,12 @@ licensesRoute.post('/check-expiry', requirePermission('license.manage'), async (
     .select('id, license_code, software_name, expire_date, expiry_notice_days, expiry_notified_at, status')
     .not('expire_date', 'is', null)
     .neq('status', 'Inactive');
-  if (findError) return c.json(fail(reqId, 'LICENSE_EXPIRY_CHECK_FAILED', findError.message), 400);
+  if (findError) return dbFailJson(c, 'LICENSE_EXPIRY_CHECK_FAILED', findError);
 
   const expiredIds = (candidates ?? []).filter((row) => row.status === 'Active' && row.expire_date! < today).map((row) => row.id);
   if (expiredIds.length) {
     const { error: updateError } = await admin.from('software_licenses').update({ status: 'Expired', updated_by: actorId }).in('id', expiredIds);
-    if (updateError) return c.json(fail(reqId, 'LICENSE_EXPIRY_UPDATE_FAILED', updateError.message), 400);
+    if (updateError) return dbFailJson(c, 'LICENSE_EXPIRY_UPDATE_FAILED', updateError);
   }
 
   const notifyRows = (candidates ?? []).filter((row) => {

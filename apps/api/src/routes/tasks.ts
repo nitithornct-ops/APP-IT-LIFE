@@ -3,9 +3,11 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import {
   addDaysToDateKey,
   buildTaskDashboard,
@@ -266,9 +268,7 @@ tasksRoute.get('/', zValidator('query', listTasksQuerySchema, zodValidationHook)
   if (dueFrom) query = query.gte('due_date', dueFrom);
   if (dueTo) query = query.lte('due_date', dueTo);
   if (search) {
-    // PostgREST's `or` expression uses commas/parentheses as syntax. Remove only
-    // those control characters while retaining Thai and normal punctuation.
-    const term = search.replace(/[,%()]/g, ' ').trim();
+    const term = cleanSearch(search);
     if (term) {
       query = query.or(
         `task_no.ilike.%${term}%,title.ilike.%${term}%,description.ilike.%${term}%,category.ilike.%${term}%,tags.ilike.%${term}%`,
@@ -411,7 +411,7 @@ tasksRoute.post('/', zValidator('json', createTaskSchema, zodValidationHook), as
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'TASK_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_CREATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -461,6 +461,7 @@ tasksRoute.patch('/:id', zValidator('json', updateTaskSchema, zodValidationHook)
   }
 
   const supabase = c.get('supabase');
+  const auditBefore = await loadAuditSnapshot(supabase, 'personal_tasks', id);
   const { data: updated, error } = await supabase
     .from('personal_tasks')
     .update({
@@ -489,7 +490,7 @@ tasksRoute.patch('/:id', zValidator('json', updateTaskSchema, zodValidationHook)
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'TASK_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_UPDATE_FAILED', error);
   }
 
   if (status === 'เสร็จแล้ว') await createNextRecurringTask(c, updated);
@@ -512,7 +513,9 @@ tasksRoute.patch('/:id', zValidator('json', updateTaskSchema, zodValidationHook)
     targetId: id,
     detail: { category: updated.category, priority: updated.priority, status: updated.status, progress: updated.progress },
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: updated,
+});
 
   return c.json(ok(reqId, updated));
 });
@@ -594,7 +597,7 @@ tasksRoute.post('/:id/status', zValidator('json', setTaskStatusSchema, zodValida
   const supabase = c.get('supabase');
   const { data: updated, error } = await supabase.from('personal_tasks').update(patch).eq('id', id).select().single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_STATUS_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_STATUS_UPDATE_FAILED', error);
   }
 
   if (status === 'เสร็จแล้ว') await createNextRecurringTask(c, updated);
@@ -681,7 +684,7 @@ tasksRoute.post('/:id/board', zValidator('json', setTaskBoardStateSchema, zodVal
   const supabase = c.get('supabase');
   const { data: updated, error } = await supabase.from('personal_tasks').update(patch).eq('id', id).select().single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_BOARD_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_BOARD_UPDATE_FAILED', error);
   }
 
   if (status === 'เสร็จแล้ว') await createNextRecurringTask(c, updated);
@@ -713,7 +716,7 @@ tasksRoute.post('/:id/due-date', zValidator('json', setTaskDueDateSchema, zodVal
     .select()
     .single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_DUE_DATE_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_DUE_DATE_UPDATE_FAILED', error);
   }
 
   await shiftTaskReminderWithDueDate(
@@ -853,7 +856,7 @@ tasksRoute.post('/:id/restore', async (c) => {
     .select()
     .single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_RESTORE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_RESTORE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -890,7 +893,7 @@ tasksRoute.post('/:id/progress-logs', zValidator('json', addTaskProgressLogSchem
     .select()
     .single();
   if (logError) {
-    return c.json(fail(reqId, 'TASK_PROGRESS_LOG_FAILED', logError.message), 400);
+    return dbFailJson(c, 'TASK_PROGRESS_LOG_FAILED', logError);
   }
 
   const patch: Record<string, unknown> = { progress, updated_by: actorId };
@@ -902,7 +905,7 @@ tasksRoute.post('/:id/progress-logs', zValidator('json', addTaskProgressLogSchem
   }
   const { data: updated, error: updateError } = await supabase.from('personal_tasks').update(patch).eq('id', id).select().single();
   if (updateError) {
-    return c.json(fail(reqId, 'TASK_PROGRESS_LOG_FAILED', updateError.message), 400);
+    return dbFailJson(c, 'TASK_PROGRESS_LOG_FAILED', updateError);
   }
   if (progress === 100) {
     await createNextRecurringTask(c, updated);
@@ -933,7 +936,7 @@ tasksRoute.post('/:id/links', zValidator('json', addTaskLinkSchema, zodValidatio
     .select()
     .single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_LINK_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_LINK_CREATE_FAILED', error);
   }
 
   return c.json(ok(reqId, data), 201);
@@ -965,7 +968,7 @@ tasksRoute.post('/:id/subtasks', zValidator('json', addTaskSubtaskSchema, zodVal
     .select()
     .single();
   if (error) {
-    return c.json(fail(reqId, 'TASK_SUBTASK_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_SUBTASK_CREATE_FAILED', error);
   }
 
   await recalculateChecklistProgress(c, id);
@@ -986,7 +989,7 @@ tasksRoute.patch('/subtasks/:subtaskId', zValidator('json', setTaskSubtaskStatus
     .select()
     .maybeSingle();
   if (error) {
-    return c.json(fail(reqId, 'TASK_SUBTASK_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_SUBTASK_UPDATE_FAILED', error);
   }
   if (!updated) {
     return c.json(fail(reqId, 'TASK_SUBTASK_NOT_FOUND', 'ไม่พบรายการย่อยนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
@@ -1008,7 +1011,7 @@ tasksRoute.patch('/subtasks/:subtaskId/detail', zValidator('json', updateTaskSub
   if (body.notes !== undefined) patch.notes = body.notes || null;
 
   const { data: updated, error } = await supabase.from('task_subtasks').update(patch).eq('id', subtaskId).select().maybeSingle();
-  if (error) return c.json(fail(reqId, 'TASK_SUBTASK_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'TASK_SUBTASK_UPDATE_FAILED', error);
   if (!updated) return c.json(fail(reqId, 'TASK_SUBTASK_NOT_FOUND', 'ไม่พบรายการย่อยนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   return c.json(ok(reqId, updated));
 });
@@ -1024,7 +1027,7 @@ tasksRoute.post('/subtasks/:subtaskId/reorder', zValidator('json', reorderTaskSu
     .eq('id', subtaskId)
     .select()
     .maybeSingle();
-  if (error) return c.json(fail(reqId, 'TASK_SUBTASK_REORDER_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'TASK_SUBTASK_REORDER_FAILED', error);
   if (!updated) return c.json(fail(reqId, 'TASK_SUBTASK_NOT_FOUND', 'ไม่พบรายการย่อยนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   return c.json(ok(reqId, updated));
 });
@@ -1034,7 +1037,7 @@ tasksRoute.delete('/subtasks/:subtaskId', async (c) => {
   const reqId = c.get('requestId');
   const subtaskId = c.req.param('subtaskId')!;
   const { data: deleted, error } = await supabase.from('task_subtasks').delete().eq('id', subtaskId).select().maybeSingle();
-  if (error) return c.json(fail(reqId, 'TASK_SUBTASK_DELETE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'TASK_SUBTASK_DELETE_FAILED', error);
   if (!deleted) return c.json(fail(reqId, 'TASK_SUBTASK_NOT_FOUND', 'ไม่พบรายการย่อยนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   await recalculateChecklistProgress(c, String(deleted.task_id));
   return c.json(ok(reqId, { id: subtaskId }));
@@ -1052,7 +1055,7 @@ tasksRoute.post('/subtasks/:subtaskId/cancel', async (c) => {
     .select()
     .maybeSingle();
   if (error) {
-    return c.json(fail(reqId, 'TASK_SUBTASK_CANCEL_FAILED', error.message), 400);
+    return dbFailJson(c, 'TASK_SUBTASK_CANCEL_FAILED', error);
   }
   if (!updated) {
     return c.json(fail(reqId, 'TASK_SUBTASK_NOT_FOUND', 'ไม่พบรายการย่อยนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);

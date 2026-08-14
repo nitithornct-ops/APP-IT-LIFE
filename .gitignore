@@ -16,6 +16,14 @@ build/
 .clasp.json
 .clasprc.json
 
+# Supabase CLI เขียน project ref / pooler URL ของโปรเจกต์ที่ link ไว้ที่นี่
+supabase/.temp/
+
+# ข้อมูลจริงที่ dump ออกมาจากฐานข้อมูล ห้าม commit เด็ดขาด
+backups/
+*.sql.gz
+backup-*.sql
+
 # Test artifacts
 coverage/
 playwright-report/

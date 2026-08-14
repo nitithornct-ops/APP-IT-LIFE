@@ -2,9 +2,10 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -128,7 +129,7 @@ maintenancePlansRoute.post(
       .select(PLAN_SELECT)
       .single();
 
-    if (error) return c.json(fail(reqId, 'MAINTENANCE_CREATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'MAINTENANCE_CREATE_FAILED', error);
     const createdId = (data as unknown as { id: string }).id;
 
     await writeAuditLog(c.env, {
@@ -168,7 +169,7 @@ maintenancePlansRoute.post(
     if (technicianId) patch.technician_id = technicianId;
 
     const { data, error } = await supabase.from('maintenance_plans').update(patch).eq('id', id).select(PLAN_SELECT).single();
-    if (error) return c.json(fail(reqId, 'MAINTENANCE_START_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'MAINTENANCE_START_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -258,7 +259,7 @@ maintenancePlansRoute.post(
     }
 
     const { data, error } = await supabase.from('maintenance_plans').update(patch).eq('id', id).select(PLAN_SELECT).single();
-    if (error) return c.json(fail(reqId, 'MAINTENANCE_RESULT_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'MAINTENANCE_RESULT_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -304,7 +305,7 @@ maintenancePlansRoute.post(
     }
 
     const { data, error } = await supabase.from('maintenance_plans').update(patch).eq('id', id).select(PLAN_SELECT).single();
-    if (error) return c.json(fail(reqId, 'MAINTENANCE_RESCHEDULE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'MAINTENANCE_RESCHEDULE_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -346,7 +347,7 @@ maintenancePlansRoute.post(
     };
 
     const { data, error } = await supabase.from('maintenance_plans').update(patch).eq('id', id).select(PLAN_SELECT).single();
-    if (error) return c.json(fail(reqId, 'MAINTENANCE_CANCEL_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'MAINTENANCE_CANCEL_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -396,7 +397,7 @@ pmTemplatesRoute.post('/', requirePermission('maintenance.manage'), zValidator('
     .select()
     .single();
 
-  if (error) return c.json(fail(reqId, 'PM_TEMPLATE_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'PM_TEMPLATE_CREATE_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -425,8 +426,9 @@ pmTemplatesRoute.patch('/:id', requirePermission('maintenance.manage'), zValidat
   if (body.items !== undefined) patch.items_json = body.items.map((text) => ({ text }));
   if (body.notes !== undefined) patch.notes = body.notes;
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'pm_checklist_templates', id);
   const { data, error } = await supabase.from('pm_checklist_templates').update(patch).eq('id', id).select().single();
-  if (error) return c.json(fail(reqId, 'PM_TEMPLATE_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'PM_TEMPLATE_UPDATE_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -437,7 +439,9 @@ pmTemplatesRoute.patch('/:id', requirePermission('maintenance.manage'), zValidat
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, data));
 });
@@ -454,7 +458,7 @@ pmTemplatesRoute.post(
     const { status } = c.req.valid('json');
 
     const { data, error } = await supabase.from('pm_checklist_templates').update({ status, updated_by: actorId }).eq('id', id).select().single();
-    if (error) return c.json(fail(reqId, 'PM_TEMPLATE_STATUS_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'PM_TEMPLATE_STATUS_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,

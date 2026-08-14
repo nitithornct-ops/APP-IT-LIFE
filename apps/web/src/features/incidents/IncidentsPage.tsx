@@ -1,3 +1,5 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Grid3X3, Loader2, Plus, ShieldAlert, X } from 'lucide-react';
@@ -10,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { QueryError } from '../../components/ui/QueryError';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
@@ -111,10 +114,11 @@ export function IncidentsPage() {
   const [severity, setSeverity] = useState('');
   const [personalData, setPersonalData] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const debouncedSearch = useDebouncedValue(search);
   const query = useQuery({
-    queryKey: ['incidents', page, status, severity, personalData, debouncedSearch],
-    queryFn: () => apiFetch<PaginatedResult<Incident>>(`/api/v1/incidents?page=${page}&pageSize=20${status ? `&status=${encodeURIComponent(status)}` : ''}${severity ? `&severity=${encodeURIComponent(severity)}` : ''}${personalData ? `&personalData=${personalData}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`),
+    queryKey: ['incidents', page, pageSize, status, severity, personalData, debouncedSearch],
+    queryFn: () => apiFetch<PaginatedResult<Incident>>(`/api/v1/incidents?page=${page}&pageSize=${pageSize}${status ? `&status=${encodeURIComponent(status)}` : ''}${severity ? `&severity=${encodeURIComponent(severity)}` : ''}${personalData ? `&personalData=${personalData}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`),
   });
   const items = query.data?.items ?? [];
   return (
@@ -126,7 +130,7 @@ export function IncidentsPage() {
           <RequirePermission permission="incident.create"><Button size="sm" onClick={() => setShowCreate((value) => !value)} data-testid="incident-create-toggle"><Plus className="h-4 w-4" /> แจ้งเหตุ</Button></RequirePermission>
         </div>
       </div>
-      {showCreate && <CreateIncidentForm onClose={() => setShowCreate(false)} />}
+      {showCreate && <FormModal title="แจ้ง Incident" description="บันทึกเหตุการณ์ ประเมินความรุนแรง และข้อมูลที่เกี่ยวข้อง" size="lg" onClose={() => setShowCreate(false)}><CreateIncidentForm onClose={() => setShowCreate(false)} /></FormModal>}
       {showMatrix && <RiskMatrix />}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="ทั้งหมด" value={query.data?.pagination.totalItems ?? 0} tone="primary" />
@@ -143,11 +147,14 @@ export function IncidentsPage() {
         <CardBody>
           <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="ค้นหาเลข Incident หรือหัวข้อ..." className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
           {query.isLoading && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>}
-          {query.data && items.length === 0 && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="ไม่พบ Incident" />}
-          {items.length > 0 && <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2">เลขที่</th><th className="px-2 py-2">เหตุการณ์</th><th className="px-2 py-2">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th></tr></thead><tbody>
+          {query.isError && (
+            <QueryError title="โหลดรายการ Incident ไม่สำเร็จ" error={query.error} onRetry={() => void query.refetch()} isRetrying={query.isFetching} />
+          )}
+          {!query.isError && query.data && items.length === 0 && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="ไม่พบ Incident" />}
+          {items.length > 0 && <div className="overflow-x-auto"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2">เลขที่</th><th className="px-2 py-2">เหตุการณ์</th><th className="px-2 py-2">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th></tr></thead><tbody>
             {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p></td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td></tr>)}
-          </tbody></table></div>}
-          {query.data && query.data.pagination.totalPages > 1 && <div className="mt-3 flex justify-center gap-3 text-sm"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded border px-3 py-1 disabled:opacity-40">ก่อนหน้า</button><span>หน้า {page} / {query.data.pagination.totalPages}</span><button disabled={page >= query.data.pagination.totalPages} onClick={() => setPage((value) => value + 1)} className="rounded border px-3 py-1 disabled:opacity-40">ถัดไป</button></div>}
+          </tbody></DataTable></div>}
+          {query.data && <TablePagination page={query.data.pagination.page} pageSize={pageSize} totalItems={query.data.pagination.totalItems} totalPages={query.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
     </div>

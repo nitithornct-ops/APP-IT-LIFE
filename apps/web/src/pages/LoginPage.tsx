@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { supabase } from '../lib/supabase';
-import { apiFetch } from '../services/apiClient';
+import { apiFetch, showToast } from '../services/apiClient';
 
 const loginSchema = z.object({
   email: z.string().trim().email('กรุณากรอกอีเมลให้ถูกต้อง'),
@@ -14,12 +14,18 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
+/**
+ * บันทึก Login Log เป็นงานเบื้องหลัง ไม่ใช่การกระทำที่ผู้ใช้กดเอง จึงต้องส่ง silent
+ * มิฉะนั้น POST นี้จะไปกระตุ้นข้อความเขียว "บันทึกข้อมูลเรียบร้อยแล้ว" ของ apiFetch
+ * ซึ่งจะขึ้นแม้ตอน login ไม่ผ่าน ขัดกับข้อความแดงที่แสดงอยู่พร้อมกัน
+ */
 async function recordLoginAttempt(email: string, success: boolean, failureReason?: string) {
   try {
-    await apiFetch('/api/v1/auth/login-log', {
-      method: 'POST',
-      body: JSON.stringify({ email, success, failureReason }),
-    });
+    await apiFetch(
+      '/api/v1/auth/login-log',
+      { method: 'POST', body: JSON.stringify({ email, success, failureReason }) },
+      { silent: true },
+    );
   } catch {
     // การบันทึก Login Log ล้มเหลวต้องไม่ขวางผู้ใช้ที่ login สำเร็จอยู่แล้ว
   }
@@ -47,6 +53,7 @@ export function LoginPage() {
     }
 
     await recordLoginAttempt(values.email, true);
+    showToast('success', 'เข้าสู่ระบบสำเร็จ');
     const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
     navigate(redirectTo, { replace: true });
   }

@@ -13,9 +13,14 @@ export interface DashboardCard {
   key: string;
   label: string;
   path: string;
+  /** ยอดรวมจริงจากฐานข้อมูล ไม่ใช่จำนวนแถวที่ API ดึงมาคำนวณ */
   total: number;
   warning: number;
   overdue: number;
+  /** true เมื่อข้อมูลมากกว่าเพดานที่สแกนได้ — warning/overdue จึงนับได้ไม่ครบ */
+  truncated: boolean;
+  /** จำนวนแถวที่นำมาคำนวณ warning/overdue จริง */
+  scanned: number;
   tone: DashboardTone;
 }
 

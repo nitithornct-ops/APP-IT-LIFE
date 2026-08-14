@@ -1,12 +1,23 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
-import type { AppEnv } from '../types';
+import type { AppEnv, Bindings } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { updateSystemSettingSchema } from '../validators/settings';
+
+const BRANDING_BUCKET = 'branding';
+const ORGANIZATION_LOGO_KEY = 'ORG_LOGO_URL';
+const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+const LOGO_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 
 const BOOLEAN_KEYS = new Set([
   'NOTIFY_LINE_ENABLED', 'ADMIN_MFA_ENABLED', 'LINE_LOGIN_ENABLED', 'LINE_REQUIRE_EMPLOYEE_LINK',
@@ -30,6 +41,30 @@ const NUMBER_RANGES: Record<string, [number, number]> = {
 };
 
 const UNSUPPORTED_ENABLE_KEYS = new Set(['NOTIFY_LINE_ENABLED', 'LINE_LOGIN_ENABLED', 'PUBLIC_TICKET_ENABLED', 'AUTO_BACKUP_ENABLED', 'AUTO_RESTORE_DRILL_ENABLED']);
+
+export function brandingStoragePath(url: string): string | null {
+  if (!url) return null;
+  try {
+    const marker = `/storage/v1/object/public/${BRANDING_BUCKET}/`;
+    const pathname = new URL(url).pathname;
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex < 0) return null;
+    const path = decodeURIComponent(pathname.slice(markerIndex + marker.length));
+    return path.startsWith('organization/') ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBranding(env: Bindings) {
+  const admin = createAdminClient(env);
+  const { data } = await admin.from('system_settings').select('key, value').in('key', ['ORG_NAME', ORGANIZATION_LOGO_KEY]);
+  const values = Object.fromEntries((data ?? []).map((item) => [String(item.key), String(item.value)]));
+  return {
+    organizationName: values.ORG_NAME || 'LIFE IT',
+    logoUrl: values[ORGANIZATION_LOGO_KEY] || '',
+  };
+}
 
 export function normalizeSettingValue(key: string, input: string): { value?: string; error?: string } {
   const raw = input.trim();
@@ -68,10 +103,69 @@ export function normalizeSettingValue(key: string, input: string): { value?: str
 export const settingsRoute = new Hono<AppEnv>();
 settingsRoute.use('*', requireAuth);
 
+settingsRoute.get('/branding', async (c) => {
+  return c.json(ok(c.get('requestId'), await loadBranding(c.env)));
+});
+
+settingsRoute.post('/logo', requirePermission('setting.manage'), async (c) => {
+  const requestId = c.get('requestId');
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json(fail(requestId, 'LOGO_REQUIRED', 'กรุณาเลือกไฟล์โลโก้'), 400);
+  const extension = LOGO_EXTENSIONS[file.type];
+  if (!extension) return c.json(fail(requestId, 'LOGO_TYPE_NOT_ALLOWED', 'โลโก้ต้องเป็นไฟล์ PNG, JPG หรือ WebP'), 400);
+  if (file.size > MAX_LOGO_SIZE_BYTES) return c.json(fail(requestId, 'LOGO_TOO_LARGE', 'ไฟล์โลโก้ต้องมีขนาดไม่เกิน 2 MB'), 400);
+
+  const admin = createAdminClient(c.env);
+  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', ORGANIZATION_LOGO_KEY).maybeSingle();
+  if (loadError || !current) return c.json(fail(requestId, 'LOGO_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าโลโก้ กรุณาอัปเดตฐานข้อมูลก่อน'), 409);
+
+  const path = `organization/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await admin.storage.from(BRANDING_BUCKET).upload(path, file, {
+    contentType: file.type,
+    cacheControl: '3600',
+    upsert: false,
+  });
+  if (uploadError) return dbFailJson(c, 'LOGO_UPLOAD_FAILED', uploadError);
+
+  const publicUrl = admin.storage.from(BRANDING_BUCKET).getPublicUrl(path).data.publicUrl;
+  const logoUrl = `${publicUrl}?v=${Date.now()}`;
+  const { error: updateError } = await admin.from('system_settings').update({ value: logoUrl, updated_by: c.get('userId') }).eq('key', ORGANIZATION_LOGO_KEY);
+  if (updateError) {
+    await admin.storage.from(BRANDING_BUCKET).remove([path]);
+    return dbFailJson(c, 'LOGO_SETTING_UPDATE_FAILED', updateError);
+  }
+
+  const previousPath = brandingStoragePath(String(current.value ?? ''));
+  if (previousPath && previousPath !== path) await admin.storage.from(BRANDING_BUCKET).remove([previousPath]);
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE_ORG_LOGO', module: 'settings',
+    targetTable: 'system_settings', targetId: ORGANIZATION_LOGO_KEY,
+    detail: { mimeType: file.type, sizeBytes: file.size, replaced: Boolean(previousPath) }, requestId,
+  });
+  return c.json(ok(requestId, { ...(await loadBranding(c.env)), logoUrl }));
+});
+
+settingsRoute.delete('/logo', requirePermission('setting.manage'), async (c) => {
+  const requestId = c.get('requestId');
+  const admin = createAdminClient(c.env);
+  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', ORGANIZATION_LOGO_KEY).maybeSingle();
+  if (loadError || !current) return c.json(fail(requestId, 'LOGO_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าโลโก้'), 404);
+  const { error: updateError } = await admin.from('system_settings').update({ value: '', updated_by: c.get('userId') }).eq('key', ORGANIZATION_LOGO_KEY);
+  if (updateError) return dbFailJson(c, 'LOGO_SETTING_UPDATE_FAILED', updateError);
+  const previousPath = brandingStoragePath(String(current.value ?? ''));
+  if (previousPath) await admin.storage.from(BRANDING_BUCKET).remove([previousPath]);
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'DELETE_ORG_LOGO', module: 'settings',
+    targetTable: 'system_settings', targetId: ORGANIZATION_LOGO_KEY, requestId,
+  });
+  return c.json(ok(requestId, await loadBranding(c.env)));
+});
+
 settingsRoute.get('/', requirePermission('setting.view'), async (c) => {
   const requestId = c.get('requestId');
   const { data, error } = await c.get('supabase').from('system_settings').select('*').order('sort_order').order('key');
-  if (error) return c.json(fail(requestId, 'SETTINGS_LIST_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'SETTINGS_LIST_FAILED', error);
   const settings = data ?? [];
   return c.json(ok(requestId, {
     settings,
@@ -95,14 +189,13 @@ settingsRoute.patch('/:key', requirePermission('setting.manage'), zValidator('js
   const key = c.req.param('key')?.trim().toUpperCase() ?? '';
   const supabase = c.get('supabase');
   const { data: current, error: loadError } = await supabase.from('system_settings').select('*').eq('key', key).maybeSingle();
-  if (loadError) return c.json(fail(requestId, 'SETTING_LOAD_FAILED', loadError.message), 400);
+  if (loadError) return dbFailJson(c, 'SETTING_LOAD_FAILED', loadError);
   if (!current) return c.json(fail(requestId, 'SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าที่ระบุ'), 404);
   if (!current.is_editable) return c.json(fail(requestId, 'SETTING_READ_ONLY', 'ค่านี้จัดการผ่านระบบภายนอกหรือยังไม่พร้อมเปิดใช้งาน'), 409);
   const normalized = normalizeSettingValue(key, c.req.valid('json').value);
   if (normalized.error || normalized.value === undefined) return c.json(fail(requestId, 'SETTING_VALUE_INVALID', normalized.error ?? 'ค่าตั้งค่าไม่ถูกต้อง'), 400);
   const { data, error } = await supabase.from('system_settings').update({ value: normalized.value, updated_by: c.get('userId') }).eq('key', key).select().single();
-  if (error) return c.json(fail(requestId, 'SETTING_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'SETTING_UPDATE_FAILED', error);
   await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE_SETTING', module: 'settings', targetTable: 'system_settings', targetId: key, detail: { changed: current.value !== normalized.value, supportStatus: current.support_status }, requestId });
   return c.json(ok(requestId, data));
 });
-

@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Plus, X } from 'lucide-react';
@@ -10,7 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import type { Employee, PaginatedResult } from '../../types/admin';
+import type { EmployeeOption } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { CiNodeOption, ConfigurationItemDetail } from '../../types/cmdb';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
@@ -67,7 +68,7 @@ const editSchema = z.object({
 });
 type EditForm = z.infer<typeof editSchema>;
 
-function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOptions, onClose }: { detail: ConfigurationItemDetail; employees: Employee[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
+function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOptions, onClose }: { detail: ConfigurationItemDetail; employees: EmployeeOption[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
   const ci = detail.ci;
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -349,7 +350,7 @@ export function ConfigurationItemDetailPage() {
     queryFn: () => apiFetch<ConfigurationItemDetail>(`/api/v1/cmdb/items/${id}`),
     enabled: Boolean(id),
   });
-  const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
+  const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: showEdit });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options'), enabled: showEdit });
@@ -398,7 +399,7 @@ export function ConfigurationItemDetailPage() {
       </div>
 
       {showEdit && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
-        <EditCiForm detail={detailQuery.data} employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
+        <EditCiForm detail={detailQuery.data} employees={employeesQuery.data} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -487,7 +488,7 @@ export function ConfigurationItemDetailPage() {
           {relationships.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีความสัมพันธ์</p>}
           {relationships.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">ต้นทาง</th>
@@ -521,7 +522,7 @@ export function ConfigurationItemDetailPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
         </CardBody>

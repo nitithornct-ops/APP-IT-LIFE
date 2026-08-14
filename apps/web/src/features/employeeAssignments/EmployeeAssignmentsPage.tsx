@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Laptop2, Loader2, Plus, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Laptop2, Loader2, PackageCheck, Wrench } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { ApiError, apiFetch } from '../../services/apiClient';
-import type { Employee, PaginatedResult } from '../../types/admin';
-import type { AssetOption, EmployeeAssignment } from '../../types/assets';
-import { EMPLOYEE_ASSET_CATEGORIES, EMPLOYEE_ASSIGNMENT_STATUSES } from '../../types/assets';
+import { apiFetch } from '../../services/apiClient';
+import type { EmployeeOption, PaginatedResult } from '../../types/admin';
+import type { EmployeeAssignment } from '../../types/assets';
+import { EMPLOYEE_ASSIGNMENT_STATUSES } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
 
 const statusTone: Record<string, 'primary' | 'success' | 'warning' | 'danger'> = {
@@ -18,90 +19,6 @@ const statusTone: Record<string, 'primary' | 'success' | 'warning' | 'danger'> =
   ส่งซ่อม: 'warning',
   สูญหาย: 'danger',
 };
-
-function CreateAssignmentForm({ employees, assets, onClose }: { employees: Employee[]; assets: AssetOption[]; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const [employeeId, setEmployeeId] = useState('');
-  const [category, setCategory] = useState<(typeof EMPLOYEE_ASSET_CATEGORIES)[number]>('Computer');
-  const [itemName, setItemName] = useState('');
-  const [assetId, setAssetId] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [notes, setNotes] = useState('');
-  const [serverError, setServerError] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/v1/employee-assignments', {
-        method: 'POST',
-        body: JSON.stringify({
-          employeeId,
-          category,
-          itemName: itemName || undefined,
-          assetId: assetId || undefined,
-          serialNumber: serialNumber || undefined,
-          notes: notes || undefined,
-        }),
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['employee-assignments'] });
-      onClose();
-    },
-    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'เพิ่มรายการครอบครองไม่สำเร็จ'),
-  });
-
-  return (
-    <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <div className="flex items-center justify-between sm:col-span-3">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มรายการครอบครอง</h3>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" aria-hidden="true" /></button>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">พนักงาน</label>
-        <select data-testid="ea-create-employee" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-          <option value="">— เลือกพนักงาน —</option>
-          {employees.map((e) => (
-            <option key={e.id} value={e.id}>{[e.prefix_th, e.first_name_th, e.last_name_th].filter(Boolean).join(' ')}</option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ประเภท</label>
-        <select value={category} onChange={(e) => setCategory(e.target.value as (typeof EMPLOYEE_ASSET_CATEGORIES)[number])} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-          {EMPLOYEE_ASSET_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ทรัพย์สินที่ขึ้นทะเบียน (ถ้ามี)</label>
-        <select data-testid="ea-create-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-          <option value="">— ไม่ผูก Asset —</option>
-          {assets.map((a) => (
-            <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อรายการ (ถ้าไม่ผูก Asset)</label>
-        <input data-testid="ea-create-itemname" value={itemName} onChange={(e) => setItemName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">S/N</label>
-        <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">หมายเหตุ</label>
-        <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
-      <div className="sm:col-span-3">
-        <Button size="sm" isLoading={mutation.isPending} disabled={!employeeId || (!assetId && !itemName.trim())} data-testid="ea-create-submit" onClick={() => mutation.mutate()}>
-          บันทึกรายการครอบครอง
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function AssignmentStatusControl({ assignment }: { assignment: EmployeeAssignment }) {
   const queryClient = useQueryClient();
@@ -123,20 +40,18 @@ function AssignmentStatusControl({ assignment }: { assignment: EmployeeAssignmen
         ))}
       </select>
       <Button size="sm" variant="outline" isLoading={mutation.isPending} disabled={value === assignment.status} data-testid={`ea-status-save-${assignment.id}`} onClick={() => mutation.mutate(value)}>
-        บันทึก
+        อัปเดตสถานะ
       </Button>
     </div>
   );
 }
 
 export function EmployeeAssignmentsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState('');
   const [status, setStatus] = useState('');
 
-  const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
-  const assetsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
-
+  const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const assignmentsQuery = useQuery({
     queryKey: ['employee-assignments', employeeId, status],
     queryFn: () =>
@@ -145,27 +60,38 @@ export function EmployeeAssignmentsPage() {
       ),
   });
 
-  const employees = employeesQuery.data?.items ?? [];
+  const employees = employeesQuery.data ?? [];
   const items = assignmentsQuery.data?.items ?? [];
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ทรัพย์สินที่พนักงานครอบครอง</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">อุปกรณ์/ซอฟต์แวร์ที่มอบให้พนักงานแต่ละคนถือครอง</p>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">เบิกจ่าย / คืนทรัพย์สินพนักงาน</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">ติดตามสถานะครอบครอง รับคืน ส่งซ่อม และแจ้งสูญหายของอุปกรณ์หรือสิทธิ์ใช้งาน</p>
         </div>
         <RequirePermission permission="employee.manage">
-          <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="ea-create-toggle">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            เพิ่มรายการ
+          <Button size="sm" variant="outline" onClick={() => navigate('/admin/employees')} data-testid="ea-go-employees">
+            ไปหน้าพนักงานเพื่อเพิ่มรายการ
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </RequirePermission>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<Laptop2 className="h-5 w-5" />} label="รายการในระบบ" value={assignmentsQuery.data?.pagination.totalItems ?? 0} tone="primary" />
+        <StatCard icon={<PackageCheck className="h-5 w-5" />} label="กำลังครอบครอง" value={items.filter((item) => item.status === 'ครอบครอง').length} tone="teal" />
+        <StatCard icon={<Wrench className="h-5 w-5" />} label="อยู่ระหว่างส่งซ่อม" value={items.filter((item) => item.status === 'ส่งซ่อม').length} tone="amber" />
+        <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="แจ้งสูญหาย" value={items.filter((item) => item.status === 'สูญหาย').length} tone={items.some((item) => item.status === 'สูญหาย') ? 'danger' : 'gray'} />
+      </div>
+
+      <div className="rounded-lg border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-800 dark:border-primary-900/60 dark:bg-primary-950/30 dark:text-primary-200">
+        การเพิ่มหรือแก้ไขข้อมูลพนักงานและรายการที่มอบหมาย ทำจากหน้า <strong>พนักงาน</strong> ส่วนหน้านี้ใช้สำหรับงานปฏิบัติการหลังการมอบหมาย
+      </div>
+
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-          <span>รายการครอบครอง</span>
+          <span>รายการเบิกจ่าย / คืนและสถานะปัจจุบัน</span>
           <div className="flex flex-wrap items-center gap-2 text-xs font-normal">
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุกพนักงาน</option>
@@ -182,8 +108,6 @@ export function EmployeeAssignmentsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && <CreateAssignmentForm employees={employees} assets={assetsQuery.data ?? []} onClose={() => setShowCreate(false)} />}
-
           {assignmentsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
               <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />

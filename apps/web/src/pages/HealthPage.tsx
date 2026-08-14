@@ -3,11 +3,25 @@ import { Link } from 'react-router-dom';
 import { useHealth } from '../hooks/useHealth';
 import { formatThaiDate } from '../utils/date';
 
-export function HealthPage() {
+/**
+ * ใช้ได้สองบริบท:
+ *  - `/health` แบบสาธารณะ (standalone) สำหรับตรวจว่าระบบล่มไหมทั้งที่ยังล็อกอินไม่ได้
+ *  - `/system-status` ภายในแอปที่มีเมนูครบ — เดิมเมนู "สถานะระบบ" ชี้ไปที่ route สาธารณะ
+ *    กดแล้วผู้ใช้หลุดออกจากโครงแอปจนต้องกด Back (พบตอน Pre-production QA audit 2026-08-13)
+ */
+export function HealthPage({ standalone = true }: { standalone?: boolean } = {}) {
   const { data, isLoading, isError, error } = useHealth();
 
+  const Wrapper = standalone ? 'main' : 'section';
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+    <Wrapper
+      className={
+        standalone
+          ? 'mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center'
+          : 'mx-auto flex max-w-md flex-col items-center gap-4 py-10 text-center'
+      }
+    >
       <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">สถานะระบบ (Health Check)</h1>
 
       {isLoading && (
@@ -47,9 +61,11 @@ export function HealthPage() {
         </div>
       )}
 
-      <Link to="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-        กลับหน้าแรก
-      </Link>
-    </main>
+      {standalone && (
+        <Link to="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+          กลับหน้าแรก
+        </Link>
+      )}
+    </Wrapper>
   );
 }

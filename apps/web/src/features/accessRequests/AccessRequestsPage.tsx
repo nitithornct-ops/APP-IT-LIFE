@@ -1,13 +1,15 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2, Plus, X } from 'lucide-react';
+import { CheckCircle2, Clock3, KeyRound, Loader2, Plus, ShieldX, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -146,6 +148,7 @@ export function AccessRequestsPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [pendingApprovalOnly, setPendingApprovalOnly] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const systemsQuery = useQuery({
     queryKey: ['access-systems'],
@@ -153,14 +156,18 @@ export function AccessRequestsPage() {
   });
 
   const requestsQuery = useQuery({
-    queryKey: ['access-requests', page, status, mineOnly, pendingApprovalOnly],
+    queryKey: ['access-requests', page, pageSize, status, mineOnly, pendingApprovalOnly],
     queryFn: () =>
       apiFetch<PaginatedResult<AccessRequestListItem>>(
-        `/api/v1/access-requests?page=${page}&pageSize=20${status ? `&status=${encodeURIComponent(status)}` : ''}${mineOnly ? '&mine=true' : ''}${pendingApprovalOnly ? '&pendingMyApproval=true' : ''}`,
+        `/api/v1/access-requests?page=${page}&pageSize=${pageSize}${status ? `&status=${encodeURIComponent(status)}` : ''}${mineOnly ? '&mine=true' : ''}${pendingApprovalOnly ? '&pendingMyApproval=true' : ''}`,
       ),
   });
 
   const activeSystems = (systemsQuery.data ?? []).filter((s) => s.status === 'active');
+  const visibleRequests = requestsQuery.data?.items ?? [];
+  const pendingCount = visibleRequests.filter((request) => request.status === 'รออนุมัติจากหัวหน้างาน' || request.status === 'รอส่วนงานไอทีดำเนินการ').length;
+  const completedCount = visibleRequests.filter((request) => request.status === 'เสร็จสิ้น').length;
+  const rejectedCount = visibleRequests.filter((request) => request.status === 'ปฏิเสธ').length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,6 +182,13 @@ export function AccessRequestsPage() {
             ยื่นคำขอใหม่
           </Button>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<KeyRound className="h-5 w-5" />} label="คำขอทั้งหมด" value={requestsQuery.data?.pagination.totalItems ?? 0} tone="primary" />
+        <StatCard icon={<Clock3 className="h-5 w-5" />} label="กำลังรอดำเนินการ (หน้านี้)" value={pendingCount} tone={pendingCount ? 'amber' : 'gray'} />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="เสร็จสิ้น (หน้านี้)" value={completedCount} tone="teal" />
+        <StatCard icon={<ShieldX className="h-5 w-5" />} label="ปฏิเสธ (หน้านี้)" value={rejectedCount} tone={rejectedCount ? 'danger' : 'gray'} />
       </div>
 
       <Card>
@@ -219,7 +233,7 @@ export function AccessRequestsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && <SubmitAccessRequestForm systems={activeSystems} onClose={() => setShowCreate(false)} />}
+          {showCreate && <FormModal title="ยื่นคำขอสิทธิ์ระบบ" description="ระบุระบบและระดับสิทธิ์ที่ต้องการ" size="lg" onClose={() => setShowCreate(false)}><SubmitAccessRequestForm systems={activeSystems} onClose={() => setShowCreate(false)} /></FormModal>}
 
           {requestsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -233,7 +247,7 @@ export function AccessRequestsPage() {
 
           {requestsQuery.data && requestsQuery.data.items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable pagination={false} className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">ระบบงาน</th>
@@ -263,33 +277,11 @@ export function AccessRequestsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
 
-          {requestsQuery.data && requestsQuery.data.pagination.totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-center gap-3 text-sm">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ก่อนหน้า
-              </button>
-              <span className="text-slate-500 dark:text-slate-400">
-                หน้า {requestsQuery.data.pagination.page} / {requestsQuery.data.pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= requestsQuery.data.pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ถัดไป
-              </button>
-            </div>
-          )}
+          {requestsQuery.data && <TablePagination page={requestsQuery.data.pagination.page} pageSize={pageSize} totalItems={requestsQuery.data.pagination.totalItems} totalPages={requestsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
     </div>

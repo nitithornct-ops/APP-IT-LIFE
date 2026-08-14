@@ -3,11 +3,14 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   assessVendorSchema,
@@ -36,14 +39,10 @@ const CONTRACT_SELECT =
   '*, vendor:vendors!contracts_vendor_id_fkey(id, vendor_code, name, status), ' +
   'owner:profiles!contracts_owner_id_fkey(id, full_name, email)';
 
-function cleanSearch(value: string): string {
-  return value.replace(/[%(),]/g, ' ').trim();
-}
-
 function generatedVendorCode(): string {
   const now = new Date();
   const month = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  return `VND-${month}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `VND-${month}-${randomCodeSuffix()}`;
 }
 
 vendorsRoute.get('/options', async (c) => {
@@ -87,8 +86,7 @@ vendorsRoute.post('/', requirePermission('vendor.manage'), zValidator('json', cr
     owner_id: body.ownerId ?? actorId, notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(VENDOR_SELECT).single();
   if (error) {
-    const message = error.code === '23505' ? 'มีชื่อหรือรหัสผู้ให้บริการนี้อยู่แล้ว' : error.message;
-    return c.json(fail(reqId, 'VENDOR_CREATE_FAILED', message), 400);
+    return dbFailJson(c, 'VENDOR_CREATE_FAILED', error, error.code === '23505' ? 'มีชื่อหรือรหัสผู้ให้บริการนี้อยู่แล้ว' : undefined);
   }
   const vendorRow = vendor as unknown as { id: string; vendor_code: string };
 
@@ -102,7 +100,7 @@ vendorsRoute.post('/', requirePermission('vendor.manage'), zValidator('json', cr
     });
     if (contractError) {
       await admin.from('vendors').delete().eq('id', vendorRow.id);
-      return c.json(fail(reqId, 'VENDOR_INITIAL_CONTRACT_FAILED', contractError.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : contractError.message), 400);
+      return dbFailJson(c, 'VENDOR_INITIAL_CONTRACT_FAILED', contractError, contractError.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : undefined);
     }
   }
 
@@ -120,11 +118,12 @@ vendorsRoute.patch('/:id', requirePermission('vendor.manage'), zValidator('json'
     const value = body[input as keyof typeof body];
     if (value !== undefined) patch[column] = value === '' ? null : value;
   }
+  const auditBefore = await loadAuditSnapshot(createAdminClient(c.env), 'vendors', c.req.param('id'));
   const { data, error } = await createAdminClient(c.env).from('vendors').update(patch).eq('id', c.req.param('id')!).select(VENDOR_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'VENDOR_UPDATE_FAILED', error.code === '23505' ? 'มีชื่อผู้ให้บริการนี้อยู่แล้ว' : error.message), 400);
+  if (error) return dbFailJson(c, 'VENDOR_UPDATE_FAILED', error, error.code === '23505' ? 'มีชื่อผู้ให้บริการนี้อยู่แล้ว' : undefined);
   if (!data) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการ'), 404);
   const dataRow = data as unknown as { id: string };
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'vendor', targetTable: 'vendors', targetId: dataRow.id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'vendor', targetTable: 'vendors', targetId: dataRow.id, detail: body, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -133,7 +132,7 @@ vendorsRoute.post('/:id/status', requirePermission('vendor.manage'), zValidator(
   const actorId = c.get('userId');
   const { status } = c.req.valid('json');
   const { data, error } = await createAdminClient(c.env).from('vendors').update({ status, updated_by: actorId }).eq('id', c.req.param('id')!).select(VENDOR_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'VENDOR_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'VENDOR_STATUS_FAILED', error);
   if (!data) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการ'), 404);
   const dataRow = data as unknown as { id: string };
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE_STATUS', module: 'vendor', targetTable: 'vendors', targetId: dataRow.id, detail: { status }, requestId: reqId });
@@ -145,7 +144,7 @@ vendorsRoute.post('/:id/assessment', requirePermission('vendor.manage'), zValida
   const actorId = c.get('userId');
   const { result } = c.req.valid('json');
   const { data, error } = await createAdminClient(c.env).from('vendors').update({ assessment_result: result, assessment_date: new Date().toISOString().slice(0, 10), updated_by: actorId }).eq('id', c.req.param('id')!).select(VENDOR_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'VENDOR_ASSESSMENT_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'VENDOR_ASSESSMENT_FAILED', error);
   if (!data) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการ'), 404);
   const dataRow = data as unknown as { id: string };
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'ASSESS', module: 'vendor', targetTable: 'vendors', targetId: dataRow.id, detail: { result }, requestId: reqId });
@@ -180,7 +179,7 @@ contractsRoute.post('/check-expiry', requirePermission('contract.manage'), async
   const admin = createAdminClient(c.env);
   const today = new Date().toISOString().slice(0, 10);
   const { data: candidates, error } = await admin.from('contracts').select('id, contract_number, name, owner_id, end_date, renewal_notice_days, expiry_notified_at, status').eq('status', 'Active').not('end_date', 'is', null);
-  if (error) return c.json(fail(reqId, 'CONTRACT_EXPIRY_CHECK_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CONTRACT_EXPIRY_CHECK_FAILED', error);
   const todayMs = Date.parse(`${today}T00:00:00Z`);
   const expiredIds = (candidates ?? []).filter((row) => row.end_date! < today).map((row) => row.id);
   const notifyRows = (candidates ?? []).filter((row) => {
@@ -190,7 +189,7 @@ contractsRoute.post('/check-expiry', requirePermission('contract.manage'), async
   });
   if (expiredIds.length) {
     const { error: updateError } = await admin.from('contracts').update({ status: 'Expired', updated_by: actorId }).in('id', expiredIds);
-    if (updateError) return c.json(fail(reqId, 'CONTRACT_EXPIRY_UPDATE_FAILED', updateError.message), 400);
+    if (updateError) return dbFailJson(c, 'CONTRACT_EXPIRY_UPDATE_FAILED', updateError);
   }
   if (notifyRows.length) {
     await Promise.all(notifyRows.map((row) => sendNotification(c.env, {
@@ -236,7 +235,7 @@ contractsRoute.post('/', requirePermission('contract.manage'), zValidator('json'
     currency: body.currency, owner_id: body.ownerId ?? actorId, renewal_notice_days: body.renewalNoticeDays,
     status: body.status, notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(CONTRACT_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CONTRACT_CREATE_FAILED', error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : error.message), 400);
+  if (error) return dbFailJson(c, 'CONTRACT_CREATE_FAILED', error, error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : undefined);
   const dataRow = data as unknown as { id: string; contract_number: string };
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: { contractNumber: dataRow.contract_number, vendorId: body.vendorId }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
@@ -253,11 +252,12 @@ contractsRoute.patch('/:id', requirePermission('contract.manage'), zValidator('j
     if (value !== undefined) patch[column] = value === '' ? null : value;
   }
   if (body.endDate !== undefined) patch.expiry_notified_at = null;
+  const auditBefore = await loadAuditSnapshot(createAdminClient(c.env), 'contracts', c.req.param('id'));
   const { data, error } = await createAdminClient(c.env).from('contracts').update(patch).eq('id', c.req.param('id')!).select(CONTRACT_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'CONTRACT_UPDATE_FAILED', error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : error.message), 400);
+  if (error) return dbFailJson(c, 'CONTRACT_UPDATE_FAILED', error, error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : undefined);
   if (!data) return c.json(fail(reqId, 'CONTRACT_NOT_FOUND', 'ไม่พบสัญญา'), 404);
   const dataRow = data as unknown as { id: string };
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: body, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -266,7 +266,7 @@ contractsRoute.post('/:id/status', requirePermission('contract.manage'), zValida
   const actorId = c.get('userId');
   const { status } = c.req.valid('json');
   const { data, error } = await createAdminClient(c.env).from('contracts').update({ status, updated_by: actorId }).eq('id', c.req.param('id')!).select(CONTRACT_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'CONTRACT_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CONTRACT_STATUS_FAILED', error);
   if (!data) return c.json(fail(reqId, 'CONTRACT_NOT_FOUND', 'ไม่พบสัญญา'), 404);
   const dataRow = data as unknown as { id: string };
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE_STATUS', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: { status }, requestId: reqId });

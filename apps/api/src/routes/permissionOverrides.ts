@@ -2,8 +2,9 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { createPermissionOverrideSchema, updatePermissionOverrideSchema } from '../validators/permissionAdmin';
@@ -81,7 +82,7 @@ permissionOverridesRoute.post(
           .single();
 
     if (error) {
-      return c.json(fail(reqId, 'PERMISSION_OVERRIDE_SAVE_FAILED', error.message), 400);
+      return dbFailJson(c, 'PERMISSION_OVERRIDE_SAVE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -129,9 +130,10 @@ permissionOverridesRoute.patch(
     if (body.reason !== undefined) patch.reason = body.reason;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'user_permission_overrides', id);
     const { data, error } = await supabase.from('user_permission_overrides').update(patch).eq('id', id).select().single();
     if (error) {
-      return c.json(fail(reqId, 'PERMISSION_OVERRIDE_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'PERMISSION_OVERRIDE_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -143,7 +145,9 @@ permissionOverridesRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },

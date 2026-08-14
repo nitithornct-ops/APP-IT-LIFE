@@ -1,12 +1,13 @@
+import { DataTable } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ListChecks, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, ListChecks, Loader2, ShieldOff } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult, UserListItem } from '../../types/admin';
@@ -92,7 +93,7 @@ function RegistrySection() {
 
         {query.data && query.data.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <DataTable className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-2 py-2">ผู้ใช้</th>
@@ -135,7 +136,7 @@ function RegistrySection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         )}
       </CardBody>
@@ -237,10 +238,22 @@ function DeactivateEmployeeSection() {
 }
 
 export function AccessRegistryPage() {
+  const registryQuery = useQuery({
+    queryKey: ['admin', 'access-registry'],
+    queryFn: () => apiFetch<AccessRegistryEntry[]>('/api/v1/access-registry'),
+  });
+  const registry = registryQuery.data ?? [];
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ทะเบียนสิทธิ์ RBAC</h1>
       <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">ทบทวน/เพิกถอนสิทธิ์ที่ IT ให้ไว้ และระงับสิทธิ์เมื่อพนักงานพ้นสภาพ</p>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<ListChecks className="h-5 w-5" />} label="สิทธิ์ในทะเบียน" value={registry.length} tone="primary" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="สิทธิ์ที่ใช้งาน" value={registry.filter((entry) => entry.status === 'active').length} tone="teal" />
+        <StatCard icon={<Clock3 className="h-5 w-5" />} label="ถึงรอบทบทวน" value={registry.filter((entry) => entry.next_review_due && entry.next_review_due <= new Date().toISOString().slice(0, 10)).length} tone="amber" />
+        <StatCard icon={<ShieldOff className="h-5 w-5" />} label="ระงับ/เพิกถอน" value={registry.filter((entry) => entry.status !== 'active').length} tone="gray" />
+      </div>
       <RegistrySection />
       <DeactivateEmployeeSection />
     </div>

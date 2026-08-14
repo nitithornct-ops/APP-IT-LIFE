@@ -3,12 +3,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
+  assetBorrowOverviewQuerySchema,
   assignAssetSchema,
   createAssetSchema,
   listAssetsQuerySchema,
@@ -72,7 +76,7 @@ function generateAssetCode(categoryPrefix: string | null | undefined): string {
   const prefix = `AS-${categoryPrefix || 'GEN'}`;
   const now = new Date();
   const datePart = `${String(now.getUTCFullYear()).slice(2)}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const rand = Math.floor(Math.random() * 9000 + 1000);
+  const rand = randomCodeSuffix();
   return `${prefix}-${datePart}${rand}`;
 }
 
@@ -141,6 +145,99 @@ assetsRoute.get('/options', requirePermission('asset.view'), async (c) => {
   return c.json(ok(reqId, data));
 });
 
+/** ภาพรวมยืม/คืนสำหรับหน้าปฏิบัติงานรวม — ต้องอยู่ก่อน '/:id' */
+assetsRoute.get(
+  '/borrow-overview',
+  requirePermission('asset.view'),
+  zValidator('query', assetBorrowOverviewQuerySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const { page, pageSize, view, search, departmentId } = c.req.valid('query');
+    const today = new Date().toISOString().slice(0, 10);
+    const dueSoonDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+    const [availableResult, activeResult, dueSoonResult, overdueResult] = await Promise.all([
+      supabase.from('assets').select('id', { count: 'exact', head: true }).eq('status', 'พร้อมใช้งาน'),
+      supabase.from('assets').select('id', { count: 'exact', head: true }).eq('status', 'ใช้งานอยู่'),
+      supabase
+        .from('assets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'ใช้งานอยู่')
+        .gte('loan_due_date', today)
+        .lte('loan_due_date', dueSoonDate),
+      supabase
+        .from('assets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'ใช้งานอยู่')
+        .lt('loan_due_date', today),
+    ]);
+    const summaryError = availableResult.error || activeResult.error || dueSoonResult.error || overdueResult.error;
+    if (summaryError) return c.json(fail(reqId, 'ASSET_BORROW_SUMMARY_FAILED', 'ดึงสรุปการยืม/คืนไม่สำเร็จ'), 400);
+
+    const summary = {
+      available: availableResult.count ?? 0,
+      active: activeResult.count ?? 0,
+      dueSoon: dueSoonResult.count ?? 0,
+      overdue: overdueResult.count ?? 0,
+    };
+
+    if (view === 'history') {
+      let matchingAssetIds: string[] | null = null;
+      const safeSearch = search ? cleanSearch(search) : '';
+      if (safeSearch) {
+        const { data: matchedAssets, error: matchedAssetsError } = await supabase
+          .from('assets')
+          .select('id')
+          .or(`name.ilike.%${safeSearch}%,asset_code.ilike.%${safeSearch}%`)
+          .limit(2000);
+        if (matchedAssetsError) return c.json(fail(reqId, 'ASSET_BORROW_HISTORY_FAILED', 'ค้นหาประวัติการยืม/คืนไม่สำเร็จ'), 400);
+        matchingAssetIds = (matchedAssets ?? []).map((asset) => asset.id);
+        if (matchingAssetIds.length === 0) {
+          return c.json(ok(reqId, { summary, records: toPaginatedData([], 0, page, pageSize) }));
+        }
+      }
+
+      let historyQuery = supabase
+        .from('asset_movements')
+        .select(
+          'id, action_type, asset:assets!asset_movements_asset_id_fkey(id, asset_code, name), ' +
+            'from_employee:employees!asset_movements_from_employee_id_fkey(first_name_th, last_name_th), ' +
+            'to_employee:employees!asset_movements_to_employee_id_fkey(first_name_th, last_name_th), ' +
+            'department:departments(name_th), location, status_label, notes, due_date, condition, action_date',
+          { count: 'exact' },
+        )
+        .in('action_type', ['Assign', 'Return', 'Transfer'])
+        .order('action_date', { ascending: false })
+        .range(...paginationRange(page, pageSize));
+      if (departmentId) historyQuery = historyQuery.eq('department_id', departmentId);
+      if (matchingAssetIds) historyQuery = historyQuery.in('asset_id', matchingAssetIds);
+
+      const { data, count, error } = await historyQuery;
+      if (error) return c.json(fail(reqId, 'ASSET_BORROW_HISTORY_FAILED', 'ดึงประวัติการยืม/คืนไม่สำเร็จ'), 400);
+      return c.json(ok(reqId, { summary, records: toPaginatedData(data ?? [], count, page, pageSize) }));
+    }
+
+    let activeQuery = supabase
+      .from('assets')
+      .select(
+        'id, asset_code, name, status, location, loan_date, loan_due_date, ' +
+          'owner:employees(id, employee_code, first_name_th, last_name_th, nickname), department:departments(id, name_th)',
+        { count: 'exact' },
+      )
+      .eq('status', 'ใช้งานอยู่')
+      .order('loan_due_date', { ascending: true, nullsFirst: false })
+      .range(...paginationRange(page, pageSize));
+    if (departmentId) activeQuery = activeQuery.eq('department_id', departmentId);
+    const safeActiveSearch = search ? cleanSearch(search) : '';
+    if (safeActiveSearch) activeQuery = activeQuery.or(`name.ilike.%${safeActiveSearch}%,asset_code.ilike.%${safeActiveSearch}%`);
+
+    const { data, count, error } = await activeQuery;
+    if (error) return c.json(fail(reqId, 'ASSET_BORROW_LIST_FAILED', 'ดึงรายการกำลังยืม/ถือครองไม่สำเร็จ'), 400);
+    return c.json(ok(reqId, { summary, records: toPaginatedData(data ?? [], count, page, pageSize) }));
+  },
+);
+
 assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -154,8 +251,9 @@ assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAs
 
   if (status) query = query.eq('status', status);
   if (categoryId) query = query.eq('category_id', categoryId);
-  if (search) {
-    query = query.or(`name.ilike.%${search}%,asset_code.ilike.%${search}%,serial_number.ilike.%${search}%`);
+  const safeSearch = search ? cleanSearch(search) : '';
+  if (safeSearch) {
+    query = query.or(`name.ilike.%${safeSearch}%,asset_code.ilike.%${safeSearch}%,serial_number.ilike.%${safeSearch}%`);
   }
 
   const { data, count, error } = await query;
@@ -243,7 +341,7 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
     .select(ASSET_SELECT)
     .single();
 
-  if (error) return c.json(fail(reqId, 'ASSET_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_CREATE_FAILED', error);
   const createdId = (data as unknown as { id: string }).id;
 
   await recordMovement(supabase, {
@@ -308,8 +406,9 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
     patch.qr_code_url = buildAssetQrUrl((patch.asset_code as string) || current.asset_code, (patch.name as string) || current.name);
   }
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'assets', id);
   const { data, error } = await supabase.from('assets').update(patch).eq('id', id).select(ASSET_SELECT).single();
-  if (error) return c.json(fail(reqId, 'ASSET_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_UPDATE_FAILED', error);
 
   await recordMovement(supabase, { assetId: id, actionType: 'Update', statusLabel: 'บันทึก', notes: 'แก้ไขข้อมูลทรัพย์สิน', createdBy: actorId });
   await writeAuditLog(c.env, {
@@ -321,7 +420,9 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, enrichAsset(data as never)));
 });
@@ -338,7 +439,7 @@ assetsRoute.post('/:id/status', requirePermission('asset.update'), zValidator('j
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
 
   const { data, error } = await supabase.from('assets').update({ status, updated_by: actorId }).eq('id', id).select(ASSET_SELECT).single();
-  if (error) return c.json(fail(reqId, 'ASSET_STATUS_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_STATUS_UPDATE_FAILED', error);
 
   await recordMovement(supabase, {
     assetId: id,
@@ -377,7 +478,7 @@ assetsRoute.post('/:id/retire', requirePermission('asset.dispose'), async (c) =>
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'ASSET_RETIRE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_RETIRE_FAILED', error);
 
   await recordMovement(supabase, { assetId: id, actionType: 'Retire', statusLabel: 'จำหน่าย/เลิกใช้', notes: 'จำหน่าย/เลิกใช้', createdBy: actorId });
   await writeAuditLog(c.env, {
@@ -409,13 +510,14 @@ assetsRoute.post(
     if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
     if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'assets', id);
     const { data, error } = await supabase
       .from('assets')
       .update({ patch_status: patchStatus, patch_date: patchDate || new Date().toISOString().slice(0, 10), updated_by: actorId })
       .eq('id', id)
       .select(ASSET_SELECT)
       .single();
-    if (error) return c.json(fail(reqId, 'ASSET_PATCH_UPDATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSET_PATCH_UPDATE_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -426,7 +528,9 @@ assetsRoute.post(
       targetId: id,
       detail: { patchStatus },
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, enrichAsset(data as never)));
   },
@@ -444,7 +548,7 @@ assetsRoute.post('/:id/qr', requirePermission('asset.update'), async (c) => {
 
   const url = buildAssetQrUrl(current.asset_code || current.id, current.name);
   const { data, error } = await supabase.from('assets').update({ qr_code_url: url, updated_by: actorId }).eq('id', id).select('id, qr_code_url').single();
-  if (error) return c.json(fail(reqId, 'ASSET_QR_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_QR_FAILED', error);
 
   await writeAuditLog(c.env, {
     actorId,
@@ -481,7 +585,7 @@ assetsRoute.post('/:id/verify', requirePermission('asset.update'), zValidator('j
   if (result === 'ไม่พบ/สูญหาย') patch.status = 'สูญหาย';
 
   const { data, error } = await supabase.from('assets').update(patch).eq('id', id).select(ASSET_SELECT).single();
-  if (error) return c.json(fail(reqId, 'ASSET_VERIFY_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_VERIFY_FAILED', error);
 
   await recordMovement(supabase, { assetId: id, actionType: 'Audit', statusLabel: result, notes: note ?? null, createdBy: actorId });
   await writeAuditLog(c.env, {
@@ -530,7 +634,7 @@ assetsRoute.post('/:id/assign', requirePermission('asset.transfer'), zValidator(
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'ASSET_ASSIGN_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_ASSIGN_FAILED', error);
 
   await recordMovement(supabase, {
     assetId: id,
@@ -585,7 +689,7 @@ assetsRoute.post('/:id/return', requirePermission('asset.transfer'), zValidator(
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
-  if (error) return c.json(fail(reqId, 'ASSET_RETURN_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_RETURN_FAILED', error);
 
   await recordMovement(supabase, {
     assetId: id,
@@ -633,7 +737,7 @@ assetsRoute.post('/:id/transfer', requirePermission('asset.transfer'), zValidato
   if (dueDate !== undefined) patch.loan_due_date = dueDate || null;
 
   const { data, error } = await supabase.from('assets').update(patch).eq('id', id).select(ASSET_SELECT).single();
-  if (error) return c.json(fail(reqId, 'ASSET_TRANSFER_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'ASSET_TRANSFER_FAILED', error);
 
   await recordMovement(supabase, {
     assetId: id,
@@ -693,7 +797,7 @@ assetsRoute.post(
       .eq('id', id)
       .select(ASSET_SELECT)
       .single();
-    if (error) return c.json(fail(reqId, 'ASSET_REPAIR_SEND_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSET_REPAIR_SEND_FAILED', error);
 
     await recordMovement(supabase, {
       assetId: id,
@@ -744,7 +848,7 @@ assetsRoute.post(
       .eq('id', id)
       .select(ASSET_SELECT)
       .single();
-    if (error) return c.json(fail(reqId, 'ASSET_REPAIR_RETURN_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSET_REPAIR_RETURN_FAILED', error);
 
     await recordMovement(supabase, {
       assetId: id,

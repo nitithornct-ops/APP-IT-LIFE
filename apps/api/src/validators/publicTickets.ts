@@ -7,10 +7,11 @@ export const publicSubmitTicketSchema = z.object({
   requesterPhone: z.string().trim().max(40).optional(),
   guestDepartment: z.string().trim().max(160).optional(),
   location: z.string().trim().max(160).optional(),
+  assetCode: z.string().trim().max(80).optional(),
   categoryId: z.string().uuid('กรุณาเลือกประเภทปัญหา'),
   priority: ticketPriorityEnum.optional(),
-  title: z.string().trim().min(1, 'กรุณากรอกสรุปปัญหา').max(120),
-  description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(1500),
+  title: z.string().trim().min(1, 'กรุณากรอกสรุปปัญหา').max(200),
+  description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   privacyConsent: z.literal(true, { errorMap: () => ({ message: 'กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket' }) }),
   // Honeypot — a real visitor never fills this hidden field; a non-empty value marks the submission as spam.
   website: z.string().max(200).optional(),

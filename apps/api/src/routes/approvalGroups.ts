@@ -2,8 +2,9 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -56,7 +57,7 @@ approvalGroupsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'APPROVAL_GROUP_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'APPROVAL_GROUP_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -94,9 +95,10 @@ approvalGroupsRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'approval_groups', id);
     const { data, error } = await supabase.from('approval_groups').update(patch).eq('id', id).select().single();
     if (error) {
-      return c.json(fail(reqId, 'APPROVAL_GROUP_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'APPROVAL_GROUP_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -108,7 +110,9 @@ approvalGroupsRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },
@@ -158,7 +162,7 @@ approvalGroupsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'APPROVAL_GROUP_MEMBER_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'APPROVAL_GROUP_MEMBER_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -195,6 +199,7 @@ approvalGroupsRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'approval_group_members', memberId);
     const { data, error } = await supabase
       .from('approval_group_members')
       .update(patch)
@@ -203,7 +208,7 @@ approvalGroupsRoute.patch(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'APPROVAL_GROUP_MEMBER_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'APPROVAL_GROUP_MEMBER_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -215,7 +220,9 @@ approvalGroupsRoute.patch(
       targetId: memberId,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },

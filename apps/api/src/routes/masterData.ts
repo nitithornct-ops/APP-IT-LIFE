@@ -2,8 +2,9 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -53,7 +54,7 @@ departmentsRoute.post('/', requirePermission('department.manage'), zValidator('j
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'DEPARTMENT_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'DEPARTMENT_CREATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -88,10 +89,11 @@ departmentsRoute.patch(
     if (body.parentDepartmentId !== undefined) patch.parent_department_id = body.parentDepartmentId;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'departments', id);
     const { data, error } = await supabase.from('departments').update(patch).eq('id', id).select().single();
 
     if (error) {
-      return c.json(fail(reqId, 'DEPARTMENT_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'DEPARTMENT_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -103,7 +105,9 @@ departmentsRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },
@@ -136,7 +140,7 @@ positionsRoute.post('/', requirePermission('position.manage'), zValidator('json'
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'POSITION_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'POSITION_CREATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -166,10 +170,11 @@ positionsRoute.patch('/:id', requirePermission('position.manage'), zValidator('j
   if (body.nameEn !== undefined) patch.name_en = body.nameEn;
   if (body.status !== undefined) patch.status = body.status;
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'positions', id);
   const { data, error } = await supabase.from('positions').update(patch).eq('id', id).select().single();
 
   if (error) {
-    return c.json(fail(reqId, 'POSITION_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'POSITION_UPDATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -181,7 +186,9 @@ positionsRoute.patch('/:id', requirePermission('position.manage'), zValidator('j
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, data));
 });
@@ -227,7 +234,7 @@ ticketCategoriesRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'TICKET_CATEGORY_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'TICKET_CATEGORY_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -266,10 +273,11 @@ ticketCategoriesRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'ticket_categories', id);
     const { data, error } = await supabase.from('ticket_categories').update(patch).eq('id', id).select().single();
 
     if (error) {
-      return c.json(fail(reqId, 'TICKET_CATEGORY_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'TICKET_CATEGORY_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -281,7 +289,9 @@ ticketCategoriesRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },
@@ -324,7 +334,7 @@ assetCategoriesRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ASSET_CATEGORY_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ASSET_CATEGORY_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -359,10 +369,11 @@ assetCategoriesRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'asset_categories', id);
     const { data, error } = await supabase.from('asset_categories').update(patch).eq('id', id).select().single();
 
     if (error) {
-      return c.json(fail(reqId, 'ASSET_CATEGORY_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ASSET_CATEGORY_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -374,7 +385,9 @@ assetCategoriesRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },
@@ -412,7 +425,7 @@ accessSystemsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_SYSTEM_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_SYSTEM_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -446,10 +459,11 @@ accessSystemsRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'access_systems', id);
     const { data, error } = await supabase.from('access_systems').update(patch).eq('id', id).select().single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_SYSTEM_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_SYSTEM_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -461,7 +475,9 @@ accessSystemsRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },

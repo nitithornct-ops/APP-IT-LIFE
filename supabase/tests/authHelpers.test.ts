@@ -75,6 +75,7 @@ describe('my_permissions()', () => {
       'service_request.create',
       'service_request.view',
       'task.view',
+      'ticket.comment',
       'ticket.create',
       'ticket.view',
       'workflow.approve',

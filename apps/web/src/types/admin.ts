@@ -170,6 +170,15 @@ export interface Employee {
   notes: string | null;
 }
 
+/**
+ * รายชื่อพนักงานแบบย่อจาก GET /api/v1/employees/options — ใช้ทำ dropdown เลือกเจ้าของ/ผู้ครอบครอง
+ * ไม่มี email/upn/username_ad/notes โดยตั้งใจ เพราะเป็นข้อมูลของทะเบียนพนักงานเต็มที่ต้องใช้ employee.manage
+ */
+export type EmployeeOption = Pick<
+  Employee,
+  'id' | 'employee_code' | 'prefix_th' | 'first_name_th' | 'last_name_th' | 'nickname' | 'department_id' | 'position_id' | 'status'
+>;
+
 export interface PaginatedResult<T> {
   items: T[];
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };

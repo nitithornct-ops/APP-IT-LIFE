@@ -89,6 +89,29 @@ export interface AssetDetail {
   licenses: { id: string; software_name: string; license_type: string | null; expire_date: string | null; status: string }[];
 }
 
+export interface AssetBorrowSummary {
+  available: number;
+  active: number;
+  dueSoon: number;
+  overdue: number;
+}
+
+export interface ActiveAssetLoan {
+  id: string;
+  asset_code: string;
+  name: string;
+  status: AssetStatus;
+  location: string | null;
+  loan_date: string | null;
+  loan_due_date: string | null;
+  owner: EmployeeRef | null;
+  department: { id: string; name_th: string } | null;
+}
+
+export interface AssetBorrowMovement extends AssetMovement {
+  asset: { id: string; asset_code: string; name: string } | null;
+}
+
 // ===== Maintenance / PM =====
 export const PM_STATUSES = ['วางแผน', 'กำลังดำเนินการ', 'ดำเนินการแล้ว', 'ยกเลิก'] as const;
 export const PM_RECURRENCES = ['ครั้งเดียว', 'รายเดือน', 'รายไตรมาส', 'รายปี'] as const;

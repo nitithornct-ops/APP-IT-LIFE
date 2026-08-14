@@ -3,7 +3,8 @@ import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import type { AppEnv } from '../types';
-import { fail, ok } from '../utils/response';
+import { dbFailJson } from '../utils/dbError';
+import { ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { dashboardSummaryQuerySchema } from '../validators/dashboard';
 
@@ -78,6 +79,77 @@ function toneFor(total: number, warning: number, overdue: number): Tone {
   return total > 0 ? 'teal' : 'gray';
 }
 
+/**
+ * เดิมทุกแหล่งข้อมูลถูกดึงด้วย `.limit(2000)` เฉย ๆ ซึ่งพังสองชั้น:
+ *
+ *  1. ไม่มี `.order()` — PostgREST จึงคืน "2000 แถวไหนก็ได้" ตัวเลขบนการ์ดเปลี่ยนไปมาระหว่างรีเฟรช
+ *     และเมื่อข้อมูลเกิน 2000 แถว ยอดรวมจะหยุดนิ่งที่ 2000 โดยไม่มีอะไรบอกผู้ใช้ว่าถูกตัด
+ *  2. โหมด personal กรองด้วย requester/assignee "หลังจาก" ดึงมาแล้ว ผู้ใช้ที่งานของตัวเองไม่ติดอยู่
+ *     ใน 2000 แถวแรกที่สุ่มได้จะเห็นเป็นศูนย์ทั้งที่มีงานค้างอยู่จริง
+ *
+ * (พบตอน Pre-production QA audit 2026-08-13)
+ *
+ * แก้โดยให้ฐานข้อมูลกรองและนับให้ (`count: 'exact'`) แล้วไล่ดึงทีละหน้าอย่างมีลำดับแน่นอน
+ * ยอดรวมบนการ์ดจึงมาจากฐานข้อมูลจริงเสมอ แม้แถวที่ดึงมาคำนวณจะถูกจำกัดด้วยเพดานความปลอดภัย
+ */
+const PAGE_SIZE = 1000;
+const MAX_SCAN_ROWS = 10_000;
+
+/** คอลัมน์ที่ถือว่า "เป็นงานของผู้ใช้คนนี้" ในโหมด personal */
+const PERSONAL_COLUMNS: Record<string, string[]> = {
+  tickets: ['requester_id', 'assignee_id'],
+  'service-requests': ['requester_id', 'assignee_id'],
+  incidents: ['reported_by', 'assignee_id'],
+  'access-reviews': ['user_id'],
+};
+
+interface LoadedSource {
+  source: SourceDefinition;
+  rows: Row[];
+  total: number;
+  truncated: boolean;
+  error: { message: string; code?: string } | null;
+}
+
+async function loadSource(
+  supabase: AppEnv['Variables']['supabase'],
+  source: SourceDefinition,
+  mode: ViewMode,
+  actorId: string,
+): Promise<LoadedSource> {
+  // actorId มาจาก JWT ที่ตรวจลายเซ็นแล้วใน middleware จึงเป็น UUID เสมอ ไม่ใช่ค่าที่ผู้เรียกกำหนดเอง
+  const personalColumns = mode === 'personal' ? PERSONAL_COLUMNS[source.key] : undefined;
+
+  const buildQuery = () => {
+    let query = supabase
+      .from(source.table)
+      .select(source.select, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true });
+    if (personalColumns) query = query.or(personalColumns.map((column) => `${column}.eq.${actorId}`).join(','));
+    return query;
+  };
+
+  const rows: Row[] = [];
+  let total = 0;
+
+  // เดินหน้าตามจำนวนแถวที่ "ได้จริง" และหยุดเมื่อครบตาม count ของฐานข้อมูล ไม่ใช่เมื่อหน้าใดหน้าหนึ่ง
+  // สั้นกว่า PAGE_SIZE — PostgREST มีเพดาน max-rows ของตัวเอง (โปรเจกต์นี้ตั้งไว้ 1000 ทำให้
+  // `.limit(2000)` ของโค้ดเดิมไม่เคยมีผลเลย ได้จริงแค่ 1000 แถว) ถ้ายึดขนาดหน้าเป็นเงื่อนไขหยุด
+  // โปรเจกต์ที่ตั้งเพดานต่ำกว่านี้จะทำให้ลูปจบก่อนเวลาแบบเงียบ ๆ อีกครั้ง
+  while (rows.length < MAX_SCAN_ROWS) {
+    const { data, count, error } = await buildQuery().range(rows.length, rows.length + PAGE_SIZE - 1);
+    if (error) return { source, rows: [], total: 0, truncated: false, error };
+
+    total = count ?? rows.length + (data?.length ?? 0);
+    const page = (data ?? []) as unknown as Row[];
+    rows.push(...page);
+    if (page.length === 0 || rows.length >= total) break;
+  }
+
+  return { source, rows, total, truncated: total > rows.length, error: null };
+}
+
 export const dashboardRoute = new Hono<AppEnv>();
 dashboardRoute.use('*', requireAuth);
 dashboardRoute.use('*', requirePermission('dashboard.view'));
@@ -88,7 +160,7 @@ dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, 
   const supabase = c.get('supabase');
   const [permissionResult, roleResult] = await Promise.all([supabase.rpc('my_permissions'), supabase.rpc('my_roles')]);
   if (permissionResult.error || roleResult.error) {
-    return c.json(fail(requestId, 'DASHBOARD_ACCESS_LOAD_FAILED', permissionResult.error?.message ?? roleResult.error?.message ?? 'โหลดสิทธิ์ไม่สำเร็จ'), 400);
+    return dbFailJson(c, 'DASHBOARD_ACCESS_LOAD_FAILED', permissionResult.error ?? roleResult.error, 'โหลดสิทธิ์ไม่สำเร็จ');
   }
 
   const permissions = new Set((permissionResult.data ?? []).map((row: { permission_key: string }) => row.permission_key));
@@ -96,21 +168,12 @@ dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, 
   const allowed = SOURCES.filter((source) => permissions.has(source.permission));
   const mode = modeFor(roles);
   const actorId = c.get('userId');
-  const loaded = await Promise.all(allowed.map(async (source) => {
-    const { data, error } = await supabase.from(source.table).select(source.select).limit(2000);
-    let rows = (data ?? []) as unknown as Row[];
-    if (mode === 'personal') {
-      if (source.key === 'tickets' || source.key === 'service-requests') rows = rows.filter((row) => text(row, 'requester_id') === actorId || text(row, 'assignee_id') === actorId);
-      if (source.key === 'incidents') rows = rows.filter((row) => text(row, 'reported_by') === actorId || text(row, 'assignee_id') === actorId);
-      if (source.key === 'access-reviews') rows = rows.filter((row) => text(row, 'user_id') === actorId);
-    }
-    return { source, rows, error };
-  }));
+  const loaded = await Promise.all(allowed.map((source) => loadSource(supabase, source, mode, actorId)));
   const sourceError = loaded.find((item) => item.error)?.error;
-  if (sourceError) return c.json(fail(requestId, 'DASHBOARD_SUMMARY_LOAD_FAILED', sourceError.message), 400);
+  if (sourceError) return dbFailJson(c, 'DASHBOARD_SUMMARY_LOAD_FAILED', sourceError);
 
   const dueItems: Array<{ id: string; source: string; title: string; status: string; dueAt: string; daysRemaining: number; tone: Tone; path: string }> = [];
-  const cards = loaded.filter(({ source }) => source.key !== 'tasks').map(({ source, rows }) => {
+  const cards = loaded.filter(({ source }) => source.key !== 'tasks').map(({ source, rows, total, truncated }) => {
     let overdue = 0;
     let warning = 0;
     for (const row of rows) {
@@ -121,7 +184,9 @@ dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, 
       else if (flagged || (remaining !== null && remaining <= leadDays)) warning += 1;
       if (remaining !== null && remaining <= leadDays) dueItems.push({ id: text(row, 'id'), source: source.label, title: source.title(row), status: source.status(row), dueAt: source.due(row)!, daysRemaining: remaining, tone: remaining < 0 ? 'danger' : remaining <= 7 ? 'amber' : 'primary', path: source.path });
     }
-    return { key: source.key, label: source.label, path: source.path, total: rows.length, warning, overdue, tone: toneFor(rows.length, warning, overdue) };
+    // total มาจาก count ของฐานข้อมูล ส่วน warning/overdue นับจากแถวที่สแกนจริง — truncated บอกผู้ใช้
+    // ตรง ๆ เมื่อสองค่านี้มาจากฐานคนละขนาด แทนที่จะแสดงตัวเลขที่ต่ำกว่าความจริงอย่างเงียบ ๆ
+    return { key: source.key, label: source.label, path: source.path, total, warning, overdue, truncated, scanned: rows.length, tone: toneFor(total, warning, overdue) };
   });
 
   const byKey = new Map(loaded.map((item) => [item.source.key, item.rows]));

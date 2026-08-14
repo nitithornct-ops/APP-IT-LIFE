@@ -4,11 +4,14 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   createVulnerabilitySchema,
@@ -30,11 +33,7 @@ const VULNERABILITY_SELECT =
 function generateVulnerabilityCode(): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `VUL-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
-}
-
-function cleanSearch(value: string): string {
-  return value.replace(/[%(),]/g, ' ').trim();
+  return `VUL-${date}-${randomCodeSuffix()}`;
 }
 
 async function referenceError(
@@ -150,7 +149,7 @@ vulnerabilitiesRoute.post('/', requirePermission('vulnerability.manage'), zValid
     updated_by: actorId,
     notes: body.notes || null,
   }).select(VULNERABILITY_SELECT).single();
-  if (error) return c.json(fail(reqId, 'VULNERABILITY_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'VULNERABILITY_CREATE_FAILED', error);
   const created = data as unknown as { id: string; vulnerability_code: string; title: string; severity: string };
   if (ownerId !== actorId) await sendNotification(c.env, { recipientId: ownerId, type: 'vulnerability_assigned', title: `ได้รับมอบหมาย ${created.vulnerability_code}`, body: created.title, link: '/vulnerabilities' });
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'vulnerability', targetTable: 'vulnerability_findings', targetId: created.id, detail: { vulnerabilityCode: created.vulnerability_code, severity: created.severity, ownerId }, requestId: reqId });
@@ -192,11 +191,12 @@ vulnerabilitiesRoute.patch('/:id', requirePermission('vulnerability.manage'), zV
     patch.verified_by = null;
   }
   if (body.status === 'รอตรวจยืนยัน' && !current.remediated_at) patch.remediated_at = new Date().toISOString();
+  const auditBefore = await loadAuditSnapshot(admin, 'vulnerability_findings', id);
   const { data, error } = await admin.from('vulnerability_findings').update(patch).eq('id', id).select(VULNERABILITY_SELECT).single();
-  if (error) return c.json(fail(reqId, 'VULNERABILITY_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'VULNERABILITY_UPDATE_FAILED', error);
   const updated = data as unknown as { vulnerability_code: string; title: string };
   if (body.ownerId && body.ownerId !== current.owner_id && body.ownerId !== actorId) await sendNotification(c.env, { recipientId: body.ownerId, type: 'vulnerability_assigned', title: `ได้รับมอบหมาย ${updated.vulnerability_code}`, body: updated.title, link: '/vulnerabilities' });
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'vulnerability', targetTable: 'vulnerability_findings', targetId: id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'vulnerability', targetTable: 'vulnerability_findings', targetId: id, detail: body, requestId: reqId, before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -224,7 +224,7 @@ vulnerabilitiesRoute.post('/:id/status', requirePermission('vulnerability.manage
     patch.verified_by = null;
   }
   const { data, error } = await admin.from('vulnerability_findings').update(patch).eq('id', id).select(VULNERABILITY_SELECT).single();
-  if (error) return c.json(fail(reqId, 'VULNERABILITY_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'VULNERABILITY_STATUS_FAILED', error);
   if (status === 'ปิด' && current.asset_id) {
     await admin.from('assets').update({ patch_status: 'อัปเดตแล้ว', patch_date: new Date().toISOString().slice(0, 10), updated_by: actorId }).eq('id', current.asset_id);
   }

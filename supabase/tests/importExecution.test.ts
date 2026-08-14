@@ -41,8 +41,8 @@ function buildWorkbook(): LegacyWorkbook {
     AssetCategories: [{ CategoryID: 'AC1', CategoryName: 'โน้ตบุ๊ก', CodePrefix: 'NB' }],
     BackupLog: [{ BackupID: 'BL1', SystemName: 'core-db', BackupType: 'Full', BackupDate: '2026-01-01', Result: 'สำเร็จ', Operator: 'itadmin@example.test' }],
     PersonalTasks: [{ TaskID: 'PT1', OwnerEmail: 'itadmin@example.test', Title: 'ทดสอบงาน' }],
-    Tickets: [{ TicketID: 'T1', Title: 'เครื่องพิมพ์เสีย', RequesterEmail: 'itadmin@example.test', Description: 'เครื่องพิมพ์ใช้งานไม่ได้', Category: 'TC1' }],
-    Ticket_Worklogs: [{ WorklogID: 'TW1', TicketID: 'T1', Action: 'รับเรื่อง', ActorEmail: 'itadmin@example.test' }],
+    Tickets: [{ TicketID: 'TCK-20260101-0123456789ABCDEF', Title: 'เครื่องพิมพ์เสีย', RequesterEmail: 'itadmin@example.test', RequesterName: 'ทดสอบ ไอที', Department: 'ไอที', Description: 'เครื่องพิมพ์ใช้งานไม่ได้', Category: 'Hardware ทดสอบ', SourceChannel: 'WEB_INTERNAL' }],
+    Ticket_Worklogs: [{ WorklogID: 'TW1', TicketID: 'TCK-20260101-0123456789ABCDEF', Action: 'รับเรื่อง', ActorEmail: 'itadmin@example.test', ActorName: 'ทดสอบ ไอที', ActorIdentityType: 'INTERNAL' }],
     RecoveryTests: [{ TestID: 'RT1', SystemName: 'core-db', TestDate: '2026-01-01', Result: 'ผ่าน', Tester: 'itadmin@example.test' }],
     WorkflowDefinitions: [{ DefinitionID: 'WD1', WorkflowCode: 'wf-access', WorkflowName: 'อนุมัติสิทธิ์', ModuleKey: 'ACCESS_REQUEST', Mode: 'PARALLEL', Status: 'ใช้งาน' }],
     WorkflowSteps: [{ StepID: 'WS1', DefinitionID: 'WD1', StepCode: 'step-1', StepName: 'หัวหน้าอนุมัติ', ApprovalType: 'role', ApproverValue: 'manager' }],
@@ -156,10 +156,16 @@ describe('Phase 7 import execution (pglite, real accumulated schema)', () => {
       const task = await db.query(`select 1 from public.personal_tasks where legacy_source = 'PersonalTasks' and legacy_id = 'PT1'`);
       expect(task.rows).toHaveLength(1);
 
-      const ticket = await db.query<{ id: string; requester_id: string; category_id: string }>(`select id, requester_id, category_id from public.tickets where legacy_source = 'Tickets' and legacy_id = 'T1'`);
+      const ticket = await db.query<{ id: string; ticket_no: string; requester_id: string; category_id: string; department_name_snapshot: string }>(`select id, ticket_no, requester_id, category_id, department_name_snapshot from public.tickets where legacy_source = 'Tickets' and legacy_id = 'TCK-20260101-0123456789ABCDEF'`);
       const profileId = (await db.query<{ id: string }>(`select id from public.profiles where legacy_source = 'Users' and legacy_id = 'U1'`)).rows[0]!.id;
       const categoryId = (await db.query<{ id: string }>(`select id from public.ticket_categories where legacy_source = 'TicketCategories' and legacy_id = 'TC1'`)).rows[0]!.id;
-      expect(ticket.rows).toEqual([{ id: ticket.rows[0]!.id, requester_id: profileId, category_id: categoryId }]);
+      expect(ticket.rows).toEqual([{
+        id: ticket.rows[0]!.id,
+        ticket_no: 'TCK-20260101-0123456789ABCDEF',
+        requester_id: profileId,
+        category_id: categoryId,
+        department_name_snapshot: 'ไอที',
+      }]);
 
       const worklog = await db.query<{ ticket_id: string }>(`select ticket_id from public.ticket_worklogs where legacy_source = 'Ticket_Worklogs' and legacy_id = 'TW1'`);
       expect(worklog.rows).toEqual([{ ticket_id: ticket.rows[0]!.id }]); // proves cross-sheet FK resolution within the same batch (Tickets runs before Ticket_Worklogs)
