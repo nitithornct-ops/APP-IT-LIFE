@@ -1,3 +1,5 @@
+import { DataTable } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -358,15 +360,7 @@ export function LicensesPage() {
         </div>
       )}
 
-      {showForm && (
-        vendorOptionsQuery.isLoading || contractOptionsQuery.isLoading ? (
-          <Card><CardBody className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมข้อมูลแบบฟอร์ม</CardBody></Card>
-        ) : vendorOptionsQuery.isError || contractOptionsQuery.isError ? (
-          <Card><CardBody className="flex items-center justify-between gap-3 text-sm text-red-700 dark:text-red-300"><span>โหลดข้อมูล Vendor/Contract สำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></CardBody></Card>
-        ) : (
-          <LicenseForm license={editing} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={resetForm} />
-        )
-      )}
+      {showForm && <FormModal title={editing ? 'แก้ไข Software License' : 'เพิ่ม Software License'} description="จัดการจำนวนสิทธิ์ Vendor Contract และวันหมดอายุ" size="xl" onClose={resetForm}>{vendorOptionsQuery.isLoading || contractOptionsQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมข้อมูลแบบฟอร์ม</div> : vendorOptionsQuery.isError || contractOptionsQuery.isError ? <div className="flex items-center justify-between gap-3 p-5 text-sm text-red-700 dark:text-red-300"><span>โหลดข้อมูล Vendor/Contract สำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></div> : <LicenseForm license={editing} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={resetForm} />}</FormModal>}
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
@@ -395,7 +389,7 @@ export function LicensesPage() {
 
           {visibleItems.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="p-2">ซอฟต์แวร์</th>
@@ -466,7 +460,7 @@ export function LicensesPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
         </CardBody>

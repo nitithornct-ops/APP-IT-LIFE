@@ -4,9 +4,11 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import {
   createKnowledgeArticleSchema, listKnowledgeQuerySchema, publicKnowledgeQuerySchema,
@@ -22,7 +24,7 @@ const ARTICLE_SELECT = '*, category:ticket_categories!knowledge_articles_categor
 function articleCode(): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `KB-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `KB-${date}-${randomCodeSuffix()}`;
 }
 
 async function hasPermission(c: Context<AppEnv>, key: string): Promise<boolean> {
@@ -67,7 +69,7 @@ knowledgeRoute.get('/', requirePermission('knowledge.view'), zValidator('query',
     client.from('knowledge_article_feedback').select('article_id').eq('user_id', actorId).eq('helpful', true),
   ]);
   const error = articles.error ?? categories.error ?? feedback.error;
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_LOAD_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_LOAD_FAILED', error);
   const voted = new Set((feedback.data ?? []).map((item) => item.article_id));
   const filtered = (articles.data ?? []).filter((article) => matchesSearch(article, query.search)).map((article) => ({ ...article, has_voted: voted.has(article.id) }));
   return c.json(ok(reqId, { articles: filtered, categories: categories.data ?? [], canManage }));
@@ -83,7 +85,7 @@ knowledgeRoute.post('/articles', requirePermission('knowledge.manage'), zValidat
     author_id: actorId, published_at: body.status === 'เผยแพร่' ? now : null,
     created_by: actorId, updated_by: actorId,
   }).select(ARTICLE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'knowledge', targetTable: 'knowledge_articles', targetId: data.id, detail: { articleCode: data.article_code, status: body.status }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
@@ -92,14 +94,15 @@ knowledgeRoute.patch('/articles/:id', requirePermission('knowledge.manage'), zVa
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const id = c.req.param('id')!; const body = c.req.valid('json'); const admin = createAdminClient(c.env);
   const { data: current } = await admin.from('knowledge_articles').select('*').eq('id', id).maybeSingle(); if (!current) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความ'), 404);
   const categoryError = await activeCategoryError(c, body.categoryId); if (categoryError) return c.json(fail(reqId, 'KNOWLEDGE_CATEGORY_INVALID', categoryError), 400);
+  const auditBefore = await loadAuditSnapshot(admin, 'knowledge_articles', id);
   const { data, error } = await admin.from('knowledge_articles').update({
     title: body.title, category_id: body.categoryId ?? null, symptom: body.symptom ?? null,
     solution: body.solution, tags: body.tags, status: body.status,
     published_at: body.status === 'เผยแพร่' ? current.published_at ?? new Date().toISOString() : null,
     updated_by: actorId,
   }).eq('id', id).select(ARTICLE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_UPDATE_FAILED', error.message), 400);
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'knowledge', targetTable: 'knowledge_articles', targetId: id, detail: { status: body.status }, requestId: reqId });
+  if (error) return dbFailJson(c, 'KNOWLEDGE_UPDATE_FAILED', error);
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'knowledge', targetTable: 'knowledge_articles', targetId: id, detail: { status: body.status }, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -107,7 +110,7 @@ knowledgeRoute.post('/articles/:id/status', requirePermission('knowledge.manage'
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const id = c.req.param('id')!; const { status } = c.req.valid('json'); const admin = createAdminClient(c.env);
   const { data: current } = await admin.from('knowledge_articles').select('id,published_at').eq('id', id).maybeSingle(); if (!current) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความ'), 404);
   const { data, error } = await admin.from('knowledge_articles').update({ status, published_at: status === 'เผยแพร่' ? current.published_at ?? new Date().toISOString() : null, updated_by: actorId }).eq('id', id).select(ARTICLE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_STATUS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_STATUS_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'SET_STATUS', module: 'knowledge', targetTable: 'knowledge_articles', targetId: id, detail: { status }, requestId: reqId });
   return c.json(ok(reqId, data));
 });
@@ -117,10 +120,10 @@ knowledgeRoute.post('/articles/:id/view', requirePermission('knowledge.view'), a
   const { data: visible } = await client.from('knowledge_articles').select('id').eq('id', id).maybeSingle(); if (!visible) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความหรือยังไม่ได้เผยแพร่'), 404);
   if (!canManage) {
     const { error: viewError } = await client.rpc('record_knowledge_article_view', { article_id_input: id, visitor_hash_input: null });
-    if (viewError) return c.json(fail(reqId, 'KNOWLEDGE_VIEW_FAILED', viewError.message), 400);
+    if (viewError) return dbFailJson(c, 'KNOWLEDGE_VIEW_FAILED', viewError);
   }
   const { data, error } = await client.from('knowledge_articles').select(ARTICLE_SELECT).eq('id', id).single();
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_VIEW_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_VIEW_FAILED', error);
   const { data: feedback } = await client.from('knowledge_article_feedback').select('id').eq('article_id', id).eq('user_id', c.get('userId')).maybeSingle();
   return c.json(ok(reqId, { ...data, has_voted: Boolean(feedback) }));
 });
@@ -128,7 +131,7 @@ knowledgeRoute.post('/articles/:id/view', requirePermission('knowledge.view'), a
 knowledgeRoute.post('/articles/:id/helpful', requirePermission('knowledge.feedback'), async (c) => {
   const reqId = c.get('requestId'); const id = c.req.param('id')!; const client = c.get('supabase');
   const { data, error } = await client.rpc('mark_knowledge_article_helpful', { article_id_input: id });
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_FEEDBACK_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_FEEDBACK_FAILED', error);
   const result = Array.isArray(data) ? data[0] : data;
   if (!result) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความที่เผยแพร่'), 404);
   return c.json(ok(reqId, { helpfulCount: result.helpful_count, alreadyVoted: result.already_voted }));
@@ -137,7 +140,7 @@ knowledgeRoute.post('/articles/:id/helpful', requirePermission('knowledge.feedba
 knowledgeRoute.delete('/articles/:id', requirePermission('knowledge.manage'), async (c) => {
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const id = c.req.param('id')!; const admin = createAdminClient(c.env);
   const { data, error } = await admin.from('knowledge_articles').delete().eq('id', id).select('id,article_code').maybeSingle();
-  if (error) return c.json(fail(reqId, 'KNOWLEDGE_DELETE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWLEDGE_DELETE_FAILED', error);
   if (!data) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความ'), 404);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'DELETE', module: 'knowledge', targetTable: 'knowledge_articles', targetId: id, detail: { articleCode: data.article_code }, requestId: reqId });
   return c.json(ok(reqId, { id }));
@@ -148,7 +151,7 @@ publicKnowledgeRoute.get('/', zValidator('query', publicKnowledgeQuerySchema, zo
   let request = admin.from('knowledge_articles').select('id,article_code,title,symptom,solution,tags,views_count,helpful_count,category:ticket_categories!knowledge_articles_category_id_fkey(id,name)').eq('status', 'เผยแพร่').order('views_count', { ascending: false }).limit(100);
   if (query.categoryId) request = request.eq('category_id', query.categoryId);
   const [articles, categories] = await Promise.all([request, admin.from('ticket_categories').select('id,name').eq('status', 'active').order('name')]);
-  const error = articles.error ?? categories.error; if (error) return c.json(fail(reqId, 'PUBLIC_KNOWLEDGE_LOAD_FAILED', error.message), 400);
+  const error = articles.error ?? categories.error; if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_LOAD_FAILED', error);
   const filtered = (articles.data ?? []).filter((article) => matchesSearch(article, query.search)).slice(0, 30).map((article) => ({ id: article.id, article_code: article.article_code, title: article.title, category: firstRelation(article.category)?.name ?? null, symptom: article.symptom, solution: article.solution, tags: article.tags, views: article.views_count, helpful: article.helpful_count }));
   return c.json(ok(reqId, { articles: filtered, categories: categories.data ?? [] }));
 });
@@ -157,6 +160,6 @@ publicKnowledgeRoute.post('/:id/view', zValidator('json', publicKnowledgeViewSch
   const reqId = c.get('requestId'); const id = c.req.param('id')!; const { clientId } = c.req.valid('json'); const admin = createAdminClient(c.env);
   const { data: article } = await admin.from('knowledge_articles').select('id').eq('id', id).eq('status', 'เผยแพร่').maybeSingle(); if (!article) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความที่เผยแพร่'), 404);
   const { error } = await admin.rpc('record_knowledge_article_view', { article_id_input: id, visitor_hash_input: await hashClientId(clientId) });
-  if (error) return c.json(fail(reqId, 'PUBLIC_KNOWLEDGE_VIEW_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_VIEW_FAILED', error);
   return c.json(ok(reqId, { recorded: true }));
 });

@@ -1,0 +1,298 @@
+import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import { cn } from '../../utils/cn';
+import { Button } from './Button';
+
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
+type ModalContentPadding = 'none' | 'compact' | 'default';
+
+const sizeClasses: Record<ModalSize, string> = {
+  sm: 'max-w-md',
+  md: 'max-w-2xl',
+  lg: 'max-w-4xl',
+  xl: 'max-w-6xl',
+};
+
+const contentPaddingClasses: Record<ModalContentPadding, string> = {
+  none: '',
+  compact: 'px-4 py-4 sm:px-5',
+  default: 'px-5 py-5 sm:px-6 sm:py-6',
+};
+
+const modalStack: number[] = [];
+let nextModalOrder = 0;
+
+/**
+ * ชั้นความสูงของ overlay กำหนดไว้ที่เดียวเพื่อไม่ให้แต่ละคอมโพเนนต์เดาเลขกันเอง
+ *
+ * ลำดับต้องมาจากตัวนับตอน render (nextModalOrder) เพราะ modal ที่ซ้อนกันแบบ JSX จะรัน useEffect
+ * "ลูกก่อนแม่" การนับความลึกตอน effect จึงได้ลำดับกลับด้าน ทำให้ modal แม่ไปทับลูก
+ *
+ * ปัญหาจริงคือตัวนับนั้นไม่เคยถูกรีเซ็ต ค่า z-index จึงไต่ขึ้นทั้ง session และเมื่อเปิด/ปิดเกิน ~21 ครั้ง
+ * จะแซงชั้นของ Toast ทำให้ข้อความ "บันทึกสำเร็จ/ไม่สำเร็จ" ถูกบังหายไปทั้งที่ระบบส่งออกมาแล้ว
+ * (พบตอน Pre-production QA audit 2026-08-13) — จึงรีเซ็ตตัวนับทุกครั้งที่ modal ปิดหมด
+ */
+const MODAL_BASE_Z = 50;
+/** เพดานที่ยอมให้ดันชั้นขึ้น กันกรณีซ้อนผิดปกติไม่ให้ไปแตะชั้นของ Toast */
+const MODAL_MAX_DEPTH = 9;
+
+interface ModalProps {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  description?: ReactNode;
+  icon?: ReactNode;
+  footer?: ReactNode;
+  size?: ModalSize;
+  closeDisabled?: boolean;
+  closeOnBackdrop?: boolean;
+  isDirty?: boolean;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  className?: string;
+  contentClassName?: string;
+  /** Standard inner gutter. Base Modal stays edge-to-edge; form/detail variants add it by default. */
+  contentPadding?: ModalContentPadding;
+  testId?: string;
+  closeTestId?: string;
+}
+
+export function Modal({
+  title,
+  children,
+  onClose,
+  description,
+  icon,
+  footer,
+  size = 'md',
+  closeDisabled = false,
+  closeOnBackdrop = true,
+  isDirty = false,
+  initialFocusRef,
+  className,
+  contentClassName,
+  contentPadding = 'none',
+  testId,
+  closeTestId,
+}: ModalProps) {
+  const titleId = useId();
+  const [instanceId] = useState(() => ++nextModalOrder);
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const discardDialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
+  const isDirtyRef = useRef(isDirty);
+  const showDiscardConfirmRef = useRef(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeDisabledRef.current = closeDisabled;
+    isDirtyRef.current = isDirty;
+  }, [closeDisabled, isDirty, onClose]);
+
+  useEffect(() => {
+    showDiscardConfirmRef.current = showDiscardConfirm;
+    if (!showDiscardConfirm) return;
+    const focusTimer = window.setTimeout(() => {
+      discardDialogRef.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+    });
+    return () => window.clearTimeout(focusTimer);
+  }, [showDiscardConfirm]);
+
+  const requestClose = () => {
+    if (closeDisabledRef.current) return;
+    if (isDirtyRef.current) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    onCloseRef.current();
+  };
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = 'hidden';
+    modalStack.push(instanceId);
+    const focusTimer = window.setTimeout(() => {
+      const preferredFocus = initialFocusRef?.current
+        ?? dialogRef.current?.querySelector<HTMLElement>('[data-autofocus], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
+      (preferredFocus ?? closeButtonRef.current)?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (Math.max(...modalStack) !== instanceId) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (showDiscardConfirmRef.current) setShowDiscardConfirm(false);
+        else if (!closeDisabledRef.current) requestClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const activeDialog = showDiscardConfirmRef.current ? discardDialogRef.current : dialogRef.current;
+      const focusable = Array.from(
+        activeDialog?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      const stackIndex = modalStack.lastIndexOf(instanceId);
+      if (stackIndex >= 0) modalStack.splice(stackIndex, 1);
+      // ปิดหมดแล้วเริ่มนับใหม่ ไม่งั้นตัวเลขจะไต่ขึ้นทั้ง session จนแซงชั้นของ Toast
+      if (modalStack.length === 0) nextModalOrder = 0;
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [initialFocusRef, instanceId]);
+
+  return createPortal(
+    <div
+      className="global-modal-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-[1px] sm:items-center sm:p-6"
+      style={{ zIndex: MODAL_BASE_Z + Math.min(instanceId, MODAL_MAX_DEPTH) }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && closeOnBackdrop && !closeDisabled) requestClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        data-testid={testId}
+        className={cn(
+          'global-modal-panel my-auto flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-slate-800',
+          sizeClasses[size],
+          className,
+        )}
+      >
+        <header className="flex min-h-16 shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+          <div className="flex min-w-0 items-start gap-3">
+            {icon && <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700 dark:bg-primary-950/50 dark:text-primary-300" aria-hidden="true">{icon}</span>}
+            <div className="min-w-0">
+              <h2 id={titleId} className="text-lg font-bold text-slate-800 dark:text-white">{title}</h2>
+              {description && <p id={descriptionId} className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{description}</p>}
+            </div>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            data-testid={closeTestId}
+            aria-label="ปิดหน้าต่าง"
+            disabled={closeDisabled}
+            onClick={requestClose}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-white"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </header>
+        <div
+          data-modal-content
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+            contentPaddingClasses[contentPadding],
+            contentClassName,
+          )}
+        >
+          {children}
+        </div>
+        {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/50">{footer}</footer>}
+      </section>
+
+      {showDiscardConfirm && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/45 p-4" role="presentation">
+          <section ref={discardDialogRef} role="alertdialog" aria-modal="true" aria-labelledby={`${titleId}-discard`} className="global-modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-800">
+            <div className="flex gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"><AlertTriangle className="h-5 w-5" aria-hidden="true" /></span>
+              <div><h3 id={`${titleId}-discard`} className="font-bold text-slate-800 dark:text-slate-100">ออกโดยไม่บันทึก?</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">มีข้อมูลที่ยังไม่ได้บันทึก คุณต้องการออกจากหน้านี้หรือไม่</p></div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowDiscardConfirm(false)}>กลับไปแก้ไข</Button>
+              <Button type="button" variant="danger" onClick={() => onCloseRef.current()}>ออกโดยไม่บันทึก</Button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+export const BaseModal = Modal;
+
+export function FormModal({ children, isDirty, contentPadding = 'default', ...props }: ModalProps) {
+  const [hasChanges, setHasChanges] = useState(false);
+  return <Modal closeOnBackdrop={false} contentPadding={contentPadding} isDirty={isDirty ?? hasChanges} {...props}><div className="min-w-0" onChangeCapture={() => setHasChanges(true)} onInputCapture={() => setHasChanges(true)}>{children}</div></Modal>;
+}
+
+export function DetailModal({ contentPadding = 'default', ...props }: ModalProps) {
+  return <Modal size="xl" contentPadding={contentPadding} {...props} />;
+}
+
+interface ConfirmModalProps {
+  title: string;
+  description?: ReactNode;
+  children?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: 'primary' | 'danger';
+  isPending?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+  testId?: string;
+}
+
+export function ConfirmModal({
+  title,
+  description,
+  children,
+  confirmLabel = 'ยืนยัน',
+  cancelLabel = 'ยกเลิก',
+  tone = 'primary',
+  isPending = false,
+  onConfirm,
+  onClose,
+  testId,
+}: ConfirmModalProps) {
+  return (
+    <Modal
+      title={title}
+      description={description}
+      icon={tone === 'danger' ? <Trash2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+      size="sm"
+      closeOnBackdrop={false}
+      closeDisabled={isPending}
+      onClose={onClose}
+      testId={testId}
+      contentPadding="compact"
+      footer={<><Button type="button" variant="outline" disabled={isPending} onClick={onClose}>{cancelLabel}</Button><Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} isLoading={isPending} onClick={onConfirm}>{confirmLabel}</Button></>}
+    >
+      {children}
+    </Modal>
+  );
+}
+
+export function DeleteConfirmModal(props: Omit<ConfirmModalProps, 'tone'>) {
+  return <ConfirmModal tone="danger" confirmLabel="ลบข้อมูล" {...props} />;
+}
+
+export function StatusModal(props: ModalProps) {
+  return <FormModal size="md" {...props} />;
+}

@@ -8,6 +8,7 @@ import { writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -168,7 +169,7 @@ accessRequestsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_REQUEST_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_REQUEST_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -234,7 +235,7 @@ accessRequestsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_REQUEST_APPROVAL_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_REQUEST_APPROVAL_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -319,7 +320,7 @@ accessRequestsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_REQUEST_PROCESS_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_REQUEST_PROCESS_FAILED', error);
     }
 
     if (body.success) {
@@ -398,7 +399,7 @@ accessRegistryRoute.post('/:id/review', requirePermission('access_registry.manag
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'ACCESS_REGISTRY_REVIEW_FAILED', error.message), 400);
+    return dbFailJson(c, 'ACCESS_REGISTRY_REVIEW_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -433,7 +434,7 @@ accessRegistryRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'ACCESS_REGISTRY_REVOKE_FAILED', error.message), 400);
+      return dbFailJson(c, 'ACCESS_REGISTRY_REVOKE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -468,7 +469,7 @@ accessRegistryRoute.post(
 
     const { error: profileError } = await admin.from('profiles').update({ status: 'inactive', updated_by: actorId }).eq('id', body.userId);
     if (profileError) {
-      return c.json(fail(reqId, 'EMPLOYEE_DEACTIVATE_FAILED', profileError.message), 400);
+      return dbFailJson(c, 'EMPLOYEE_DEACTIVATE_FAILED', profileError);
     }
 
     const { data: suspended, error: registryError } = await admin
@@ -479,7 +480,7 @@ accessRegistryRoute.post(
       .select('id');
 
     if (registryError) {
-      return c.json(fail(reqId, 'ACCESS_SUSPEND_FAILED', registryError.message), 400);
+      return dbFailJson(c, 'ACCESS_SUSPEND_FAILED', registryError);
     }
 
     await writeAuditLog(c.env, {

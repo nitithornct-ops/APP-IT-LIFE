@@ -1,6 +1,7 @@
+import { DataTable } from '../components/table/DataTable';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, ArrowRight, BarChart3, CalendarClock, CheckCircle2,
+  AlertTriangle, ArrowRight, BarChart3, CalendarClock, CheckCircle2,
   ClipboardList, Clock3, Gauge, Loader2, RefreshCw, ShieldCheck,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -8,10 +9,12 @@ import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
+import { QueryError } from '../components/ui/QueryError';
 import { dashboardBarWidth, dashboardDueLabel } from '../features/dashboard/dashboardDisplay';
-import { ApiError, apiFetch } from '../services/apiClient';
+import { apiFetch } from '../services/apiClient';
 import { useAuth } from '../stores/authContext';
 import type { DashboardMode, DashboardSummary, DashboardTone } from '../types/dashboard';
+import { formatThaiDate, formatThaiDateTime } from '../utils/date';
 
 const LEAD_OPTIONS = [
   { value: 7, label: '7 วัน' },
@@ -34,10 +37,6 @@ const TONE = {
   danger: { badge: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200', bar: 'bg-red-600', border: 'border-red-200 dark:border-red-900' },
   gray: { badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', bar: 'bg-slate-400', border: 'border-slate-200 dark:border-slate-700' },
 } satisfies Record<DashboardTone, { badge: string; bar: string; border: string }>;
-
-function errorText(reason: unknown): string {
-  return reason instanceof ApiError || reason instanceof Error ? reason.message : 'ไม่สามารถโหลด Dashboard ได้';
-}
 
 const dueLabel = dashboardDueLabel;
 
@@ -88,7 +87,14 @@ export function HomePage() {
       </section>
 
       {dashboard.isLoading && <div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /><span className="sr-only">กำลังโหลด Dashboard</span></div>}
-      {dashboard.isError && <EmptyState icon={<Activity className="h-10 w-10" />} title="โหลด Dashboard ไม่สำเร็จ" message={errorText(dashboard.error)} />}
+      {dashboard.isError && (
+        <QueryError
+          title="โหลด Dashboard ไม่สำเร็จ"
+          error={dashboard.error}
+          onRetry={() => void dashboard.refetch()}
+          isRetrying={dashboard.isFetching}
+        />
+      )}
 
       {dashboard.data && (
         <>
@@ -118,7 +124,7 @@ export function HomePage() {
                       <div className={`absolute inset-x-0 top-0 h-1 ${TONE[card.tone].bar}`} />
                       <div className="flex items-start justify-between gap-2 pt-1"><p className="font-bold text-slate-800 dark:text-slate-100">{card.label}</p><ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-primary-600" /></div>
                       <p className="mt-2 text-2xl font-extrabold text-slate-800 dark:text-white">{card.total.toLocaleString('th-TH')}</p>
-                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]"><span className={`rounded-full px-2 py-1 ${TONE[card.tone].badge}`}>{card.overdue ? `เกินกำหนด ${card.overdue}` : card.warning ? `ใกล้กำหนด ${card.warning}` : 'ปกติ'}</span>{card.overdue > 0 && card.warning > 0 && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">ใกล้กำหนด {card.warning}</span>}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]"><span className={`rounded-full px-2 py-1 ${TONE[card.tone].badge}`}>{card.overdue ? `เกินกำหนด ${card.overdue}` : card.warning ? `ใกล้กำหนด ${card.warning}` : 'ปกติ'}</span>{card.overdue > 0 && card.warning > 0 && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">ใกล้กำหนด {card.warning}</span>}{card.truncated && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600 dark:bg-slate-700 dark:text-slate-300" title={`ข้อมูลมี ${card.total.toLocaleString('th-TH')} รายการ ระบบนับสถานะครบกำหนดจาก ${card.scanned.toLocaleString('th-TH')} รายการล่าสุด`}>นับจาก {card.scanned.toLocaleString('th-TH')} ล่าสุด</span>}</div>
                     </Link>
                   ))}
                 </div> : <p className="py-8 text-center text-sm text-slate-400">ไม่มีแหล่งข้อมูลควบคุมที่บัญชีนี้เข้าถึงได้</p>}
@@ -137,10 +143,10 @@ export function HomePage() {
 
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>กำหนดการที่ต้องติดตาม</span><span className="text-xs font-normal text-slate-400">เกินกำหนดก่อน · แสดงสูงสุด 30 รายการ</span></CardHeader>
-            {dashboard.data.upcoming.length ? <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-5 py-3 font-semibold">แหล่งข้อมูล</th><th className="px-5 py-3 font-semibold">รายการ</th><th className="px-5 py-3 font-semibold">สถานะ</th><th className="px-5 py-3 font-semibold">ครบกำหนด</th><th className="px-5 py-3 text-right font-semibold">คงเหลือ</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700">{dashboard.data.upcoming.map((item) => <tr key={`${item.source}-${item.id}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30"><td className="whitespace-nowrap px-5 py-3"><Link to={item.path} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.source}</Link></td><td className="max-w-[380px] truncate px-5 py-3 text-slate-800 dark:text-slate-100" title={item.title}>{item.title}</td><td className="whitespace-nowrap px-5 py-3 text-slate-500">{item.status || '—'}</td><td className="whitespace-nowrap px-5 py-3 text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock className="h-4 w-4" />{new Date(item.dueAt).toLocaleDateString('th-TH')}</span></td><td className="whitespace-nowrap px-5 py-3 text-right"><span className={`rounded-full px-2 py-1 text-xs font-bold ${TONE[item.tone].badge}`}>{dueLabel(item.daysRemaining)}</span></td></tr>)}</tbody></table></div> : <CardBody className="py-12 text-center"><ClipboardList className="mx-auto h-9 w-9 text-teal-500" /><p className="mt-2 font-semibold text-slate-700 dark:text-slate-200">ไม่มีรายการใกล้หรือเกินกำหนด</p><p className="mt-1 text-xs text-slate-400">ภายในช่วง {dashboard.data.leadDays} วันที่เลือก</p></CardBody>}
+            {dashboard.data.upcoming.length ? <div className="overflow-x-auto"><DataTable className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-5 py-3 font-semibold">แหล่งข้อมูล</th><th className="px-5 py-3 font-semibold">รายการ</th><th className="px-5 py-3 font-semibold">สถานะ</th><th className="px-5 py-3 font-semibold">ครบกำหนด</th><th className="px-5 py-3 text-right font-semibold">คงเหลือ</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700">{dashboard.data.upcoming.map((item) => <tr key={`${item.source}-${item.id}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30"><td className="whitespace-nowrap px-5 py-3"><Link to={item.path} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.source}</Link></td><td className="max-w-[380px] truncate px-5 py-3 text-slate-800 dark:text-slate-100" title={item.title}>{item.title}</td><td className="whitespace-nowrap px-5 py-3 text-slate-500">{item.status || '—'}</td><td className="whitespace-nowrap px-5 py-3 text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock className="h-4 w-4" />{formatThaiDate(item.dueAt, 'd MMM yyyy')}</span></td><td className="whitespace-nowrap px-5 py-3 text-right"><span className={`rounded-full px-2 py-1 text-xs font-bold ${TONE[item.tone].badge}`}>{dueLabel(item.daysRemaining)}</span></td></tr>)}</tbody></DataTable></div> : <CardBody className="py-12 text-center"><ClipboardList className="mx-auto h-9 w-9 text-teal-500" /><p className="mt-2 font-semibold text-slate-700 dark:text-slate-200">ไม่มีรายการใกล้หรือเกินกำหนด</p><p className="mt-1 text-xs text-slate-400">ภายในช่วง {dashboard.data.leadDays} วันที่เลือก</p></CardBody>}
           </Card>
 
-          <p className="text-right text-xs text-slate-400"><BarChart3 className="mr-1 inline h-3.5 w-3.5" />อัปเดตล่าสุด {new Date(dashboard.data.generatedAt).toLocaleString('th-TH')}</p>
+          <p className="text-right text-xs text-slate-400"><BarChart3 className="mr-1 inline h-3.5 w-3.5" />อัปเดตล่าสุด {formatThaiDateTime(dashboard.data.generatedAt)}</p>
         </>
       )}
     </div>

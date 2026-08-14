@@ -1,11 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, GripVertical, Loader2, Pencil, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
+import { BellRing, GripVertical, Loader2, Pencil, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { ConfirmModal, DeleteConfirmModal, DetailModal } from '../../components/ui/Modal';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Task } from '../../types/tasks';
@@ -314,6 +315,7 @@ function ReminderSection({ task }: { task: Task }) {
   const [preset, setPreset] = useState<ReminderPreset>(current?.preset ?? 'before_30m');
   const [remindAt, setRemindAt] = useState(() => current ? bangkokDateTimeInput(current.snoozed_until ?? current.remind_at) : reminderDateTimeForPreset(task, 'before_30m'));
   const [error, setError] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['tasks'] });
     void queryClient.invalidateQueries({ queryKey: ['task-dashboard'] });
@@ -335,7 +337,7 @@ function ReminderSection({ task }: { task: Task }) {
   });
   const cancelMutation = useMutation({
     mutationFn: () => apiFetch(`/api/v1/tasks/${task.id}/reminder`, { method: 'DELETE' }),
-    onSuccess: () => { setError(null); invalidate(); },
+    onSuccess: () => { setShowCancelConfirm(false); setError(null); invalidate(); },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'ยกเลิกการแจ้งเตือนไม่สำเร็จ'),
   });
 
@@ -343,6 +345,7 @@ function ReminderSection({ task }: { task: Task }) {
   const disabled = task.status === 'เสร็จแล้ว' || task.status === 'ยกเลิก';
 
   return (
+    <>
     <section className="rounded-lg border border-primary-100 bg-primary-50/50 p-3 dark:border-primary-900 dark:bg-primary-950/20">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><BellRing className="h-4 w-4 text-primary-600" /> การแจ้งเตือน</h3>
@@ -362,10 +365,23 @@ function ReminderSection({ task }: { task: Task }) {
       {error && <p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" size="sm" isLoading={saveMutation.isPending} disabled={disabled || !remindAt} onClick={() => saveMutation.mutate()}>บันทึกการเตือน</Button>
-        {current && <Button type="button" size="sm" variant="outline" isLoading={cancelMutation.isPending} disabled={disabled} onClick={() => cancelMutation.mutate()}>ยกเลิกการเตือน</Button>}
+        {current && <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setShowCancelConfirm(true)}>ยกเลิกการเตือน</Button>}
       </div>
       <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">ส่งเข้า Notification Center ภายในระบบตามเวลา Asia/Bangkok</p>
     </section>
+    {showCancelConfirm && (
+      <ConfirmModal
+        title="ยกเลิกการแจ้งเตือน?"
+        description="ระบบจะหยุดส่งการแจ้งเตือนที่ตั้งไว้สำหรับงานนี้"
+        confirmLabel="ยกเลิกการแจ้งเตือน"
+        isPending={cancelMutation.isPending}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={() => cancelMutation.mutate()}
+      >
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      </ConfirmModal>
+    )}
+    </>
   );
 }
 
@@ -386,29 +402,31 @@ function DeleteTaskSection({ task, onDeleted }: { task: Task; onDeleted: () => v
   if (task.status === 'ยกเลิก') return null;
 
   return (
+    <>
     <section className="rounded-lg border border-red-100 bg-red-50/70 p-3 dark:border-red-900 dark:bg-red-950/20">
-      {!confirming ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-bold text-red-700 dark:text-red-300">ลบงาน</h3>
-            <p className="text-xs text-red-600/80 dark:text-red-300/80">งานจะถูกย้ายเป็นสถานะยกเลิกและยังสามารถกู้คืนได้</p>
-          </div>
-          <Button type="button" size="sm" variant="danger" onClick={() => setConfirming(true)}>
-            <Trash2 className="h-4 w-4" aria-hidden="true" /> ลบงาน
-          </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-red-700 dark:text-red-300">ลบงาน</h3>
+          <p className="text-xs text-red-600/80 dark:text-red-300/80">งานจะถูกย้ายเป็นสถานะยกเลิกและยังสามารถกู้คืนได้</p>
         </div>
-      ) : (
-        <div role="alertdialog" aria-labelledby="delete-task-title">
-          <h3 id="delete-task-title" className="text-sm font-bold text-red-700 dark:text-red-300">ยืนยันลบ “{task.title}”?</h3>
-          <p className="mt-1 text-xs text-red-600/80 dark:text-red-300/80">การดำเนินการนี้จะซ่อนงานจากรายการงานที่เปิดอยู่</p>
-          {error && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={() => setConfirming(false)}>ไม่ลบ</Button>
-            <Button type="button" size="sm" variant="danger" isLoading={mutation.isPending} onClick={() => mutation.mutate()}>ยืนยันลบงาน</Button>
-          </div>
-        </div>
-      )}
+        <Button type="button" size="sm" variant="danger" onClick={() => setConfirming(true)}>
+          <Trash2 className="h-4 w-4" aria-hidden="true" /> ลบงาน
+        </Button>
+      </div>
     </section>
+    {confirming && (
+      <DeleteConfirmModal
+        title={`ยืนยันลบ “${task.title}”?`}
+        description="งานจะถูกย้ายเป็นสถานะยกเลิกและซ่อนจากรายการงานที่เปิดอยู่"
+        confirmLabel="ยืนยันลบงาน"
+        isPending={mutation.isPending}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => mutation.mutate()}
+      >
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      </DeleteConfirmModal>
+    )}
+    </>
   );
 }
 
@@ -419,6 +437,7 @@ function SubtasksSection({ task }: { task: Task }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -452,7 +471,7 @@ function SubtasksSection({ task }: { task: Task }) {
   });
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiFetch(`/api/v1/tasks/subtasks/${id}`, { method: 'DELETE' }),
-    onSuccess: invalidate,
+    onSuccess: () => { setPendingDelete(null); invalidate(); },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'ลบรายการย่อยไม่สำเร็จ'),
   });
   const reorderMutation = useMutation({
@@ -516,7 +535,7 @@ function SubtasksSection({ task }: { task: Task }) {
               ) : (
                 <button type="button" title="แก้ไขรายการย่อย" aria-label={`แก้ไขรายการย่อย ${s.title}`} disabled={busy} onClick={() => { setEditingId(s.id); setEditingTitle(s.title); }} className="grid h-7 w-7 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-primary-600 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /></button>
               )}
-              <button type="button" title="ลบรายการย่อย" aria-label={`ลบรายการย่อย ${s.title}`} disabled={busy} onClick={() => deleteMutation.mutate(s.id)} className="grid h-7 w-7 place-items-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50">
+              <button type="button" title="ลบรายการย่อย" aria-label={`ลบรายการย่อย ${s.title}`} disabled={busy} onClick={() => setPendingDelete({ id: s.id, title: s.title })} className="grid h-7 w-7 place-items-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50">
                 {deleteMutation.isPending && deleteMutation.variables === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
               </button>
             </li>
@@ -541,6 +560,17 @@ function SubtasksSection({ task }: { task: Task }) {
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </form>
+      {pendingDelete && (
+        <DeleteConfirmModal
+          title={`ลบรายการย่อย “${pendingDelete.title}”?`}
+          description="รายการย่อยนี้จะถูกนำออกจาก Checklist"
+          isPending={deleteMutation.isPending}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={() => deleteMutation.mutate(pendingDelete.id)}
+        >
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        </DeleteConfirmModal>
+      )}
     </div>
   );
 }
@@ -692,30 +722,11 @@ export function TaskDetailPanel({ taskId, onClose, onDeleted }: { taskId: string
     onError: (e) => setRestoreError(e instanceof ApiError ? e.message : 'กู้คืนงานไม่สำเร็จ'),
   });
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const task = taskQuery.data;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div
-        className="relative flex h-full w-full max-w-md flex-col overflow-y-auto bg-white shadow-xl dark:bg-slate-800"
-        data-testid="task-detail-panel"
-      >
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-700">
-          <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">รายละเอียดงาน</h2>
-          <button type="button" onClick={onClose} data-testid="task-detail-close" className="text-slate-400 hover:text-slate-600">
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-
+    <DetailModal title="รายละเอียดงาน" description={task ? `${task.task_no} — ${task.title}` : 'กำลังโหลดข้อมูลงาน'} onClose={onClose} testId="task-detail-panel" closeTestId="task-detail-close">
+      <div>
         {taskQuery.isLoading && (
           <div className="flex justify-center py-10" role="status">
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
@@ -749,6 +760,6 @@ export function TaskDetailPanel({ taskId, onClose, onDeleted }: { taskId: string
           </div>
         )}
       </div>
-    </div>
+    </DetailModal>
   );
 }

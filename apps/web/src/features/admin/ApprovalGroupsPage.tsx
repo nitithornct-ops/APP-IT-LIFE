@@ -1,13 +1,15 @@
+import { DataTable } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Users2, X } from 'lucide-react';
+import { Building2, CheckCircle2, Loader2, PauseCircle, Plus, Users2, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { ApprovalGroup, ApprovalGroupMember, Department, PaginatedResult, UserListItem } from '../../types/admin';
@@ -327,6 +329,13 @@ export function ApprovalGroupsPage() {
         ใช้กำหนดเส้นทางการอนุมัติสำหรับโมดูล Workflow / Access Request / Change ที่จะตามมา
       </p>
 
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<Users2 className="h-5 w-5" />} label="กลุ่มทั้งหมด" value={groupsQuery.data?.length ?? 0} tone="primary" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="กลุ่มที่ใช้งาน" value={groupsQuery.data?.filter((group) => group.status === 'active').length ?? 0} tone="teal" />
+        <StatCard icon={<PauseCircle className="h-5 w-5" />} label="กลุ่มที่ระงับ" value={groupsQuery.data?.filter((group) => group.status === 'inactive').length ?? 0} tone="gray" />
+        <StatCard icon={<Building2 className="h-5 w-5" />} label="หน่วยงานที่อ้างอิงได้" value={departmentsQuery.data?.length ?? 0} tone="amber" />
+      </div>
+
       <Card>
         <CardHeader className="flex items-center justify-between">
           <span>รายการกลุ่มอนุมัติ</span>
@@ -338,9 +347,7 @@ export function ApprovalGroupsPage() {
           </RequirePermission>
         </CardHeader>
         <CardBody>
-          {showCreate && departmentsQuery.data && (
-            <CreateGroupForm departments={departmentsQuery.data} onClose={() => setShowCreate(false)} />
-          )}
+          {showCreate && departmentsQuery.data && <FormModal title="เพิ่มกลุ่มผู้อนุมัติ" description="กำหนดกลุ่มและเงื่อนไขผู้อนุมัติ" size="lg" onClose={() => setShowCreate(false)}><CreateGroupForm departments={departmentsQuery.data} onClose={() => setShowCreate(false)} /></FormModal>}
 
           {groupsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -354,7 +361,7 @@ export function ApprovalGroupsPage() {
 
           {groupsQuery.data && groupsQuery.data.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
@@ -392,7 +399,7 @@ export function ApprovalGroupsPage() {
                     </Fragment>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
         </CardBody>

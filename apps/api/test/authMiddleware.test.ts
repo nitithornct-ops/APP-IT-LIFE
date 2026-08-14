@@ -91,4 +91,37 @@ describe('POST /api/v1/auth/login-log validation', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.details.length).toBeGreaterThan(0);
   });
+
+  // Login Log เป็นหลักฐานตรวจสอบย้อนหลัง — ถ้ารับ success=true จาก Client ที่ไม่มี Session
+  // ใครก็ปลอมได้ว่าอีเมลใดล็อกอินสำเร็จ (พบจากการทดสอบเจาะระบบจริง)
+  it('refuses to record a successful login when the caller has no session', async () => {
+    const res = await app.request(
+      '/api/v1/auth/login-log',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'someone.else@example.com', success: true }),
+      },
+      testEnv,
+    );
+    expect(res.status).toBe(401);
+
+    const body = (await res.json()) as ApiResponse<never>;
+    expect(body.success).toBe(false);
+    if (body.success) throw new Error('expected an error response');
+    expect(body.error.code).toBe('SESSION_REQUIRED');
+  });
+
+  it('refuses a successful login claim carried by a malformed bearer token', async () => {
+    const res = await app.request(
+      '/api/v1/auth/login-log',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'not-a-bearer-token' },
+        body: JSON.stringify({ email: 'someone.else@example.com', success: true }),
+      },
+      testEnv,
+    );
+    expect(res.status).toBe(401);
+  });
 });

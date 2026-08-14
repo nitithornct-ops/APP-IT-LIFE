@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -20,7 +20,7 @@ const profileFormSchema = z.object({
 type ProfileForm = z.infer<typeof profileFormSchema>;
 
 export function ProfilePage() {
-  const { me, isMeLoading } = useAuth();
+  const { me, isMeLoading, meError, refetchMe } = useAuth();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
 
@@ -47,10 +47,31 @@ export function ProfilePage() {
     },
   });
 
-  if (isMeLoading || !me) {
+  if (isMeLoading) {
     return (
       <div className="flex items-center justify-center py-20" role="status">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
+        <span className="sr-only">กำลังโหลดข้อมูลโปรไฟล์</span>
+      </div>
+    );
+  }
+
+  if (!me) {
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center rounded-xl border border-amber-200 bg-amber-50 px-6 py-10 text-center dark:border-amber-900/60 dark:bg-amber-950/30" role="alert">
+        <AlertCircle className="h-8 w-8 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <h1 className="mt-3 text-lg font-semibold text-slate-800 dark:text-slate-100">โหลดข้อมูลโปรไฟล์ไม่สำเร็จ</h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          {meError ? 'ไม่สามารถเชื่อมต่อบริการข้อมูลผู้ใช้ได้ กรุณาตรวจสอบว่า API ทำงานอยู่แล้วลองใหม่' : 'ไม่พบข้อมูลผู้ใช้สำหรับบัญชีนี้'}
+        </p>
+        <button
+          type="button"
+          onClick={refetchMe}
+          className="mt-5 flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          ลองใหม่
+        </button>
       </div>
     );
   }

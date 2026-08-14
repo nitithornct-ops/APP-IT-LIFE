@@ -28,11 +28,16 @@ describe('public (no-login) ticket submit validator', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload({ privacyConsent: undefined })).success).toBe(false);
   });
 
-  it('enforces the same title/description character limits as the legacy public form (120/1500)', () => {
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ title: 'x'.repeat(120) })).success).toBe(true);
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ title: 'x'.repeat(121) })).success).toBe(false);
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ description: 'x'.repeat(1500) })).success).toBe(true);
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ description: 'x'.repeat(1501) })).success).toBe(false);
+  it('enforces the legacy ticket core limits (200/3000)', () => {
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ title: 'x'.repeat(200) })).success).toBe(true);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ title: 'x'.repeat(201) })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ description: 'x'.repeat(3000) })).success).toBe(true);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ description: 'x'.repeat(3001) })).success).toBe(false);
+  });
+
+  it('accepts a legacy or current asset code and bounds its length', () => {
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ assetCode: 'AST-001' })).success).toBe(true);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ assetCode: 'x'.repeat(81) })).success).toBe(false);
   });
 
   it('accepts the optional honeypot field so real submissions with it left blank still pass', () => {

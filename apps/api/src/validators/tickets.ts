@@ -10,12 +10,17 @@ export const createTicketSchema = z.object({
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   location: z.string().trim().max(160).optional(),
   requesterPhone: z.string().trim().max(40).optional(),
+  assetId: z.string().uuid().optional(),
+  isSecurity: z.boolean().optional(),
 });
 
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
 export const listTicketsQuerySchema = paginationQuerySchema.extend({
   status: z.string().trim().max(80).optional(),
+  categoryId: z.string().uuid().optional(),
+  priority: ticketPriorityEnum.optional(),
+  search: z.string().trim().max(120).optional(),
   assigneeId: z.string().uuid().optional(),
   mine: z.enum(['true', 'false']).optional(),
 });

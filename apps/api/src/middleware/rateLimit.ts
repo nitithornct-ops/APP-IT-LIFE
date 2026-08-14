@@ -35,6 +35,25 @@ export function rateLimit(options: {
   };
 }
 
+/**
+ * Cloudflare-backed burst limiting for public routes. The binding is optional so unit tests
+ * and local development still work; the existing isolate limiter remains defense in depth.
+ */
+export function edgeRateLimit(options: {
+  keyFn: (c: Context<AppEnv>) => string;
+}): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const limiter = c.env.PUBLIC_RATE_LIMITER;
+    if (limiter) {
+      const outcome = await limiter.limit({ key: options.keyFn(c) });
+      if (!outcome.success) {
+        return c.json(fail(c.get('requestId'), 'RATE_LIMITED', 'มีการร้องขอมากเกินไป กรุณาลองใหม่ภายหลัง'), 429);
+      }
+    }
+    await next();
+  };
+}
+
 export function clientIp(c: Context<AppEnv>): string {
   return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
 }

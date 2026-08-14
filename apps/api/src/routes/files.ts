@@ -4,6 +4,8 @@ import { requireAuth } from '../middleware/auth';
 import { writeAuditLog } from '../services/auditService';
 import { createSignedUrl, deleteFile, uploadFile } from '../services/storageService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
+import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -56,7 +58,23 @@ filesRoute.post('/', async (c) => {
     return c.json(fail(reqId, 'FILE_TYPE_NOT_ALLOWED', 'ไม่รองรับชนิดไฟล์นี้'), 400);
   }
 
-  const uploaded = await uploadFile(supabase, userId, file);
+  // ชนิดที่ Client ประกาศมาเป็นเพียงคำกล่าวอ้าง ต้องยืนยันด้วยลายเซ็นในตัวไฟล์จริงก่อนเก็บ
+  const signature = await verifyFileSignature(file, file.type);
+  if (!signature.ok) {
+    await writeAuditLog(c.env, {
+      actorId: userId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPLOAD_REJECTED',
+      module: 'file',
+      targetTable: 'file_attachments',
+      detail: { filename: file.name, declaredMimeType: file.type, sizeBytes: file.size, reason: signature.reason },
+      result: 'denied',
+      requestId: reqId,
+    });
+    return c.json(fail(reqId, 'FILE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ตรงกับชนิดไฟล์ที่ระบุ'), 400);
+  }
+
+  const uploaded = await uploadFile(supabase, userId, file, signature.resolvedMime);
   if ('error' in uploaded) {
     return c.json(fail(reqId, 'FILE_UPLOAD_FAILED', uploaded.error), 400);
   }
@@ -66,7 +84,7 @@ filesRoute.post('/', async (c) => {
     .insert({
       storage_path: uploaded.path,
       original_filename: file.name,
-      mime_type: file.type || 'application/octet-stream',
+      mime_type: signature.resolvedMime ?? 'application/octet-stream',
       size_bytes: file.size,
       module: metaResult.data.module,
       target_table: metaResult.data.targetTable ?? null,
@@ -135,7 +153,7 @@ filesRoute.delete('/:id', async (c) => {
 
   const { error: deleteError } = await supabase.from('file_attachments').delete().eq('id', id);
   if (deleteError) {
-    return c.json(fail(reqId, 'FILE_DELETE_FAILED', deleteError.message), 400);
+    return dbFailJson(c, 'FILE_DELETE_FAILED', deleteError);
   }
 
   await writeAuditLog(c.env, {

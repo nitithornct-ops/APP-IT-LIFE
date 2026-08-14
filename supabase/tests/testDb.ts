@@ -20,6 +20,17 @@ export async function createTestDb(): Promise<PGlite> {
   await db.exec(readFileSync(authStubPath, 'utf-8'));
   await db.exec(readFileSync(storageStubPath, 'utf-8'));
 
+  // Supabase โปรเจกต์จริงตั้ง "default privileges" ไว้ตั้งแต่สร้างโปรเจกต์ ตารางใหม่ทุกตารางจึงได้สิทธิ์
+  // นี้ตั้งแต่ตอน create — ต้องตั้งก่อนรัน migration ให้ตรงลำดับจริง มิฉะนั้น migration ที่ revoke สิทธิ์
+  // ระดับคอลัมน์ (เช่น 20260908100000_tighten_directory_access.sql) จะถูก grant ทับกลับทั้งหมด
+  // และเทสต์จะผ่านทั้งที่ของจริงไม่ปลอดภัย (Row Level Security ยังเป็นตัวกรองซ้อนอยู่บนสิทธิ์นี้อีกชั้น)
+  await db.exec(`
+    alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+    alter default privileges in schema public grant select on tables to anon;
+    alter default privileges in schema public grant all on tables to service_role;
+    alter default privileges in schema public grant usage, select on sequences to authenticated, service_role;
+  `);
+
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
@@ -30,15 +41,7 @@ export async function createTestDb(): Promise<PGlite> {
 
   await db.exec(readFileSync(seedPath, 'utf-8'));
 
-  // Supabase โปรเจกต์จริงให้สิทธิ์ระดับตารางนี้กับ anon/authenticated โดยอัตโนมัติอยู่แล้ว
-  // (Row Level Security เป็นตัวกรองซ้อนอยู่บนสิทธิ์นี้อีกชั้นหนึ่ง)
-  await db.exec(`
-    grant select, insert, update, delete on all tables in schema public to authenticated;
-    grant select on all tables in schema public to anon;
-    grant all on all tables in schema public to service_role;
-    grant usage, select on all sequences in schema public to authenticated, service_role;
-    grant all on storage.buckets, storage.objects to service_role;
-  `);
+  await db.exec('grant all on storage.buckets, storage.objects to service_role;');
 
   return db;
 }

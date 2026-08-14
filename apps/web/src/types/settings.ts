@@ -24,3 +24,7 @@ export interface SettingsResponse {
   notices: { secretsStoredHere: boolean; designerDeferred: boolean; integrationMessage: string };
 }
 
+export interface BrandingSettings {
+  organizationName: string;
+  logoUrl: string;
+}

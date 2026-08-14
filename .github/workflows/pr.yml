@@ -2,9 +2,16 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
   push:
-    branches: [main]
+    branches: [master]
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -16,8 +23,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -39,5 +46,27 @@ jobs:
       - name: Unit test
         run: npm run test
 
+      # ค่าหลอกสำหรับ build ตรวจสอบใน CI เท่านั้น ไม่ใช่ความลับ และไม่ชี้ไปยังระบบจริงใด ๆ
+      #
+      # lib/supabase.ts เรียก createClient() ตั้งแต่ระดับ module ถ้าค่าว่างแอปจะพังตั้งแต่บูต
+      # หน้าเว็บที่ build ออกมาจึงไม่ redirect ไป /login และ browser smoke test ล้มทั้งชุด
+      # ค่าจริงตอน deploy มาจาก GitHub Environment production ซึ่งมีด่าน predeploy บังคับไว้แล้วว่า
+      # VITE_SUPABASE_URL ต้องมีและต้องเป็น https — ค่าหลอกตรงนี้จึงไม่ได้ทำให้ด่านนั้นอ่อนลง
       - name: Build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: ci-anon-key-not-a-real-credential
+          VITE_API_BASE_URL: http://localhost:8787
         run: npm run build
+
+      - name: Production dependency audit
+        run: npm run audit:prod
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser smoke test
+        run: npm run test:e2e
+
+      - name: Migration dry-run gate
+        run: npm run dry-run --workspace=packages/migration

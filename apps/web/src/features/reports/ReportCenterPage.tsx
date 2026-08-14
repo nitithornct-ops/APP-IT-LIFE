@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Activity, BarChart3, Download, FileDown, FileText, Loader2, Printer, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -7,6 +8,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { ReportDataset, ReportKey, ReportOverview } from '../../types/reports';
+import { formatThaiDateTime } from '../../utils/date';
 import { breakdownWidth, reportCell, reportSearchText } from './reportDisplay';
 
 const RANGE_OPTIONS = [
@@ -147,14 +149,14 @@ export function ReportCenterPage() {
                   <div className="min-w-[240px] flex-1">
                     <h2 className="font-bold text-slate-800 dark:text-slate-100">{reportQuery.data.definition.label}</h2>
                     <p className="mt-1 text-sm text-slate-500">{reportQuery.data.definition.description}</p>
-                    <p className="mt-2 text-xs text-slate-400">สร้างเมื่อ {new Date(reportQuery.data.generatedAt).toLocaleString('th-TH')} · {reportQuery.data.totalRows.toLocaleString('th-TH')} รายการ</p>
+                    <p className="mt-2 text-xs text-slate-400">สร้างเมื่อ {formatThaiDateTime(reportQuery.data.generatedAt)} · {reportQuery.data.totalRows.toLocaleString('th-TH')} รายการ</p>
                   </div>
                   {hasPermission('report.export') && (
                     <div className="flex flex-col items-end gap-1" data-print-hide>
                       <div className="flex gap-2">
                         <Button size="sm" variant="outline" isLoading={csvMutation.isPending} onClick={() => csvMutation.mutate()}><Download className="h-4 w-4" />CSV</Button>
-                        <Button size="sm" variant="outline" isLoading={printMutation.isPending} onClick={() => printMutation.mutate()}><Printer className="h-4 w-4" />พิมพ์</Button>
-                        <Button size="sm" variant="outline" isLoading={pdfMutation.isPending} onClick={() => pdfMutation.mutate()}><FileDown className="h-4 w-4" />ดาวน์โหลด PDF</Button>
+                        <Button size="sm" variant="outline" data-testid="report-print" isLoading={printMutation.isPending} onClick={() => printMutation.mutate()}><Printer className="h-4 w-4" />พิมพ์</Button>
+                        <Button size="sm" variant="outline" data-testid="report-pdf" isLoading={pdfMutation.isPending} onClick={() => pdfMutation.mutate()}><FileDown className="h-4 w-4" />ดาวน์โหลด PDF</Button>
                       </div>
                       {pdfMutation.isError && <p className="text-xs text-red-600">{errorText(pdfMutation.error)}</p>}
                     </div>
@@ -212,10 +214,10 @@ export function ReportCenterPage() {
                   <div className="flex min-w-[240px] items-center gap-2 font-normal" data-print-hide><Search className="h-4 w-4 text-slate-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาในรายงาน..." className="w-full bg-transparent text-sm outline-none" /><span className="whitespace-nowrap text-xs text-slate-400">{rows.length} รายการ</span></div>
                 </CardHeader>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-xs">
+                  <DataTable className="min-w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900/40"><tr>{reportQuery.data.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-4 py-3 font-semibold">{column.label}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">{rows.map((row, index) => <tr key={String(row.id ?? row.code ?? index)} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">{reportQuery.data.columns.map((column) => <td key={column.key} className="max-w-[260px] whitespace-nowrap px-4 py-3 text-slate-700 dark:text-slate-200" title={reportCell(row[column.key])}>{reportCell(row[column.key])}</td>)}</tr>)}</tbody>
-                  </table>
+                  </DataTable>
                   {!rows.length && <p className="p-8 text-center text-sm text-slate-400">ไม่พบข้อมูลในช่วงเวลาหรือคำค้นนี้</p>}
                 </div>
               </Card>

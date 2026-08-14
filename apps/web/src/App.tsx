@@ -1,7 +1,8 @@
 import { Loader2 } from 'lucide-react';
-import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { Route, Routes, useNavigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { DetailModal } from './components/ui/Modal';
 import { AppShell } from './layouts/AppShell';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HealthPage } from './pages/HealthPage';
@@ -9,9 +10,11 @@ import { HomePage } from './pages/HomePage';
 import { LineCallbackPage } from './pages/LineCallbackPage';
 import { LinePortalPage } from './pages/LinePortalPage';
 import { LoginPage } from './pages/LoginPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { PublicTicketPortalPage } from './pages/PublicTicketPortalPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { VendorFormPortalPage } from './pages/VendorFormPortalPage';
 
 // หน้าฝั่งผู้ดูแลระบบใช้งานไม่บ่อยเท่าหน้าหลัก — แยก bundle ด้วย lazy loading (Code Splitting)
 const UsersPage = lazy(() => import('./features/admin/UsersPage').then((m) => ({ default: m.UsersPage })));
@@ -53,6 +56,7 @@ const AccessRegistryPage = lazy(() =>
 const TasksPage = lazy(() => import('./features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })));
 const AssetsPage = lazy(() => import('./features/assets/AssetsPage').then((m) => ({ default: m.AssetsPage })));
 const AssetDetailPage = lazy(() => import('./features/assets/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })));
+const AssetBorrowPage = lazy(() => import('./features/assets/AssetBorrowPage').then((m) => ({ default: m.AssetBorrowPage })));
 const MaintenancePage = lazy(() => import('./features/maintenance/MaintenancePage').then((m) => ({ default: m.MaintenancePage })));
 const InventoryPage = lazy(() => import('./features/inventory/InventoryPage').then((m) => ({ default: m.InventoryPage })));
 const LicensesPage = lazy(() => import('./features/licenses/LicensesPage').then((m) => ({ default: m.LicensesPage })));
@@ -102,6 +106,9 @@ const ReportCenterPage = lazy(() =>
 const LineLinksPage = lazy(() =>
   import('./features/admin/LineLinksPage').then((m) => ({ default: m.LineLinksPage })),
 );
+const FormManagementPage = lazy(() =>
+  import('./features/forms/FormManagementPage').then((m) => ({ default: m.FormManagementPage })),
+);
 
 function LazyPageFallback() {
   return (
@@ -109,6 +116,11 @@ function LazyPageFallback() {
       <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
     </div>
   );
+}
+
+function DetailRouteModal({ title, returnTo, background, children }: { title: string; returnTo: string; background: ReactNode; children: ReactNode }) {
+  const navigate = useNavigate();
+  return <>{background}<DetailModal title={title} description="ดูข้อมูลและดำเนินการโดยไม่ออกจากรายการ" onClose={() => navigate(returnTo, { replace: true })} contentPadding="compact" contentClassName="bg-slate-50 dark:bg-slate-900/40">{children}</DetailModal></>;
 }
 
 export function App() {
@@ -121,6 +133,7 @@ export function App() {
       <Route path="/line" element={<LinePortalPage />} />
       <Route path="/line/callback" element={<LineCallbackPage />} />
       <Route path="/report" element={<PublicTicketPortalPage />} />
+      <Route path="/vendor/forms/:token" element={<VendorFormPortalPage />} />
 
       <Route
         element={
@@ -131,6 +144,8 @@ export function App() {
       >
         <Route path="/" element={<ProtectedRoute permission="dashboard.view"><HomePage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
+        {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
+        <Route path="/system-status" element={<HealthPage standalone={false} />} />
         <Route
           path="/tasks"
           element={
@@ -156,7 +171,7 @@ export function App() {
           element={
             <ProtectedRoute permission="incident.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <IncidentDetailPage />
+                <DetailRouteModal title="รายละเอียด Incident" returnTo="/incidents" background={<IncidentsPage />}><IncidentDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -176,7 +191,7 @@ export function App() {
           element={
             <ProtectedRoute permission="problem.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <ProblemDetailPage />
+                <DetailRouteModal title="รายละเอียด Problem" returnTo="/problems" background={<ProblemsPage />}><ProblemDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -196,7 +211,7 @@ export function App() {
           element={
             <ProtectedRoute permission="change.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <ChangeDetailPage />
+                <DetailRouteModal title="รายละเอียด Change" returnTo="/changes" background={<ChangesPage />}><ChangeDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -226,7 +241,17 @@ export function App() {
           element={
             <ProtectedRoute permission="asset.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <AssetDetailPage />
+                <DetailRouteModal title="รายละเอียดทรัพย์สิน" returnTo="/assets" background={<AssetsPage />}><AssetDetailPage /></DetailRouteModal>
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/asset-borrow"
+          element={
+            <ProtectedRoute permission="asset.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AssetBorrowPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -346,7 +371,7 @@ export function App() {
           element={
             <ProtectedRoute permission="cmdb.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <ConfigurationItemDetailPage />
+                <DetailRouteModal title="รายละเอียด Configuration Item" returnTo="/cmdb" background={<CmdbPage />}><ConfigurationItemDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -357,6 +382,16 @@ export function App() {
             <ProtectedRoute anyPermission={['employee.manage', 'asset.view']}>
               <Suspense fallback={<LazyPageFallback />}>
                 <EmployeeAssignmentsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/forms"
+          element={
+            <ProtectedRoute permission="form.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <FormManagementPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -376,7 +411,7 @@ export function App() {
           element={
             <ProtectedRoute permission="ticket.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <TicketDetailPage />
+                <DetailRouteModal title="รายละเอียด Ticket" returnTo="/tickets" background={<TicketsPage />}><TicketDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -396,7 +431,7 @@ export function App() {
           element={
             <ProtectedRoute permission="service_request.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <ServiceRequestDetailPage />
+                <DetailRouteModal title="รายละเอียดคำขอบริการ" returnTo="/service-requests" background={<ServiceRequestsPage />}><ServiceRequestDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -416,7 +451,7 @@ export function App() {
           element={
             <ProtectedRoute permission="access_request.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <AccessRequestDetailPage />
+                <DetailRouteModal title="รายละเอียดคำขอสิทธิ์" returnTo="/access-requests" background={<AccessRequestsPage />}><AccessRequestDetailPage /></DetailRouteModal>
               </Suspense>
             </ProtectedRoute>
           }
@@ -454,7 +489,9 @@ export function App() {
         <Route
           path="/admin/master-data"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute
+              anyPermission={['ticket_category.manage', 'asset_category.manage', 'access_system.manage']}
+            >
               <Suspense fallback={<LazyPageFallback />}>
                 <MasterDataPage />
               </Suspense>
@@ -531,6 +568,9 @@ export function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* ต้องอยู่ท้ายสุดเสมอ — รับทุก URL ที่ไม่ตรง route ใดข้างบน แทนที่จะปล่อยจอว่าง */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );

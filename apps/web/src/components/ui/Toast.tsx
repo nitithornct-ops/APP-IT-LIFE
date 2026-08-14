@@ -1,10 +1,25 @@
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { cn } from '../../utils/cn';
 
 export interface ToastMessage {
   message: string;
   tone: 'success' | 'error';
+}
+
+const GLOBAL_TOAST_EVENT = 'itlife:toast';
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const close = useCallback(() => setToast(null), []);
+
+  useEffect(() => {
+    const handleToast = (event: Event) => setToast((event as CustomEvent<ToastMessage>).detail);
+    window.addEventListener(GLOBAL_TOAST_EVENT, handleToast);
+    return () => window.removeEventListener(GLOBAL_TOAST_EVENT, handleToast);
+  }, []);
+
+  return <>{children}<Toast toast={toast} onClose={close} /></>;
 }
 
 export function Toast({ toast, onClose }: { toast: ToastMessage | null; onClose: () => void }) {
@@ -22,7 +37,7 @@ export function Toast({ toast, onClose }: { toast: ToastMessage | null; onClose:
       role={toast.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
       className={cn(
-        'fixed bottom-4 right-4 z-[70] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-elevated dark:bg-slate-800 sm:max-w-sm',
+        'fixed bottom-4 right-4 z-[200] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-elevated dark:bg-slate-800 sm:max-w-sm',
         toast.tone === 'success'
           ? 'border-emerald-200 text-emerald-800 dark:border-emerald-800 dark:text-emerald-200'
           : 'border-red-200 text-red-700 dark:border-red-800 dark:text-red-200',

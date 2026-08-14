@@ -1,6 +1,6 @@
 # Phase 7 — Migration Dry-Run Report
 
-Generated: 2026-08-10T15:31:02.266Z
+Generated: 2026-08-13T06:34:43.282Z
 
 Source: ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY (2026-08-09T19:27:54.773Z)  
 Mode: **read-only** — no Supabase writes, raw rows, PII, or secrets are included.  

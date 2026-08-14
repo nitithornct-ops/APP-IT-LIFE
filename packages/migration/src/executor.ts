@@ -51,6 +51,20 @@ async function resolveRef(db: Queryable, idMap: IdMap, ref: Ref): Promise<string
     const result = await db.query<{ id: string }>(`select id from public.departments where name_th = $1 or name_en = $1 limit 1`, [ref.name]);
     return result.rows[0]?.id ?? null;
   }
+  if (ref.kind === 'byTicketCategoryName') {
+    const result = await db.query<{ id: string }>(
+      `select id from public.ticket_categories where lower(name) = lower($1) limit 1`,
+      [ref.name],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+  if (ref.kind === 'byLineUserProfile') {
+    const result = await db.query<{ linked_user_id: string }>(
+      `select linked_user_id from public.line_users where line_user_id = $1 and linked_user_id is not null limit 1`,
+      [ref.lineUserId],
+    );
+    return result.rows[0]?.linked_user_id ?? null;
+  }
   const result = await db.query<{ id: string }>(`select id from public.positions where name_th = $1 or name_en = $1 limit 1`, [ref.name]);
   return result.rows[0]?.id ?? null;
 }

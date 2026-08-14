@@ -1,0 +1,161 @@
+name: Backup
+
+# Supabase free tier ไม่มีระบบสำรองข้อมูลให้เลย ข้อมูลหายแล้วหายถาวร — งานนี้จึงเป็นสำเนาชุดเดียว
+# ที่ระบบมี ทำงานอัตโนมัติทุกคืนโดยไม่ต้องมีเครื่องเซิร์ฟเวอร์และไม่ต้องมีคนกด
+#
+# หนึ่งรอบได้ไฟล์เดียว itlife-backup-<เวลา UTC>.tar.gz ประกอบด้วย
+#   db-public.sql       โครงสร้าง + ข้อมูล + RLS policy + GRANT ของทั้ง 108 ตาราง
+#   db-auth.sql         บัญชีผู้ใช้ (ไม่มีไฟล์นี้ = กู้ข้อมูลกลับมาได้แต่ไม่มีใครล็อกอินได้)
+#   attachments/        ไฟล์แนบใน Ticket
+#   branding/           โลโก้หน่วยงาน
+#   manifest.json       รายชื่อไฟล์ + SHA-256 ไว้พิสูจน์ตอนกู้คืน
+#
+# ⚠ ไฟล์นี้มีข้อมูลส่วนบุคคลและ hash รหัสผ่าน — bucket ต้องเป็น private เสมอ และ R2 API token
+#   ต้องจำกัดสิทธิ์ไว้เฉพาะ bucket นี้ bucket เดียว
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 01:00 ตามเวลาไทย
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    # ใช้ environment แยกที่ไม่ตั้ง required reviewers — ถ้าใช้ environment "production" งานตามเวลา
+    # จะค้างรออนุมัติทุกคืนแล้วไม่มีสำเนาเกิดขึ้นจริงสักครั้ง
+    environment: backup
+    timeout-minutes: 45
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # AWS CLI v2 ใส่ checksum แบบใหม่มาให้เองซึ่ง R2 ปฏิเสธ ทำให้ upload ล้มโดยไม่บอกสาเหตุที่แท้จริง
+      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+      AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
+      RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS || '30' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # ตรวจค่าตั้งต้นก่อนเริ่ม เพื่อให้ล้มพร้อมข้อความที่อ่านรู้เรื่อง แทนที่จะไปล้มกลางทางด้วย error ของ aws
+      - name: Verify backup configuration
+        shell: bash
+        run: |
+          missing=()
+          for name in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY \
+                      AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_BUCKET; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          case "$R2_ENDPOINT" in https://.r2.cloudflarestorage.com) missing+=("R2_ACCOUNT_ID");; esac
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ยังไม่ได้ตั้งค่า: ${missing[*]}" >&2
+            echo "ตั้งที่ GitHub → Settings → Environments → backup" >&2
+            exit 1
+          fi
+          echo "ค่าตั้งต้นครบ (ไม่มีการพิมพ์ค่าความลับออกมา)"
+
+      - name: Dump database
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          mkdir -p "backup/$STAMP"
+
+          # ใช้ pg_dump 15 ให้ตรงรุ่นกับ Supabase (supabase/config.toml major_version = 15)
+          # ส่ง URL ผ่าน environment ไม่ใช่ argv เพื่อไม่ให้ความลับไปโผล่ใน process list
+          #
+          # ห้ามใส่ --no-privileges: migration มี GRANT ... TO authenticated อยู่ 188 บรรทัด ถ้าตัดออก
+          # ไฟล์สำรองจะกู้กลับมาได้ "ครบทุกแถวแต่เปิดใช้ไม่ได้" เพราะ PostgREST จะถูกปฏิเสธสิทธิ์ทั้งหมด
+          # ส่วน --no-owner ยังต้องมี เพราะ role เจ้าของในโปรเจกต์ปลายทางไม่จำเป็นต้องชื่อเดียวกัน
+          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:15-alpine sh -c \
+            'pg_dump --dbname="$PGURL" --schema=public --no-owner --quote-all-identifiers' \
+            > "backup/$STAMP/db-public.sql"
+
+          # auth.identities ต้องมาด้วย ไม่ใช่แค่ auth.users — ขาดไปแล้ว GoTrue จะหาบัญชีจากอีเมลไม่เจอ
+          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:15-alpine sh -c \
+            'pg_dump --dbname="$PGURL" --data-only --table=auth.users --table=auth.identities --no-owner --quote-all-identifiers' \
+            > "backup/$STAMP/db-auth.sql"
+
+          for file in db-public.sql db-auth.sql; do
+            size=$(stat -c%s "backup/$STAMP/$file")
+            [ "$size" -gt 1024 ] || { echo "$file มีขนาดเพียง $size ไบต์ — ถือว่าล้มเหลว" >&2; exit 1; }
+            echo "$file: $size ไบต์"
+          done
+
+      - name: Download storage files
+        env:
+          BACKUP_DIR: backup/${{ env.STAMP }}
+        run: node scripts/backup-storage.mjs
+
+      - name: Upload to Cloudflare R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="itlife-backup-$STAMP.tar.gz"
+          tar -czf "$ARCHIVE" -C "backup/$STAMP" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          ls -lh "$ARCHIVE"
+          aws s3 cp "$ARCHIVE" "s3://$R2_BUCKET/$ARCHIVE" --endpoint-url "$R2_ENDPOINT"
+
+      # สำเนาที่ไม่เคยลองเปิดกลับมาดู ไม่นับว่าเป็นสำเนา — ดึงกลับมาตรวจว่าไฟล์ไม่เสียจริง
+      - name: Verify the uploaded archive can be read back
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws s3 cp "s3://$R2_BUCKET/$ARCHIVE" verify.tar.gz --endpoint-url "$R2_ENDPOINT"
+          gzip -t verify.tar.gz
+          tar -tzf verify.tar.gz | grep -q 'db-public.sql'
+          tar -tzf verify.tar.gz | grep -q 'manifest.json'
+          echo "ตรวจแล้ว: ไฟล์สำรองบน R2 เปิดอ่านได้และมีข้อมูลฐานข้อมูลครบ"
+
+      - name: Prune backups past the retention window
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          CUTOFF="$(date -u -d "-${RETENTION_DAYS} days" +%Y%m%dT%H%M%SZ)"
+          echo "ลบสำเนาที่เก่ากว่า $CUTOFF (เก็บไว้ $RETENTION_DAYS วัน)"
+          # จำกัดขอบเขตไว้ที่ไฟล์ที่งานนี้สร้างเองเท่านั้น เพื่อไม่ให้ไปแตะของอื่นใน bucket
+          # เก็บรายชื่อก่อนแล้วค่อยวน — ถ้าต่อ `|| true` เข้ากับ pipe โดยตรง ลูปจะทำงานเฉพาะตอน grep ไม่เจอ
+          keys="$(aws s3 ls "s3://$R2_BUCKET/" --endpoint-url "$R2_ENDPOINT" \
+            | awk '{print $4}' \
+            | grep -E '^itlife-backup-[0-9]{8}T[0-9]{6}Z\.tar\.gz$' || true)"
+          if [ -z "$keys" ]; then
+            echo "  ไม่มีไฟล์สำรองเดิมให้ตรวจ"
+          else
+            while read -r key; do
+              stamp="${key#itlife-backup-}"; stamp="${stamp%.tar.gz}"
+              if [[ "$stamp" < "$CUTOFF" ]]; then
+                echo "  ลบ $key"
+                aws s3 rm "s3://$R2_BUCKET/$key" --endpoint-url "$R2_ENDPOINT"
+              fi
+            done <<< "$keys"
+          fi
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "### สำรองข้อมูลสำเร็จ"
+            echo ""
+            echo "- ไฟล์: \`$ARCHIVE\`"
+            echo "- ขนาด: $(du -h "$ARCHIVE" | cut -f1)"
+            echo "- เก็บไว้: $RETENTION_DAYS วัน"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -20,15 +20,22 @@ insert into public.roles (key, name_th, name_en, description, is_system, status)
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
--- Permissions (100 permission key เริ่มต้น — ตรงกับ packages/shared/src/constants/permissions.ts)
+-- Permissions — ตรงกับ packages/shared/src/constants/permissions.ts
 -- ---------------------------------------------------------------------------
 insert into public.permissions (key, module_key, action, description, status) values
   ('dashboard.view', 'dashboard', 'view', 'ดู Dashboard ภาพรวม', 'active'),
-  ('ticket.view', 'ticket', 'view', 'ดูรายการ Ticket', 'active'),
+  ('ticket.view', 'ticket', 'view', 'เข้าใช้โมดูลและดู Ticket ที่เกี่ยวข้องกับตน', 'active'),
+  ('ticket.view_all', 'ticket', 'view_all', 'ดู Ticket ทั้งหมดตามขอบเขตองค์กร', 'active'),
   ('ticket.create', 'ticket', 'create', 'เปิด Ticket ใหม่', 'active'),
+  ('ticket.comment', 'ticket', 'comment', 'สนทนาใน Ticket ที่เกี่ยวข้องกับตน', 'active'),
+  ('ticket.internal_note', 'ticket', 'internal_note', 'เพิ่มบันทึกภายในสำหรับเจ้าหน้าที่ IT', 'active'),
+  ('ticket.worklog', 'ticket', 'worklog', 'บันทึกเวลาปฏิบัติงาน Ticket', 'active'),
+  ('ticket.triage', 'ticket', 'triage', 'รับเรื่องและคัดแยก Ticket', 'active'),
+  ('ticket.escalate', 'ticket', 'escalate', 'ยกระดับ Ticket เป็น Incident', 'active'),
   ('ticket.update', 'ticket', 'update', 'แก้ไข/อัปเดต Ticket', 'active'),
   ('ticket.assign', 'ticket', 'assign', 'มอบหมายผู้รับผิดชอบ Ticket', 'active'),
   ('ticket.close', 'ticket', 'close', 'ปิดงาน Ticket', 'active'),
+  ('ticket.settings.manage', 'ticket', 'settings_manage', 'จัดการสถานะ Priority Workflow และ SLA ของ Help Desk', 'active'),
   ('asset.view', 'asset', 'view', 'ดูทะเบียนทรัพย์สิน', 'active'),
   ('asset.create', 'asset', 'create', 'เพิ่มทรัพย์สินใหม่', 'active'),
   ('asset.update', 'asset', 'update', 'แก้ไขข้อมูลทรัพย์สิน', 'active'),
@@ -124,7 +131,11 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('vendor.view', 'vendor', 'view', 'ดูทะเบียนผู้ให้บริการภายนอก', 'active'),
   ('vendor.manage', 'vendor', 'manage', 'จัดการทะเบียนและประเมินผู้ให้บริการภายนอก', 'active'),
   ('contract.view', 'contract', 'view', 'ดูทะเบียนสัญญาและวันหมดอายุ', 'active'),
-  ('contract.manage', 'contract', 'manage', 'จัดการทะเบียนสัญญาและสถานะสัญญา', 'active')
+  ('contract.manage', 'contract', 'manage', 'จัดการทะเบียนสัญญาและสถานะสัญญา', 'active'),
+  ('form.view', 'form', 'view', 'ดูคลังแบบฟอร์มและรายการแบบฟอร์มงาน', 'active'),
+  ('form.manage', 'form', 'manage', 'สร้าง แก้ไข และเผยแพร่แบบฟอร์ม', 'active'),
+  ('form.vendor_send', 'form', 'vendor_send', 'ส่งแบบฟอร์มให้ Vendor ประเมินและตอบกลับ', 'active'),
+  ('form.close', 'form', 'close', 'ตรวจรับและปิดแบบฟอร์มงาน', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -185,6 +196,10 @@ from (values
   ('technician', 'dashboard.view'),
   ('technician', 'task.view'),
   ('technician', 'ticket.view'),
+  ('technician', 'ticket.view_all'),
+  ('technician', 'ticket.comment'),
+  ('technician', 'ticket.internal_note'),
+  ('technician', 'ticket.worklog'),
   ('technician', 'ticket.update'),
   ('technician', 'ticket.assign'),
   ('technician', 'asset.view'),
@@ -225,6 +240,10 @@ from (values
   ('technician', 'vendor.manage'),
   ('technician', 'contract.view'),
   ('technician', 'contract.manage'),
+  ('technician', 'form.view'),
+  ('technician', 'form.manage'),
+  ('technician', 'form.vendor_send'),
+  ('technician', 'form.close'),
   ('technician', 'service_request.view'),
   ('technician', 'service_request.update'),
   ('technician', 'service_request.assign'),
@@ -235,6 +254,10 @@ from (values
   ('approver', 'dashboard.view'),
   ('approver', 'task.view'),
   ('approver', 'ticket.view'),
+  ('approver', 'ticket.view_all'),
+  ('approver', 'ticket.triage'),
+  ('approver', 'ticket.assign'),
+  ('approver', 'ticket.escalate'),
   ('approver', 'incident.view'),
   ('approver', 'incident.create'),
   ('approver', 'incident.view_all'),
@@ -251,10 +274,12 @@ from (values
   ('approver', 'workflow.delegate'),
   ('approver', 'knowledge.view'),
   ('approver', 'knowledge.feedback'),
+  ('approver', 'form.view'),
 
   ('manager', 'dashboard.view'),
   ('manager', 'task.view'),
   ('manager', 'ticket.view'),
+  ('manager', 'ticket.view_all'),
   ('manager', 'asset.view'),
   ('manager', 'maintenance.view'),
   ('manager', 'inventory.view'),
@@ -270,6 +295,7 @@ from (values
   ('manager', 'change.view'),
   ('manager', 'vendor.view'),
   ('manager', 'contract.view'),
+  ('manager', 'form.view'),
   ('manager', 'report.export'),
   ('manager', 'report.view'),
   ('manager', 'service_request.view'),
@@ -284,6 +310,7 @@ from (values
   ('executive', 'dashboard.view'),
   ('executive', 'task.view'),
   ('executive', 'ticket.view'),
+  ('executive', 'ticket.view_all'),
   ('executive', 'asset.view'),
   ('executive', 'maintenance.view'),
   ('executive', 'inventory.view'),
@@ -298,6 +325,7 @@ from (values
   ('executive', 'change.view'),
   ('executive', 'vendor.view'),
   ('executive', 'contract.view'),
+  ('executive', 'form.view'),
   ('executive', 'report.export'),
   ('executive', 'report.view'),
   ('executive', 'audit.view'),
@@ -313,6 +341,7 @@ from (values
   ('auditor', 'dashboard.view'),
   ('auditor', 'task.view'),
   ('auditor', 'ticket.view'),
+  ('auditor', 'ticket.view_all'),
   ('auditor', 'asset.view'),
   ('auditor', 'maintenance.view'),
   ('auditor', 'inventory.view'),
@@ -327,6 +356,7 @@ from (values
   ('auditor', 'change.view'),
   ('auditor', 'vendor.view'),
   ('auditor', 'contract.view'),
+  ('auditor', 'form.view'),
   ('auditor', 'report.export'),
   ('auditor', 'report.view'),
   ('auditor', 'role.view'),
@@ -357,6 +387,7 @@ from (values
   ('user', 'task.view'),
   ('user', 'ticket.view'),
   ('user', 'ticket.create'),
+  ('user', 'ticket.comment'),
   ('user', 'incident.view'),
   ('user', 'incident.create'),
   ('user', 'service_request.view'),
@@ -372,3 +403,40 @@ from (values
 join public.roles r on r.key = mapping.role_key
 join public.permissions p on p.key = mapping.permission_key
 on conflict (role_id, permission_id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Help Desk reference data from legacy-gas/Config.gs and Ticket.gs.
+-- SLA is category-based in Legacy; do not invent priority-wide SLA defaults.
+-- Compatibility guard: databases created before the migration-readiness and
+-- Help Desk foundation migrations do not yet have these columns. Keep the seed
+-- idempotent for those installations as well as fully migrated databases.
+-- ---------------------------------------------------------------------------
+alter table public.ticket_categories
+  add column if not exists legacy_source text,
+  add column if not exists legacy_id text,
+  add column if not exists sort_order integer not null default 0;
+
+create unique index if not exists ticket_categories_legacy_identity_uidx
+  on public.ticket_categories (legacy_source, legacy_id)
+  where legacy_id is not null;
+
+insert into public.ticket_categories
+  (legacy_id, name, default_priority, response_sla_hours, resolution_sla_hours,
+   sla_hours, is_security_default, notes, sort_order, status)
+values
+  ('TCAT-001', 'Computer', 'ปานกลาง', 4, 24, 24, false, 'PC', 10, 'active'),
+  ('TCAT-002', 'Notebook', 'ปานกลาง', 4, 24, 24, false, 'Notebook', 20, 'active'),
+  ('TCAT-003', 'Printer', 'ปานกลาง', 4, 16, 16, false, 'Printer', 30, 'active'),
+  ('TCAT-004', 'Network', 'สูง', 2, 8, 8, false, 'Network', 40, 'active'),
+  ('TCAT-005', 'Software', 'ปานกลาง', 4, 16, 16, false, 'Software', 50, 'active'),
+  ('TCAT-006', 'Email', 'สูง', 2, 8, 8, false, 'Email', 60, 'active'),
+  ('TCAT-007', 'ขอรับบริการ IT', 'ปานกลาง', 4, 24, 24, false, 'IT Service Request', 70, 'active')
+on conflict (name) do update
+set legacy_id = excluded.legacy_id,
+    default_priority = excluded.default_priority,
+    response_sla_hours = excluded.response_sla_hours,
+    resolution_sla_hours = excluded.resolution_sla_hours,
+    sla_hours = excluded.sla_hours,
+    is_security_default = excluded.is_security_default,
+    notes = excluded.notes,
+    sort_order = excluded.sort_order;

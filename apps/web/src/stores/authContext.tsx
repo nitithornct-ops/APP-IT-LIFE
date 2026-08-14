@@ -33,6 +33,8 @@ interface AuthContextValue {
   isSessionLoading: boolean;
   me: MeResponse | undefined;
   isMeLoading: boolean;
+  meError: Error | null;
+  refetchMe: () => void;
   hasPermission: (key: string) => boolean;
   hasRole: (key: string) => boolean;
   signOut: () => Promise<void>;
@@ -78,6 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isSessionLoading,
     me: meQuery.data,
     isMeLoading: meQuery.isLoading,
+    meError: meQuery.error,
+    refetchMe: () => {
+      void meQuery.refetch();
+    },
     hasPermission: (key) => meQuery.data?.permissions.includes(key) ?? false,
     hasRole: (key) => meQuery.data?.roles.some((r) => r.role_key === key) ?? false,
     signOut,
@@ -86,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// The provider and its context hook intentionally share this module as one public API.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {

@@ -1,5 +1,9 @@
 # Database — Foundation Schema (Phase 2)
 
+> Help Desk extension: [`helpdesk/phase2-database-security.md`](helpdesk/phase2-database-security.md)
+>
+> Repository analysis: [`helpdesk/phase1-analysis.md`](helpdesk/phase1-analysis.md)
+
 > ขอบเขต Phase 2 ครอบคลุมเฉพาะ **Foundation Schema** (RBAC + Master Data + Audit) ที่ Phase 3
 > (Authentication/Permission) ต้องใช้ทันที ตารางของแต่ละโมดูลธุรกิจ (tickets, assets, incidents, ...) จะถูกออกแบบและ
 > Migrate ทีละโมดูลใน **Phase 6** ตามลำดับที่กำหนดไว้ใน
@@ -201,10 +205,15 @@ CLI) แล้วจำลอง Role/`auth.uid()` ของ Supabase เพื�
 ## วิธี Deploy Migration ไปยัง Supabase โปรเจกต์จริง (Phase 9 หรือเมื่อพร้อม)
 
 ```bash
-supabase link --project-ref <project-ref>
-supabase db push          # apply migrations/*.sql ตามลำดับชื่อไฟล์
-supabase db execute -f supabase/seed.sql   # รัน seed แยกต่างหาก (idempotent, รันซ้ำได้)
+npx supabase link --project-ref <project-ref>
+npx supabase db push --linked --include-all --include-seed --dry-run
+npx supabase db push --linked --include-all --include-seed
+npx supabase migration list --linked
 ```
+
+`supabase/config.toml` กำหนด `supabase/seed.sql` เป็น seed path แล้ว จึงใช้ `--include-seed` ได้โดยไม่ต้องใช้คำสั่ง
+`db execute` ที่ Supabase CLI เวอร์ชันปัจจุบันไม่มี ดูขั้นตอนเต็มที่
+[`helpdesk/NEW_SUPABASE_SETUP.md`](helpdesk/NEW_SUPABASE_SETUP.md)
 
 ยังไม่ได้ดำเนินการจริงใน Phase 2 — ต้องมี Supabase Project จริงก่อน (สร้างใน Phase 3) และต้องผ่าน Environment
 Approval ตามกฎ "Production Migration ต้องสั่งทำงานด้วยตนเองหรือมี Environment Approval"

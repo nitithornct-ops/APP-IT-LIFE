@@ -1,11 +1,14 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldAlert, UserPlus, X } from 'lucide-react';
+import { CheckCircle2, Loader2, Plus, ShieldAlert, ShieldCheck, UserMinus, UserPlus, UsersRound, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { RequirePermission } from '../../components/RequirePermission';
+import { StatCard } from '../../components/ui/Card';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type {
   Department,
@@ -417,6 +420,8 @@ function InviteUserForm({
 
 function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[] }) {
   const queryClient = useQueryClient();
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<UserRoleAssignment | null>(null);
 
   const rolesQuery = useQuery({
     queryKey: ['admin', 'users', userId, 'roles'],
@@ -431,10 +436,8 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
 
   const removeMutation = useMutation({
     mutationFn: (roleId: string) => apiFetch(`/api/v1/users/${userId}/roles/${roleId}`, { method: 'DELETE' }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'users', userId, 'roles'] }),
-    onError: (error) => {
-      if (error instanceof ApiError) window.alert(error.message);
-    },
+    onSuccess: () => { setPendingRemoval(null); setRemoveError(null); void queryClient.invalidateQueries({ queryKey: ['admin', 'users', userId, 'roles'] }); },
+    onError: (error) => setRemoveError(error instanceof ApiError ? error.message : 'ลบบทบาทไม่สำเร็จ'),
   });
 
   const assignedRoleIds = new Set((rolesQuery.data ?? []).map((r) => r.role_id));
@@ -451,7 +454,7 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
             {r.roles?.name_th}
             <button
               type="button"
-              onClick={() => removeMutation.mutate(r.role_id)}
+              onClick={() => { setRemoveError(null); setPendingRemoval(r); }}
               className="text-blue-500 hover:text-red-600"
               aria-label={`ลบบทบาท ${r.roles?.name_th}`}
             >
@@ -475,6 +478,19 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
             </button>
           ))}
       </div>
+      {removeError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">{removeError}</p>}
+      {pendingRemoval && (
+        <DeleteConfirmModal
+          title="ยืนยันการถอดบทบาท"
+          description={`บทบาท ${pendingRemoval.roles?.name_th ?? ''} จะถูกถอดออกจากผู้ใช้นี้`}
+          confirmLabel="ถอดบทบาท"
+          isPending={removeMutation.isPending}
+          onClose={() => setPendingRemoval(null)}
+          onConfirm={() => removeMutation.mutate(pendingRemoval.role_id)}
+        >
+          {removeError && <p role="alert" className="text-sm text-red-600">{removeError}</p>}
+        </DeleteConfirmModal>
+      )}
     </div>
   );
 }
@@ -483,14 +499,15 @@ export function UsersPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [showInvite, setShowInvite] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const usersQuery = useQuery({
-    queryKey: ['admin', 'users', page, debouncedSearch],
+    queryKey: ['admin', 'users', page, pageSize, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<UserListItem>>(
-        `/api/v1/users?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/users?page=${page}&pageSize=${pageSize}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -518,6 +535,7 @@ export function UsersPage() {
     queryKey: ['admin', 'users', 'for-supervisor-picker'],
     queryFn: () => apiFetch<PaginatedResult<UserListItem>>('/api/v1/users?page=1&pageSize=100'),
   });
+  const visibleUsers = usersQuery.data?.items ?? [];
 
   return (
     <div>
@@ -533,9 +551,14 @@ export function UsersPage() {
         </button>
       </div>
 
-      {showInvite && departmentsQuery.data && positionsQuery.data && (
-        <InviteUserForm departments={departmentsQuery.data} positions={positionsQuery.data} onClose={() => setShowInvite(false)} />
-      )}
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard icon={<UsersRound className="h-5 w-5" />} label="ผู้ใช้ทั้งหมด" value={usersQuery.data?.pagination.totalItems ?? 0} tone="primary" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="ใช้งาน (หน้านี้)" value={visibleUsers.filter((user) => user.status === 'active').length} tone="teal" />
+        <StatCard icon={<UserMinus className="h-5 w-5" />} label="ระงับ (หน้านี้)" value={visibleUsers.filter((user) => user.status !== 'active').length} tone="gray" />
+        <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="บทบาทในระบบ" value={rolesQuery.data?.length ?? 0} note={`${departmentsQuery.data?.length ?? 0} หน่วยงาน`} tone="amber" />
+      </div>
+
+      {showInvite && departmentsQuery.data && positionsQuery.data && <FormModal title="เชิญผู้ใช้งาน" description="สร้างคำเชิญและผูกข้อมูลบุคลากรโดยใช้สิทธิ์เดิมของระบบ" size="lg" onClose={() => setShowInvite(false)}><InviteUserForm departments={departmentsQuery.data} positions={positionsQuery.data} onClose={() => setShowInvite(false)} /></FormModal>}
 
       <input
         type="search"
@@ -560,7 +583,7 @@ export function UsersPage() {
 
       {usersQuery.data && usersQuery.data.items.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-          <table className="w-full text-left text-sm">
+          <DataTable pagination={false} className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               <tr>
                 <th className="px-4 py-2">ชื่อ-สกุล</th>
@@ -604,33 +627,11 @@ export function UsersPage() {
                 </Fragment>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </div>
       )}
 
-      {usersQuery.data && usersQuery.data.pagination.totalPages > 1 && (
-        <div className="mt-3 flex items-center justify-center gap-3 text-sm">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-          >
-            ก่อนหน้า
-          </button>
-          <span className="text-slate-500 dark:text-slate-400">
-            หน้า {usersQuery.data.pagination.page} / {usersQuery.data.pagination.totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={page >= usersQuery.data.pagination.totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-          >
-            ถัดไป
-          </button>
-        </div>
-      )}
+      {usersQuery.data && <TablePagination page={usersQuery.data.pagination.page} pageSize={pageSize} totalItems={usersQuery.data.pagination.totalItems} totalPages={usersQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
     </div>
   );
 }

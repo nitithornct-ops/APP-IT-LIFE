@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 103 permissions', async () => {
+  it('seeds 9 roles and 114 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(103);
+    expect((permissions.rows[0] as { count: number }).count).toBe(114);
   });
 });
 
@@ -321,7 +321,11 @@ describe('approval_groups / approval_group_members RLS (Phase 6 Module 2)', () =
 });
 
 describe('employees RLS (Phase 6 Module 3)', () => {
-  it('lets any authenticated user read employees', async () => {
+  // เดิมตารางนี้เปิดให้ทุกคนที่ login แล้วอ่านได้ (`using (true)`) เพื่อให้โมดูลอื่นทำ dropdown ได้
+  // แต่ทะเบียนพนักงานมี PII (email, upn, username_ad, notes) — การทดสอบเจาะระบบจริงพบว่าบัญชีที่ไม่มี
+  // สิทธิ์ใดเลยดึงได้ครบทุกฟิลด์ จึงจำกัดไว้ที่ employee.manage ตั้งแต่
+  // 20260908100000_tighten_directory_access.sql และให้ dropdown ใช้ GET /api/v1/employees/options แทน
+  it('hides the employee register from a user without employee.manage', async () => {
     await asServiceRole(db, async () => {
       await db.query(
         `insert into public.employees (employee_code, first_name_th, last_name_th)
@@ -330,6 +334,11 @@ describe('employees RLS (Phase 6 Module 3)', () => {
     });
 
     const result = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.employees'));
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it('lets a user with employee.manage read the employee register', async () => {
+    const result = await asUser(db, SUPER_ADMIN_ID, async () => db.query('select id from public.employees'));
     expect(result.rows.length).toBeGreaterThanOrEqual(1);
   });
 

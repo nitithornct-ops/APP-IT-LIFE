@@ -14,17 +14,35 @@ export type TicketStatus =
 
 export interface TicketListItem {
   id: string;
+  ticket_no: string;
   title: string;
   requester_id: string;
+  requester_name_snapshot: string | null;
+  department_name_snapshot: string | null;
+  guest_name: string | null;
+  guest_department: string | null;
+  source_channel: 'web' | 'line' | 'guest' | string;
   category_id: string | null;
   priority: TicketPriority;
   status: TicketStatus;
   assignee_id: string | null;
+  assignee_name_snapshot: string | null;
   is_security: boolean;
   incident_id: string | null;
   due_at: string | null;
   created_at: string;
+  outsource_name: string | null;
   ticket_categories: { name: string } | null;
+  requester: { full_name: string; email: string } | null;
+  assignee: { full_name: string; email: string } | null;
+}
+
+export interface TicketSummary {
+  open: number;
+  overdue: number;
+  security: number;
+  averageRating: number | null;
+  ratingCount: number;
 }
 
 export interface TicketWorklog {

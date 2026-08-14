@@ -90,7 +90,9 @@ test('primary task actions call the API and update the interface', async ({ page
   await page.getByLabel('ชื่องาน', { exact: true }).fill('จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)');
   await page.getByTestId('td-save').click();
   await page.getByTestId('task-detail-close').click();
-  await expect(page.getByText('จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)', { exact: true })).toBeVisible();
+  // ชื่องานปรากฏหลายที่พร้อมกัน (การ์ดในรายการ + chip ปฏิทิน) getByText จึงชน strict mode
+  // ใช้ปุ่มดูรายละเอียดของการ์ดซึ่งมีชื่องานอยู่ใน aria-label และมีหนึ่งเดียวต่องาน
+  await expect(page.getByLabel('ดูรายละเอียด จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)', { exact: true })).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'CSV', exact: true }).click();

@@ -7,7 +7,10 @@ import { writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import { approveChangeSchema, createChangeSchema, deployChangeSchema, listChangesQuerySchema, signOffChangeTestSchema } from '../validators/changes';
 
@@ -36,7 +39,7 @@ type ChangeRow = Record<string, unknown> & {
 function generateChangeNumber(): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `CHG-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `CHG-${date}-${randomCodeSuffix()}`;
 }
 
 async function loadChange(env: Bindings, id: string) {
@@ -67,7 +70,7 @@ changesRoute.get('/', zValidator('query', listChangesQuerySchema, zodValidationH
   const { page, pageSize, search, status, riskLevel, requesterId } = c.req.valid('query');
   let query = c.get('supabase').from('change_requests').select(CHANGE_SELECT, { count: 'exact' }).order('request_date', { ascending: false }).range(...paginationRange(page, pageSize));
   if (search) {
-    const safe = search.replace(/[%(),]/g, ' ').trim();
+    const safe = cleanSearch(search);
     query = query.or(`change_number.ilike.%${safe}%,title.ilike.%${safe}%,system_affected.ilike.%${safe}%`);
   }
   if (status) query = query.eq('status', status);
@@ -102,7 +105,7 @@ changesRoute.post('/', requirePermission('change.create'), zValidator('json', cr
     notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(CHANGE_SELECT).single();
   const { data, error } = result as unknown as { data: ChangeRow | null; error: { message: string } | null };
-  if (error) return c.json(fail(reqId, 'CHANGE_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CHANGE_CREATE_FAILED', error);
   if (!data) return c.json(fail(reqId, 'CHANGE_CREATE_FAILED', 'ไม่พบข้อมูล Change หลังสร้างรายการ'), 500);
   await Promise.all([
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'change', targetTable: 'change_requests', targetId: data.id, detail: { changeNumber: data.change_number, riskLevel: data.risk_level }, requestId: reqId }),
@@ -124,7 +127,7 @@ changesRoute.post('/:id/test-signoff', requirePermission('change.test'), zValida
     return c.json(fail(reqId, 'CHANGE_SOD_VIOLATION', 'ผู้ยื่นคำขอไม่สามารถรับรองผลทดสอบรายการเดียวกันได้'), 409);
   }
   const { data, error } = await createAdminClient(c.env).from('change_requests').update({ test_result: body.result, test_passed: body.passed, test_signoff_by: actorId, test_signoff_at: new Date().toISOString(), status: body.passed ? 'ผ่านการทดสอบ' : 'ยื่นคำขอ', updated_by: actorId }).eq('id', id).select(CHANGE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CHANGE_TEST_SIGNOFF_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CHANGE_TEST_SIGNOFF_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'TEST_SIGNOFF', module: 'change', targetTable: 'change_requests', targetId: id, detail: { passed: body.passed, result: body.result }, requestId: reqId });
   return c.json(ok(reqId, data));
 });
@@ -142,7 +145,7 @@ changesRoute.post('/:id/approval', requirePermission('change.approve'), zValidat
     return c.json(fail(reqId, 'CHANGE_SOD_VIOLATION', current.requester_id === actorId ? 'ผู้ยื่นคำขอไม่สามารถอนุมัติ Change ของตนเองได้' : 'ผู้รับรองผลทดสอบไม่สามารถเป็นผู้อนุมัติ Change รายการเดียวกันได้'), 409);
   }
   const { data, error } = await createAdminClient(c.env).from('change_requests').update({ approver_id: actorId, approve_date: new Date().toISOString(), approve_result: body.approve ? 'อนุมัติ' : 'ปฏิเสธ', approval_comment: body.comment || null, status: body.approve ? 'อนุมัติแล้ว' : 'ปฏิเสธ', updated_by: actorId }).eq('id', id).select(CHANGE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CHANGE_APPROVAL_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CHANGE_APPROVAL_FAILED', error);
   await Promise.all([
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: body.approve ? 'APPROVE' : 'REJECT', module: 'change', targetTable: 'change_requests', targetId: id, detail: { comment: body.comment }, requestId: reqId }),
     sendNotification(c.env, { recipientId: current.requester_id, type: 'change_approval_result', title: `Change ${current.change_number} ${body.approve ? 'ได้รับอนุมัติ' : 'ถูกปฏิเสธ'}`, link: `/changes/${id}` }),
@@ -163,7 +166,7 @@ changesRoute.post('/:id/deploy', requirePermission('change.deploy'), zValidator(
     return c.json(fail(reqId, 'CHANGE_SOD_VIOLATION', 'ผู้อนุมัติไม่สามารถเป็นผู้ติดตั้ง Change รายการเดียวกันได้'), 409);
   }
   const { data, error } = await createAdminClient(c.env).from('change_requests').update({ deploy_by: actorId, deploy_date: new Date().toISOString(), version: body.version, rollback_plan: body.rollbackPlan || current.rollback_plan, status: 'ติดตั้งใช้งานแล้ว', updated_by: actorId }).eq('id', id).select(CHANGE_SELECT).single();
-  if (error) return c.json(fail(reqId, 'CHANGE_DEPLOY_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'CHANGE_DEPLOY_FAILED', error);
   await Promise.all([
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'DEPLOY', module: 'change', targetTable: 'change_requests', targetId: id, detail: { version: body.version }, requestId: reqId }),
     sendNotification(c.env, { recipientId: current.requester_id, type: 'change_deployed', title: `Change ${current.change_number} ติดตั้งเวอร์ชัน ${body.version} แล้ว`, link: `/changes/${id}` }),

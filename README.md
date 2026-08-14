@@ -70,5 +70,6 @@ npm run dev:web     # Vite dev server ที่ http://localhost:5173
 
 ## สถานะโครงการ
 
-กำลังดำเนินการย้ายระบบทีละ Phase ตามแผนใน [`docs/migration.md`](docs/migration.md) — Phase ปัจจุบัน: **Phase 1 (โครงสร้างโครงการ)**
-ห้าม deploy ขึ้น Production จนกว่าจะผ่าน Phase 8 (Testing และ Security) และ UAT ตาม [`docs/migration/phase0-summary.md`](docs/migration/phase0-summary.md)
+ระบบอยู่ในช่วง **Pre-production hardening / migration rehearsal** โค้ดต้องผ่าน CI, Staging Live E2E,
+migration rehearsal, UAT และ owner approval ก่อน Production ดูขั้นตอนที่
+[`docs/deployment.md`](docs/deployment.md) และแผนกู้คืนที่ [`docs/rollback.md`](docs/rollback.md)

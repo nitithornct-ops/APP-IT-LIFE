@@ -1,3 +1,5 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
@@ -10,9 +12,10 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { QueryError } from '../../components/ui/QueryError';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import type { Employee, PaginatedResult } from '../../types/admin';
+import type { EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { CmdbDataQuality, ConfigurationItem } from '../../types/cmdb';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
@@ -33,7 +36,7 @@ const createCiSchema = z.object({
 });
 type CreateCiForm = z.infer<typeof createCiSchema>;
 
-function CreateCiForm({ employees, assetOptions, vendorOptions, contractOptions, onClose }: { employees: Employee[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
+function CreateCiForm({ employees, assetOptions, vendorOptions, contractOptions, onClose }: { employees: EmployeeOption[]; assetOptions: AssetOption[]; vendorOptions: ContractVendorRef[]; contractOptions: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -205,17 +208,18 @@ export function CmdbPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  const employeesQuery = useQuery({ queryKey: ['admin', 'employees', 'all'], queryFn: () => apiFetch<PaginatedResult<Employee>>('/api/v1/employees?page=1&pageSize=100') });
+  const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: showCreate });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options'), enabled: showCreate });
 
   const itemsQuery = useQuery({
-    queryKey: ['cmdb', 'items', page, ciType, environment, status, debouncedSearch],
+    queryKey: ['cmdb', 'items', page, pageSize, ciType, environment, status, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<ConfigurationItem>>(
-        `/api/v1/cmdb/items?page=${page}&pageSize=20${ciType ? `&ciType=${encodeURIComponent(ciType)}` : ''}${environment ? `&environment=${encodeURIComponent(environment)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/cmdb/items?page=${page}&pageSize=${pageSize}${ciType ? `&ciType=${encodeURIComponent(ciType)}` : ''}${environment ? `&environment=${encodeURIComponent(environment)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -282,9 +286,7 @@ export function CmdbPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && (
-            <CreateCiForm employees={employeesQuery.data.items} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />
-          )}
+          {showCreate && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && <FormModal title="เพิ่ม Configuration Item" description="บันทึก CI และความเชื่อมโยงกับ Asset, Vendor และ Contract" size="xl" onClose={() => setShowCreate(false)}><CreateCiForm employees={employeesQuery.data} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowCreate(false)} /></FormModal>}
 
           <input
             type="search"
@@ -300,11 +302,15 @@ export function CmdbPage() {
             </div>
           )}
 
-          {itemsQuery.data && items.length === 0 && <EmptyState icon={<Network className="h-10 w-10" aria-hidden="true" />} title="ไม่พบ Configuration Item" />}
+          {itemsQuery.isError && (
+            <QueryError title="โหลดรายการ Configuration Item ไม่สำเร็จ" error={itemsQuery.error} onRetry={() => void itemsQuery.refetch()} isRetrying={itemsQuery.isFetching} />
+          )}
+
+          {!itemsQuery.isError && itemsQuery.data && items.length === 0 && <EmptyState icon={<Network className="h-10 w-10" aria-hidden="true" />} title="ไม่พบ Configuration Item" />}
 
           {itemsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable pagination={false} className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
@@ -337,28 +343,11 @@ export function CmdbPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
 
-          {itemsQuery.data && itemsQuery.data.pagination.totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-center gap-3 text-sm">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600">
-                ก่อนหน้า
-              </button>
-              <span className="text-slate-500 dark:text-slate-400">
-                หน้า {itemsQuery.data.pagination.page} / {itemsQuery.data.pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= itemsQuery.data.pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ถัดไป
-              </button>
-            </div>
-          )}
+          {itemsQuery.data && <TablePagination page={itemsQuery.data.pagination.page} pageSize={pageSize} totalItems={itemsQuery.data.pagination.totalItems} totalPages={itemsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
     </div>

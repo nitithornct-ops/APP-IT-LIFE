@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { auditOverviewQuerySchema, listAuditLogsQuerySchema, listLoginLogsQuerySchema } from '../validators/auditLogs';
@@ -27,7 +28,7 @@ auditLogsRoute.get('/overview', requirePermission('audit.view'), zValidator('que
     supabase.from('login_logs').select('id', { count: 'exact', head: true }).gte('created_at', since).eq('success', false),
   ]);
   const error = [audit, denied, failedActions, logins, failedLogins].find((result) => result.error)?.error;
-  if (error) return c.json(fail(requestId, 'AUDIT_OVERVIEW_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'AUDIT_OVERVIEW_FAILED', error);
   return c.json(ok(requestId, { days: c.req.valid('query').days, auditTotal: audit.count ?? 0, denied: denied.count ?? 0, failedActions: failedActions.count ?? 0, loginTotal: logins.count ?? 0, failedLogins: failedLogins.count ?? 0 }));
 });
 
@@ -40,7 +41,7 @@ auditLogsRoute.get('/login-logs', requirePermission('audit.view'), zValidator('q
   if (from) query = query.gte('created_at', `${from}T00:00:00.000+07:00`);
   if (to) query = query.lte('created_at', endOfDay(to));
   const { data, count, error } = await query;
-  if (error) return c.json(fail(requestId, 'LOGIN_LOGS_LIST_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'LOGIN_LOGS_LIST_FAILED', error);
   return c.json(ok(requestId, toPaginatedData(data, count, page, pageSize)));
 });
 

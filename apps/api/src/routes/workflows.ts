@@ -3,11 +3,13 @@ import { Hono, type Context } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import { requiredWorkflowApprovals, workflowDecisionStatus } from '../services/workflowEngine';
 import type { AppEnv, Bindings } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import {
   cancelWorkflowSchema, createWorkflowDefinitionSchema, createWorkflowDelegationSchema,
@@ -42,7 +44,7 @@ interface HistoryValues {
 function code(prefix: string): string {
   const now = new Date();
   const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `${prefix}-${stamp}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `${prefix}-${stamp}-${randomCodeSuffix()}`;
 }
 
 function addHours(hours: number): string { return new Date(Date.now() + hours * 3_600_000).toISOString(); }
@@ -139,7 +141,7 @@ workflowsRoute.get('/', requirePermission('workflow.view'), async (c) => {
     admin.from('profiles').select('id,full_name,email'),
   ]);
   const error = definitions.error ?? steps.error ?? instances.error ?? approvals.error ?? histories.error ?? delegations.error ?? profiles.error;
-  if (error) return c.json(fail(reqId, 'WORKFLOW_LOAD_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', error);
   const profileById = new Map((profiles.data ?? []).map((item) => [item.id, item]));
   const approvalRows = approvals.data ?? [];
   const visibleInstances = (instances.data ?? []).filter((instance) => canViewAll || canManage || instance.requester_id === actorId || approvalRows.some((approval) => approval.instance_id === instance.id && (approval.approver_id === actorId || approval.original_approver_id === actorId)));
@@ -169,7 +171,7 @@ workflowsRoute.get('/options', requirePermission('workflow.view'), async (c) => 
     admin.from('approval_groups').select('id,code,name').eq('status', 'active').order('code'),
   ]);
   const error = users.error ?? roles.error ?? groups.error;
-  if (error) return c.json(fail(reqId, 'WORKFLOW_OPTIONS_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_OPTIONS_FAILED', error);
   return c.json(ok(reqId, { users: users.data ?? [], roles: roles.data ?? [], groups: groups.data ?? [] }));
 });
 
@@ -179,9 +181,9 @@ workflowsRoute.post('/definitions', requirePermission('workflow.manage'), zValid
   const { data: existing } = await admin.from('workflow_definitions').select('id').eq('workflow_code', body.workflowCode).maybeSingle();
   if (existing) return c.json(fail(reqId, 'WORKFLOW_CODE_EXISTS', 'รหัส Workflow นี้มีอยู่แล้ว'), 409);
   const { data, error } = await admin.from('workflow_definitions').insert({ workflow_code: body.workflowCode, workflow_name: body.workflowName, module_key: body.moduleKey, description: body.description ?? null, version: 1, trigger_event: body.triggerEvent ?? 'MANUAL', sla_hours: body.slaHours, is_default: false, status: body.status, active_from: body.activeFrom ?? null, active_to: body.activeTo ?? null, notes: body.notes ?? null, created_by: actorId, updated_by: actorId }).select('*').single();
-  if (error) return c.json(fail(reqId, 'WORKFLOW_DEFINITION_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_DEFINITION_CREATE_FAILED', error);
   const { error: stepError } = await admin.from('workflow_steps').insert(stepRows(data.id, 1, body.steps, actorId));
-  if (stepError) { await admin.from('workflow_definitions').delete().eq('id', data.id); return c.json(fail(reqId, 'WORKFLOW_STEPS_CREATE_FAILED', stepError.message), 400); }
+  if (stepError) { await admin.from('workflow_definitions').delete().eq('id', data.id); return dbFailJson(c, 'WORKFLOW_STEPS_CREATE_FAILED', stepError); }
   if (body.isDefault) {
     await admin.from('workflow_definitions').update({ is_default: false }).eq('module_key', body.moduleKey).neq('id', data.id);
     await admin.from('workflow_definitions').update({ is_default: true }).eq('id', data.id);
@@ -196,11 +198,12 @@ workflowsRoute.patch('/definitions/:id', requirePermission('workflow.manage'), z
   const { data: current } = await admin.from('workflow_definitions').select('*').eq('id', id).maybeSingle(); if (!current) return c.json(fail(reqId, 'WORKFLOW_DEFINITION_NOT_FOUND', 'ไม่พบแบบ Workflow'), 404);
   const invalid = await validateSteps(admin, body.steps); if (invalid) return c.json(fail(reqId, 'WORKFLOW_STEP_REFERENCE_INVALID', invalid), 400);
   const version = current.version + 1;
-  const { error: stepError } = await admin.from('workflow_steps').insert(stepRows(id, version, body.steps, actorId)); if (stepError) return c.json(fail(reqId, 'WORKFLOW_STEPS_CREATE_FAILED', stepError.message), 400);
+  const { error: stepError } = await admin.from('workflow_steps').insert(stepRows(id, version, body.steps, actorId)); if (stepError) return dbFailJson(c, 'WORKFLOW_STEPS_CREATE_FAILED', stepError);
   if (body.isDefault) await admin.from('workflow_definitions').update({ is_default: false }).eq('module_key', body.moduleKey).neq('id', id);
+  const auditBefore = await loadAuditSnapshot(admin, 'workflow_definitions', id);
   const { data, error } = await admin.from('workflow_definitions').update({ workflow_name: body.workflowName, module_key: body.moduleKey, description: body.description ?? null, version, trigger_event: body.triggerEvent ?? 'MANUAL', sla_hours: body.slaHours, is_default: body.isDefault, status: body.status, active_from: body.activeFrom ?? null, active_to: body.activeTo ?? null, notes: body.notes ?? null, updated_by: actorId }).eq('id', id).select('*').single();
-  if (error) { await admin.from('workflow_steps').delete().eq('definition_id', id).eq('definition_version', version); return c.json(fail(reqId, 'WORKFLOW_DEFINITION_UPDATE_FAILED', error.message), 400); }
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'workflow', targetTable: 'workflow_definitions', targetId: id, detail: { version, steps: body.steps.length }, requestId: reqId });
+  if (error) { await admin.from('workflow_steps').delete().eq('definition_id', id).eq('definition_version', version); return dbFailJson(c, 'WORKFLOW_DEFINITION_UPDATE_FAILED', error); }
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'workflow', targetTable: 'workflow_definitions', targetId: id, detail: { version, steps: body.steps.length }, requestId: reqId, before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -209,11 +212,11 @@ workflowsRoute.post('/instances', requirePermission('workflow.manage'), zValidat
   const { data: definition } = await admin.from('workflow_definitions').select('*').eq('id', body.definitionId).eq('status', 'ใช้งาน').maybeSingle(); if (!definition) return c.json(fail(reqId, 'WORKFLOW_DEFINITION_INACTIVE', 'ไม่พบแบบ Workflow ที่เปิดใช้งาน'), 404);
   if (body.idempotencyKey) { const { data: duplicate } = await admin.from('workflow_instances').select('*').eq('idempotency_key', body.idempotencyKey).maybeSingle(); if (duplicate) return c.json(ok(reqId, duplicate)); }
   const { data: steps, error: stepsError } = await admin.from('workflow_steps').select('*').eq('definition_id', definition.id).eq('definition_version', definition.version).eq('status', 'ใช้งาน').order('step_order');
-  if (stepsError || !steps?.length) return c.json(fail(reqId, 'WORKFLOW_STEPS_NOT_FOUND', stepsError?.message ?? 'แบบ Workflow ไม่มีขั้นอนุมัติ'), 400);
+  if (stepsError || !steps?.length) return dbFailJson(c, 'WORKFLOW_STEPS_NOT_FOUND', stepsError, 'แบบ Workflow ไม่มีขั้นอนุมัติ');
   const { data: instance, error } = await admin.from('workflow_instances').insert({ instance_code: code('WF'), definition_id: definition.id, definition_version: definition.version, module_key: definition.module_key, record_id: body.recordId, record_label: body.recordLabel, requester_id: actorId, status: 'กำลังดำเนินการ', started_at: new Date().toISOString(), due_at: addHours(definition.sla_hours), context: body.context, result: {}, idempotency_key: body.idempotencyKey ?? null, notes: body.notes ?? null, created_by: actorId, updated_by: actorId }).select('*').single();
-  if (error) return c.json(fail(reqId, 'WORKFLOW_START_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_START_FAILED', error);
   try { await history(admin, instance.id, 'START', actorId, { status_to: 'กำลังดำเนินการ', detail: { definitionCode: definition.workflow_code, version: definition.version } }); await activateStep(admin, c.env, instance, steps[0], actorId); }
-  catch (reason) { await admin.from('workflow_instances').delete().eq('id', instance.id); return c.json(fail(reqId, 'WORKFLOW_ACTIVATION_FAILED', reason instanceof Error ? reason.message : 'เปิดขั้นอนุมัติไม่สำเร็จ'), 400); }
+  catch (reason) { await admin.from('workflow_instances').delete().eq('id', instance.id); return dbFailJson(c, 'WORKFLOW_ACTIVATION_FAILED', reason instanceof Error ? reason : { message: String(reason) }, 'เปิดขั้นอนุมัติไม่สำเร็จ'); }
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'START', module: 'workflow', targetTable: 'workflow_instances', targetId: instance.id, detail: { definitionId: definition.id, recordId: body.recordId }, requestId: reqId });
   return c.json(ok(reqId, instance), 201);
 });
@@ -228,7 +231,7 @@ workflowsRoute.post('/approvals/:id/decision', requirePermission('workflow.appro
   if (body.decision === 'RETURN' && !step.allow_return) return c.json(fail(reqId, 'WORKFLOW_RETURN_NOT_ALLOWED', 'ขั้นนี้ไม่อนุญาตให้ส่งกลับแก้ไข'), 400);
   const approvalStatus = workflowDecisionStatus(body.decision);
   const { data: updated, error } = await admin.from('workflow_approvals').update({ status: approvalStatus, decision: body.decision, comment: body.comment ?? null, decided_at: new Date().toISOString(), decision_by: actorId, updated_by: actorId }).eq('id', id).eq('status', 'รอพิจารณา').select('id').maybeSingle();
-  if (error) return c.json(fail(reqId, 'WORKFLOW_DECISION_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_DECISION_FAILED', error);
   if (!updated) return c.json(fail(reqId, 'WORKFLOW_APPROVAL_ALREADY_DECIDED', 'งานอนุมัตินี้ถูกดำเนินการแล้ว'), 409);
   await history(admin, instance.id, 'DECISION', actorId, { approval_id: id, step_order: approval.step_order, status_from: 'รอพิจารณา', status_to: approvalStatus, comment: body.comment, detail: { decision: body.decision } });
   if (body.decision !== 'APPROVE') {
@@ -263,7 +266,7 @@ workflowsRoute.post('/delegations', requirePermission('workflow.delegate'), zVal
   const { data: overlaps } = await admin.from('workflow_delegations').select('id').eq('delegator_id', actorId).eq('status', 'Active').lt('start_at', body.endAt).gt('end_at', body.startAt);
   if (overlaps?.length) return c.json(fail(reqId, 'WORKFLOW_DELEGATION_OVERLAP', 'มีช่วงมอบหมายงานแทนที่ทับซ้อนอยู่แล้ว'), 409);
   const { data, error } = await admin.from('workflow_delegations').insert({ delegator_id: actorId, delegate_id: body.delegateId, module_key: body.moduleKey ?? null, definition_id: body.definitionId ?? null, start_at: body.startAt, end_at: body.endAt, reason: body.reason, status: 'Active', created_by: actorId, updated_by: actorId }).select('*').single();
-  if (error) return c.json(fail(reqId, 'WORKFLOW_DELEGATION_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_DELEGATION_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'DELEGATE', module: 'workflow', targetTable: 'workflow_delegations', targetId: data.id, detail: { delegateId: body.delegateId, startAt: body.startAt, endAt: body.endAt }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
@@ -273,7 +276,7 @@ workflowsRoute.post('/delegations/:id/revoke', requirePermission('workflow.deleg
   const { data: row } = await admin.from('workflow_delegations').select('*').eq('id', id).maybeSingle(); if (!row) return c.json(fail(reqId, 'WORKFLOW_DELEGATION_NOT_FOUND', 'ไม่พบการมอบหมายแทน'), 404);
   const canManage = await hasPermission(c, 'workflow.manage'); if (row.delegator_id !== actorId && !canManage) return c.json(fail(reqId, 'WORKFLOW_DELEGATION_REVOKE_DENIED', 'ยกเลิกได้เฉพาะผู้มอบหมายหรือผู้ดูแล'), 403);
   const { data, error } = await admin.from('workflow_delegations').update({ status: 'Revoked', revoked_at: new Date().toISOString(), revoked_by: actorId, revoke_reason: body.reason, updated_by: actorId }).eq('id', id).eq('status', 'Active').select('*').single();
-  if (error) return c.json(fail(reqId, 'WORKFLOW_DELEGATION_REVOKE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'WORKFLOW_DELEGATION_REVOKE_FAILED', error);
   return c.json(ok(reqId, data));
 });
 

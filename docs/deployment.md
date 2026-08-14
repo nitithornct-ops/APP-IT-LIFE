@@ -1,0 +1,96 @@
+# Production Deployment Runbook
+
+เอกสารนี้เป็น gate สำหรับ Production ของ LIFE IT Smart Service Center การ deploy จริงทำผ่าน
+GitHub Actions workflow `Deploy Production` จาก branch `master` เท่านั้น และต้องใช้ GitHub
+Environment ชื่อ `production` ที่กำหนด required reviewers ไว้แล้ว
+
+## 1. สิ่งที่ต้องผ่านก่อนเริ่ม
+
+- PR Checks บน commit เดียวกับที่จะ deploy ต้องผ่านทั้งหมด: typecheck, lint, unit tests, build,
+  production dependency audit, browser smoke test และ migration dry-run
+- Workflow `Staging Live E2E` ต้องผ่านครบทุก live suite บน Supabase staging และต้องเก็บ URL/run ID
+  ไว้เป็น `staging_e2e_run_ref`
+
+### 1.1 เลือก `migration_mode` ให้ตรงกับรุ่นที่ปล่อย
+
+ด่าน `npm run migration:gate` มีสองโหมด และ **ทั้งสองโหมดบังคับ `migration_approval_ref` เสมอ** —
+ไม่มีเส้นทางใดที่ deploy ได้โดยไม่มีผู้รับผิดชอบที่ระบุตัวได้
+
+**`legacy-import`** — รุ่นที่ยกข้อมูลจากระบบเดิมบน Google Sheets เข้ามาด้วย
+
+- ต้องมี `docs/migration/phase7-rehearsal-report.json` จากข้อมูล legacy จริง รายงานต้องมี SQL/Auth
+  failure เป็นศูนย์, ไม่มี unverified sheet และมี owner approval/change ticket
+- Attachment exception ทุกไฟล์ต้องถูกตรวจ checksum/upload result หรือบันทึกเหตุผลและอนุมัติ
+- บันทึกผลเป็น `docs/migration/phase7-attachment-report.json` ตามไฟล์ `.example.json` โดยห้ามมี
+  URL/File ID ต้นทาง และยอด uploaded/archived/unresolved ต้อง reconcile กับ rehearsal report
+
+**`fresh-start`** — รุ่นที่ไม่นำเข้าข้อมูลเดิมเลย ผู้ใช้กรอกใหม่ทั้งหมด
+
+- ต้องกรอก `fresh_start_confirm` เป็น `NO-LEGACY-DATA` เพื่อประกาศเจตนาอย่างชัดเจนและตรวจสอบย้อนหลังได้
+- ด่านจะ **ปฏิเสธ** ถ้าพบ `phase7-rehearsal-report.json` อยู่จริง เพราะขัดกับคำประกาศ — ต้องให้คน
+  ตัดสินว่าโหมดไหนถูก ไม่ใช่ให้สคริปต์เดา
+- Export/backup ฐาน Production ต้องเสร็จและทดสอบว่าสามารถอ่านไฟล์สำรองได้
+- UAT sign-off, maintenance window, change owner, rollback owner และช่องทางสื่อสารต้องระบุใน change ticket
+
+## 2. GitHub Environment configuration
+
+ตั้งค่า Variables:
+
+- `PRODUCTION_WEB_URL` — HTTPS origin ของ Cloudflare Pages ไม่มี `/` ปิดท้าย
+- `PRODUCTION_API_URL` — HTTPS origin ของ Worker
+- `CLOUDFLARE_PAGES_PROJECT`
+- `LINE_LOGIN_ENABLED` และ `NOTIFY_LINE_ENABLED` เป็น `true` เฉพาะเมื่อ integration ผ่านการทดสอบแล้ว
+- `LINE_LOGIN_CALLBACK_URL` เมื่อเปิด LINE Login
+
+ตั้งค่า Secrets:
+
+- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
+- LINE secrets ตาม feature ที่เปิด: `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`,
+  `LINE_SESSION_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_DEFAULT_TO`
+
+Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
+ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์
+
+### 2.1 Environment `backup` (แยกจาก `production`)
+
+Workflow `Backup` ทำงานตามเวลาทุกคืน จึง **ห้ามผูกกับ environment ที่ตั้ง required reviewers** ไว้
+มิฉะนั้นงานจะค้างรออนุมัติทุกคืนและไม่มีสำเนาเกิดขึ้นจริงสักครั้ง ให้สร้าง environment ชื่อ `backup`
+โดยไม่ตั้ง reviewer แล้วใส่
+
+- Secrets: `SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+- Variables: `R2_BACKUP_BUCKET`, `BACKUP_RETENTION_DAYS` (ไม่ใส่ = 30 วัน)
+
+ไฟล์สำรองมีข้อมูลส่วนบุคคลและ hash รหัสผ่านจาก `auth.users` — bucket ต้องเป็น private และ R2 API
+token ต้องจำกัดสิทธิ์ไว้ที่ bucket นี้ bucket เดียว
+
+## 3. ลำดับ deploy
+
+1. เปิด Actions → `Staging Live E2E` และเก็บหลักฐานผลผ่าน
+2. สร้าง backup และบันทึก backup ID/timestamp ลง change ticket — รัน Actions → `Backup` แล้วเก็บชื่อไฟล์
+   `itlife-backup-<เวลา UTC>.tar.gz` ที่ workflow รายงานไว้
+3. เปิด Actions → `Deploy Production` จาก `master`
+4. ใส่ `DEPLOY`, migration approval reference, เลือก `migration_mode` (พร้อม `fresh_start_confirm`
+   เมื่อเลือก `fresh-start`), Staging E2E reference และยืนยัน attachment review
+5. GitHub Environment reviewer ตรวจ commit SHA, backup และหลักฐานก่อน approve
+6. Workflow จะตรวจ config/migration gate, รัน release verification, dry-run migration แล้วจึงเรียง
+   Database → Worker API → Cloudflare Pages
+7. ห้ามแก้ Worker vars/secrets ผ่าน Dashboard หลัง deploy เพราะ config และ workflow เป็น source of truth
+
+## 4. Post-deploy verification
+
+- `/api/v1/health` ต้องตอบ `status: ok` และ database check เป็น `ok`
+- Login, reset password และ permission menu ถูกต้องอย่างน้อย role: user, approver, technician, auditor, IT admin
+- ทดสอบ Ticket create/assign/SLA/pause/resume/resolve/reopen และ public ticket tracking
+- ตรวจ private attachment signed URL, audit log, login log, notification และ scheduled reminder
+- ทดสอบ report CSV/PDF; PDF ต้องเห็น Browser Rendering binding `MYBROWSER`
+- ตรวจ CORS, CSP/security headers และยืนยัน origin อื่นเรียก API ไม่ได้
+- ตรวจ Worker logs/429 metrics และ Cloudflare security events ช่วง 30 นาทีแรก
+
+หาก smoke test สำคัญข้อใดไม่ผ่าน ให้หยุดรับ traffic/cutover และทำตาม `docs/rollback.md` ทันที
+
+## 5. Go-live record
+
+บันทึก commit SHA, GitHub run URL, Supabase migration list, Worker version ID, Pages deployment ID,
+backup ID, ผู้อนุมัติ, เวลาเริ่ม/จบ และผล smoke test ลง change ticket ทุกครั้ง

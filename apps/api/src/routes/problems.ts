@@ -3,10 +3,13 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   createKnownErrorSchema,
@@ -32,11 +35,7 @@ const KNOWN_ERROR_SELECT =
 function generateNumber(prefix: 'PRB' | 'KEDB'): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `${prefix}-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
-}
-
-function cleanSearch(value: string): string {
-  return value.replace(/[%(),]/g, ' ').trim();
+  return `${prefix}-${date}-${randomCodeSuffix()}`;
 }
 
 async function replaceLinks(
@@ -137,7 +136,7 @@ problemsRoute.post('/known-errors', requirePermission('problem.manage'), zValida
     knowledge_article_ref: body.knowledgeArticleRef || null, status: body.status,
     review_date: body.reviewDate || null, notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(KNOWN_ERROR_SELECT).single();
-  if (error) return c.json(fail(reqId, 'KNOWN_ERROR_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWN_ERROR_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'problem', targetTable: 'known_errors', targetId: data.id, detail: { knownErrorNumber: data.known_error_number, problemId: body.problemId }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
@@ -158,10 +157,11 @@ problemsRoute.patch('/known-errors/:id', requirePermission('problem.manage'), zV
     const value = body[input as keyof typeof body];
     if (value !== undefined) patch[column] = value === '' ? null : value;
   }
+  const auditBefore = await loadAuditSnapshot(createAdminClient(c.env), 'known_errors', c.req.param('id'));
   const { data, error } = await createAdminClient(c.env).from('known_errors').update(patch).eq('id', c.req.param('id')!).select(KNOWN_ERROR_SELECT).maybeSingle();
-  if (error) return c.json(fail(reqId, 'KNOWN_ERROR_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'KNOWN_ERROR_UPDATE_FAILED', error);
   if (!data) return c.json(fail(reqId, 'KNOWN_ERROR_NOT_FOUND', 'ไม่พบ Known Error'), 404);
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'problem', targetTable: 'known_errors', targetId: data.id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'problem', targetTable: 'known_errors', targetId: data.id, detail: body, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });
 
@@ -207,7 +207,7 @@ problemsRoute.post('/', requirePermission('problem.manage'), zValidator('json', 
     closed_at: body.status === 'ปิด' ? new Date().toISOString() : null, evidence_url: body.evidenceUrl || null,
     notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select().single();
-  if (error) return c.json(fail(reqId, 'PROBLEM_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'PROBLEM_CREATE_FAILED', error);
   const linkError = await replaceLinks(c.env, data.id, actorId, body.incidentIds, body.ticketIds);
   if (linkError) {
     await admin.from('problems').delete().eq('id', data.id);
@@ -238,12 +238,13 @@ problemsRoute.patch('/:id', requirePermission('problem.manage'), zValidator('jso
     patch.status = body.status;
     patch.closed_at = body.status === 'ปิด' ? new Date().toISOString() : null;
   }
+  const auditBefore = await loadAuditSnapshot(admin, 'problems', id);
   const { data, error } = await admin.from('problems').update(patch).eq('id', id).select().maybeSingle();
-  if (error) return c.json(fail(reqId, 'PROBLEM_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'PROBLEM_UPDATE_FAILED', error);
   if (!data) return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
   const linkError = await replaceLinks(c.env, id, actorId, body.incidentIds, body.ticketIds);
   if (linkError) return c.json(fail(reqId, 'PROBLEM_LINK_FAILED', linkError), 400);
   const { data: result } = await admin.from('problems').select(PROBLEM_SELECT).eq('id', id).single();
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'problem', targetTable: 'problems', targetId: id, detail: body, requestId: reqId });
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'problem', targetTable: 'problems', targetId: id, detail: body, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, result));
 });

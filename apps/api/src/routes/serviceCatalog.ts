@@ -2,9 +2,10 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { createServiceCatalogSchema, listServiceCatalogQuerySchema, updateServiceCatalogSchema } from '../validators/serviceCatalog';
@@ -96,7 +97,7 @@ serviceCatalogRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'SERVICE_CATALOG_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'SERVICE_CATALOG_CREATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -170,9 +171,10 @@ serviceCatalogRoute.patch(
       patch.version = (current.version ?? 1) + 1;
     }
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'service_catalog', id);
     const { data, error } = await supabase.from('service_catalog').update(patch).eq('id', id).select().single();
     if (error) {
-      return c.json(fail(reqId, 'SERVICE_CATALOG_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'SERVICE_CATALOG_UPDATE_FAILED', error);
     }
 
     await writeAuditLog(c.env, {
@@ -184,7 +186,9 @@ serviceCatalogRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },

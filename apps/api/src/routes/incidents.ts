@@ -5,11 +5,14 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   closeIncidentSchema,
@@ -56,7 +59,7 @@ type IncidentRow = Record<string, unknown> & {
 function generateIncidentNumber(): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `INC-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `INC-${date}-${randomCodeSuffix()}`;
 }
 
 function riskLevel(score: number | null): string | null {
@@ -162,7 +165,7 @@ incidentsRoute.get('/', zValidator('query', listIncidentsQuerySchema, zodValidat
     .order('report_date', { ascending: false })
     .range(...paginationRange(page, pageSize));
   if (search) {
-    const safe = search.replace(/[%(),]/g, ' ').trim();
+    const safe = cleanSearch(search);
     query = query.or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`);
   }
   if (status) query = query.eq('status', status);
@@ -216,16 +219,16 @@ incidentsRoute.post('/', requirePermission('incident.create'), zValidator('json'
     })
     .select()
     .single();
-  if (error) return c.json(fail(reqId, 'INCIDENT_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'INCIDENT_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'REPORT', module: 'incident', targetTable: 'incidents', targetId: data.id, detail: { incidentNumber: data.incident_number, containsPersonalData: data.contains_personal_data }, requestId: reqId });
   if (data.contains_personal_data) await notifyDpoUsers(c.env, data.id, data.title);
   return c.json(ok(reqId, mapIncident(data)), 201);
 });
 
-incidentsRoute.post('/from-ticket/:ticketId', requirePermission('incident.manage'), zValidator('json', escalateTicketSchema, zodValidationHook), async (c) => {
+incidentsRoute.post('/from-ticket/:ticketId', requireAnyPermission(['incident.manage', 'ticket.escalate']), zValidator('json', escalateTicketSchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  if (!(await hasPerm(c, 'ticket.update'))) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ต้องมีสิทธิ์ดำเนินการ Ticket เพื่อยกระดับเป็น Incident'), 403);
+  if (!(await hasPerm(c, 'ticket.escalate'))) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ยกระดับ Ticket เป็น Incident'), 403);
   const ticketId = c.req.param('ticketId')!;
   const body = c.req.valid('json');
   const admin = createAdminClient(c.env);
@@ -238,23 +241,23 @@ incidentsRoute.post('/from-ticket/:ticketId', requirePermission('incident.manage
   }
   if (['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(ticket.status)) return c.json(fail(reqId, 'TICKET_TRANSITION_INVALID', 'Ticket นี้อยู่ในสถานะที่ยกระดับไม่ได้'), 400);
   const categoryName = (ticket.ticket_categories as { name?: string } | null)?.name ?? 'ไม่ระบุ';
-  const description = `ยกระดับจาก Ticket ${ticketId}\n\nหัวข้อ: ${ticket.title}\nหมวด Ticket: ${categoryName}\n\n${ticket.description}${body.notes ? `\n\nหมายเหตุการยกระดับ: ${body.notes}` : ''}`;
+  const description = `ยกระดับจาก Ticket ${ticket.ticket_no ?? ticketId}\n\nหัวข้อ: ${ticket.title}\nหมวด Ticket: ${categoryName}\n\n${ticket.description}${body.notes ? `\n\nหมายเหตุการยกระดับ: ${body.notes}` : ''}`;
   const { data: incident, error: insertError } = await admin
     .from('incidents')
-    .insert({ incident_number: generateIncidentNumber(), title: `[Ticket] ${ticket.title}`.slice(0, 200), reported_by: ticket.requester_id, category: body.category, severity: body.severity, description: description.slice(0, 3000), affected_system: categoryName.slice(0, 150), contains_personal_data: body.containsPersonalData ?? false, dpo_notify_deadline: body.containsPersonalData ? new Date(Date.now() + 4 * 3600_000).toISOString() : null, source_ticket_id: ticketId, notes: `SourceTicketID=${ticketId}`, created_by: actorId, updated_by: actorId })
+    .insert({ incident_number: generateIncidentNumber(), title: `[Ticket] ${ticket.title}`.slice(0, 200), reported_by: ticket.requester_id ?? actorId, category: body.category, severity: body.severity, description: description.slice(0, 3000), affected_system: categoryName.slice(0, 150), contains_personal_data: body.containsPersonalData ?? false, dpo_notify_deadline: body.containsPersonalData ? new Date(Date.now() + 4 * 3600_000).toISOString() : null, source_ticket_id: ticketId, notes: `SourceTicketID=${ticket.ticket_no ?? ticketId}`, created_by: actorId, updated_by: actorId })
     .select()
     .single();
-  if (insertError) return c.json(fail(reqId, 'INCIDENT_CREATE_FAILED', insertError.message), 400);
+  if (insertError) return dbFailJson(c, 'INCIDENT_CREATE_FAILED', insertError);
   const { error: updateError } = await admin.from('tickets').update({ incident_id: incident.id, is_security: true, status: 'ยกระดับเป็น Incident', updated_by: actorId }).eq('id', ticketId).is('incident_id', null);
   if (updateError) {
     await admin.from('incidents').delete().eq('id', incident.id);
-    return c.json(fail(reqId, 'TICKET_ESCALATION_FAILED', updateError.message), 409);
+    return dbFailJson(c, 'TICKET_ESCALATION_FAILED', updateError);
   }
   await admin.from('ticket_worklogs').insert({ ticket_id: ticketId, action: 'ยกระดับเป็น Incident', detail: `Incident ${incident.incident_number}`, status_from: ticket.status, status_to: 'ยกระดับเป็น Incident', is_public: true, actor_id: actorId });
   await Promise.all([
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'ESCALATE_INCIDENT', module: 'ticket', targetTable: 'tickets', targetId: ticketId, detail: { incidentId: incident.id }, requestId: reqId }),
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE_FROM_TICKET', module: 'incident', targetTable: 'incidents', targetId: incident.id, detail: { ticketId }, requestId: reqId }),
-    sendNotification(c.env, { recipientId: ticket.requester_id, type: 'ticket_escalated', title: `Ticket ถูกยกระดับเป็น Incident ${incident.incident_number}`, link: `/incidents/${incident.id}` }),
+    ...(ticket.requester_id ? [sendNotification(c.env, { recipientId: ticket.requester_id, type: 'ticket_escalated', title: `Ticket ถูกยกระดับเป็น Incident ${incident.incident_number}`, link: `/incidents/${incident.id}` })] : []),
   ]);
   if (incident.contains_personal_data) await notifyDpoUsers(c.env, incident.id, incident.title);
   return c.json(ok(reqId, mapIncident(incident)), 201);
@@ -273,9 +276,10 @@ incidentsRoute.patch('/:id', requirePermission('incident.manage'), zValidator('j
   if (body.status !== undefined) patch.status = body.status;
   if (body.notes !== undefined) patch.notes = body.notes || null;
   if (body.evidenceUrl !== undefined) patch.evidence_url = body.evidenceUrl || null;
+  const auditBefore = await loadAuditSnapshot(c.get('supabase'), 'incidents', id);
   const { data, error } = await c.get('supabase').from('incidents').update(patch).eq('id', id).select().maybeSingle();
-  if (error || !data) return c.json(fail(reqId, 'INCIDENT_UPDATE_FAILED', error?.message ?? 'ไม่พบ Incident'), 400);
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'incident', targetTable: 'incidents', targetId: id, detail: body, requestId: reqId });
+  if (error || !data) return dbFailJson(c, 'INCIDENT_UPDATE_FAILED', error, 'ไม่พบ Incident');
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'incident', targetTable: 'incidents', targetId: id, detail: body, requestId: reqId , before: auditBefore, after: data });
   if (body.assigneeId) await sendNotification(c.env, { recipientId: body.assigneeId, type: 'incident_assigned', title: `ท่านได้รับมอบหมาย Incident ${data.incident_number}`, link: `/incidents/${id}` });
   return c.json(ok(reqId, mapIncident(data)));
 });
@@ -289,7 +293,7 @@ incidentsRoute.post('/:id/dpo-notified', requireAnyPermission(['incident.manage'
   const { data: current } = await loadIncident(admin, id);
   if (!current || (!current.contains_personal_data && !(await hasPerm(c, 'incident.manage')))) return c.json(fail(reqId, 'INCIDENT_NOT_FOUND', 'ไม่พบ Incident ที่ดำเนินการได้'), 404);
   const { data, error } = await admin.from('incidents').update({ dpo_notified_at: new Date().toISOString(), dpo_notified_by: actorId, dpo_notify_note: body.note, updated_by: actorId }).eq('id', id).select().single();
-  if (error) return c.json(fail(reqId, 'INCIDENT_DPO_UPDATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'INCIDENT_DPO_UPDATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'DPO_NOTIFIED', module: 'incident', targetTable: 'incidents', targetId: id, detail: { note: body.note }, requestId: reqId });
   return c.json(ok(reqId, mapIncident(data)));
 });
@@ -304,7 +308,7 @@ incidentsRoute.post('/:id/regulatory-assessment', requireAnyPermission(['inciden
   if (!current || (!current.contains_personal_data && !(await hasPerm(c, 'incident.manage')))) return c.json(fail(reqId, 'INCIDENT_NOT_FOUND', 'ไม่พบ Incident ที่ดำเนินการได้'), 404);
   const pending = [body.pdpcRequired, body.dataSubjectRequired, body.ncsaRequired, body.otherRegulatorRequired].includes('Pending');
   const { data, error } = await admin.from('incidents').update({ regulatory_assessment_status: pending ? 'รอตัดสินใจ' : 'ประเมินแล้ว', breach_risk_level: body.breachRiskLevel ?? null, pdpc_notify_required: body.pdpcRequired, data_subject_notify_required: body.dataSubjectRequired, ncsa_report_required: body.ncsaRequired, other_regulator_required: body.otherRegulatorRequired, regulatory_assessment: body.assessment, regulatory_assessed_at: new Date().toISOString(), regulatory_assessed_by: actorId, updated_by: actorId }).eq('id', id).select().single();
-  if (error) return c.json(fail(reqId, 'INCIDENT_ASSESSMENT_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'INCIDENT_ASSESSMENT_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'ASSESS_REGULATORY_NOTIFICATION', module: 'incident', targetTable: 'incidents', targetId: id, detail: body, requestId: reqId });
   return c.json(ok(reqId, mapIncident(data)));
 });
@@ -318,7 +322,7 @@ incidentsRoute.post('/:id/regulatory-notifications', requireAnyPermission(['inci
   const { data: incident } = await loadIncident(admin, id);
   if (!incident || (!incident.contains_personal_data && !(await hasPerm(c, 'incident.manage')))) return c.json(fail(reqId, 'INCIDENT_NOT_FOUND', 'ไม่พบ Incident ที่ดำเนินการได้'), 404);
   const { data, error } = await admin.from('regulatory_notifications').insert({ incident_id: id, destination: body.destination, agency: body.agency, notification_type: body.notificationType, required: body.required, legal_basis: body.legalBasis || null, deadline: body.deadline || null, status: body.status, notified_at: body.status === 'แจ้งแล้ว' ? body.notifiedAt || new Date().toISOString() : null, reference_no: body.referenceNo || null, approved_by: actorId, evidence_url: body.evidenceUrl || null, reason_not_required: body.reasonNotRequired || null, notes: body.notes || null, created_by: actorId, updated_by: actorId }).select().single();
-  if (error) return c.json(fail(reqId, 'REGULATORY_NOTIFICATION_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'REGULATORY_NOTIFICATION_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'RECORD_REGULATORY_NOTIFICATION', module: 'incident', targetTable: 'regulatory_notifications', targetId: data.id, detail: { incidentId: id, destination: body.destination, status: body.status }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
@@ -337,7 +341,7 @@ incidentsRoute.post('/:id/close', requirePermission('incident.manage'), zValidat
   const gaps = closureGaps(incident as unknown as IncidentRow, (notifications ?? []) as Record<string, unknown>[]);
   if (gaps.length) return c.json(fail(reqId, 'INCIDENT_CLOSURE_BLOCKED', `ยังปิด Incident ไม่ได้: ${gaps.join(' · ')}`), 409);
   const { data, error } = await c.get('supabase').from('incidents').update({ root_cause: body.rootCause, resolution: body.resolution, lessons_learned: body.lessonsLearned || null, status: 'ปิดเคส', closed_at: new Date().toISOString(), updated_by: actorId }).eq('id', id).select().single();
-  if (error) return c.json(fail(reqId, 'INCIDENT_CLOSE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'INCIDENT_CLOSE_FAILED', error);
   await Promise.all([
     writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CLOSE', module: 'incident', targetTable: 'incidents', targetId: id, requestId: reqId }),
     sendNotification(c.env, { recipientId: data.reported_by, type: 'incident_closed', title: `Incident ${data.incident_number} ปิดเคสแล้ว`, link: `/incidents/${id}` }),

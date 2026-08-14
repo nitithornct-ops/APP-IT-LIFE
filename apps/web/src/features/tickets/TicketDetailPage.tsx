@@ -388,15 +388,15 @@ export function TicketDetailPage() {
   }
 
   const ticket = ticketQuery.data;
-  const canManage = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close');
+  const canManage = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canReopen = hasPermission('ticket.close') && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน');
   const canRate =
     ticket.requester_id === me?.profile.id &&
     (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') &&
     !ticket.rating;
   const canEscalate =
-    hasPermission('incident.manage') &&
-    hasPermission('ticket.update') &&
+    hasPermission('incident.create') &&
+    hasPermission('ticket.escalate') &&
     !ticket.incident_id &&
     !['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(ticket.status);
 
@@ -409,6 +409,7 @@ export function TicketDetailPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <p className="font-mono text-xs text-slate-500 dark:text-slate-400">{ticket.ticket_no}</p>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-100">
             {ticket.title}
             {ticket.is_security && <AlertTriangle className="h-5 w-5 text-red-500" aria-label="Security" />}
@@ -481,6 +482,7 @@ export function TicketDetailPage() {
           <Card>
             <CardHeader>ข้อมูล Ticket</CardHeader>
             <CardBody className="divide-y divide-slate-100 dark:divide-slate-700">
+              <InfoRow label="เลขที่ Ticket" value={ticket.ticket_no} />
               <InfoRow label="ผู้แจ้ง" value={ticket.requester?.full_name} />
               <InfoRow label="ผู้รับผิดชอบ" value={ticket.assignee?.full_name ?? 'ยังไม่ได้มอบหมาย'} />
               <InfoRow label="หมวดหมู่" value={ticket.ticket_categories?.name} />

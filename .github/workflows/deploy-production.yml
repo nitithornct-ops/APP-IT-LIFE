@@ -1,0 +1,127 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to confirm the production cutover
+        required: true
+      migration_approval_ref:
+        description: Approved change/UAT reference for this release
+        required: true
+      migration_mode:
+        description: legacy-import = ยกข้อมูลจากระบบเดิมเข้ามาด้วย / fresh-start = เริ่มข้อมูลใหม่ทั้งหมด
+        required: true
+        type: choice
+        options:
+          - legacy-import
+          - fresh-start
+        default: legacy-import
+      fresh_start_confirm:
+        description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
+        required: false
+      staging_e2e_run_ref:
+        description: Successful Staging Live E2E workflow run URL or approval reference
+        required: true
+      attachments_approved:
+        description: All attachment migration exceptions were reviewed (ไม่มีผลในโหมด fresh-start)
+        required: true
+        type: boolean
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/master' && inputs.confirmation == 'DEPLOY'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      PRODUCTION_DEPLOY_CONFIRM: ${{ inputs.confirmation }}
+      MIGRATION_APPROVAL_REF: ${{ inputs.migration_approval_ref }}
+      MIGRATION_MODE: ${{ inputs.migration_mode }}
+      FRESH_START_CONFIRM: ${{ inputs.fresh_start_confirm }}
+      STAGING_E2E_APPROVAL_REF: ${{ inputs.staging_e2e_run_ref }}
+      MIGRATION_ATTACHMENTS_APPROVED: ${{ inputs.attachments_approved }}
+      PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+      VITE_API_BASE_URL: ${{ vars.PRODUCTION_API_URL }}
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      ALLOWED_ORIGINS: ${{ vars.PRODUCTION_WEB_URL }}
+      PUBLIC_APP_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LINE_LOGIN_ENABLED: ${{ vars.LINE_LOGIN_ENABLED }}
+      LINE_LOGIN_CHANNEL_ID: ${{ secrets.LINE_LOGIN_CHANNEL_ID }}
+      LINE_LOGIN_CHANNEL_SECRET: ${{ secrets.LINE_LOGIN_CHANNEL_SECRET }}
+      LINE_LOGIN_CALLBACK_URL: ${{ vars.LINE_LOGIN_CALLBACK_URL }}
+      LINE_SESSION_SECRET: ${{ secrets.LINE_SESSION_SECRET }}
+      NOTIFY_LINE_ENABLED: ${{ vars.NOTIFY_LINE_ENABLED }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_DEFAULT_TO: ${{ secrets.LINE_DEFAULT_TO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Validate production configuration and migration approval
+        run: |
+          npm run predeploy
+          npm run migration:gate
+      - name: Verify release candidate
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test
+          npm run audit:prod
+          npm run build
+      - name: Apply reviewed database migrations
+        run: |
+          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --include-seed --dry-run
+          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --include-seed
+      - name: Verify the database matches this release and Auth is locked down
+        run: npm run runtime:gate
+      - name: Synchronize Worker secrets
+        shell: bash
+        run: |
+          printf '%s' "$SUPABASE_URL" | npx wrangler secret put SUPABASE_URL --env production --cwd apps/api
+          printf '%s' "$SUPABASE_ANON_KEY" | npx wrangler secret put SUPABASE_ANON_KEY --env production --cwd apps/api
+          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production --cwd apps/api
+          printf '%s' "$ALLOWED_ORIGINS" | npx wrangler secret put ALLOWED_ORIGINS --env production --cwd apps/api
+          printf '%s' "$PUBLIC_APP_URL" | npx wrangler secret put PUBLIC_APP_URL --env production --cwd apps/api
+          printf '%s' "${LINE_LOGIN_ENABLED:-false}" | npx wrangler secret put LINE_LOGIN_ENABLED --env production --cwd apps/api
+          printf '%s' "${NOTIFY_LINE_ENABLED:-false}" | npx wrangler secret put NOTIFY_LINE_ENABLED --env production --cwd apps/api
+          if [ "${LINE_LOGIN_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$LINE_LOGIN_CHANNEL_ID" | npx wrangler secret put LINE_LOGIN_CHANNEL_ID --env production --cwd apps/api
+            printf '%s' "$LINE_LOGIN_CHANNEL_SECRET" | npx wrangler secret put LINE_LOGIN_CHANNEL_SECRET --env production --cwd apps/api
+            printf '%s' "$LINE_LOGIN_CALLBACK_URL" | npx wrangler secret put LINE_LOGIN_CALLBACK_URL --env production --cwd apps/api
+            printf '%s' "$LINE_SESSION_SECRET" | npx wrangler secret put LINE_SESSION_SECRET --env production --cwd apps/api
+          fi
+          if [ "${NOTIFY_LINE_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$LINE_CHANNEL_ACCESS_TOKEN" | npx wrangler secret put LINE_CHANNEL_ACCESS_TOKEN --env production --cwd apps/api
+            printf '%s' "$LINE_DEFAULT_TO" | npx wrangler secret put LINE_DEFAULT_TO --env production --cwd apps/api
+          fi
+      - name: Deploy API
+        run: npx wrangler deploy --env production --cwd apps/api
+      - name: Build web with production public configuration
+        run: npm run build --workspace=apps/web
+      - name: Deploy web
+        run: npx wrangler pages deploy apps/web/dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch master
+      - name: Post-deploy smoke checks
+        shell: bash
+        run: |
+          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_API_URL/api/v1/health"
+          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_WEB_URL/login"

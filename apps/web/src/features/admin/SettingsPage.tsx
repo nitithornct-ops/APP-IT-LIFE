@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock3, ExternalLink, KeyRound, Loader2, Save, Search, Settings2, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Building2, CheckCircle2, Clock3, ExternalLink, Image as ImageIcon, KeyRound, Loader2, Save, Search, Settings2, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
-import type { SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
+import type { BrandingSettings, SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
 
 const STATUS_COPY: Record<SettingSupportStatus, { label: string; className: string }> = {
   active: { label: 'ใช้งานในระบบ', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200' },
@@ -17,6 +17,77 @@ const STATUS_COPY: Record<SettingSupportStatus, { label: string; className: stri
 
 function errorText(reason: unknown): string {
   return reason instanceof ApiError || reason instanceof Error ? reason.message : 'ดำเนินการไม่สำเร็จ';
+}
+
+function OrganizationLogoSetting({ currentUrl, canManage }: { currentUrl: string; canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [validationError, setValidationError] = useState('');
+  const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : currentUrl, [currentUrl, file]);
+
+  useEffect(() => () => {
+    if (file && previewUrl !== currentUrl) URL.revokeObjectURL(previewUrl);
+  }, [currentUrl, file, previewUrl]);
+
+  const refreshBranding = async () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] }),
+      queryClient.invalidateQueries({ queryKey: ['branding'] }),
+    ]);
+  };
+  const uploadMutation = useMutation({
+    mutationFn: async (logo: File) => {
+      const body = new FormData();
+      body.set('file', logo);
+      return apiFetch<BrandingSettings>('/api/v1/settings/logo', { method: 'POST', body });
+    },
+    onSuccess: refreshBranding,
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => apiFetch<BrandingSettings>('/api/v1/settings/logo', { method: 'DELETE' }),
+    onSuccess: refreshBranding,
+  });
+
+  const selectFile = (selected: File | undefined) => {
+    setValidationError('');
+    if (!selected) return setFile(null);
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(selected.type)) {
+      setFile(null);
+      return setValidationError('รองรับเฉพาะไฟล์ PNG, JPG และ WebP');
+    }
+    if (selected.size > 2 * 1024 * 1024) {
+      setFile(null);
+      return setValidationError('ไฟล์ต้องมีขนาดไม่เกิน 2 MB');
+    }
+    setFile(selected);
+  };
+
+  const mutationError = uploadMutation.error ?? deleteMutation.error;
+  return (
+    <Card data-testid="organization-logo-setting">
+      <CardHeader className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary-600" />ตราสัญลักษณ์หน่วยงาน</CardHeader>
+      <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 p-2 dark:border-slate-600 dark:bg-slate-900">
+          {previewUrl ? <img src={previewUrl} alt="ตัวอย่างโลโก้หน่วยงาน" className="h-full w-full object-contain" /> : <ImageIcon className="h-9 w-9 text-slate-300" aria-hidden="true" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">โลโก้ที่แสดงใน Sidebar</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">แนะนำภาพพื้นหลังโปร่งใส อัตราส่วน 1:1 ขนาดไม่เกิน 2 MB รองรับ PNG, JPG และ WebP</p>
+          {file && <p className="mt-2 truncate text-xs font-medium text-primary-700 dark:text-primary-300">ไฟล์ที่เลือก: {file.name}</p>}
+          {(validationError || mutationError) && <p className="mt-2 text-xs text-red-600" role="alert">{validationError || errorText(mutationError)}</p>}
+          {canManage ? <div className="mt-3 flex flex-wrap gap-2">
+            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => selectFile(event.target.files?.[0])} />
+            <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><ImageIcon className="h-4 w-4" />เลือกไฟล์</Button>
+            {file && <Button size="sm" isLoading={uploadMutation.isPending} onClick={() => uploadMutation.mutate(file)}><Upload className="h-4 w-4" />อัปโหลดโลโก้</Button>}
+            {currentUrl && !file && <Button size="sm" variant="danger" isLoading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}><Trash2 className="h-4 w-4" />ลบโลโก้</Button>}
+          </div> : <p className="mt-2 flex items-center gap-1 text-xs text-slate-400"><ShieldCheck className="h-3.5 w-3.5" />ต้องมีสิทธิ์จัดการ Settings จึงจะเปลี่ยนโลโก้ได้</p>}
+        </div>
+      </CardBody>
+    </Card>
+  );
 }
 
 export function SettingsPage() {
@@ -43,6 +114,7 @@ export function SettingsPage() {
   const visible = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('th');
     return (settingsQuery.data?.settings ?? []).filter((setting) => {
+      if (setting.key === 'ORG_LOGO_URL') return false;
       if (activeGroup !== 'ทั้งหมด' && setting.group_key !== activeGroup) return false;
       return !keyword || `${setting.key} ${setting.description} ${setting.group_key}`.toLocaleLowerCase('th').includes(keyword);
     });
@@ -63,6 +135,8 @@ export function SettingsPage() {
       {settingsQuery.isError && <EmptyState icon={<Settings2 className="h-10 w-10" />} title="โหลด Settings ไม่สำเร็จ" message={errorText(settingsQuery.error)} />}
 
       {settingsQuery.data && <>
+        <OrganizationLogoSetting currentUrl={settingsQuery.data.settings.find((setting) => setting.key === 'ORG_LOGO_URL')?.value ?? ''} canManage={hasPermission('setting.manage')} />
+
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={<Settings2 className="h-5 w-5" />} label="ค่าตั้งค่าทั้งหมด" value={settingsQuery.data.summary.total} tone="primary" />
           <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="แก้ไขผ่านระบบได้" value={settingsQuery.data.summary.editable} tone="teal" />

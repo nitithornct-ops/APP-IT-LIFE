@@ -170,15 +170,21 @@ describe('buildImportPlan', () => {
     expect(op.values.approval_type).toBe('USER');
   });
 
-  it('hand-verifies Tickets with a required requester and optional category/assignee refs', () => {
+  it('preserves TicketID and resolves the Legacy Category column by CategoryName', () => {
     const plan = buildImportPlan({
-      Tickets: [{ TicketID: 'T1', Title: 't', RequesterEmail: 'req@example.com', Description: 'd', Category: 'TC1', Assignee: '' }],
+      Tickets: [{ TicketID: 'TCK-20260811-0123456789ABCDEF', Title: 't', RequesterEmail: 'req@example.com', RequesterName: 'ผู้แจ้ง', Description: 'd', Category: 'Computer', Assignee: '' }],
     }, migrationManifest);
     expect(plan.unverifiedSheets).not.toContain('Tickets');
     const op = plan.phases.operational.find((o) => o.table === 'tickets')!;
     expect(op.refs?.requester_id).toEqual({ kind: 'byEmail', table: 'profiles', email: 'req@example.com' });
-    expect(op.refs?.category_id).toEqual({ kind: 'byLegacyId', table: 'ticket_categories', legacySource: 'TicketCategories', legacyId: 'TC1', optional: true });
+    expect(op.refs?.category_id).toEqual({ kind: 'byTicketCategoryName', name: 'Computer', optional: true });
     expect(op.refs?.assignee_id).toBeUndefined();
+    expect(op.values).toMatchObject({
+      ticket_no: 'TCK-20260811-0123456789ABCDEF',
+      requester_email_snapshot: 'req@example.com',
+      requester_name_snapshot: 'ผู้แจ้ง',
+      source_channel: 'web',
+    });
   });
 
   it('places AuditTrail in the audit_history phase, run strictly last', () => {

@@ -4,10 +4,11 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -257,7 +258,7 @@ serviceRequestsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'SERVICE_REQUEST_CREATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'SERVICE_REQUEST_CREATE_FAILED', error);
     }
 
     // ผู้ยื่นคำขอมีแค่ service_request.create ไม่มี service_request.update ซึ่ง RLS insert policy
@@ -376,7 +377,7 @@ serviceRequestsRoute.post(
 
     const { data: updated, error } = await supabase.from('service_requests').update(patch).eq('id', id).select().single();
     if (error) {
-      return c.json(fail(reqId, 'SERVICE_REQUEST_APPROVAL_FAILED', error.message), 400);
+      return dbFailJson(c, 'SERVICE_REQUEST_APPROVAL_FAILED', error);
     }
 
     await supabase.from('service_request_history').insert({
@@ -543,9 +544,10 @@ serviceRequestsRoute.patch('/:id', zValidator('json', updateServiceRequestSchema
     patch.status = toStatus;
   }
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'service_requests', id);
   const { data: updated, error } = await supabase.from('service_requests').update(patch).eq('id', id).select().single();
   if (error) {
-    return c.json(fail(reqId, 'SERVICE_REQUEST_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'SERVICE_REQUEST_UPDATE_FAILED', error);
   }
 
   const historyAction = isConfirmPath
@@ -588,7 +590,9 @@ serviceRequestsRoute.patch('/:id', zValidator('json', updateServiceRequestSchema
     targetId: id,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: updated,
+});
 
   if (body.assigneeId && body.assigneeId !== current.assignee_id) {
     await sendNotification(c.env, {
@@ -660,7 +664,7 @@ serviceRequestsRoute.patch(
 
     const { data: updated, error } = await supabase.from('service_request_tasks').update(patch).eq('id', taskId).select().single();
     if (error) {
-      return c.json(fail(reqId, 'SERVICE_REQUEST_TASK_UPDATE_FAILED', error.message), 400);
+      return dbFailJson(c, 'SERVICE_REQUEST_TASK_UPDATE_FAILED', error);
     }
 
     await supabase.from('service_request_history').insert({

@@ -4,8 +4,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { writeAuditLog } from '../services/auditService';
+import { evaluateHealthSnapshot } from '../services/governanceHealth';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
 import { governanceActionSchema, governanceCreateSchemas } from '../validators/governance';
 
 type Row = Record<string, unknown>;
@@ -25,12 +28,18 @@ type DomainConfig = {
   view: string;
   manage?: string;
   act?: string;
+  /**
+   * สิทธิ์ที่ใช้ตัดสินใจ approve/reject ของโดเมนนี้โดยเฉพาะ — ต้องประกาศแยกทุกโดเมน
+   * ห้ามใช้ key ร่วมกันข้ามโดเมน มิฉะนั้นผู้ที่อนุมัติเรื่องหนึ่งได้จะอนุมัติทุกเรื่องได้
+   * โดเมนที่ไม่ประกาศ = ไม่มีใครอนุมัติผ่าน endpoint นี้ได้ (fail-closed)
+   */
+  approve?: string;
   entities: EntityConfig[];
 };
 
 const DOMAINS: Record<string, DomainConfig> = {
   'data-classification': {
-    view: 'data_class.view', manage: 'data_class.manage', act: 'data_class.approve',
+    view: 'data_class.view', manage: 'data_class.manage', act: 'data_class.approve', approve: 'data_class.approve',
     entities: [
       { entity: 'data-assets', table: 'governance_data_assets', code: 'data_code', prefix: 'DAT', title: 'data_name', status: 'status', owner: 'data_owner', due: 'next_review_date' },
       { entity: 'destruction-requests', table: 'data_destruction_requests', code: 'request_code', prefix: 'DST', title: 'data_name', status: 'status', owner: 'requester_email' },
@@ -132,7 +141,7 @@ async function hasPermission(c: Context<AppEnv>, key?: string): Promise<boolean>
 function code(prefix: string): string {
   const now = new Date();
   const date = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
-  return `${prefix}-${date}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return `${prefix}-${date}-${randomCodeSuffix()}`;
 }
 
 function camelToSnake(value: string): string { return value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`); }
@@ -214,7 +223,7 @@ governanceRoute.get('/:domain', async (c) => {
     const result = await loadDomain(c.get('supabase'), domain, config, canManage, canAct, c.get('userEmail'));
     return c.json(ok(requestId, { domain, ...result, canManage, canAct, generatedAt: new Date().toISOString() }));
   } catch (error) {
-    return c.json(fail(requestId, 'GOVERNANCE_LOAD_FAILED', error instanceof Error ? error.message : String(error)), 400);
+    return dbFailJson(c, 'GOVERNANCE_LOAD_FAILED', error instanceof Error ? error : { message: String(error) }, 'โหลดข้อมูลโมดูลนี้ไม่สำเร็จ');
   }
 });
 
@@ -230,7 +239,7 @@ governanceRoute.post('/:domain/exports/csv', async (c) => {
     await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'EXPORT_CSV', module: 'governance', detail: { domain, rows: result.records.length }, requestId });
     return c.json(ok(requestId, { filename: `governance-${domain}-${new Date().toISOString().slice(0, 10)}.csv`, csv: lines.join('\r\n') }));
   } catch (error) {
-    return c.json(fail(requestId, 'GOVERNANCE_EXPORT_FAILED', error instanceof Error ? error.message : String(error)), 400);
+    return dbFailJson(c, 'GOVERNANCE_EXPORT_FAILED', error instanceof Error ? error : { message: String(error) }, 'Export ข้อมูลไม่สำเร็จ');
   }
 });
 
@@ -272,7 +281,7 @@ governanceRoute.post('/:domain/:entity', async (c) => {
     insert.requested_by_id = actorId; insert.requested_by_email = actorEmail; insert.status = 'PENDING';
   }
   const { data, error } = await admin.from(entity.table).insert(insert).select('*').single();
-  if (error) return c.json(fail(requestId, 'GOVERNANCE_CREATE_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'GOVERNANCE_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail, action: 'CREATE', module: `governance.${domain}`, targetTable: entity.table, targetId: data.id, detail: { entity: entityName, code: data[entity.code] }, requestId });
   const [canManage, canAct] = await Promise.all([hasPermission(c, config.manage), hasPermission(c, config.act)]);
   return c.json(ok(requestId, normalize(entity, data as Row, domain, canManage, canAct, actorEmail)), 201);
@@ -283,7 +292,13 @@ governanceRoute.post('/:domain/:entity/:id/actions/:action', async (c) => {
   const domain = c.req.param('domain'); const entityName = c.req.param('entity'); const id = c.req.param('id'); const action = c.req.param('action');
   const config = domainOrNull(domain); const entity = config ? entityOrNull(config, entityName) : null;
   if (!config || !entity) return c.json(fail(requestId, 'GOVERNANCE_ENTITY_NOT_FOUND', 'ไม่พบประเภทรายการ Governance ที่ระบุ'), 404);
-  const actionPermission = action === 'approve' || action === 'reject' ? 'data_class.approve' : action === 'verify' && domain === 'audit-management' ? 'audit_management.verify' : config.manage;
+  // สิทธิ์ต้องมาจากโดเมนที่กำลังทำรายการเสมอ — ห้าม hard-code key ของโดเมนใดโดเมนหนึ่ง
+  const actionPermission =
+    action === 'approve' || action === 'reject'
+      ? config.approve
+      : action === 'verify' && domain === 'audit-management'
+        ? 'audit_management.verify'
+        : config.manage;
   if (!(await hasPermission(c, actionPermission))) return c.json(fail(requestId, 'FORBIDDEN', 'ไม่มีสิทธิ์ดำเนินการนี้'), 403);
   let json: unknown = {};
   try { json = await c.req.json(); } catch { /* an empty body is valid for parameterless actions */ }
@@ -296,7 +311,7 @@ governanceRoute.post('/:domain/:entity/:id/actions/:action', async (c) => {
     const requestEntity = config.entities.find((item) => item.entity === 'destruction-requests')!;
     const requestInsert = { request_code: code('DST'), data_asset_id: id, data_name: current.data_name, classification: current.classification, reason: 'คำขอจากหน้า Data Classification', requester_id: actorId, requester_email: actorEmail, requested_at: now, status: 'รออนุมัติ', created_by: actorId, updated_by: actorId };
     const { data, error } = await admin.from(requestEntity.table).insert(requestInsert).select('*').single();
-    if (error) return c.json(fail(requestId, 'DESTRUCTION_REQUEST_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'DESTRUCTION_REQUEST_FAILED', error);
     await writeAuditLog(c.env, { actorId, actorEmail, action: 'REQUEST_DESTRUCTION', module: 'governance.data-classification', targetTable: requestEntity.table, targetId: data.id, detail: { dataAssetId: id }, requestId });
     return c.json(ok(requestId, normalize(requestEntity, data as Row, domain, true, false, actorEmail)), 201);
   }
@@ -317,21 +332,36 @@ governanceRoute.post('/:domain/:entity/:id/actions/:action', async (c) => {
   } else if (action === 'retry' && ['ERROR', 'DEAD'].includes(String(current.status))) Object.assign(update, { status: 'PENDING', next_attempt_at: now, last_error: null });
   else if (action === 'cancel' && ['PENDING', 'ERROR'].includes(String(current.status)) && !current.result_record_id) Object.assign(update, { status: 'CANCELLED', cancelled_at: now, cancelled_by: actorId });
   else if (action === 'health-check' && domain === 'operations') {
-    const { data, error } = await admin.from('governance_operational_checks').insert({ check_code: code('OPS'), check_name: 'Database and governance controls', check_type: 'MANUAL', status: 'PASS', detail: { database: 'reachable', rls: 'enabled' }, checked_by_id: actorId, checked_by_email: actorEmail, checked_at: now, created_by: actorId, updated_by: actorId }).select('*').single();
-    if (error) return c.json(fail(requestId, 'HEALTH_CHECK_FAILED', error.message), 400);
+    // ผลการตรวจต้องมาจากการอ่านสถานะจริงเสมอ ห้ามบันทึก PASS ตายตัว — แถวในตารางนี้ถูกใช้เป็น
+    // หลักฐานการควบคุมให้ผู้ตรวจสอบภายนอก การแต่งผลขึ้นมาจึงเป็นการสร้างหลักฐานเท็จ
+    const snapshot = await c.get('supabase').rpc('governance_health_snapshot');
+    const detail = evaluateHealthSnapshot(snapshot.data, snapshot.error?.message);
+    const { data, error } = await admin.from('governance_operational_checks').insert({
+      check_code: code('OPS'),
+      check_name: 'Database and governance controls',
+      check_type: 'AUTOMATED',
+      status: detail.status,
+      detail: detail.evidence,
+      checked_by_id: actorId,
+      checked_by_email: actorEmail,
+      checked_at: now,
+      created_by: actorId,
+      updated_by: actorId,
+    }).select('*').single();
+    if (error) return dbFailJson(c, 'HEALTH_CHECK_FAILED', error);
     return c.json(ok(requestId, data));
   } else if (action === 'retention-preview' && domain === 'operations') {
     const { data, error } = await admin.rpc('run_governance_retention', { apply_changes: false, preview_run_id_input: null, requested_by_input: actorId, requested_by_email_input: actorEmail });
-    if (error) return c.json(fail(requestId, 'RETENTION_PREVIEW_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'RETENTION_PREVIEW_FAILED', error);
     return c.json(ok(requestId, data));
   } else if (action === 'retention-apply' && domain === 'operations') {
     if (current.mode !== 'PREVIEW' || current.status !== 'COMPLETED') return c.json(fail(requestId, 'RETENTION_PREVIEW_REQUIRED', 'ต้องเลือก Preview ที่เสร็จสมบูรณ์ก่อน Run Retention'), 409);
     const { data, error } = await admin.rpc('run_governance_retention', { apply_changes: true, preview_run_id_input: id, requested_by_input: actorId, requested_by_email_input: actorEmail });
-    if (error) return c.json(fail(requestId, 'RETENTION_APPLY_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'RETENTION_APPLY_FAILED', error);
     return c.json(ok(requestId, data));
   } else return c.json(fail(requestId, 'INVALID_STATE_TRANSITION', 'สถานะปัจจุบันไม่รองรับ action นี้'), 409);
   const { data, error } = await admin.from(entity.table).update(update).eq('id', id).select('*').single();
-  if (error) return c.json(fail(requestId, 'GOVERNANCE_ACTION_FAILED', error.message), 400);
+  if (error) return dbFailJson(c, 'GOVERNANCE_ACTION_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail, action: action.toUpperCase().replaceAll('-', '_'), module: `governance.${domain}`, targetTable: entity.table, targetId: id, detail: { from: current.status, to: data[entity.status] }, requestId });
   const [canManage, canAct] = await Promise.all([hasPermission(c, config.manage), hasPermission(c, config.act)]);
   return c.json(ok(requestId, normalize(entity, data as Row, domain, canManage, canAct, actorEmail)));

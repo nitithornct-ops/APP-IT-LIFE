@@ -51,6 +51,13 @@ export const listAssetsQuerySchema = paginationQuerySchema.extend({
 });
 export type ListAssetsQuery = z.infer<typeof listAssetsQuerySchema>;
 
+export const assetBorrowOverviewQuerySchema = paginationQuerySchema.extend({
+  view: z.enum(['active', 'history']).default('active'),
+  search: z.string().trim().max(200).optional(),
+  departmentId: z.string().uuid().optional(),
+});
+export type AssetBorrowOverviewQuery = z.infer<typeof assetBorrowOverviewQuerySchema>;
+
 export const setAssetStatusSchema = z.object({
   status: z.enum(ASSET_STATUSES),
   remark: z.string().trim().max(200).optional(),

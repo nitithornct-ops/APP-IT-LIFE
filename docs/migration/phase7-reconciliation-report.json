@@ -1,7 +1,7 @@
 {
   "phase": "Phase 7 Data Migration",
   "mode": "READ_ONLY_RECONCILIATION_PLAN",
-  "generatedAt": "2026-08-10T15:31:02.274Z",
+  "generatedAt": "2026-08-13T06:34:43.289Z",
   "sourceTitle": "ISMS_DB_SNAPSHOT_20260810_022753_AUTO_DAILY",
   "safety": {
     "writesToSupabase": false,

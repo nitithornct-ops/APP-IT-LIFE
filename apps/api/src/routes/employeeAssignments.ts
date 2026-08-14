@@ -6,7 +6,9 @@ import { requireAnyPermission, requirePermission } from '../middleware/permissio
 import { writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   createEmployeeAssignmentSchema,
@@ -79,7 +81,8 @@ employeeAssignmentsRoute.get(
 
     if (employeeId) query = query.eq('employee_id', employeeId);
     if (status) query = query.eq('status', status);
-    if (search) query = query.or(`item_name.ilike.%${search}%,serial_number.ilike.%${search}%,asset_code.ilike.%${search}%`);
+    const safeSearch = search ? cleanSearch(search) : '';
+    if (safeSearch) query = query.or(`item_name.ilike.%${safeSearch}%,serial_number.ilike.%${safeSearch}%,asset_code.ilike.%${safeSearch}%`);
 
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'ASSIGNMENTS_LIST_FAILED', 'ดึงรายการครอบครองไม่สำเร็จ'), 400);
@@ -168,7 +171,7 @@ employeeAssignmentsRoute.post(
       .select(ASSIGNMENT_SELECT)
       .single();
 
-    if (error) return c.json(fail(reqId, 'ASSIGNMENT_CREATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSIGNMENT_CREATE_FAILED', error);
     const createdId = (data as unknown as { id: string }).id;
 
     await syncAssignmentAsset(supabase, body.assetId, status, body.employeeId, employee.department_id, actorId);
@@ -257,7 +260,7 @@ employeeAssignmentsRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
 
     const { data, error } = await supabase.from('employee_assignments').update(patch).eq('id', id).select(ASSIGNMENT_SELECT).single();
-    if (error) return c.json(fail(reqId, 'ASSIGNMENT_UPDATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSIGNMENT_UPDATE_FAILED', error);
 
     // ถ้าเปลี่ยนไปคนละ Asset ต้องคืน Asset เก่าก่อน (ไม่งั้น Asset เก่าจะค้างสถานะ "มีเจ้าของ" ตลอดไป)
     if (current.asset_id && String(current.asset_id) !== String(nextAssetId || '')) {
@@ -309,7 +312,7 @@ employeeAssignmentsRoute.post(
     };
 
     const { data, error } = await supabase.from('employee_assignments').update(patch).eq('id', id).select(ASSIGNMENT_SELECT).single();
-    if (error) return c.json(fail(reqId, 'ASSIGNMENT_STATUS_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'ASSIGNMENT_STATUS_FAILED', error);
 
     await syncAssignmentAsset(supabase, current.asset_id, status, current.employee_id, employee.department_id, actorId);
 

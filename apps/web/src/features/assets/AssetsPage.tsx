@@ -1,6 +1,7 @@
+import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Boxes, Loader2, Plus, X } from 'lucide-react';
+import { Boxes, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
@@ -10,6 +11,8 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { QueryError } from '../../components/ui/QueryError';
+import { Modal } from '../../components/ui/Modal';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, PaginatedResult } from '../../types/admin';
@@ -56,16 +59,9 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
   return (
     <form
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
-      className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40"
+      className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-3"
       noValidate
     >
-      <div className="flex items-center justify-between sm:col-span-3">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มทรัพย์สิน</h3>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-
       <div className="sm:col-span-2">
         <label htmlFor="as-name" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
           ชื่อทรัพย์สิน
@@ -145,8 +141,11 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
 
       {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
 
-      <div className="sm:col-span-3">
-        <Button type="submit" size="sm" isLoading={isSubmitting} data-testid="asset-create-submit">
+      <div className="-mx-5 -mb-5 mt-2 flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:col-span-3 dark:border-slate-700 dark:bg-slate-900/40">
+        <Button type="button" size="sm" variant="outline" disabled={mutation.isPending} onClick={onClose}>
+          ยกเลิก
+        </Button>
+        <Button type="submit" size="sm" isLoading={isSubmitting || mutation.isPending} data-testid="asset-create-submit">
           บันทึก
         </Button>
       </div>
@@ -161,6 +160,7 @@ export function AssetsPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'asset-categories'],
@@ -170,10 +170,10 @@ export function AssetsPage() {
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const assetsQuery = useQuery({
-    queryKey: ['assets', page, status, categoryId, debouncedSearch],
+    queryKey: ['assets', page, pageSize, status, categoryId, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<Asset>>(
-        `/api/v1/assets?page=${page}&pageSize=20${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/assets?page=${page}&pageSize=${pageSize}${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -194,7 +194,7 @@ export function AssetsPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Asset Register — ยืม/คืน/โอนย้าย/ส่งซ่อม/ตรวจนับ</p>
         </div>
         <RequirePermission permission="asset.create">
-          <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="asset-create-toggle">
+          <Button size="sm" onClick={() => setShowCreate(true)} data-testid="asset-create-toggle" aria-haspopup="dialog">
             <Plus className="h-4 w-4" aria-hidden="true" />
             เพิ่มทรัพย์สิน
           </Button>
@@ -245,8 +245,6 @@ export function AssetsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && <CreateAssetForm categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowCreate(false)} />}
-
           <input
             type="search"
             placeholder="ค้นหาชื่อ รหัสทรัพย์สิน หรือ S/N..."
@@ -264,11 +262,15 @@ export function AssetsPage() {
             </div>
           )}
 
-          {assetsQuery.data && items.length === 0 && <EmptyState icon={<Boxes className="h-10 w-10" aria-hidden="true" />} title="ไม่พบทรัพย์สิน" />}
+          {assetsQuery.isError && (
+            <QueryError title="โหลดรายการทรัพย์สินไม่สำเร็จ" error={assetsQuery.error} onRetry={() => void assetsQuery.refetch()} isRetrying={assetsQuery.isFetching} />
+          )}
+
+          {!assetsQuery.isError && assetsQuery.data && items.length === 0 && <EmptyState icon={<Boxes className="h-10 w-10" aria-hidden="true" />} title="ไม่พบทรัพย์สิน" />}
 
           {assetsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <DataTable pagination={false} className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
@@ -301,35 +303,31 @@ export function AssetsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
           )}
 
-          {assetsQuery.data && assetsQuery.data.pagination.totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-center gap-3 text-sm">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ก่อนหน้า
-              </button>
-              <span className="text-slate-500 dark:text-slate-400">
-                หน้า {assetsQuery.data.pagination.page} / {assetsQuery.data.pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= assetsQuery.data.pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40 dark:border-slate-600"
-              >
-                ถัดไป
-              </button>
-            </div>
-          )}
+          {assetsQuery.data && <TablePagination page={assetsQuery.data.pagination.page} pageSize={pageSize} totalItems={assetsQuery.data.pagination.totalItems} totalPages={assetsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
+
+      {showCreate && (
+        <Modal title="เพิ่มทรัพย์สิน" size="xl" onClose={() => setShowCreate(false)} testId="asset-create-dialog">
+          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data ? (
+            <CreateAssetForm
+              categories={categoriesQuery.data}
+              vendors={vendorOptionsQuery.data}
+              contracts={contractOptionsQuery.data}
+              onClose={() => setShowCreate(false)}
+            />
+          ) : (
+            <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              กำลังเตรียมแบบฟอร์ม...
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

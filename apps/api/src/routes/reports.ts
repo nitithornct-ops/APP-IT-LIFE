@@ -9,6 +9,7 @@ import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
+import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import { reportExportSchema, reportRangeQuerySchema } from '../validators/reports';
 
@@ -284,7 +285,7 @@ reportsRoute.get('/:key', zValidator('query', reportRangeQuerySchema, zodValidat
 
 async function logExport(c: Context<AppEnv>, key: string, format: 'CSV' | 'PRINT' | 'PDF', rangeDays: number, rowCount: number) {
   const admin = createAdminClient(c.env);
-  const exportCode = `RPT-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  const exportCode = `RPT-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${randomCodeSuffix()}`;
   const { error } = await admin.from('report_exports').insert({ export_code: exportCode, report_key: key, format, filters: { rangeDays }, row_count: rowCount, actor_id: c.get('userId'), actor_email: c.get('userEmail') });
   if (error) return error.message;
   await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: `REPORT_EXPORT_${format}`, module: 'report', targetTable: 'report_definitions', targetId: key, detail: { exportCode, rangeDays, rowCount }, requestId: c.get('requestId') });
@@ -324,7 +325,8 @@ reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zVali
   try {
     pdfBytes = await renderHtmlToPdf(c.env.MYBROWSER, renderReportHtml(result.dataset));
   } catch (error) {
-    return c.json(fail(requestId, 'PDF_RENDER_FAILED', error instanceof Error ? error.message : 'สร้าง PDF ไม่สำเร็จ'), 502);
+    console.error(JSON.stringify({ requestId, code: 'PDF_RENDER_FAILED', message: error instanceof Error ? error.message : String(error) }));
+    return c.json(fail(requestId, 'PDF_RENDER_FAILED', 'สร้าง PDF ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 502);
   }
 
   const logError = await logExport(c, key, 'PDF', rangeDays, result.dataset.totalRows);

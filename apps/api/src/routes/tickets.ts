@@ -5,11 +5,14 @@ import { resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessa
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
+import { addTicketBusinessHours, parseTicketBusinessCalendar, ticketBusinessMinutesBetween } from '../services/ticketSlaService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import { createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
 
@@ -17,8 +20,7 @@ import { createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema,
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
  * ผู้ใช้ที่ login ผ่าน Supabase Auth แล้ว — เส้นทางแจ้งซ่อมสาธารณะผ่าน LINE อยู่ที่ routes/line.ts
  * แยกกันเพราะผู้ใช้ LINE ไม่มี Supabase JWT (ดู R-11, ตัดสินใจแล้ว 2026-08-10)
- * SLA due date คำนวณแบบชั่วโมงปฏิทินธรรมดา (ยังไม่ใช่ "เวลาทำการ" แบบระบบเดิม ซึ่งอยู่ในกลุ่ม
- * Operations Hardening cross-cutting service ที่จะทำภายหลัง)
+ * SLA due date ใช้เวลาทำการ Asia/Bangkok ตาม Settings เดียวกับ Legacy
  */
 export const ticketsRoute = new Hono<AppEnv>();
 ticketsRoute.use('*', requireAuth);
@@ -79,23 +81,39 @@ async function hasPerm(c: Context<AppEnv>, permissionKey: string): Promise<boole
   return !error && data === true;
 }
 
+async function loadTicketBusinessCalendar(c: Context<AppEnv>) {
+  const keys = ['SLA_BUSINESS_START', 'SLA_BUSINESS_END', 'SLA_BUSINESS_DAYS', 'SLA_HOLIDAYS'];
+  const { data } = await createAdminClient(c.env).from('system_settings').select('key, value').in('key', keys);
+  return parseTicketBusinessCalendar(Object.fromEntries((data ?? []).map((row) => [row.key, row.value])));
+}
+
 ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, status, assigneeId, mine } = c.req.valid('query');
+  const { page, pageSize, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
 
   // RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — filter ที่นี่เป็นแค่ UX
   let query = supabase
     .from('tickets')
     .select(
-      'id, title, requester_id, category_id, priority, status, assignee_id, is_security, due_at, created_at, ticket_categories(name)',
+      'id, ticket_no, title, requester_id, requester_name_snapshot, department_name_snapshot, guest_name, guest_department, source_channel, category_id, priority, status, assignee_id, assignee_name_snapshot, is_security, incident_id, due_at, created_at, outsource_name, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name,email), assignee:profiles!tickets_assignee_id_fkey(full_name,email)',
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
 
   if (status) query = query.eq('status', status);
+  if (categoryId) query = query.eq('category_id', categoryId);
+  if (priority) query = query.eq('priority', priority);
+  if (search) {
+    const safeSearch = cleanSearch(search);
+    if (safeSearch) {
+      query = query.or(
+        `ticket_no.ilike.%${safeSearch}%,title.ilike.%${safeSearch}%,requester_name_snapshot.ilike.%${safeSearch}%,department_name_snapshot.ilike.%${safeSearch}%`,
+      );
+    }
+  }
   if (assigneeId) query = query.eq('assignee_id', assigneeId);
   if (mine === 'true') query = query.eq('requester_id', actorId);
 
@@ -104,6 +122,37 @@ ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationH
     return c.json(fail(reqId, 'TICKETS_LIST_FAILED', 'ดึงรายการ Ticket ไม่สำเร็จ'), 400);
   }
   return c.json(ok(reqId, toPaginatedData(data, count, page, pageSize)));
+});
+
+/** KPI 4 ใบของหน้า Help Desk เดิม คำนวณจากข้อมูลที่ RLS อนุญาตให้ผู้ใช้คนนี้มองเห็นเท่านั้น */
+ticketsRoute.get('/summary', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { data, error } = await supabase
+    .from('tickets')
+    .select('status,due_at,is_security,rating');
+  if (error) return c.json(fail(reqId, 'TICKET_SUMMARY_FAILED', 'โหลดสรุป Ticket ไม่สำเร็จ'), 400);
+
+  const terminal = new Set<string>([
+    TICKET_STATUS.RESOLVED,
+    TICKET_STATUS.CLOSED,
+    TICKET_STATUS.CANCELLED,
+    TICKET_STATUS.ESCALATED,
+  ]);
+  const now = Date.now();
+  const rows = data ?? [];
+  const openRows = rows.filter((ticket) => !terminal.has(String(ticket.status)));
+  const ratings = rows
+    .map((ticket) => Number(ticket.rating))
+    .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+
+  return c.json(ok(reqId, {
+    open: openRows.length,
+    overdue: openRows.filter((ticket) => ticket.due_at && new Date(ticket.due_at).getTime() < now).length,
+    security: openRows.filter((ticket) => ticket.is_security).length,
+    averageRating: ratings.length ? Math.round((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length) * 10) / 10 : null,
+    ratingCount: ratings.length,
+  }));
 });
 
 /**
@@ -176,8 +225,9 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
   const responseSlaHours = Number(category.response_sla_hours ?? 4);
   const resolutionSlaHours = Number(category.resolution_sla_hours ?? category.sla_hours ?? 24);
   const now = new Date();
-  const responseDueAt = new Date(now.getTime() + responseSlaHours * 3600 * 1000);
-  const dueAt = new Date(now.getTime() + resolutionSlaHours * 3600 * 1000);
+  const businessCalendar = await loadTicketBusinessCalendar(c);
+  const responseDueAt = addTicketBusinessHours(now, responseSlaHours, businessCalendar);
+  const dueAt = addTicketBusinessHours(now, resolutionSlaHours, businessCalendar);
 
   const { data: ticket, error } = await supabase
     .from('tickets')
@@ -186,6 +236,7 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
       requester_id: actorId,
       requester_phone: body.requesterPhone ?? null,
       location: body.location ?? null,
+      asset_id: body.assetId ?? null,
       category_id: body.categoryId,
       priority,
       response_sla_hours: responseSlaHours,
@@ -193,7 +244,7 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
       response_due_at: responseDueAt.toISOString(),
       due_at: dueAt.toISOString(),
       description: body.description,
-      is_security: category.is_security_default ?? false,
+      is_security: body.isSecurity || category.is_security_default || false,
       status: TICKET_STATUS.NEW,
       created_by: actorId,
     })
@@ -201,7 +252,7 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'TICKET_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TICKET_CREATE_FAILED', error);
   }
 
   // ผู้แจ้งทั่วไปมีแค่ ticket.create ไม่มี ticket.update ซึ่ง RLS insert policy ของ ticket_worklogs
@@ -243,12 +294,13 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   }
 
-  const [canUpdate, canClose, canAssign] = await Promise.all([
+  const [canUpdate, canClose, canAssign, canTriage] = await Promise.all([
     hasPerm(c, 'ticket.update'),
     hasPerm(c, 'ticket.close'),
     hasPerm(c, 'ticket.assign'),
+    hasPerm(c, 'ticket.triage'),
   ]);
-  if (!canUpdate && !canClose && !canAssign) {
+  if (!canUpdate && !canClose && !canAssign && !canTriage) {
     return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
   }
   if (body.assigneeId !== undefined && !canAssign && !canUpdate) {
@@ -293,7 +345,8 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
       );
     }
   } else if (toStatus !== fromStatus) {
-    if (!canUpdate) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
+    const isLegacyTriage = fromStatus === TICKET_STATUS.NEW && toStatus === TICKET_STATUS.ACK && canTriage;
+    if (!canUpdate && !isLegacyTriage) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
     try {
       assertTransition(fromStatus, toStatus);
     } catch (e) {
@@ -309,16 +362,25 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     // ไม่ได้เปลี่ยนสถานะ แค่แก้ field อื่น (assignee/priority/category/...) — ต้องมี ticket.update
     // เว้นแต่เป็นการมอบหมาย assignee อย่างเดียวซึ่งอนุญาตด้วย ticket.assign ไปแล้วข้างบน
     const onlyAssigneeChange = Object.keys(body).every((k) => k === 'assigneeId' || k === 'note');
-    if (!onlyAssigneeChange) {
+    const onlyTriageFields = canTriage && Object.keys(body).every((k) =>
+      ['categoryId', 'priority', 'assigneeId', 'isSecurity', 'note'].includes(k),
+    );
+    if (!onlyAssigneeChange && !onlyTriageFields) {
       return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
     }
   }
 
   const patch: Record<string, unknown> = { updated_by: actorId };
   const now = new Date();
+  const waitingStatuses = new Set<string>([TICKET_STATUS.WAITING_PARTS, TICKET_STATUS.WAITING_USER]);
+  const changesSlaPause = toStatus !== fromStatus
+    && (waitingStatuses.has(toStatus) || Boolean(current.sla_paused_at));
+  const businessCalendar = body.categoryId !== undefined || isReopen || changesSlaPause
+    ? await loadTicketBusinessCalendar(c)
+    : null;
 
   if (body.categoryId !== undefined && body.categoryId !== current.category_id) {
-    const { data: category } = await supabase.from('ticket_categories').select('*').eq('id', body.categoryId).maybeSingle();
+    const { data: category } = await supabase.from('ticket_categories').select('*').eq('id', body.categoryId).eq('status', 'active').maybeSingle();
     if (!category) {
       return c.json(fail(reqId, 'TICKET_CATEGORY_INVALID', 'หมวดหมู่ Ticket ไม่ถูกต้อง'), 400);
     }
@@ -328,8 +390,9 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     const resolutionSlaHours = Number(category.resolution_sla_hours ?? category.sla_hours ?? current.resolution_sla_hours ?? 24);
     patch.response_sla_hours = responseSlaHours;
     patch.resolution_sla_hours = resolutionSlaHours;
-    patch.response_due_at = new Date(now.getTime() + responseSlaHours * 3600 * 1000).toISOString();
-    patch.due_at = new Date(now.getTime() + resolutionSlaHours * 3600 * 1000).toISOString();
+    const legacySlaBase = new Date(current.created_at);
+    patch.response_due_at = addTicketBusinessHours(legacySlaBase, responseSlaHours, businessCalendar!).toISOString();
+    patch.due_at = addTicketBusinessHours(legacySlaBase, resolutionSlaHours, businessCalendar!).toISOString();
   }
   if (body.priority !== undefined) patch.priority = body.priority;
   if (body.location !== undefined) patch.location = body.location;
@@ -351,6 +414,12 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     patch.status = TICKET_STATUS.IN_PROGRESS;
     patch.resolved_at = null;
     patch.closed_at = null;
+    patch.sla_paused_at = null;
+    patch.sla_paused_minutes = 0;
+    const responseSlaHours = Number(patch.response_sla_hours ?? current.response_sla_hours ?? 4);
+    const resolutionSlaHours = Number(patch.resolution_sla_hours ?? current.resolution_sla_hours ?? 24);
+    patch.response_due_at = addTicketBusinessHours(now, responseSlaHours, businessCalendar!).toISOString();
+    patch.due_at = addTicketBusinessHours(now, resolutionSlaHours, businessCalendar!).toISOString();
     patch.reopen_count = (current.reopen_count ?? 0) + 1;
   } else if (toStatus !== fromStatus) {
     patch.status = toStatus;
@@ -365,9 +434,32 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
 
+  if (toStatus !== fromStatus && !isReopen) {
+    if (!current.sla_paused_at && waitingStatuses.has(toStatus)) {
+      patch.sla_paused_at = now.toISOString();
+    } else if (current.sla_paused_at && !waitingStatuses.has(toStatus)) {
+      const pausedBusinessMinutes = ticketBusinessMinutesBetween(
+        new Date(current.sla_paused_at),
+        now,
+        businessCalendar!,
+      );
+      patch.sla_paused_at = null;
+      patch.sla_paused_minutes = Number(current.sla_paused_minutes ?? 0) + pausedBusinessMinutes;
+      const effectiveDueAt = patch.due_at ?? current.due_at;
+      if (effectiveDueAt && pausedBusinessMinutes > 0) {
+        patch.due_at = addTicketBusinessHours(
+          new Date(String(effectiveDueAt)),
+          pausedBusinessMinutes / 60,
+          businessCalendar!,
+        ).toISOString();
+      }
+    }
+  }
+
+  const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
   if (error) {
-    return c.json(fail(reqId, 'TICKET_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'TICKET_UPDATE_FAILED', error);
   }
 
   const worklogAction = isReopen
@@ -404,6 +496,8 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     targetId: id,
     detail: body,
     requestId: reqId,
+    before: auditBefore,
+    after: updated,
   });
 
   if (body.assigneeId && body.assigneeId !== current.assignee_id) {
@@ -460,7 +554,7 @@ ticketsRoute.post(
       .single();
 
     if (error) {
-      return c.json(fail(reqId, 'TICKET_FEEDBACK_FAILED', error.message), 400);
+      return dbFailJson(c, 'TICKET_FEEDBACK_FAILED', error);
     }
 
     await writeAuditLog(c.env, {

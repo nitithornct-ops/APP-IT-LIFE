@@ -2,8 +2,9 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { createRoleSchema, setRolePermissionsSchema, updateRoleSchema } from '../validators/roles';
@@ -45,7 +46,7 @@ rolesRoute.post('/', requirePermission('role.manage'), zValidator('json', create
     .single();
 
   if (error) {
-    return c.json(fail(reqId, 'ROLE_CREATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'ROLE_CREATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -75,10 +76,11 @@ rolesRoute.patch('/:id', requirePermission('role.manage'), zValidator('json', up
   if (body.description !== undefined) patch.description = body.description;
   if (body.status !== undefined) patch.status = body.status;
 
+  const auditBefore = await loadAuditSnapshot(supabase, 'roles', roleId);
   const { data, error } = await supabase.from('roles').update(patch).eq('id', roleId).select().single();
 
   if (error) {
-    return c.json(fail(reqId, 'ROLE_UPDATE_FAILED', error.message), 400);
+    return dbFailJson(c, 'ROLE_UPDATE_FAILED', error);
   }
 
   await writeAuditLog(c.env, {
@@ -90,7 +92,9 @@ rolesRoute.patch('/:id', requirePermission('role.manage'), zValidator('json', up
     targetId: roleId,
     detail: body,
     requestId: reqId,
-  });
+      before: auditBefore,
+    after: data,
+});
 
   return c.json(ok(reqId, data));
 });
@@ -133,7 +137,7 @@ rolesRoute.put(
 
     const { error: deleteError } = await supabase.from('role_permissions').delete().eq('role_id', roleId);
     if (deleteError) {
-      return c.json(fail(reqId, 'ROLE_PERMISSIONS_SAVE_FAILED', deleteError.message), 400);
+      return dbFailJson(c, 'ROLE_PERMISSIONS_SAVE_FAILED', deleteError);
     }
 
     if (permissions.length > 0) {
@@ -145,7 +149,7 @@ rolesRoute.put(
       }));
       const { error: insertError } = await supabase.from('role_permissions').insert(rows);
       if (insertError) {
-        return c.json(fail(reqId, 'ROLE_PERMISSIONS_SAVE_FAILED', insertError.message), 400);
+        return dbFailJson(c, 'ROLE_PERMISSIONS_SAVE_FAILED', insertError);
       }
     }
 

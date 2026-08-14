@@ -1,11 +1,14 @@
+import { DataTable } from '../../components/table/DataTable';
+import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, X } from 'lucide-react';
+import { KeyRound, Loader2, LockKeyhole, Plus, ShieldCheck, UsersRound, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
+import { StatCard } from '../../components/ui/Card';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Role } from '../../types/admin';
 
@@ -150,7 +153,16 @@ export function RolesPage() {
         </div>
       </div>
 
-      {showCreate && <CreateRoleForm onClose={() => setShowCreate(false)} />}
+      {rolesQuery.data && (
+        <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="บทบาททั้งหมด" value={rolesQuery.data.length} tone="primary" />
+          <StatCard icon={<LockKeyhole className="h-5 w-5" />} label="บทบาทระบบ" value={rolesQuery.data.filter((role) => role.is_system).length} tone="teal" />
+          <StatCard icon={<UsersRound className="h-5 w-5" />} label="บทบาทกำหนดเอง" value={rolesQuery.data.filter((role) => !role.is_system).length} tone="amber" />
+          <StatCard icon={<KeyRound className="h-5 w-5" />} label="พร้อมกำหนดสิทธิ์" value={rolesQuery.data.length} tone="gray" />
+        </div>
+      )}
+
+      {showCreate && <FormModal title="เพิ่มบทบาท" description="กำหนดบทบาทใหม่โดยคง permission model เดิม" size="md" onClose={() => setShowCreate(false)}><CreateRoleForm onClose={() => setShowCreate(false)} /></FormModal>}
 
       {rolesQuery.isLoading && (
         <div className="flex justify-center py-10" role="status">
@@ -160,7 +172,7 @@ export function RolesPage() {
 
       {rolesQuery.data && (
         <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-          <table className="w-full text-left text-sm">
+          <DataTable className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               <tr>
                 <th className="px-4 py-2">Key</th>
@@ -181,7 +193,7 @@ export function RolesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </div>
       )}
     </div>

@@ -2,10 +2,12 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   adjustInventoryStockSchema,
@@ -41,7 +43,8 @@ inventoryItemsRoute.get(
       .range(...paginationRange(page, pageSize));
 
     if (status) query = query.eq('status', status);
-    if (search) query = query.or(`item_name.ilike.%${search}%,category.ilike.%${search}%`);
+    const safeSearch = search ? cleanSearch(search) : '';
+    if (safeSearch) query = query.or(`item_name.ilike.%${safeSearch}%,category.ilike.%${safeSearch}%`);
 
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'INVENTORY_LIST_FAILED', 'ดึงรายการ Inventory ไม่สำเร็จ'), 400);
@@ -99,7 +102,7 @@ inventoryItemsRoute.post(
       .select()
       .single();
 
-    if (error) return c.json(fail(reqId, 'INVENTORY_ITEM_CREATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'INVENTORY_ITEM_CREATE_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -138,8 +141,9 @@ inventoryItemsRoute.patch(
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
 
+    const auditBefore = await loadAuditSnapshot(supabase, 'inventory_items', id);
     const { data, error } = await supabase.from('inventory_items').update(patch).eq('id', id).select().single();
-    if (error) return c.json(fail(reqId, 'INVENTORY_ITEM_UPDATE_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'INVENTORY_ITEM_UPDATE_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -150,7 +154,9 @@ inventoryItemsRoute.patch(
       targetId: id,
       detail: body,
       requestId: reqId,
-    });
+          before: auditBefore,
+      after: data,
+});
 
     return c.json(ok(reqId, data));
   },
@@ -168,7 +174,7 @@ inventoryItemsRoute.post(
     const { status } = c.req.valid('json');
 
     const { data, error } = await supabase.from('inventory_items').update({ status, updated_by: actorId }).eq('id', id).select().single();
-    if (error) return c.json(fail(reqId, 'INVENTORY_ITEM_STATUS_FAILED', error.message), 400);
+    if (error) return dbFailJson(c, 'INVENTORY_ITEM_STATUS_FAILED', error);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -209,14 +215,14 @@ inventoryItemsRoute.post(
     }
 
     const { error: updateError } = await supabase.from('inventory_items').update({ stock_qty: balanceAfter, updated_by: actorId }).eq('id', id);
-    if (updateError) return c.json(fail(reqId, 'INVENTORY_STOCK_UPDATE_FAILED', updateError.message), 400);
+    if (updateError) return dbFailJson(c, 'INVENTORY_STOCK_UPDATE_FAILED', updateError);
 
     const { data: tx, error: txError } = await supabase
       .from('inventory_transactions')
       .insert({ item_id: id, transaction_type: transactionType, qty, balance_after: balanceAfter, notes: notes ?? null, created_by: actorId })
       .select()
       .single();
-    if (txError) return c.json(fail(reqId, 'INVENTORY_TX_FAILED', txError.message), 400);
+    if (txError) return dbFailJson(c, 'INVENTORY_TX_FAILED', txError);
 
     await writeAuditLog(c.env, {
       actorId,
@@ -253,7 +259,7 @@ inventoryItemsRoute.post(
     const variance = counted - currentStock;
 
     const { error: updateError } = await supabase.from('inventory_items').update({ stock_qty: counted, updated_by: actorId }).eq('id', id);
-    if (updateError) return c.json(fail(reqId, 'INVENTORY_STOCK_UPDATE_FAILED', updateError.message), 400);
+    if (updateError) return dbFailJson(c, 'INVENTORY_STOCK_UPDATE_FAILED', updateError);
 
     const noteText = `จาก ${currentStock} → ${counted}${notes ? ` — ${notes}` : ''}`;
     const { data: tx, error: txError } = await supabase
@@ -269,7 +275,7 @@ inventoryItemsRoute.post(
       })
       .select()
       .single();
-    if (txError) return c.json(fail(reqId, 'INVENTORY_TX_FAILED', txError.message), 400);
+    if (txError) return dbFailJson(c, 'INVENTORY_TX_FAILED', txError);
 
     await writeAuditLog(c.env, {
       actorId,

@@ -1,4 +1,4 @@
-import type { BrowserWorker } from '@cloudflare/puppeteer';
+import type { BrowserWorker } from '@cloudflare/playwright';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /** ตัวแปรที่ Cloudflare Workers ได้รับจาก wrangler.toml [vars] และ `wrangler secret` */
@@ -25,6 +25,8 @@ export interface Bindings {
   MYBROWSER?: BrowserWorker;
   /** Kill switch for the public no-login ticket report page (routes/publicTickets.ts) — unset/anything but 'false' means enabled. */
   PUBLIC_TICKET_FORM_ENABLED?: string;
+  /** Cloudflare edge rate limiter for unauthenticated endpoints. Local tests may omit it. */
+  PUBLIC_RATE_LIMITER?: RateLimit;
 }
 
 export interface LineUserProfile {
