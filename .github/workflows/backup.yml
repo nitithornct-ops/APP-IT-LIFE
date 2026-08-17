@@ -67,9 +67,33 @@ jobs:
             [ -n "${!name}" ] || missing+=("$name")
           done
           case "$R2_ENDPOINT" in https://.r2.cloudflarestorage.com) missing+=("R2_ACCOUNT_ID");; esac
+
+          # แปลงชื่อภายในกลับเป็นชื่อที่ผู้ใช้เห็นในหน้า GitHub — AWS_* เป็นชื่อที่ aws cli ต้องการ
+          # แต่คนตั้งค่าจะไปหาชื่อนั้นใน Environment ไม่เจอ เพราะที่นั่นชื่อ R2_*
+          label() {
+            case "$1" in
+              AWS_ACCESS_KEY_ID)     echo "R2_ACCESS_KEY_ID (Secret)";;
+              AWS_SECRET_ACCESS_KEY) echo "R2_SECRET_ACCESS_KEY (Secret)";;
+              R2_BUCKET)             echo "R2_BACKUP_BUCKET (Variable)";;
+              R2_ACCOUNT_ID)         echo "R2_ACCOUNT_ID (Secret)";;
+              *)                     echo "$1 (Secret)";;
+            esac
+          }
+
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "ยังไม่ได้ตั้งค่า: ${missing[*]}" >&2
-            echo "ตั้งที่ GitHub → Settings → Environments → backup" >&2
+            names=""
+            for name in "${missing[@]}"; do names="$names, $(label "$name")"; done
+            names="${names#, }"
+            # ใช้ ::error:: เพื่อให้ชื่อที่ขาดโผล่บนหน้า run และอ่านผ่าน API ได้ ไม่ต้องเปิด log ทีละบรรทัด
+            echo "::error title=ยังตั้งค่า backup ไม่ครบ::ขาด $names — ตั้งที่ GitHub → Settings → Environments → backup"
+            {
+              echo "### ❌ ยังตั้งค่าไม่ครบ"
+              echo ""
+              echo "ขาดค่าต่อไปนี้ใน Environment \`backup\`:"
+              for name in "${missing[@]}"; do echo "- \`$(label "$name")\`"; done
+              echo ""
+              echo "ตั้งที่ **Settings → Environments → backup** แล้วกด Run workflow ใหม่"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           echo "ค่าตั้งต้นครบ (ไม่มีการพิมพ์ค่าความลับออกมา)"
