@@ -68,8 +68,29 @@ jobs:
           [ $fail -eq 0 ] && echo "ค่าใน Variables ทั้งสามตัวไม่มีรูปแบบของความลับ"
           exit $fail
 
+      # wrangler พิมพ์สาเหตุลง log เท่านั้น ซึ่งต้องล็อกอินถึงจะเปิดอ่านได้ จึงสรุปสาเหตุที่เป็นไปได้
+      # ออกมาเป็น annotation ให้เห็นบนหน้า run เลย (ค่า secret ถูก GitHub ปิดบังเป็น *** ให้อยู่แล้ว)
       - name: 3/5 ตรวจว่า Cloudflare token ใช้ได้จริง
-        run: npx wrangler whoami
+        shell: bash
+        run: |
+          if npx wrangler whoami; then
+            echo "Cloudflare token ใช้งานได้"
+            exit 0
+          fi
+          echo "::error title=Cloudflare token ใช้ไม่ได้::ตรวจตามลำดับ 1) อัปเดต CLOUDFLARE_API_TOKEN ใน Environment production ให้เป็นค่าของ token ตัวใหม่แล้วหรือยัง 2) token ถูกยกเลิกไปแล้วหรือไม่ 3) คัดลอกมาครบไม่มีช่องว่างหน้า/หลัง 4) CLOUDFLARE_ACCOUNT_ID ถูกต้อง"
+          {
+            echo "### ❌ Cloudflare token ใช้ไม่ได้"
+            echo ""
+            echo "สาเหตุที่พบบ่อย เรียงตามความน่าจะเป็น"
+            echo ""
+            echo "1. **ยกเลิก token เดิมแล้วสร้างใหม่ แต่ยังไม่ได้อัปเดตค่าใน GitHub** — ค่าที่เก็บไว้จึงยังเป็นตัวเก่าที่ถูกยกเลิกไปแล้ว"
+            echo "2. คัดลอกไม่ครบ หรือมีช่องว่าง/ขึ้นบรรทัดใหม่ติดมาตอนวาง"
+            echo "3. \`CLOUDFLARE_ACCOUNT_ID\` ไม่ตรงกับบัญชีที่ออก token"
+            echo "4. token หมดอายุ"
+            echo ""
+            echo "แก้ที่ **Settings → Environments → production → Secrets → CLOUDFLARE_API_TOKEN** (กดดินสอเพื่อใส่ค่าใหม่) แล้วกด Run workflow ซ้ำ"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       # จุดที่ระบบเคยพังตอนขั้นสุดท้าย — ตรวจตั้งแต่ตอนนี้ว่าโปรเจกต์ชื่อนี้มีอยู่จริง
       - name: 4/5 ตรวจว่าโปรเจกต์ Pages ชื่อนี้มีอยู่จริง
@@ -77,11 +98,22 @@ jobs:
         run: |
           if npx wrangler pages project list | grep -qw -- "$CLOUDFLARE_PAGES_PROJECT"; then
             echo "พบโปรเจกต์ Pages ชื่อ $CLOUDFLARE_PAGES_PROJECT"
-          else
-            echo "::error::ไม่พบโปรเจกต์ Pages ชื่อ \"$CLOUDFLARE_PAGES_PROJECT\" — รายชื่อที่มีจริงอยู่ด้านล่าง"
-            npx wrangler pages project list
-            exit 1
+            exit 0
           fi
+          echo "::error title=ไม่พบโปรเจกต์ Pages::ไม่มีโปรเจกต์ชื่อ \"$CLOUDFLARE_PAGES_PROJECT\" ในบัญชีนี้ — ดูรายชื่อที่มีจริงในสรุปท้ายหน้า แล้วแก้ค่า CLOUDFLARE_PAGES_PROJECT ให้ตรง"
+          {
+            echo "### ❌ ไม่พบโปรเจกต์ Pages ชื่อ \`$CLOUDFLARE_PAGES_PROJECT\`"
+            echo ""
+            echo "โปรเจกต์ที่มีอยู่จริงในบัญชีนี้"
+            echo ""
+            echo '```'
+            npx wrangler pages project list 2>&1 || true
+            echo '```'
+            echo ""
+            echo "แก้ **Settings → Environments → production → Variables → CLOUDFLARE_PAGES_PROJECT** ให้ตรงกับชื่อด้านบน"
+            echo "และตรวจว่า \`PRODUCTION_WEB_URL\` สอดคล้องกัน (\`https://<ชื่อโปรเจกต์>.pages.dev\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: 5/5 ตรวจว่าฐานข้อมูลตรงกับรุ่นนี้และ Auth ปิดการสมัครเอง
         run: npm run runtime:gate
