@@ -1,7 +1,11 @@
 name: Backup
 
 # Supabase free tier ไม่มีระบบสำรองข้อมูลให้เลย ข้อมูลหายแล้วหายถาวร — งานนี้จึงเป็นสำเนาชุดเดียว
-# ที่ระบบมี ทำงานอัตโนมัติทุกคืนโดยไม่ต้องมีเครื่องเซิร์ฟเวอร์และไม่ต้องมีคนกด
+# ที่ระบบมี ทำงานเมื่อกดสั่งเท่านั้น (ผู้ดูแลระบบเลือกไว้ 2026-08-14 ว่าต้องการควบคุมเองมากกว่า
+# ให้รันตามเวลา) ถ้าวันหนึ่งอยากให้รันเองทุกคืน เพิ่ม schedule กลับเข้าไปใน on: ได้ทันที
+#
+# ⚠ ผลของการกดเอง: ข้อมูลที่เกิดขึ้นหลังการกดครั้งล่าสุดจะไม่มีสำเนา ควรกดหลังงานสำคัญทุกครั้ง
+#   เช่น หลังนำเข้าข้อมูลจำนวนมาก ก่อน deploy และตามรอบที่หน่วยงานกำหนด
 #
 # หนึ่งรอบได้ไฟล์เดียว itlife-backup-<เวลา UTC>.tar.gz ประกอบด้วย
 #   db-public.sql       โครงสร้าง + ข้อมูล + RLS policy + GRANT ของทั้ง 108 ตาราง
@@ -14,8 +18,6 @@ name: Backup
 #   ต้องจำกัดสิทธิ์ไว้เฉพาะ bucket นี้ bucket เดียว
 
 on:
-  schedule:
-    - cron: "0 18 * * *" # 01:00 ตามเวลาไทย
   workflow_dispatch:
 
 concurrency:
@@ -28,8 +30,8 @@ permissions:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    # ใช้ environment แยกที่ไม่ตั้ง required reviewers — ถ้าใช้ environment "production" งานตามเวลา
-    # จะค้างรออนุมัติทุกคืนแล้วไม่มีสำเนาเกิดขึ้นจริงสักครั้ง
+    # ใช้ environment แยกที่ไม่ตั้ง required reviewers — การสำรองข้อมูลไม่ควรต้องรอใครอนุมัติ
+    # เพราะมันไม่ได้เปลี่ยนแปลงอะไรในระบบ อ่านข้อมูลออกมาเก็บอย่างเดียว
     environment: backup
     timeout-minutes: 45
     env:
@@ -44,7 +46,9 @@ jobs:
       AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
       R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
       R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
-      RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS || '30' }}
+      # นับเป็น "จำนวนชุด" ไม่ใช่ "จำนวนวัน" เพราะงานนี้กดเอง จึงไม่มีระยะห่างที่แน่นอน
+      # ถ้าใช้เกณฑ์อายุ การเว้นช่วงนาน ๆ แล้วกดครั้งเดียวจะลบของเก่าทิ้งหมดจนเหลือสำเนาเดียว
+      BACKUP_KEEP_COUNT: ${{ vars.BACKUP_KEEP_COUNT || '10' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -125,28 +129,42 @@ jobs:
           tar -tzf verify.tar.gz | grep -q 'manifest.json'
           echo "ตรวจแล้ว: ไฟล์สำรองบน R2 เปิดอ่านได้และมีข้อมูลฐานข้อมูลครบ"
 
-      - name: Prune backups past the retention window
+      # เก็บ "ชุดล่าสุด N ชุด" ไม่ใช่ "ลบตามอายุ" — งานนี้กดเอง จึงไม่มีระยะห่างที่แน่นอน
+      # เกณฑ์อายุจะกลายเป็นกับดัก: เว้นไป 3 เดือนแล้วกดครั้งเดียว ของเก่าจะถูกลบหมดจนเหลือสำเนาเดียว
+      # ขั้นนี้รันหลังอัปโหลดและตรวจไฟล์สำเร็จแล้วเสมอ ชุดที่เพิ่งสร้างจึงถูกนับเป็นชุดล่าสุดไปด้วย
+      - name: Keep only the most recent backups
         shell: bash
         run: |
           set -euo pipefail
           export LC_ALL=C
-          CUTOFF="$(date -u -d "-${RETENTION_DAYS} days" +%Y%m%dT%H%M%SZ)"
-          echo "ลบสำเนาที่เก่ากว่า $CUTOFF (เก็บไว้ $RETENTION_DAYS วัน)"
+
+          KEEP="${BACKUP_KEEP_COUNT:-10}"
+          case "$KEEP" in ''|*[!0-9]*) KEEP=10 ;; esac
+          [ "$KEEP" -ge 1 ] || KEEP=1
+
+          # ชื่อไฟล์ฝังเวลา UTC แบบ YYYYMMDDTHHMMSSZ ไว้ การเรียงตามตัวอักษรจึงเท่ากับเรียงตามเวลา
           # จำกัดขอบเขตไว้ที่ไฟล์ที่งานนี้สร้างเองเท่านั้น เพื่อไม่ให้ไปแตะของอื่นใน bucket
-          # เก็บรายชื่อก่อนแล้วค่อยวน — ถ้าต่อ `|| true` เข้ากับ pipe โดยตรง ลูปจะทำงานเฉพาะตอน grep ไม่เจอ
           keys="$(aws s3 ls "s3://$R2_BUCKET/" --endpoint-url "$R2_ENDPOINT" \
             | awk '{print $4}' \
-            | grep -E '^itlife-backup-[0-9]{8}T[0-9]{6}Z\.tar\.gz$' || true)"
+            | grep -E '^itlife-backup-[0-9]{8}T[0-9]{6}Z\.tar\.gz$' | sort -r || true)"
+
           if [ -z "$keys" ]; then
-            echo "  ไม่มีไฟล์สำรองเดิมให้ตรวจ"
+            echo "ไม่พบไฟล์สำรองใน bucket"
+            exit 0
+          fi
+
+          total="$(printf '%s\n' "$keys" | wc -l)"
+          echo "มีสำเนาทั้งหมด $total ชุด — ตั้งให้เก็บชุดล่าสุดไว้ $KEEP ชุด"
+
+          old="$(printf '%s\n' "$keys" | tail -n +"$((KEEP + 1))")"
+          if [ -z "$old" ]; then
+            echo "  ยังไม่เกินจำนวนที่ตั้งไว้ ไม่มีอะไรต้องลบ"
           else
-            while read -r key; do
-              stamp="${key#itlife-backup-}"; stamp="${stamp%.tar.gz}"
-              if [[ "$stamp" < "$CUTOFF" ]]; then
-                echo "  ลบ $key"
-                aws s3 rm "s3://$R2_BUCKET/$key" --endpoint-url "$R2_ENDPOINT"
-              fi
-            done <<< "$keys"
+            printf '%s\n' "$old" | while read -r key; do
+              [ -n "$key" ] || continue
+              echo "  ลบ $key"
+              aws s3 rm "s3://$R2_BUCKET/$key" --endpoint-url "$R2_ENDPOINT"
+            done
           fi
 
       - name: Summary
@@ -157,5 +175,7 @@ jobs:
             echo ""
             echo "- ไฟล์: \`$ARCHIVE\`"
             echo "- ขนาด: $(du -h "$ARCHIVE" | cut -f1)"
-            echo "- เก็บไว้: $RETENTION_DAYS วัน"
+            echo "- เก็บสำเนาล่าสุดไว้: $BACKUP_KEEP_COUNT ชุด"
+            echo ""
+            echo "งานนี้ทำงานเมื่อกดสั่งเท่านั้น — ข้อมูลที่เกิดขึ้นหลังจากนี้จะยังไม่มีสำเนา"
           } >> "$GITHUB_STEP_SUMMARY"
