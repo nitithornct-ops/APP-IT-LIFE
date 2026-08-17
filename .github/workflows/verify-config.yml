@@ -1,0 +1,103 @@
+name: Verify Production Config
+
+# ตรวจว่าค่าใน GitHub Environment "production" ถูกต้องและใช้งานได้จริง โดย "ไม่ deploy อะไรทั้งสิ้น"
+#
+# ทำไมต้องมี: ด่าน predeploy ตรวจได้แค่ "รูปแบบ" ของค่า (เป็น https ไหม มีครบไหม) แต่ตรวจไม่ได้ว่า
+# ค่านั้นชี้ไปยังของที่มีอยู่จริงหรือเปล่า ถ้า CLOUDFLARE_PAGES_PROJECT พิมพ์ผิด งาน Deploy Production
+# จะผ่านด่านแรกไปได้ แล้วไปล้มที่ขั้น "Deploy web" ซึ่งเป็นขั้นเกือบสุดท้าย — ตอนนั้น migration ลง
+# ฐานข้อมูลไปแล้วและ Worker ขึ้นไปแล้ว เหลือหน้าเว็บที่ยังไม่ขึ้น กลายเป็นระบบที่ขึ้นไปครึ่งเดียว
+# ซึ่งกู้คืนยากกว่าการไม่เริ่มเลยมาก (พบตอนเตรียม go-live 2026-08-14 หลังพบค่าที่กรอกผิดช่องจริง)
+#
+# งานนี้อ่านอย่างเดียวทั้งหมด: ไม่เขียนฐานข้อมูล ไม่แตะ Worker ไม่แตะ Pages ไม่ตั้ง secret ใด ๆ
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      # ค่าสามตัวนี้เป็นของด่าน predeploy ซึ่งปกติมาจากช่องกรอกตอนกด Deploy จริง
+      # ที่นี่ใส่ค่าคงที่ไว้เพราะเรากำลังตรวจ "การตั้งค่า" ไม่ได้กำลังขออนุมัติปล่อยรุ่น
+      PRODUCTION_DEPLOY_CONFIRM: DEPLOY
+      MIGRATION_APPROVAL_REF: config-check-only
+      STAGING_E2E_APPROVAL_REF: config-check-only
+      PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      ALLOWED_ORIGINS: ${{ vars.PRODUCTION_WEB_URL }}
+      PUBLIC_APP_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: 1/5 ตรวจว่าค่าครบและถูกรูปแบบ
+        run: npm run predeploy
+
+      # ตรวจว่าค่าที่กรอกไม่ได้สลับช่องกัน — เคยมีการวาง API token ลงในช่อง URL มาแล้ว
+      # ซึ่งด่าน predeploy จับไม่ได้ทุกกรณี และค่าใน Variables ไม่ถูกเข้ารหัสจึงหลุดเข้า log ได้
+      - name: 2/5 ตรวจว่าไม่มีความลับหลุดไปอยู่ในช่องที่เปิดเผยได้
+        shell: bash
+        run: |
+          fail=0
+          for name in PRODUCTION_WEB_URL PRODUCTION_API_URL CLOUDFLARE_PAGES_PROJECT; do
+            value="${!name}"
+            case "$value" in
+              cfat_*|sb_secret_*|eyJ*|postgres://*|postgresql://*)
+                echo "::error::$name ดูเหมือนเป็นค่าความลับ ไม่ใช่ชื่อหรือที่อยู่เว็บ — ย้ายไปไว้ใน Secrets แล้วยกเลิกค่าเดิมทันที"
+                fail=1;;
+            esac
+          done
+          [ $fail -eq 0 ] && echo "ค่าใน Variables ทั้งสามตัวไม่มีรูปแบบของความลับ"
+          exit $fail
+
+      - name: 3/5 ตรวจว่า Cloudflare token ใช้ได้จริง
+        run: npx wrangler whoami
+
+      # จุดที่ระบบเคยพังตอนขั้นสุดท้าย — ตรวจตั้งแต่ตอนนี้ว่าโปรเจกต์ชื่อนี้มีอยู่จริง
+      - name: 4/5 ตรวจว่าโปรเจกต์ Pages ชื่อนี้มีอยู่จริง
+        shell: bash
+        run: |
+          if npx wrangler pages project list | grep -qw -- "$CLOUDFLARE_PAGES_PROJECT"; then
+            echo "พบโปรเจกต์ Pages ชื่อ $CLOUDFLARE_PAGES_PROJECT"
+          else
+            echo "::error::ไม่พบโปรเจกต์ Pages ชื่อ \"$CLOUDFLARE_PAGES_PROJECT\" — รายชื่อที่มีจริงอยู่ด้านล่าง"
+            npx wrangler pages project list
+            exit 1
+          fi
+
+      - name: 5/5 ตรวจว่าฐานข้อมูลตรงกับรุ่นนี้และ Auth ปิดการสมัครเอง
+        run: npm run runtime:gate
+
+      - name: สรุป
+        shell: bash
+        run: |
+          {
+            echo "### ค่าตั้งต้นของ production ใช้งานได้จริงทั้งหมด"
+            echo ""
+            echo "ตรวจแล้ว 5 ข้อ โดยไม่ได้ deploy อะไรและไม่ได้เขียนข้อมูลใด ๆ:"
+            echo "- ค่าครบและถูกรูปแบบ"
+            echo "- ไม่มีความลับหลุดไปอยู่ใน Variables"
+            echo "- Cloudflare token ใช้งานได้"
+            echo "- โปรเจกต์ Pages มีอยู่จริง"
+            echo "- ฐานข้อมูลตรงกับรุ่นนี้ และปิดการสมัครสมาชิกเองแล้ว"
+            echo ""
+            echo "พร้อมสำหรับ **Deploy Production**"
+          } >> "$GITHUB_STEP_SUMMARY"

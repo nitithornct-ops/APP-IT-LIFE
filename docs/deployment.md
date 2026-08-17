@@ -54,13 +54,20 @@ Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redire
 
 ### 2.1 Environment `backup` (แยกจาก `production`)
 
-Workflow `Backup` ทำงานตามเวลาทุกคืน จึง **ห้ามผูกกับ environment ที่ตั้ง required reviewers** ไว้
-มิฉะนั้นงานจะค้างรออนุมัติทุกคืนและไม่มีสำเนาเกิดขึ้นจริงสักครั้ง ให้สร้าง environment ชื่อ `backup`
-โดยไม่ตั้ง reviewer แล้วใส่
+Workflow `Backup` ทำงาน **เมื่อกดสั่งเท่านั้น** (Actions → Backup → Run workflow) ไม่มี schedule
+ตามการตัดสินใจของผู้ดูแลระบบ 2026-08-14 — ผลที่ตามมาคือ **ข้อมูลที่เกิดขึ้นหลังการกดครั้งล่าสุด
+จะไม่มีสำเนา** จึงต้องกดหลังงานสำคัญทุกครั้ง (นำเข้าข้อมูลจำนวนมาก, ก่อน deploy) และตามรอบที่
+หน่วยงานกำหนด ถ้าภายหลังต้องการให้รันเอง เพิ่ม `schedule:` กลับเข้าไปใน `on:` ได้ทันที
+
+สร้าง environment ชื่อ `backup` โดย **ไม่ตั้ง required reviewer** — การสำรองข้อมูลไม่เปลี่ยนแปลง
+อะไรในระบบ อ่านออกมาเก็บอย่างเดียว จึงไม่ควรต้องรอใครอนุมัติ
 
 - Secrets: `SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
   `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
-- Variables: `R2_BACKUP_BUCKET`, `BACKUP_RETENTION_DAYS` (ไม่ใส่ = 30 วัน)
+- Variables: `R2_BACKUP_BUCKET`, `BACKUP_KEEP_COUNT` (ไม่ใส่ = เก็บ 10 ชุดล่าสุด)
+
+`BACKUP_KEEP_COUNT` นับเป็น **จำนวนชุด ไม่ใช่จำนวนวัน** โดยตั้งใจ เพราะงานที่กดเองไม่มีระยะห่าง
+ที่แน่นอน ถ้าใช้เกณฑ์อายุ การเว้นช่วงนานแล้วกดครั้งเดียวจะลบสำเนาเก่าทิ้งทั้งหมดจนเหลือชุดเดียว
 
 ไฟล์สำรองมีข้อมูลส่วนบุคคลและ hash รหัสผ่านจาก `auth.users` — bucket ต้องเป็น private และ R2 API
 token ต้องจำกัดสิทธิ์ไว้ที่ bucket นี้ bucket เดียว
