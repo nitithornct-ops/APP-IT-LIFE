@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
+import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -279,6 +280,7 @@ export function AssetsPage() {
                     <th className="px-2 py-2">ผู้ถือครอง</th>
                     <th className="px-2 py-2">สถานที่</th>
                     <th className="px-2 py-2">สถานะ</th>
+                    <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -299,6 +301,9 @@ export function AssetsPage() {
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{a.location ?? '—'}</td>
                       <td className="px-2 py-2">
                         <Badge variant={assetStatusTone[a.status]}>{a.status}</Badge>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <RowActions recordLabel={a.asset_code} actions={[{ kind: 'view', to: `/assets/${a.id}` }]} />
                       </td>
                     </tr>
                   ))}

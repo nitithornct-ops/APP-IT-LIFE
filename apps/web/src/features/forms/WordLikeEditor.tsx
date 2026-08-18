@@ -6,6 +6,7 @@ import {
   Bold,
   Braces,
   Download,
+  Image as ImageIcon,
   Italic,
   Link2,
   List,
@@ -17,9 +18,12 @@ import {
   Underline,
   Undo2,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { FormModal } from '../../components/ui/Modal';
+import { apiFetch } from '../../services/apiClient';
+import type { BrandingSettings } from '../../types/settings';
 import { cn } from '../../utils/cn';
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 
@@ -45,12 +49,45 @@ const tools = [
   { command: 'justifyFull', label: 'เต็มแนว', icon: AlignJustify },
 ] as const;
 
+/**
+ * รูปที่แทรกจากเครื่องถูกฝังเป็น base64 ลงใน content_html ไม่ได้เก็บเป็นไฟล์แนบแยก เพื่อให้เอกสารที่
+ * ดาวน์โหลดไป Word หรือสั่งพิมพ์ยังเห็นรูปครบโดยไม่ต้องพึ่งลิงก์ภายนอก ผลคือขนาดรูปกลายเป็นขนาดของ
+ * แถวในฐานข้อมูลโดยตรง จึงจำกัดไว้เท่าที่โลโก้/ตราหน่วยงานต้องใช้จริง
+ */
+const MAX_EMBEDDED_IMAGE_BYTES = 512 * 1024;
+const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const IMAGE_WIDTHS = [
+  { value: '160px', label: 'เล็ก — ขนาดโลโก้' },
+  { value: '320px', label: 'กลาง' },
+  { value: '100%', label: 'เต็มความกว้างกระดาษ' },
+] as const;
+
+/** ที่อยู่รูปที่ยอมให้แทรกได้ ต้องตรงกับที่ sanitizeFormHtml ยอมให้ผ่าน ไม่งั้นแทรกแล้วหายตอนบันทึก */
+function isInsertableImageSrc(src: string): boolean {
+  return /^https:\/\//i.test(src) || /^data:image\/(png|jpeg|gif|webp);base64,/i.test(src);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character] ?? character);
+}
+
 export function WordLikeEditor({ value, onChange, fileName, readOnly = false, className }: WordLikeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const lastEmitted = useRef('');
   const savedRange = useRef<Range | null>(null);
-  const [promptKind, setPromptKind] = useState<'link' | 'field' | null>(null);
+  const [promptKind, setPromptKind] = useState<'link' | 'field' | 'image' | null>(null);
   const [promptValue, setPromptValue] = useState('');
+  const [imageWidth, setImageWidth] = useState<string>(IMAGE_WIDTHS[0].value);
+  const [imageError, setImageError] = useState('');
+
+  // หน้า Vendor เปิดแบบไม่ต้องล็อกอินและเป็นโหมดอ่านอย่างเดียว จึงต้องไม่ยิงคำขอที่ต้องยืนยันตัวตน
+  const brandingQuery = useQuery({
+    queryKey: ['branding'],
+    queryFn: () => apiFetch<BrandingSettings>('/api/v1/settings/branding'),
+    staleTime: 5 * 60 * 1000,
+    enabled: !readOnly,
+  });
+  const organizationLogoUrl = brandingQuery.data?.logoUrl ?? '';
 
   useEffect(() => {
     if (!editorRef.current || value === lastEmitted.current) return;
@@ -81,13 +118,14 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
    * document.execCommand ทำงานกับ selection ปัจจุบัน การเปิด modal ทำให้ selection ในกล่องข้อความหาย
    * จึงต้องจำช่วงที่เลือกไว้ก่อนเปิด แล้วคืนกลับก่อนสั่งงานเสมอ
    */
-  function openPrompt(kind: 'link' | 'field') {
+  function openPrompt(kind: 'link' | 'field' | 'image') {
     const selection = window.getSelection();
     savedRange.current =
       selection && selection.rangeCount > 0 && editorRef.current?.contains(selection.anchorNode)
         ? selection.getRangeAt(0).cloneRange()
         : null;
     setPromptValue('');
+    setImageError('');
     setPromptKind(kind);
   }
 
@@ -99,18 +137,58 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     selection?.addRange(savedRange.current);
   }
 
+  function insertImage(src: string, alt: string) {
+    setPromptKind(null);
+    restoreSelection();
+    const sizing = imageWidth === '100%' ? 'max-width:100%' : `width:${imageWidth};max-width:100%`;
+    run('insertHTML', `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" style="${sizing};height:auto" /><p><br></p>`);
+  }
+
+  function insertImageFile(file: File) {
+    setImageError('');
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setImageError('รองรับเฉพาะไฟล์ PNG, JPG, GIF และ WebP');
+      return;
+    }
+    if (file.size > MAX_EMBEDDED_IMAGE_BYTES) {
+      setImageError(`ไฟล์ใหญ่ ${Math.round(file.size / 1024)} KB เกินที่รับได้ ${MAX_EMBEDDED_IMAGE_BYTES / 1024} KB — ย่อรูปก่อนแล้วลองใหม่`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setImageError('อ่านไฟล์ไม่สำเร็จ กรุณาลองใหม่');
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!isInsertableImageSrc(result)) {
+        setImageError('ไฟล์นี้ไม่ใช่รูปภาพที่รองรับ');
+        return;
+      }
+      insertImage(result, file.name.replace(/\.[^.]+$/, ''));
+    };
+    reader.readAsDataURL(file);
+  }
+
   function submitPrompt() {
     const value = promptValue.trim();
     const kind = promptKind;
-    setPromptKind(null);
     if (!value || !kind) return;
+    if (kind === 'image') {
+      if (!isInsertableImageSrc(value)) {
+        setImageError('ใส่ได้เฉพาะที่อยู่รูปที่ขึ้นต้นด้วย https:// เท่านั้น');
+        return;
+      }
+      insertImage(value, '');
+      return;
+    }
+    setPromptKind(null);
     restoreSelection();
     if (kind === 'link') {
       run('createLink', value);
       return;
     }
+    // ชื่อฟิลด์มาจากสิ่งที่ผู้ใช้พิมพ์ จึงต้อง escape ก่อนต่อเป็น HTML — data-field คงไว้เป็น ASCII
+    // เพื่อให้อ้างอิงในโค้ดได้ ส่วนข้อความที่แสดงคงอักษรไทยไว้ตามที่พิมพ์
     const safeField = value.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    run('insertHTML', `<span class="form-variable" data-field="${safeField}">{{${value}}}</span>&nbsp;`);
+    run('insertHTML', `<span class="form-variable" data-field="${safeField}">{{${escapeHtml(value)}}}</span>&nbsp;`);
   }
 
   function insertTable() {
@@ -129,6 +207,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
           <button type="button" title="แทรกลิงก์" aria-label="แทรกลิงก์" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => openPrompt('link')}><Link2 className="h-4 w-4" /></button>
           <button type="button" title="แทรกตาราง" aria-label="แทรกตาราง" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={insertTable}><Table2 className="h-4 w-4" /></button>
+          <button type="button" title="แทรกรูปภาพ / โลโก้" aria-label="แทรกรูปภาพ / โลโก้" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => openPrompt('image')}><ImageIcon className="h-4 w-4" /></button>
           <button type="button" title="แทรกตัวแปรฟิลด์" aria-label="แทรกตัวแปรฟิลด์" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => openPrompt('field')}><Braces className="h-4 w-4" /></button>
           <button type="button" title="เส้นคั่น" aria-label="เส้นคั่น" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => run('insertHorizontalRule')}><Minus className="h-4 w-4" /></button>
         </>}
@@ -153,11 +232,13 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
 
       {promptKind && (
         <FormModal
-          title={promptKind === 'link' ? 'แทรกลิงก์' : 'แทรกตัวแปรฟิลด์'}
+          title={promptKind === 'link' ? 'แทรกลิงก์' : promptKind === 'image' ? 'แทรกรูปภาพ / โลโก้' : 'แทรกตัวแปรฟิลด์'}
           description={
             promptKind === 'link'
               ? 'วาง URL ปลายทางที่ต้องการเชื่อมโยงกับข้อความที่เลือกไว้'
-              : 'ชื่อฟิลด์ที่จะถูกแทนค่าจริงตอนพิมพ์เอกสาร เช่น requester_name หรือ ticket_no'
+              : promptKind === 'image'
+                ? 'รูปจะถูกฝังลงในเอกสาร จึงติดไปด้วยเมื่อดาวน์โหลดเป็น Word หรือสั่งพิมพ์'
+                : 'ชื่อฟิลด์สำหรับกรอกข้อมูลลงในเอกสาร เช่น requester_name หรือ ticket_no'
           }
           size="sm"
           closeTestId="editor-prompt-close"
@@ -170,18 +251,56 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
             }}
             className="flex flex-col gap-3"
           >
+            {promptKind === 'image' && (
+              <>
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  ขนาดที่จะแสดง
+                  <select
+                    data-testid="editor-image-width"
+                    value={imageWidth}
+                    onChange={(event) => setImageWidth(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    {IMAGE_WIDTHS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                {organizationLogoUrl && (
+                  <Button type="button" variant="outline" size="sm" data-testid="editor-image-use-org-logo" onClick={() => insertImage(organizationLogoUrl, 'โลโก้หน่วยงาน')}>
+                    ใช้โลโก้หน่วยงานที่ตั้งไว้ในระบบ
+                  </Button>
+                )}
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  เลือกไฟล์รูปจากเครื่อง
+                  <input
+                    data-testid="editor-image-file"
+                    type="file"
+                    accept={ALLOWED_IMAGE_TYPES.join(',')}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) insertImageFile(file);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">
+                    PNG, JPG, GIF หรือ WebP ขนาดไม่เกิน {MAX_EMBEDDED_IMAGE_BYTES / 1024} KB
+                  </span>
+                </label>
+              </>
+            )}
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              {promptKind === 'link' ? 'URL' : 'ชื่อฟิลด์'}
+              {promptKind === 'link' ? 'URL' : promptKind === 'image' ? 'หรือวางที่อยู่รูปภาพ' : 'ชื่อฟิลด์'}
               <input
                 data-autofocus
                 data-testid="editor-prompt-input"
-                type={promptKind === 'link' ? 'url' : 'text'}
+                type={promptKind === 'field' ? 'text' : 'url'}
                 value={promptValue}
                 onChange={(event) => setPromptValue(event.target.value)}
-                placeholder={promptKind === 'link' ? 'https://example.com' : 'requester_name'}
+                placeholder={promptKind === 'field' ? 'requester_name' : 'https://example.com'}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
               />
             </label>
+            {imageError && <p role="alert" data-testid="editor-image-error" className="text-sm font-semibold text-rose-600 dark:text-rose-400">{imageError}</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setPromptKind(null)}>ยกเลิก</Button>
               <Button type="submit" size="sm" data-testid="editor-prompt-submit" disabled={!promptValue.trim()}>แทรก</Button>
