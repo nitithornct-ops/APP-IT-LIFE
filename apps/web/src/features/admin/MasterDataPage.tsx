@@ -2,10 +2,11 @@ import { DataTable } from '../../components/table/DataTable';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Database, FolderTree, KeyRound, Loader2, Plus, Tags, X } from 'lucide-react';
+import { Ban, CheckCircle2, Database, FolderTree, KeyRound, Loader2, Plus, Tags, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -365,17 +366,16 @@ function AssetCategoriesSection() {
                       <StatusBadge status={cat.status} />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <RequirePermission permission="asset_category.manage">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' })
-                          }
-                          className="text-xs text-primary-700 hover:underline dark:text-primary-300"
-                        >
-                          {cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน'}
-                        </button>
-                      </RequirePermission>
+                      <RowActions
+                        recordLabel={cat.name}
+                        actions={[{
+                          kind: 'custom',
+                          icon: cat.status === 'active' ? Ban : CheckCircle2,
+                          label: cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน',
+                          permission: 'asset_category.manage',
+                          onClick: () => toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' }),
+                        }]}
+                      />
                     </td>
                   </tr>
                 ))}

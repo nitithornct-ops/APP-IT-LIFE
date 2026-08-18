@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
+import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -320,6 +321,7 @@ export function CmdbPage() {
                     <th className="px-2 py-2">Criticality</th>
                     <th className="px-2 py-2">เจ้าของ</th>
                     <th className="px-2 py-2">สถานะ</th>
+                    <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -339,6 +341,9 @@ export function CmdbPage() {
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{employeeName(c.owner)}</td>
                       <td className="px-2 py-2">
                         <Badge variant={ciStatusTone[c.status]}>{c.status}</Badge>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <RowActions recordLabel={c.ci_code} actions={[{ kind: 'view', to: `/cmdb/${c.id}` }]} />
                       </td>
                     </tr>
                   ))}

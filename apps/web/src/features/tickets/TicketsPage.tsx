@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
+import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -574,10 +575,8 @@ export function TicketsPage() {
                       </td>
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.outsource_name ?? '—'}</td>
-                      <td className="px-3 py-3 text-center">
-                        <Link to={`/tickets/${ticket.id}`} className="inline-flex min-h-[34px] items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                          รายละเอียด
-                        </Link>
+                      <td className="px-3 py-3 text-right">
+                        <RowActions recordLabel={ticket.ticket_no} actions={[{ kind: 'view', to: `/tickets/${ticket.id}`, label: 'รายละเอียด' }]} />
                       </td>
                     </tr>
                   ))}
