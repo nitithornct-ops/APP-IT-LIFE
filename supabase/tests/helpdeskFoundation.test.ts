@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asServiceRole, asUser, createTestDb } from './testDb';
+import { asAnon, asServiceRole, asUser, createTestDb } from './testDb';
 
 const ADMIN_ID = '10000000-0000-0000-0000-000000000001';
 const REQUESTER_ID = '10000000-0000-0000-0000-000000000002';
@@ -99,7 +99,34 @@ describe('Help Desk Phase 2 foundation', () => {
 
     expect(new Set(numbers).size).toBe(12);
     for (const ticketNo of numbers) {
-      expect(ticketNo).toMatch(/^TCK-\d{8}-[0-9A-F]{16}$/);
+      expect(ticketNo).toMatch(/^TCK-\d{8}-[0-9A-F]{8}$/);
+    }
+  });
+
+  /**
+   * เลขนี้คือสิ่งที่ผู้ใช้อ่านให้เจ้าหน้าที่ฟังทางโทรศัพท์และจดลงกระดาษ ความยาวจึงถูกตรึงไว้ด้วยเทสต์
+   * ไม่ใช่ปล่อยให้ยาวขึ้นเงียบ ๆ ในอนาคต — และการออกเลขต้องไม่ชนกันเองแม้จะเหลือ 8 ตัว
+   */
+  it('issues a short ticket number that stays unique across a burst of allocations', async () => {
+    const issued = await db.query<{ ticket_no: string }>(
+      `select public.allocate_ticket_number(now()) as ticket_no from generate_series(1, 200)`,
+    );
+    const numbers = issued.rows.map((row) => row.ticket_no);
+
+    expect(numbers).toHaveLength(200);
+    expect(new Set(numbers).size).toBe(200);
+    for (const ticketNo of numbers) {
+      expect(ticketNo).toMatch(/^TCK-\d{8}-[0-9A-F]{8}$/);
+      expect(ticketNo).toHaveLength(21);
+    }
+  });
+
+  /** เลขที่ Ticket ต้องออกโดย trigger เท่านั้น ไม่มี role ของแอปตัวไหนเรียกฟังก์ชันนี้ตรง ๆ ได้ */
+  it('keeps ticket number allocation out of reach of every application role', async () => {
+    for (const runAs of [asServiceRole, asAnon]) {
+      await expect(
+        runAs(db, () => db.query('select public.allocate_ticket_number(now())')),
+      ).rejects.toThrow(/permission denied/i);
     }
   });
 
