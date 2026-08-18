@@ -99,6 +99,37 @@ describe('RowActions', () => {
     expect(screen.queryByRole('button', { name: 'ยกเลิก TCK-2' })).not.toBeInTheDocument();
   });
 
+  /**
+   * บางปุ่มต้องเปิดหน้าต่างของตัวเองเพื่อกรอกเหตุผล (เช่น เพิกถอนสิทธิ์) จึงส่งเป็นคอมโพเนนต์เข้ามาได้
+   * แต่ยังต้องอยู่ในแถวเดียวกับปุ่มอื่น ไม่ใช่ลอยไปอยู่คนละที่กับตารางอื่น
+   */
+  it('places a caller-supplied control in the same row as the standard buttons', () => {
+    renderActions(
+      <RowActions
+        recordLabel="สมชาย · ระบบบัญชี"
+        actions={[
+          { kind: 'view', to: '/x' },
+          { kind: 'node', node: <button type="button">เพิกถอน</button> },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'ดู สมชาย · ระบบบัญชี' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'เพิกถอน' })).toBeVisible();
+  });
+
+  it('hides a caller-supplied control when the row does not qualify for it', () => {
+    renderActions(
+      <RowActions
+        recordLabel="สมชาย"
+        actions={[{ kind: 'node', hidden: true, node: <button type="button">เพิกถอน</button> }]}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'เพิกถอน' })).not.toBeInTheDocument();
+    expect(screen.getByText('—')).toBeVisible();
+  });
+
   it('shows a dash rather than an empty cell when the row has nothing available', () => {
     renderActions(<RowActions recordLabel="TCK-3" actions={[{ kind: 'edit', onClick: () => undefined, hidden: true }]} />);
     expect(screen.getByText('—')).toBeVisible();

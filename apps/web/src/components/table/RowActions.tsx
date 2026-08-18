@@ -17,7 +17,9 @@ import { cn } from '../../utils/cn';
  * ทั้งสองแบบบังคับผ่านกล่องยืนยันเสมอ ไม่มีทางกดพลาดแล้วข้อมูลหายทันที
  */
 export interface RowAction {
-  kind: 'view' | 'edit' | 'cancel' | 'delete' | 'custom';
+  kind: 'view' | 'edit' | 'cancel' | 'delete' | 'custom' | 'node';
+  /** kind: 'node' — ปุ่มที่มีหน้าต่างของตัวเอง (เช่น ต้องกรอกเหตุผล) วางไว้ในแถวเดียวกันเพื่อให้ตำแหน่งตรงกับหน้าอื่น */
+  node?: ReactNode;
   /** ทับข้อความเริ่มต้นของแต่ละชนิด */
   label?: string;
   /** ใช้กับ kind: 'custom' เท่านั้น */
@@ -50,6 +52,7 @@ const PRESETS: Record<RowAction['kind'], { label: string; icon: LucideIcon; tone
   cancel: { label: 'ยกเลิก', icon: Ban, tone: 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/40', needsConfirm: true },
   delete: { label: 'ลบ', icon: Trash2, tone: 'text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/40', needsConfirm: true },
   custom: { label: '', icon: Eye, tone: 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700', needsConfirm: false },
+  node: { label: '', icon: Eye, tone: '', needsConfirm: false },
 };
 
 const BUTTON_CLASS = 'inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40';
@@ -65,6 +68,7 @@ export function RowActions({ recordLabel, actions, className }: RowActionsProps)
     <>
       <div className={cn('flex flex-wrap items-center justify-end gap-1', className)}>
         {visible.map((action, index) => {
+          if (action.kind === 'node') return <span key={index} className="contents">{action.node}</span>;
           const base = PRESETS[action.kind];
           const Icon = action.icon ?? base.icon;
           const label = action.label ?? base.label;

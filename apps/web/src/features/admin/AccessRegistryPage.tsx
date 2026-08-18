@@ -1,4 +1,5 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock3, ListChecks, Loader2, ShieldOff } from 'lucide-react';
@@ -101,7 +102,7 @@ function RegistrySection() {
                   <th className="px-2 py-2">ระดับ</th>
                   <th className="px-2 py-2">รอบทบทวนถัดไป</th>
                   <th className="px-2 py-2">สถานะ</th>
-                  <th className="px-2 py-2" />
+                  <th className="px-2 py-2 text-right">ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -119,19 +120,20 @@ function RegistrySection() {
                       <StatusBadge status={entry.status} />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {entry.status === 'active' && (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => reviewMutation.mutate(entry.id)}
-                            disabled={reviewMutation.isPending}
-                            className="text-xs text-primary-700 hover:underline dark:text-primary-300"
-                          >
-                            ทบทวนแล้ว
-                          </button>
-                          <RevokeButton entryId={entry.id} />
-                        </div>
-                      )}
+                      <RowActions
+                        recordLabel={`${entry.user?.full_name ?? 'ผู้ใช้'} · ${entry.access_systems?.name ?? 'ระบบงาน'}`}
+                        actions={[
+                          {
+                            kind: 'custom',
+                            icon: CheckCircle2,
+                            label: 'ทบทวนแล้ว',
+                            hidden: entry.status !== 'active',
+                            disabled: reviewMutation.isPending,
+                            onClick: () => reviewMutation.mutate(entry.id),
+                          },
+                          { kind: 'node', hidden: entry.status !== 'active', node: <RevokeButton entryId={entry.id} /> },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

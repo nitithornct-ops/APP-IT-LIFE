@@ -1,4 +1,5 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,7 +11,6 @@ import {
   CircleGauge,
   KeyRound,
   Loader2,
-  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -427,11 +427,14 @@ export function LicensesPage() {
                           <td className="max-w-48 p-2 text-slate-500 dark:text-slate-400"><p className="flex items-start gap-1"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />{license.assigned_to || '—'}</p></td>
                           <td className="p-2"><Badge variant={healthTone[health]}>{healthLabel[health]}</Badge></td>
                           <td className="p-2">
-                            <div className="flex min-w-max justify-end gap-1">
-                              <Button size="sm" variant="ghost" aria-label={`รายละเอียด ${license.software_name}`} onClick={() => setExpandedId(expanded ? null : license.id)}>{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
-                              {canManage && <Button size="sm" variant="outline" onClick={() => setEditingUsageId(editingUsageId === license.id ? null : license.id)}>สิทธิ์</Button>}
-                              {canManage && <Button size="sm" variant="ghost" onClick={() => { setEditing(license); setShowForm(true); }}><Pencil className="h-3.5 w-3.5" />แก้ไข</Button>}
-                            </div>
+                            <RowActions
+                              recordLabel={license.software_name}
+                              actions={[
+                                { kind: 'view', icon: expanded ? ChevronUp : ChevronDown, label: expanded ? 'ย่อ' : 'รายละเอียด', onClick: () => setExpandedId(expanded ? null : license.id) },
+                                { kind: 'custom', icon: KeyRound, label: 'สิทธิ์', permission: 'license.manage', onClick: () => setEditingUsageId(editingUsageId === license.id ? null : license.id) },
+                                { kind: 'edit', permission: 'license.manage', onClick: () => { setEditing(license); setShowForm(true); } },
+                              ]}
+                            />
                             {editingUsageId === license.id && <div className="mt-2"><UsageEditor license={license} onClose={() => setEditingUsageId(null)} /></div>}
                           </td>
                         </tr>

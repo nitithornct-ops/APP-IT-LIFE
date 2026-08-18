@@ -1,16 +1,15 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarDays,
-  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
   CirclePlay,
   Clock3,
   Download,
-  Eye,
   Gauge,
   Grid2X2,
   Kanban,
@@ -190,55 +189,26 @@ function TaskActions({
   onStatus: (status: TaskStatus) => void;
 }) {
   const isTerminal = TERMINAL_STATUSES.includes(task.status);
-  const actionClass = 'grid h-8 w-8 shrink-0 place-items-center rounded-md border transition disabled:cursor-wait disabled:opacity-50';
 
+  // งานที่ปิดไปแล้วเปลี่ยนสถานะไม่ได้ ปุ่มจึงหายไปทั้งชุด เหลือแต่ "ดู"
   return (
-    <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        title="ดูรายละเอียด"
-        aria-label={`ดูรายละเอียด ${task.title}`}
-        onClick={onView}
-        className={cn(actionClass, 'border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300')}
-      >
-        <Eye className="h-4 w-4" />
-      </button>
-      {!isTerminal && task.status !== 'กำลังทำ' && (
-        <button
-          type="button"
-          title="เริ่มงาน"
-          aria-label={`เริ่มงาน ${task.title}`}
-          disabled={pending}
-          onClick={() => onStatus('กำลังทำ')}
-          className={cn(actionClass, 'border-primary-300 text-primary-700 hover:bg-primary-50 dark:text-primary-300')}
-        >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CirclePlay className="h-4 w-4" />}
-        </button>
-      )}
-      {!isTerminal && (
-        <>
-          <button
-            type="button"
-            title="ทำงานเสร็จ"
-            aria-label={`ทำงานเสร็จ ${task.title}`}
-            disabled={pending}
-            onClick={() => onStatus('เสร็จแล้ว')}
-            className={cn(actionClass, 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800')}
-          >
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          </button>
-          <button
-            type="button"
-            title="ยกเลิกงาน"
-            aria-label={`ยกเลิกงาน ${task.title}`}
-            disabled={pending}
-            onClick={() => onStatus('ยกเลิก')}
-            className={cn(actionClass, 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-300')}
-          >
-            <Ban className="h-4 w-4" />
-          </button>
-        </>
-      )}
+    <div onClick={(event) => event.stopPropagation()}>
+      <RowActions
+        recordLabel={task.title}
+        actions={[
+          { kind: 'view', label: 'ดูรายละเอียด', onClick: onView },
+          { kind: 'custom', icon: pending ? Loader2 : CirclePlay, label: 'เริ่มงาน', disabled: pending, hidden: isTerminal || task.status === 'กำลังทำ', onClick: () => onStatus('กำลังทำ') },
+          { kind: 'custom', icon: pending ? Loader2 : Check, label: 'ทำงานเสร็จ', disabled: pending, hidden: isTerminal, onClick: () => onStatus('เสร็จแล้ว') },
+          {
+            kind: 'cancel',
+            label: 'ยกเลิกงาน',
+            hidden: isTerminal,
+            isPending: pending,
+            confirmDescription: 'งานนี้จะถูกยกเลิก แต่ยังอยู่ในรายการและประวัติการทำงานเพื่อการตรวจสอบย้อนหลัง',
+            onConfirm: () => onStatus('ยกเลิก'),
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -179,6 +180,7 @@ export function RolesPage() {
                 <th className="px-4 py-2">ชื่อบทบาท</th>
                 <th className="px-4 py-2">คำอธิบาย</th>
                 <th className="px-4 py-2">ประเภท</th>
+                <th className="px-4 py-2 text-right">ดำเนินการ</th>
               </tr>
             </thead>
             <tbody>
@@ -189,6 +191,12 @@ export function RolesPage() {
                   <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{role.description ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-500 dark:text-slate-400">
                     {role.is_system ? 'บทบาทเริ่มต้นของระบบ' : 'กำหนดเอง'}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <RowActions
+                      recordLabel={role.name_th}
+                      actions={[{ kind: 'view', to: '/admin/permission-matrix', label: 'ดูสิทธิ์' }]}
+                    />
                   </td>
                 </tr>
               ))}
