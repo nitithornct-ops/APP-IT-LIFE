@@ -9,6 +9,31 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.
 const gateScript = join(repositoryRoot, 'scripts', 'check-migration-gate.mjs');
 const temporaryDirectories: string[] = [];
 
+/**
+ * ตัวแปรทุกตัวที่ scripts/check-migration-gate.mjs อ่าน — ต้องล้างออกจาก env ที่สืบทอดมาก่อนเสมอ
+ *
+ * เทสต์ชุดนี้เคยส่ง { ...process.env } เข้าไปตรง ๆ จึงไม่ได้ทดสอบสิ่งที่ตั้งใจเมื่อกระบวนการที่เรียกมัน
+ * ตั้งตัวแปรเหล่านี้ไว้อยู่แล้ว — งาน Deploy Production ตั้ง MIGRATION_MODE และ FRESH_START_CONFIRM
+ * ไว้ระดับ job ค่าจึงรั่วเข้าเทสต์ ทำให้เคสที่ควรถูกบล็อกกลับผ่าน และเคสที่ควรผ่านกลับถูกบล็อก
+ * (ล้มจริงตอนกด deploy ครั้งแรก 2026-08-18 — ผ่านทั้งในเครื่องและใน PR Checks เพราะที่นั่นไม่มีค่าเหล่านี้)
+ */
+const GATE_ENV_KEYS = [
+  'MIGRATION_MODE',
+  'MIGRATION_APPROVAL_REF',
+  'FRESH_START_CONFIRM',
+  'MIGRATION_ATTACHMENTS_APPROVED',
+  'MIGRATION_REHEARSAL_REPORT',
+  'MIGRATION_ATTACHMENT_REPORT',
+  'MIGRATION_REPORT_MAX_AGE_DAYS',
+];
+
+/** env ที่สะอาด — มีเฉพาะค่าที่เคสนั้นตั้งเอง ไม่มีอะไรรั่วมาจากภายนอก */
+function gateEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  const base = { ...process.env };
+  for (const key of GATE_ENV_KEYS) delete base[key];
+  return { ...base, ...overrides };
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -48,13 +73,12 @@ describe('production migration gate', () => {
     const files = await reportFiles(2);
     const result = spawnSync(process.execPath, [gateScript], {
       encoding: 'utf8',
-      env: {
-        ...process.env,
+      env: gateEnv({
         MIGRATION_REHEARSAL_REPORT: files.rehearsal,
         MIGRATION_ATTACHMENT_REPORT: files.attachments,
         MIGRATION_APPROVAL_REF: 'CHG-1234',
         MIGRATION_ATTACHMENTS_APPROVED: 'true',
-      },
+      }),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Migration gate passed');
@@ -63,11 +87,10 @@ describe('production migration gate', () => {
   it('blocks when the rehearsal report is unavailable', () => {
     const result = spawnSync(process.execPath, [gateScript], {
       encoding: 'utf8',
-      env: {
-        ...process.env,
+      env: gateEnv({
         MIGRATION_REHEARSAL_REPORT: join(tmpdir(), 'missing-itlife-rehearsal.json'),
         MIGRATION_APPROVAL_REF: 'CHG-1234',
-      },
+      }),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Migration gate failed');
@@ -85,7 +108,7 @@ describe('production migration gate — fresh-start mode', () => {
   function runGate(env: Record<string, string>) {
     return spawnSync(process.execPath, [gateScript], {
       encoding: 'utf8',
-      env: { ...process.env, MIGRATION_REHEARSAL_REPORT: missingReport, ...env },
+      env: gateEnv({ MIGRATION_REHEARSAL_REPORT: missingReport, ...env }),
     });
   }
 
@@ -126,13 +149,12 @@ describe('production migration gate — fresh-start mode', () => {
     const files = await reportFiles(0);
     const result = spawnSync(process.execPath, [gateScript], {
       encoding: 'utf8',
-      env: {
-        ...process.env,
+      env: gateEnv({
         MIGRATION_MODE: 'fresh-start',
         MIGRATION_REHEARSAL_REPORT: files.rehearsal,
         MIGRATION_APPROVAL_REF: 'CHG-1234',
         FRESH_START_CONFIRM: 'NO-LEGACY-DATA',
-      },
+      }),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('contradicts the fresh-start declaration');
