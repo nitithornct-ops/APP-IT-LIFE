@@ -1,8 +1,9 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, CheckCircle2, Loader2, PauseCircle, Plus, Users2, X } from 'lucide-react';
+import { Building2, CheckCircle2, ChevronUp, Loader2, PauseCircle, Plus, Users2, UsersRound, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -380,13 +381,15 @@ export function ApprovalGroupsPage() {
                           <StatusBadge status={g.status} />
                         </td>
                         <td className="px-2 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedGroupId(expandedGroupId === g.id ? null : g.id)}
-                            className="text-xs text-primary-700 hover:underline dark:text-primary-300"
-                          >
-                            {expandedGroupId === g.id ? 'ปิด' : 'จัดการสมาชิก'}
-                          </button>
+                          <RowActions
+                            recordLabel={g.name}
+                            actions={[{
+                              kind: 'custom',
+                              icon: expandedGroupId === g.id ? ChevronUp : UsersRound,
+                              label: expandedGroupId === g.id ? 'ปิด' : 'จัดการสมาชิก',
+                              onClick: () => setExpandedGroupId(expandedGroupId === g.id ? null : g.id),
+                            }]}
+                          />
                         </td>
                       </tr>
                       {expandedGroupId === g.id && (

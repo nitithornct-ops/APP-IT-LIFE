@@ -1,6 +1,7 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock3, Link2Off, Loader2, MessageCircle, UsersRound } from 'lucide-react';
+import { CheckCircle2, Clock3, Link2Off, Loader2, MessageCircle, RotateCcw, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -93,7 +94,7 @@ export function LineLinksPage() {
                     <th className="px-2 py-2">รหัสพนักงาน</th>
                     <th className="px-2 py-2">หน่วยงาน</th>
                     <th className="px-2 py-2">สถานะ</th>
-                    <th className="px-2 py-2" />
+                    <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -108,23 +109,14 @@ export function LineLinksPage() {
                         </Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <div className="flex justify-end gap-2 text-xs">
-                          {row.link_status === 'Pending' && (
-                            <button type="button" onClick={() => updateMutation.mutate({ id: row.id, nextStatus: 'Active' })} className="text-green-700 hover:underline dark:text-green-400">
-                              อนุมัติ
-                            </button>
-                          )}
-                          {row.link_status !== 'Suspended' && (
-                            <button type="button" onClick={() => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' })} className="text-red-700 hover:underline dark:text-red-400">
-                              ระงับ
-                            </button>
-                          )}
-                          {row.link_status === 'Suspended' && (
-                            <button type="button" onClick={() => updateMutation.mutate({ id: row.id, nextStatus: 'Active' })} className="text-green-700 hover:underline dark:text-green-400">
-                              ยกเลิกระงับ
-                            </button>
-                          )}
-                        </div>
+                        <RowActions
+                          recordLabel={row.full_name ?? row.display_name ?? row.employee_code ?? 'บัญชี LINE'}
+                          actions={[
+                            { kind: 'custom', icon: CheckCircle2, label: 'อนุมัติ', hidden: row.link_status !== 'Pending', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
+                            { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
+                            { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ ข้อมูลการเชื่อมโยงยังอยู่ครบ', onConfirm: () => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}

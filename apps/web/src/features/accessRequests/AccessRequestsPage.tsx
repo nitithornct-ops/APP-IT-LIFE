@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -255,6 +256,7 @@ export function AccessRequestsPage() {
                     <th className="px-2 py-2">ประเภท</th>
                     <th className="px-2 py-2">สถานะ</th>
                     <th className="px-2 py-2">ยื่นเมื่อ</th>
+                    <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,6 +276,9 @@ export function AccessRequestsPage() {
                         <StatusBadge status={r.status} />
                       </td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(r.created_at, 'd MMM yyyy HH:mm')}</td>
+                      <td className="px-2 py-2 text-right">
+                        <RowActions recordLabel={r.access_systems?.name ?? 'คำขอสิทธิ์'} actions={[{ kind: 'view', to: `/access-requests/${r.id}` }]} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

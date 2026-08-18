@@ -1,8 +1,9 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, Plus, ShieldAlert, ShieldCheck, UserMinus, UserPlus, UsersRound, X } from 'lucide-react';
+import { CheckCircle2, ChevronUp, Loader2, Plus, ShieldAlert, ShieldCheck, UserMinus, UserPlus, UsersRound, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -604,13 +605,15 @@ export function UsersPage() {
                     </td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(user.created_at)}</td>
                     <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
-                        className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        {expandedUserId === user.id ? 'ปิด' : 'จัดการบทบาท'}
-                      </button>
+                      <RowActions
+                        recordLabel={user.email}
+                        actions={[{
+                          kind: 'custom',
+                          icon: expandedUserId === user.id ? ChevronUp : ShieldCheck,
+                          label: expandedUserId === user.id ? 'ปิด' : 'จัดการบทบาท',
+                          onClick: () => setExpandedUserId(expandedUserId === user.id ? null : user.id),
+                        }]}
+                      />
                     </td>
                   </tr>
                   {expandedUserId === user.id && (

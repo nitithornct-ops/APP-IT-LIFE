@@ -1,4 +1,5 @@
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, Bug, Hourglass, Loader2, Plus } from 'lucide-react';
@@ -376,7 +377,7 @@ export function ProblemsPage() {
         {problems.data && items.length === 0 && <CompactEmpty>ยังไม่มี Problem</CompactEmpty>}
         {items.length > 0 && (
           <DataTable itemLabel="Problem">
-            <thead><tr><th>เลขที่</th><th>ปัญหา</th><th>เชื่อมโยง</th><th>Owner</th><th>Priority</th><th>สถานะ</th></tr></thead>
+            <thead><tr><th>เลขที่</th><th>ปัญหา</th><th>เชื่อมโยง</th><th>Owner</th><th>Priority</th><th>สถานะ</th><th className="text-right">ดำเนินการ</th></tr></thead>
             <tbody>{items.map((item) => (
               <tr key={item.id}>
                 <td><Link to={`/problems/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.problem_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.created_at, 'd MMM yyyy')}</p></td>
@@ -385,6 +386,7 @@ export function ProblemsPage() {
                 <td className="text-slate-500">{item.owner?.full_name ?? '—'}</td>
                 <td><Badge variant={priorityTone[item.priority]}>{item.priority}</Badge></td>
                 <td><Badge variant={problemStatusTone[item.status]}>{item.status}</Badge></td>
+                <td className="text-right"><RowActions recordLabel={item.problem_number} actions={[{ kind: 'view', to: `/problems/${item.id}` }]} /></td>
               </tr>
             ))}</tbody>
           </DataTable>
@@ -397,7 +399,7 @@ export function ProblemsPage() {
         {knownErrors.data && knownItems.length === 0 && <CompactEmpty>ยังไม่มี Known Error</CompactEmpty>}
         {knownItems.length > 0 && (
           <DataTable itemLabel="Known Error">
-            <thead><tr><th>เลขที่</th><th>Problem</th><th>Known Error / อาการ</th><th>Workaround</th><th>KB</th><th>สถานะ</th></tr></thead>
+            <thead><tr><th>เลขที่</th><th>Problem</th><th>Known Error / อาการ</th><th>Workaround</th><th>KB</th><th>สถานะ</th><th className="text-right">ดำเนินการ</th></tr></thead>
             <tbody>{knownItems.map((item) => (
               <tr key={item.id} data-testid={`known-error-row-${item.id}`}>
                 <td className="font-mono text-xs">{item.known_error_number}</td>
@@ -406,6 +408,7 @@ export function ProblemsPage() {
                 <td className="max-w-sm whitespace-pre-wrap text-xs">{item.workaround}</td>
                 <td className="text-xs">{item.knowledge_article_ref ? <Link to="/knowledge" className="text-primary-700 hover:underline dark:text-primary-300">{item.knowledge_article_ref}</Link> : '—'}</td>
                 <td><Badge variant={knownErrorStatusTone[item.status]}>{item.status}</Badge></td>
+                <td className="text-right"><RowActions recordLabel={item.known_error_number} actions={[{ kind: 'view', to: `/problems/${item.problem_id}`, label: 'ดู Problem' }]} /></td>
               </tr>
             ))}</tbody>
           </DataTable>

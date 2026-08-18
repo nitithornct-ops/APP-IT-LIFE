@@ -4,10 +4,8 @@ import {
   Box,
   Boxes,
   Download,
-  Eye,
   GitBranch,
   Loader2,
-  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -18,6 +16,7 @@ import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -350,7 +349,23 @@ export function EmployeesPage() {
               const count = overview?.assignmentCounts[employee.id] ?? 0;
               const department = departments.find((item) => item.id === employee.department_id)?.name_th ?? '—';
               const position = positions.find((item) => item.id === employee.position_id)?.name_th ?? '—';
-              return <tr key={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td><div className="flex min-w-44 flex-wrap gap-1.5"><button type="button" aria-label={`ดู ${employeeName(employee)}`} onClick={() => setViewingEmployee(employee)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 px-2 text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:text-primary-300"><Eye className="h-3.5 w-3.5" />ดู</button><button type="button" aria-label={`แก้ไข ${employeeName(employee)}`} onClick={() => setEditingEmployee(employee)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-primary-300 px-2 text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300"><Pencil className="h-3.5 w-3.5" />แก้ไข</button><button type="button" aria-label={`เพิ่มทรัพย์สิน ${employeeName(employee)}`} onClick={() => setAssetEmployee(employee)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-400 px-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300"><Box className="h-3.5 w-3.5" />เพิ่มทรัพย์สิน</button>{hasPermission('operations.manage') && <button type="button" aria-label={`เริ่ม Lifecycle ${employeeName(employee)}`} onClick={() => setLifecycleEmployee(employee)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-400 px-2 text-amber-600 hover:bg-amber-50 dark:text-amber-300"><GitBranch className="h-3.5 w-3.5" />Lifecycle</button>}<button type="button" onClick={() => toggleStatusMutation.mutate({ id: employee.id, nextStatus: employee.status === 'active' ? 'inactive' : 'active' })} className="sr-only">{employee.status === 'active' ? 'ระงับพนักงาน' : 'เปิดใช้งานพนักงาน'}</button></div></td></tr>;
+              return <tr key={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
+                    recordLabel={employeeName(employee)}
+                    actions={[
+                      { kind: 'view', onClick: () => setViewingEmployee(employee) },
+                      { kind: 'edit', onClick: () => setEditingEmployee(employee) },
+                      { kind: 'custom', icon: Box, label: 'เพิ่มทรัพย์สิน', onClick: () => setAssetEmployee(employee) },
+                      { kind: 'custom', icon: GitBranch, label: 'Lifecycle', permission: 'operations.manage', onClick: () => setLifecycleEmployee(employee) },
+                      {
+                        kind: 'cancel',
+                        label: employee.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน',
+                        confirmDescription: employee.status === 'active'
+                          ? 'พนักงานคนนี้จะถูกระงับ ประวัติการถือครองทรัพย์สินและงานที่เคยแจ้งยังอยู่ครบ'
+                          : 'พนักงานคนนี้จะกลับมาใช้งานระบบได้ตามเดิม',
+                        onConfirm: () => toggleStatusMutation.mutate({ id: employee.id, nextStatus: employee.status === 'active' ? 'inactive' : 'active' }),
+                      },
+                    ]}
+                  /></td></tr>;
             })}</tbody>
           </DataTable>}
           {employeesQuery.data && <TablePagination page={employeesQuery.data.pagination.page} pageSize={pageSize} totalItems={employeesQuery.data.pagination.totalItems} totalPages={employeesQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
