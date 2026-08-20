@@ -35,6 +35,7 @@ import type { TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
+import { downloadCsv } from '../../utils/csv';
 import { formatThaiDate } from '../../utils/date';
 import { LOCKED_TICKET_STATUSES, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
 
@@ -93,12 +94,6 @@ function TicketMetricCard({
       </div>
     </Card>
   );
-}
-
-function csvCell(value: unknown): string {
-  const text = String(value ?? '');
-  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function requesterName(ticket: TicketListItem): string {
@@ -392,13 +387,7 @@ export function TicketsPage() {
       ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '',
       ticket.outsource_name ?? '',
     ]);
-    const csv = `\uFEFF${[header, ...body].map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `tickets-page-${page}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv([header, ...body], `tickets-page-${page}.csv`);
   }
 
   const summary = summaryQuery.data;
@@ -539,7 +528,7 @@ export function TicketsPage() {
 
           {ticketsQuery.data && ticketsQuery.data.items.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-              <DataTable pagination={false} className="min-w-[1120px] w-full text-left text-sm">
+              <DataTable mode="server" className="min-w-[1120px] w-full text-left text-sm">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                   <tr>
                     <th className="px-3 py-3">ลำดับ</th>
