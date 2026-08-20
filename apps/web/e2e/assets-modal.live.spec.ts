@@ -95,7 +95,7 @@ test('asset create, edit and action forms open as bounded popups', async ({ page
 
   await page.getByTestId('asset-detail-edit-toggle').click();
   await expectPopupFitsViewport(page, 'asset-edit-dialog');
-  await page.keyboard.press('Escape');
+  await page.getByTestId('asset-edit-dialog').getByRole('button', { name: 'ปิดหน้าต่าง', exact: true }).click();
   await expect(page.getByTestId('asset-edit-dialog')).toBeHidden();
 
   await page.getByTestId('asset-action-verify').click();

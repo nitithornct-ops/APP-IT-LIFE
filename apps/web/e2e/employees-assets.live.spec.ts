@@ -93,7 +93,7 @@ test('employee register and all action forms render as bounded popups', async ({
   await expectPopupFitsViewport(page, 'employee-assignment-dialog');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: `เริ่ม Lifecycle ${firstName} พนักงาน`, exact: true }).click();
+  await page.getByRole('button', { name: `Lifecycle ${firstName} พนักงาน`, exact: true }).click();
   await expectPopupFitsViewport(page, 'employee-lifecycle-dialog');
   await page.screenshot({ path: 'test-results/employees-lifecycle-popup.png', fullPage: false });
   await page.keyboard.press('Escape');

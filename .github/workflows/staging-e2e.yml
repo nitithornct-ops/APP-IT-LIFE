@@ -81,5 +81,6 @@ jobs:
           name: staging-e2e-evidence
           path: |
             test-results/
+            apps/web/test-results/
             apps/web/playwright-report/
           retention-days: 14

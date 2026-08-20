@@ -107,8 +107,15 @@ test('task command center remains contained on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await expect(page.getByRole('article').filter({ hasText: 'ตรวจสอบสัญญาบริการ Cloud' })).toBeVisible();
-  const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
-  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+  const dimensions = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+    offenders: Array.from(document.querySelectorAll<HTMLElement>('body *'))
+      .map((element) => ({ tag: element.tagName, className: element.className, right: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width }))
+      .filter((element) => element.right > document.documentElement.clientWidth + 1)
+      .slice(0, 10),
+  }));
+  expect(dimensions.scrollWidth, JSON.stringify(dimensions.offenders, null, 2)).toBeLessThanOrEqual(dimensions.clientWidth + 1);
   await expect(page.getByLabel('ชื่องานใหม่')).toBeVisible();
   await page.screenshot({ path: 'test-results/tasks-command-center-mobile.png', fullPage: true });
 });
