@@ -18,6 +18,7 @@ import {
 } from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { BulkItemError, runBulk } from '../utils/bulk';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -392,8 +393,7 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
  * 20 ใบแล้วล้มทั้งชุดเพราะใบเดียวปิดไปแล้ว บังคับให้ผู้ใช้มานั่งไล่หาเองว่าใบไหนพัง
  * ใบที่ผ่านจะถูกบันทึกจริง ใบที่ไม่ผ่านจะบอกเหตุผลกลับไปเป็นรายใบ
  *
- * ทำทีละใบตามลำดับ ไม่ขนาน เพื่อให้ worklog กับ audit log เรียงตามที่เกิดจริง —
- * ISMS ต้องตรวจย้อนได้ว่าใครทำอะไรกับใบไหนเมื่อไร ซึ่ง audit รายชุดรายการเดียวตอบไม่ได้
+ * การวนทีละใบกับรูปแบบผลลัพธ์อยู่ที่ runBulk (utils/bulk.ts) — ดูเหตุผลของการทำตามลำดับได้ที่นั่น
  *
  * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
  */
@@ -424,15 +424,9 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
     && (currentRows ?? []).some((row) => changesSlaPause(row as never, status));
   const businessCalendar = needsCalendar ? await loadTicketBusinessCalendar(c) : null;
 
-  const succeeded: { id: string; ticketNo: string; status: string }[] = [];
-  const failed: { id: string; code: string; message: string }[] = [];
-
-  for (const id of ids) {
+  const result = await runBulk(ids, async (id) => {
     const current = byId.get(id);
-    if (!current) {
-      failed.push({ id, code: 'TICKET_NOT_FOUND', message: 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง' });
-      continue;
-    }
+    if (!current) throw new BulkItemError('TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง');
 
     const fromStatus = String(current.status);
     const toStatus = status ?? fromStatus;
@@ -440,14 +434,12 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
     if (toStatus !== fromStatus) {
       const isLegacyTriage = fromStatus === TICKET_STATUS.NEW && toStatus === TICKET_STATUS.ACK && canTriage;
       if (!canUpdate && !isLegacyTriage) {
-        failed.push({ id, code: 'PERMISSION_DENIED', message: 'ท่านไม่มีสิทธิ์เปลี่ยนสถานะใบนี้' });
-        continue;
+        throw new BulkItemError('PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์เปลี่ยนสถานะใบนี้');
       }
       try {
         assertTransition(fromStatus, toStatus);
       } catch (error) {
-        failed.push({ id, code: 'TICKET_TRANSITION_INVALID', message: (error as Error).message });
-        continue;
+        throw new BulkItemError('TICKET_TRANSITION_INVALID', (error as Error).message);
       }
     }
 
@@ -458,10 +450,7 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
 
     const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
     const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
-    if (error || !updated) {
-      failed.push({ id, code: 'TICKET_UPDATE_FAILED', message: 'บันทึกไม่สำเร็จ' });
-      continue;
-    }
+    if (error || !updated) throw new BulkItemError('TICKET_UPDATE_FAILED', 'บันทึกไม่สำเร็จ');
 
     await supabase.from('ticket_worklogs').insert({
       ticket_id: id,
@@ -503,10 +492,10 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
       });
     }
 
-    succeeded.push({ id, ticketNo: String(updated.ticket_no), status: String(updated.status) });
-  }
+    return { id, ticketNo: String(updated.ticket_no), status: String(updated.status) };
+  });
 
-  return c.json(ok(reqId, { succeeded, failed }));
+  return c.json(ok(reqId, result));
 });
 
 ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationHook), async (c) => {
