@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -486,12 +487,10 @@ export function MaintenancePage() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<MaintenancePlan | null>(null);
-  const [status, setStatus] = useState('');
-  const [recurrence, setRecurrence] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const table = useTableParams<'status' | 'recurrence' | 'search' | 'view'>({ filters: ['status', 'recurrence', 'search', 'view'] });
+  const { page, pageSize } = table;
+  const { status, recurrence, search } = table.filters;
+  const view: 'list' | 'calendar' = table.filters.view === 'calendar' ? 'calendar' : 'list';
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -526,7 +525,7 @@ export function MaintenancePage() {
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pagedItems = filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const clearFilters = () => { setSearch(''); setStatus(''); setRecurrence(''); setPage(1); };
+  const clearFilters = () => table.setFilters({ search: '', status: '', recurrence: '' });
   const isFormReady = Boolean(assetsQuery.data && templatesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data);
 
   return (
@@ -549,8 +548,8 @@ export function MaintenancePage() {
 
       <section>
         <div className="flex border-b border-slate-200 dark:border-slate-700">
-          <button type="button" onClick={() => setView('list')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'list' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><ListChecks className="h-4 w-4" /> รายการ</button>
-          <button type="button" onClick={() => setView('calendar')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'calendar' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><CalendarDays className="h-4 w-4" /> ปฏิทิน</button>
+          <button type="button" onClick={() => table.setFilter('view', '')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'list' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><ListChecks className="h-4 w-4" /> รายการ</button>
+          <button type="button" onClick={() => table.setFilter('view', 'calendar')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'calendar' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><CalendarDays className="h-4 w-4" /> ปฏิทิน</button>
         </div>
       </section>
 
@@ -558,9 +557,9 @@ export function MaintenancePage() {
         {view === 'list' ? (
           <>
             <div className="m-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40 lg:flex-row lg:items-center">
-              <label className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900"><Search className="mx-3 h-4 w-4 shrink-0 text-slate-400" /><input type="search" aria-label="ค้นหาแผน PM" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="ค้นหา Asset หรือผู้รับผิดชอบ..." className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none" /></label>
-              <select aria-label="กรองสถานะ" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select>
-              <select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => { setRecurrence(event.target.value); setPage(1); }} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select>
+              <label className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900"><Search className="mx-3 h-4 w-4 shrink-0 text-slate-400" /><input type="search" aria-label="ค้นหาแผน PM" value={search} onChange={(event) => table.setFilter('search', event.target.value, { replace: true })} placeholder="ค้นหา Asset หรือผู้รับผิดชอบ..." className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none" /></label>
+              <select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select>
+              <select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => table.setFilter('recurrence', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select>
               <Button size="sm" variant="outline" onClick={clearFilters}><RefreshCw className="h-4 w-4" /> ล้างตัวกรอง</Button>
               <Button size="sm" variant="outline" onClick={() => setShowExport(true)} aria-haspopup="dialog"><Download className="h-4 w-4" /> ส่งออก</Button>
               <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-800">{filteredItems.length} รายการ</span>
@@ -577,7 +576,7 @@ export function MaintenancePage() {
                 </DataTable>
               </div>
             )}
-            <div className="px-4 pb-4"><TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredItems.length} totalPages={pageCount} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} /></div>
+            <div className="px-4 pb-4"><TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredItems.length} totalPages={pageCount} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>
           </>
         ) : (
           <div className="overflow-x-auto"><CalendarView plans={items} month={calendarMonth} onMonthChange={setCalendarMonth} onSelect={setSelectedPlan} /></div>
