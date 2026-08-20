@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -561,16 +562,26 @@ export function UsersPage() {
 
       {showInvite && departmentsQuery.data && positionsQuery.data && <FormModal title="เชิญผู้ใช้งาน" description="สร้างคำเชิญและผูกข้อมูลบุคลากรโดยใช้สิทธิ์เดิมของระบบ" size="lg" onClose={() => setShowInvite(false)}><InviteUserForm departments={departmentsQuery.data} positions={positionsQuery.data} onClose={() => setShowInvite(false)} /></FormModal>}
 
-      <input
-        type="search"
-        placeholder="ค้นหาชื่อหรืออีเมล..."
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setPage(1);
-        }}
-        className="mb-3 w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-      />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          placeholder="ค้นหาชื่อหรืออีเมล..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        />
+        <ExportCsvButton
+          disabled={!visibleUsers.length}
+          fileName={`users-page-${page}.csv`}
+          getRows={() => [
+            ['ชื่อ-สกุล', 'อีเมล', 'สถานะ', 'เข้าร่วมเมื่อ'],
+            ...visibleUsers.map((user) => [user.full_name, user.email, user.status, formatThaiDate(user.created_at)]),
+          ]}
+        />
+      </div>
 
       {usersQuery.isLoading && (
         <div className="flex justify-center py-10" role="status">
@@ -584,7 +595,7 @@ export function UsersPage() {
 
       {usersQuery.data && usersQuery.data.items.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-          <DataTable pagination={false} className="w-full text-left text-sm">
+          <DataTable mode="server" className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               <tr>
                 <th className="px-4 py-2">ชื่อ-สกุล</th>
