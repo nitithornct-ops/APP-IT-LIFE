@@ -1,4 +1,7 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -37,8 +40,21 @@ import { downloadCsv } from '../../utils/csv';
  */
 export type DataTableMode = 'client' | 'server';
 
+export interface TableSort {
+  /** ค่าเดียวกับ data-sort-key บน <th> — ใน server mode คือชื่อคอลัมน์ที่ส่งไปกับ query */
+  key: string;
+  order: 'asc' | 'desc';
+}
+
 interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   containerClassName?: string;
+  /**
+   * สถานะการเรียงปัจจุบัน ส่งมาคู่กับ onSortChange เพื่อให้หน้าเป็นเจ้าของ state
+   * ถ้าไม่ส่งทั้งคู่ ตารางจะจำสถานะเองและเรียงข้อมูลในตัว (ใช้ได้เฉพาะ mode="client")
+   */
+  sort?: TableSort | null;
+  /** เรียกเมื่อผู้ใช้กดหัวคอลัมน์ที่มี data-sort-key — null คือกลับไปใช้ลำดับเริ่มต้น */
+  onSortChange?: (sort: TableSort | null) => void;
   /**
    * แหล่งที่จัดการ search/filter/sort/pagination
    * ค่าเริ่มต้น 'client' เพื่อให้หน้าเดิมทั้งหมดทำงานเหมือนเดิม
@@ -78,6 +94,86 @@ function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[],
   );
 }
 
+type CellProps = {
+  children?: ReactNode;
+  'data-sort-key'?: string;
+  'data-sort-label'?: string;
+  'data-sort-value'?: string | number;
+};
+
+/** อ่านชื่อคอลัมน์สำหรับเรียงจาก <th data-sort-key="..."> เรียงตามตำแหน่งคอลัมน์ */
+function headerSortKeys(headerRow: ReactNode): (string | undefined)[] {
+  return rowCells(headerRow).map((cell) => (isValidElement<CellProps>(cell) ? cell.props['data-sort-key'] : undefined));
+}
+
+/**
+ * ค่าที่ใช้เปรียบเทียบของหนึ่งเซลล์ — ถ้า <td> ระบุ data-sort-value มาจะใช้ค่านั้น
+ * เพราะข้อความที่แสดง (วันที่ไทย, Badge, จำนวนที่มีคอมมา) เรียงตามตัวอักษรแล้วได้ลำดับผิด
+ */
+function cellSortValue(cell: ReactNode): string {
+  if (isValidElement<CellProps>(cell)) {
+    const explicit = cell.props['data-sort-value'];
+    if (explicit !== undefined && explicit !== null) return String(explicit);
+  }
+  return nodeText(cell).replace(/\s+/g, ' ').trim();
+}
+
+function compareSortValues(a: string, b: string): number {
+  const numberA = Number(a);
+  const numberB = Number(b);
+  if (!Number.isNaN(numberA) && !Number.isNaN(numberB)) return numberA - numberB;
+  return a.localeCompare(b, 'th-TH');
+}
+
+/** เรียงแถวในตัว (client mode) โดยดันแถวที่ไม่มีค่าไปท้ายเสมอ เหมือน nullsFirst: false ของฝั่ง api */
+function sortRows(rows: ReactNode[], columnIndex: number, order: 'asc' | 'desc'): ReactNode[] {
+  const direction = order === 'desc' ? -1 : 1;
+  return [...rows].sort((rowA, rowB) => {
+    const valueA = cellSortValue(rowCells(rowA)[columnIndex]);
+    const valueB = cellSortValue(rowCells(rowB)[columnIndex]);
+    if (valueA === valueB) return 0;
+    if (valueA === '') return 1;
+    if (valueB === '') return -1;
+    return direction * compareSortValues(valueA, valueB);
+  });
+}
+
+/** เปลี่ยน <th data-sort-key> ให้เป็นปุ่มกดเรียง พร้อม aria-sort ให้ screen reader */
+function withSortableHeaders(
+  row: ReactNode,
+  activeSort: TableSort | null,
+  onSort: (key: string) => void,
+): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(row)) return row;
+  const cells = Children.toArray(row.props.children);
+  if (!cells.some((cell) => isValidElement(cell) && cell.type === 'th')) return row;
+  return cloneElement(
+    row,
+    {},
+    cells.map((cell) => {
+      if (!isValidElement<CellProps>(cell) || cell.type !== 'th') return cell;
+      const key = cell.props['data-sort-key'];
+      if (!key) return cell;
+      const active = activeSort?.key === key;
+      const Icon = active ? (activeSort.order === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+      return cloneElement(
+        cell,
+        { 'aria-sort': active ? (activeSort.order === 'asc' ? 'ascending' : 'descending') : 'none' } as Record<string, string>,
+        <button
+          type="button"
+          onClick={() => onSort(key)}
+          // ใช้เมื่อหัวคอลัมน์รวมหลายอย่างไว้ด้วยกัน (เช่น "สถานะ/SLA") จะได้บอกชัดว่าปุ่มเรียงตามอะไร
+          aria-label={cell.props['data-sort-label']}
+          className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left font-semibold hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:text-primary-300"
+        >
+          {cell.props.children}
+          <Icon className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-primary-600 dark:text-primary-300' : 'text-slate-400')} aria-hidden="true" />
+        </button>,
+      );
+    }),
+  );
+}
+
 function withVisibleColumns(node: ReactNode, hiddenColumns: Set<number>): ReactNode {
   if (!isValidElement<{ children?: ReactNode }>(node)) return node;
   const cells = Children.toArray(node.props.children);
@@ -106,6 +202,8 @@ export function DataTable({
   containerClassName,
   children,
   mode = 'client',
+  sort: controlledSort,
+  onSortChange,
   pagination = true,
   toolbar = true,
   initialPageSize = 10,
@@ -120,7 +218,11 @@ export function DataTable({
   const [filterValue, setFilterValue] = useState('');
   const [hiddenColumnIndexes, setHiddenColumnIndexes] = useState<number[]>([]);
   const [showColumns, setShowColumns] = useState(false);
+  const [internalSort, setInternalSort] = useState<TableSort | null>(null);
   const isServerMode = mode === 'server';
+  // controlled เมื่อหน้าส่ง onSortChange มา ไม่งั้นตารางจำสถานะเอง
+  const isSortControlled = Boolean(onSortChange);
+  const activeSort = isSortControlled ? controlledSort ?? null : internalSort;
   const childArray = Children.toArray(children);
   const headIndex = childArray.findIndex((child) => isValidElement(child) && child.type === 'thead');
   const bodyIndex = childArray.findIndex((child) => isValidElement(child) && child.type === 'tbody');
@@ -134,12 +236,17 @@ export function DataTable({
   const normalizedSearch = search.trim().toLocaleLowerCase('th-TH');
   const normalizedFilter = filterValue.trim().toLocaleLowerCase('th-TH');
   // server mode: หน้าเป็นคนกรอง/แบ่งหน้าเองแล้ว ตารางแสดงแถวที่ได้รับมาตรง ๆ
-  const filteredRows = isServerMode ? rows : rows.filter((row) => {
+  const matchedRows = isServerMode ? rows : rows.filter((row) => {
     const cells = rowCells(row).map((cell) => nodeText(cell).replace(/\s+/g, ' ').trim().toLocaleLowerCase('th-TH'));
     if (normalizedSearch && !cells.some((cell) => cell.includes(normalizedSearch))) return false;
     if (filterColumn !== '' && normalizedFilter && !cells[Number(filterColumn)]?.includes(normalizedFilter)) return false;
     return true;
   });
+  // server mode เรียงมาจาก API แล้ว ตารางจึงเรียงเองเฉพาะตอนถือข้อมูลครบชุด
+  const sortColumnIndex = activeSort ? headerSortKeys(headerRow).indexOf(activeSort.key) : -1;
+  const filteredRows = !isServerMode && activeSort && sortColumnIndex >= 0
+    ? sortRows(matchedRows, sortColumnIndex, activeSort.order)
+    : matchedRows;
   const showToolbar = toolbar && !isServerMode && rows.length > 0;
   const showPagination = pagination && !isServerMode && filteredRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -147,21 +254,32 @@ export function DataTable({
   const visibleRows = pagination && !isServerMode
     ? filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
     : filteredRows;
-  // ไม่ clone children ใน server mode เพราะไม่มี column visibility ให้ประมวลผล
-  const renderedChildren = isServerMode ? childArray : childArray.map((child, index) => {
+  /** asc → desc → กลับไปลำดับเริ่มต้น */
+  const handleSort = (key: string) => {
+    const next: TableSort | null = activeSort?.key !== key
+      ? { key, order: 'asc' }
+      : activeSort.order === 'asc' ? { key, order: 'desc' } : null;
+    if (onSortChange) onSortChange(next);
+    else setInternalSort(next);
+  };
+
+  const renderedChildren = childArray.map((child, index) => {
     if (index === headIndex && head) {
-      return cloneElement(head, {}, Children.map(head.props.children, (row) => withVisibleColumns(row, hiddenColumns)));
+      const headRows = Children.map(head.props.children, (row) => withSortableHeaders(row, activeSort, handleSort));
+      // server mode ไม่มี column visibility ให้ประมวลผล จึงข้าม clone รอบที่สอง
+      return cloneElement(head, {}, isServerMode ? headRows : Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns)));
     }
     if (index === bodyIndex && body) {
+      if (isServerMode) return child;
       return cloneElement(body, {}, visibleRows.map((row) => withVisibleColumns(row, hiddenColumns)));
     }
     return child;
   });
-  const hasActiveControls = Boolean(search || filterValue || hiddenColumnIndexes.length);
+  const hasActiveControls = Boolean(search || filterValue || hiddenColumnIndexes.length || activeSort);
 
   useEffect(() => {
     setPage(1);
-  }, [search, filterColumn, filterValue, pageSize]);
+  }, [search, filterColumn, filterValue, pageSize, activeSort?.key, activeSort?.order]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -172,6 +290,8 @@ export function DataTable({
     setFilterColumn('');
     setFilterValue('');
     setHiddenColumnIndexes([]);
+    setInternalSort(null);
+    if (onSortChange) onSortChange(null);
     setPage(1);
   };
 
