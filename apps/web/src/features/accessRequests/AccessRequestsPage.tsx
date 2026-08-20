@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -231,6 +232,20 @@ export function AccessRequestsPage() {
                 </option>
               ))}
             </select>
+            <ExportCsvButton
+              disabled={!requestsQuery.data?.items.length}
+              fileName={`access-requests-page-${page}.csv`}
+              getRows={() => [
+                ['ระบบงาน', 'ระดับสิทธิ์', 'ประเภท', 'สถานะ', 'ยื่นเมื่อ'],
+                ...(requestsQuery.data?.items ?? []).map((r) => [
+                  r.access_systems?.name ?? '',
+                  r.access_level,
+                  r.request_type,
+                  r.status,
+                  formatThaiDate(r.created_at, 'd MMM yyyy HH:mm'),
+                ]),
+              ]}
+            />
           </div>
         </CardHeader>
         <CardBody>
@@ -248,7 +263,7 @@ export function AccessRequestsPage() {
 
           {requestsQuery.data && requestsQuery.data.items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable pagination={false} className="w-full text-left text-sm">
+              <DataTable mode="server" className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">ระบบงาน</th>
