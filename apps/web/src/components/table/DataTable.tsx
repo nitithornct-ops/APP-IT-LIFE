@@ -67,6 +67,48 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   initialPageSize?: number;
   itemLabel?: string;
   exportFileName?: string;
+  /**
+   * ตรึงหัวตารางไว้ขณะเลื่อนดูแถว
+   * ต้องให้ตารางมี scroll ของตัวเอง (maxBodyHeight) เพราะ position: sticky อ้างอิงกล่องที่เลื่อน
+   * ไม่ใช่หน้าเว็บ — เปิดกับตารางที่แถวเยอะจริงเท่านั้น ไม่งั้นจะได้ scrollbar ซ้อนโดยไม่จำเป็น
+   */
+  stickyHeader?: boolean;
+  /** ความสูงสูงสุดของตารางเมื่อเปิด stickyHeader */
+  maxBodyHeight?: string;
+  /** ตรึงคอลัมน์แรกไว้ขณะเลื่อนแนวนอน — ใช้กับตารางกว้างที่คอลัมน์แรกคือตัวระบุแถว */
+  freezeFirstColumn?: boolean;
+  /**
+   * บนจอแคบให้เรียงเป็นการ์ดแทนการเลื่อนแนวนอน
+   * ต้องใส่ data-label ให้ <td> ทุกช่องก่อน ไม่งั้นการ์ดจะไม่มีชื่อฟิลด์กำกับ
+   */
+  cardOnMobile?: boolean;
+  /** จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้ใน localStorage ด้วยคีย์นี้ */
+  tableId?: string;
+}
+
+interface StoredTablePrefs {
+  /** เก็บเป็นชื่อหัวคอลัมน์ ไม่ใช่ตำแหน่ง เพราะลำดับคอลัมน์เปลี่ยนได้ระหว่าง deploy */
+  hidden?: string[];
+  pageSize?: number;
+}
+
+function prefsStorageKey(tableId: string): string {
+  return `itlife-table:${tableId}`;
+}
+
+function readTablePrefs(tableId: string | undefined): StoredTablePrefs {
+  if (!tableId) return {};
+  try {
+    const raw = localStorage.getItem(prefsStorageKey(tableId));
+    const parsed = raw ? JSON.parse(raw) as StoredTablePrefs : {};
+    return {
+      hidden: Array.isArray(parsed.hidden) ? parsed.hidden.filter((item) => typeof item === 'string') : undefined,
+      pageSize: Number.isInteger(parsed.pageSize) && (parsed.pageSize ?? 0) > 0 ? parsed.pageSize : undefined,
+    };
+  } catch {
+    // localStorage ปิดอยู่หรือค่าที่เก็บไว้เสีย — ใช้ค่าเริ่มต้นแทนการพังทั้งตาราง
+    return {};
+  }
 }
 
 function nodeText(node: ReactNode): string {
@@ -209,14 +251,21 @@ export function DataTable({
   initialPageSize = 10,
   itemLabel = 'รายการ',
   exportFileName = `export-${new Date().toISOString().slice(0, 10)}.csv`,
+  stickyHeader = false,
+  maxBodyHeight = '70vh',
+  freezeFirstColumn = false,
+  cardOnMobile = false,
+  tableId,
   ...props
 }: DataTableProps) {
+  const [storedPrefs] = useState(() => readTablePrefs(tableId));
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [pageSize, setPageSize] = useState(storedPrefs.pageSize ?? initialPageSize);
   const [search, setSearch] = useState('');
   const [filterColumn, setFilterColumn] = useState('');
   const [filterValue, setFilterValue] = useState('');
-  const [hiddenColumnIndexes, setHiddenColumnIndexes] = useState<number[]>([]);
+  // เก็บเป็นชื่อหัวคอลัมน์ ไม่ใช่ index เพื่อให้ค่าที่จำไว้ยังชี้คอลัมน์เดิมแม้ลำดับจะเปลี่ยน
+  const [hiddenColumnNames, setHiddenColumnNames] = useState<string[]>(storedPrefs.hidden ?? []);
   const [showColumns, setShowColumns] = useState(false);
   const [internalSort, setInternalSort] = useState<TableSort | null>(null);
   const isServerMode = mode === 'server';
@@ -231,7 +280,7 @@ export function DataTable({
   const rows = useMemo(() => body ? Children.toArray(body.props.children) : [], [body]);
   const headerRow = head ? Children.toArray(head.props.children).find((child) => isValidElement(child)) : null;
   const headers = rowCells(headerRow).map((cell, index) => nodeText(cell).replace(/\s+/g, ' ').trim() || `คอลัมน์ ${index + 1}`);
-  const hiddenColumns = new Set(hiddenColumnIndexes);
+  const hiddenColumns = new Set(headers.map((header, index) => (hiddenColumnNames.includes(header) ? index : -1)).filter((index) => index >= 0));
   const visibleColumns = headers.map((_, index) => index).filter((index) => !hiddenColumns.has(index));
   const normalizedSearch = search.trim().toLocaleLowerCase('th-TH');
   const normalizedFilter = filterValue.trim().toLocaleLowerCase('th-TH');
@@ -275,7 +324,7 @@ export function DataTable({
     }
     return child;
   });
-  const hasActiveControls = Boolean(search || filterValue || hiddenColumnIndexes.length || activeSort);
+  const hasActiveControls = Boolean(search || filterValue || hiddenColumnNames.length || activeSort);
 
   useEffect(() => {
     setPage(1);
@@ -285,11 +334,20 @@ export function DataTable({
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  useEffect(() => {
+    if (!tableId) return;
+    try {
+      localStorage.setItem(prefsStorageKey(tableId), JSON.stringify({ hidden: hiddenColumnNames, pageSize }));
+    } catch {
+      // เขียนไม่ได้ (โหมดส่วนตัว/พื้นที่เต็ม) ก็แค่ไม่จำค่าไว้ ไม่ต้องรบกวนผู้ใช้
+    }
+  }, [tableId, hiddenColumnNames, pageSize]);
+
   const resetControls = () => {
     setSearch('');
     setFilterColumn('');
     setFilterValue('');
-    setHiddenColumnIndexes([]);
+    setHiddenColumnNames([]);
     setInternalSort(null);
     if (onSortChange) onSortChange(null);
     setPage(1);
@@ -365,7 +423,7 @@ export function DataTable({
                           key={`${header}-${index}`}
                           type="button"
                           disabled={isLastVisible}
-                          onClick={() => setHiddenColumnIndexes((current) => visible ? [...current, index] : current.filter((item) => item !== index))}
+                          onClick={() => setHiddenColumnNames((current) => visible ? [...current, header] : current.filter((item) => item !== header))}
                           className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-700"
                         >
                           <span className={cn('grid h-4 w-4 place-items-center rounded border', visible ? 'border-primary-600 bg-primary-600 text-white' : 'border-slate-300 dark:border-slate-600')}>
@@ -388,7 +446,10 @@ export function DataTable({
           </div>
         </div>
       )}
-      <div className="w-full overflow-x-auto">
+      <div
+        className={cn('w-full overflow-x-auto', stickyHeader && 'overflow-y-auto')}
+        style={stickyHeader ? { maxHeight: maxBodyHeight } : undefined}
+      >
         <table
           className={cn(
             'w-full min-w-[720px] border-separate border-spacing-0 text-left text-sm',
@@ -396,6 +457,16 @@ export function DataTable({
             '[&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-slate-200 [&_th]:px-4 [&_th]:py-3 dark:[&_th]:border-slate-700',
             '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-primary-50/50 dark:[&_tbody_tr:hover]:bg-slate-700/40',
             '[&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-slate-700/80',
+            // thead โปร่งแสงอยู่ ถ้าตรึงไว้เฉย ๆ แถวจะเลื่อนทะลุขึ้นมาเห็นข้างหลัง จึงต้องทึบ
+            stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-slate-50 dark:[&_thead_th]:bg-slate-900',
+            // คอลัมน์ที่ตรึงไว้ต้องทึบและเปลี่ยนสีตามแถวด้วย ไม่งั้น hover จะดูเหมือนตารางแตกเป็นสองส่วน
+            freezeFirstColumn && [
+              '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0',
+              '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800',
+              '[&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40',
+              '[&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
+            ].join(' '),
+            cardOnMobile && 'data-table-cards',
             className,
           )}
           {...props}

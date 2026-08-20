@@ -4,6 +4,8 @@ import { DataTable } from './DataTable';
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -286,5 +288,48 @@ describe('DataTable', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA' }));
     expect(onSortChange).toHaveBeenCalledWith({ key: 'due_at', order: 'asc' });
+  });
+  it('จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้เมื่อมี tableId', () => {
+    const markup = (
+      <DataTable tableId="assets">
+        <thead><tr><th>ชื่อ</th><th>สถานะ</th></tr></thead>
+        <tbody>{Array.from({ length: 30 }, (_, index) => <tr key={index}><td>แถว {index + 1}</td><td>ใช้งาน</td></tr>)}</tbody>
+      </DataTable>
+    );
+
+    const first = render(markup);
+    fireEvent.click(screen.getByRole('button', { name: /คอลัมน์/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'สถานะ' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'จำนวนรายการต่อหน้า' }), { target: { value: '25' } });
+    expect(screen.getAllByText('ใช้งาน')[0]).not.toBeVisible();
+    first.unmount();
+
+    render(markup);
+    expect(screen.getAllByText('ใช้งาน')[0]).not.toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'จำนวนรายการต่อหน้า' })).toHaveValue('25');
+  });
+
+  it('ไม่จำอะไรเลยเมื่อไม่ได้ระบุ tableId', () => {
+    const before = localStorage.length;
+    render(
+      <DataTable>
+        <thead><tr><th>ชื่อ</th><th>สถานะ</th></tr></thead>
+        <tbody><tr><td>แถว 1</td><td>ใช้งาน</td></tr></tbody>
+      </DataTable>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /คอลัมน์/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'สถานะ' }));
+    expect(localStorage.length).toBe(before);
+  });
+
+  it('ค่าที่เสียใน localStorage ไม่ทำให้ตารางพัง', () => {
+    localStorage.setItem('itlife-table:broken', '{ not json');
+    render(
+      <DataTable tableId="broken">
+        <thead><tr><th>ชื่อ</th></tr></thead>
+        <tbody><tr><td>แถว 1</td></tr></tbody>
+      </DataTable>,
+    );
+    expect(screen.getByText('แถว 1')).toBeVisible();
   });
 });
