@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Boxes, Loader2, Plus } from 'lucide-react';
@@ -246,16 +247,33 @@ export function AssetsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          <input
-            type="search"
-            placeholder="ค้นหาชื่อ รหัสทรัพย์สิน หรือ S/N..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              placeholder="ค้นหาชื่อ รหัสทรัพย์สิน หรือ S/N..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+            />
+            <ExportCsvButton
+              disabled={!items.length}
+              fileName={`assets-page-${page}.csv`}
+              getRows={() => [
+                ['รหัส', 'ชื่อทรัพย์สิน', 'หมวดหมู่', 'ผู้ถือครอง', 'สถานที่', 'สถานะ'],
+                ...items.map((a) => [
+                  a.asset_code,
+                  a.name,
+                  a.category?.name ?? (a.category_id ? categoryById.get(a.category_id) : null) ?? '',
+                  a.owner ? `${a.owner.first_name_th} ${a.owner.last_name_th}` : '',
+                  a.location ?? '',
+                  a.status,
+                ]),
+              ]}
+            />
+          </div>
 
           {assetsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -271,7 +289,7 @@ export function AssetsPage() {
 
           {assetsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable pagination={false} className="w-full text-left text-sm">
+              <DataTable mode="server" className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
