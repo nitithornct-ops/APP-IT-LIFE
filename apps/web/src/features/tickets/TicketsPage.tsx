@@ -38,7 +38,7 @@ import type { AssetOption } from '../../types/assets';
 import type { TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
 import { downloadCsv } from '../../utils/csv';
 import { formatThaiDate } from '../../utils/date';
-import { LOCKED_TICKET_STATUSES, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
 
 const TICKET_STATUSES: TicketStatus[] = [
   'ใหม่',
@@ -95,6 +95,13 @@ function TicketMetricCard({
       </div>
     </Card>
   );
+}
+
+/** ป้ายเตือนเฉพาะใบที่ใกล้ครบหรือเกินกำหนด SLA — ใบที่ยังมีเวลาเหลือจะไม่มีป้ายให้รก */
+function SlaBadge({ dueAt, status }: { dueAt: string | null; status: TicketStatus }) {
+  const badge = ticketSlaBadge(dueAt, status);
+  if (!badge) return null;
+  return <div className="mt-1"><Badge variant={badge.tone}>{badge.label}</Badge></div>;
 }
 
 function requesterName(ticket: TicketListItem): string {
@@ -568,6 +575,7 @@ export function TicketsPage() {
                       <td className="px-3 py-3">
                         <StatusBadge status={ticket.status} />
                         <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{ticket.due_at ? formatThaiDate(ticket.due_at, 'd/MM/yyyy HH:mm') : 'ไม่กำหนด SLA'}</p>
+                        <SlaBadge dueAt={ticket.due_at} status={ticket.status} />
                       </td>
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.outsource_name ?? '—'}</td>
