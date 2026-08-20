@@ -1,8 +1,9 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
@@ -27,15 +28,12 @@ function detailText(detail: Record<string, unknown> | null): string {
 }
 
 export function AuditLogsPage() {
-  const [tab, setTab] = useState<LogTab>('audit');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [actor, setActor] = useState('');
-  const [module, setModule] = useState('');
-  const [action, setAction] = useState('');
-  const [result, setResult] = useState('');
+  const table = useTableParams<'tab' | 'from' | 'to' | 'actor' | 'module' | 'action' | 'result'>({
+    filters: ['tab', 'from', 'to', 'actor', 'module', 'action', 'result'],
+  });
+  const { page, pageSize } = table;
+  const { from, to, actor, module, action, result } = table.filters;
+  const tab: LogTab = table.filters.tab === 'login' ? 'login' : 'audit';
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -61,14 +59,9 @@ export function AuditLogsPage() {
       : apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs/login-logs?${queryString}`),
   });
 
-  const resetPage = () => setPage(1);
+  // สลับแท็บแล้วต้องล้างตัวกรองที่มีเฉพาะแท็บเดิม ไม่งั้น query จะพกค่าที่อีกแท็บไม่รู้จักติดไปด้วย
   const switchTab = (next: LogTab) => {
-    setTab(next);
-    setPage(1);
-    setActor('');
-    setModule('');
-    setAction('');
-    setResult('');
+    table.setFilters({ tab: next === 'audit' ? '' : next, actor: '', module: '', action: '', result: '' });
   };
 
   return (
@@ -127,12 +120,12 @@ export function AuditLogsPage() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <label className="text-xs font-semibold text-slate-500">ตั้งแต่วันที่<input aria-label="ตั้งแต่วันที่" type="date" value={from} onChange={(event) => { setFrom(event.target.value); resetPage(); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
-            <label className="text-xs font-semibold text-slate-500">ถึงวันที่<input aria-label="ถึงวันที่" type="date" value={to} onChange={(event) => { setTo(event.target.value); resetPage(); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
-            <label className="text-xs font-semibold text-slate-500">{tab === 'audit' ? 'ผู้ดำเนินการ' : 'อีเมล'}<div className="relative mt-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={actor} onChange={(event) => { setActor(event.target.value); resetPage(); }} placeholder="ค้นหาอีเมล" className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></div></label>
-            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">โมดูล<input value={module} onChange={(event) => { setModule(event.target.value); resetPage(); }} placeholder="เช่น settings" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
-            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">การกระทำ<input value={action} onChange={(event) => { setAction(event.target.value); resetPage(); }} placeholder="เช่น UPDATE_SETTING" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
-            <label className="text-xs font-semibold text-slate-500">ผลลัพธ์<select value={result} onChange={(event) => { setResult(event.target.value); resetPage(); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทั้งหมด</option>{tab === 'audit' ? <><option value="success">success</option><option value="fail">fail</option><option value="denied">denied</option></> : <><option value="true">สำเร็จ</option><option value="false">ไม่สำเร็จ</option></>}</select></label>
+            <label className="text-xs font-semibold text-slate-500">ตั้งแต่วันที่<input aria-label="ตั้งแต่วันที่" type="date" value={from} onChange={(event) => table.setFilter('from', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
+            <label className="text-xs font-semibold text-slate-500">ถึงวันที่<input aria-label="ถึงวันที่" type="date" value={to} onChange={(event) => table.setFilter('to', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
+            <label className="text-xs font-semibold text-slate-500">{tab === 'audit' ? 'ผู้ดำเนินการ' : 'อีเมล'}<div className="relative mt-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={actor} onChange={(event) => table.setFilter('actor', event.target.value, { replace: true })} placeholder="ค้นหาอีเมล" className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></div></label>
+            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">โมดูล<input value={module} onChange={(event) => table.setFilter('module', event.target.value, { replace: true })} placeholder="เช่น settings" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
+            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">การกระทำ<input value={action} onChange={(event) => table.setFilter('action', event.target.value, { replace: true })} placeholder="เช่น UPDATE_SETTING" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
+            <label className="text-xs font-semibold text-slate-500">ผลลัพธ์<select value={result} onChange={(event) => table.setFilter('result', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทั้งหมด</option>{tab === 'audit' ? <><option value="success">success</option><option value="fail">fail</option><option value="denied">denied</option></> : <><option value="true">สำเร็จ</option><option value="false">ไม่สำเร็จ</option></>}</select></label>
           </div>
         </CardBody>
       </Card>
@@ -144,7 +137,7 @@ export function AuditLogsPage() {
         ? <AuditTable items={logsQuery.data.items as AuditLogItem[]} />
         : <LoginTable items={logsQuery.data.items as LoginLogItem[]} />)}
 
-      {logsQuery.data && <TablePagination page={logsQuery.data.pagination.page} pageSize={pageSize} totalItems={logsQuery.data.pagination.totalItems} totalPages={logsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+      {logsQuery.data && <TablePagination page={logsQuery.data.pagination.page} pageSize={pageSize} totalItems={logsQuery.data.pagination.totalItems} totalPages={logsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
     </div>
   );
 }
