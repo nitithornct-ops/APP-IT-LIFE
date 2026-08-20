@@ -35,7 +35,7 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
-import type { TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
+import type { AssignableStaff, TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
 import { downloadCsv } from '../../utils/csv';
 import { formatThaiDate } from '../../utils/date';
 import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
@@ -94,6 +94,124 @@ function TicketMetricCard({
         <p className="text-xs text-slate-400 dark:text-slate-500">{note}</p>
       </div>
     </Card>
+  );
+}
+
+/** สถานะที่เปลี่ยนทีละหลายใบได้ — ต้องตรงกับ BULK_TICKET_STATUSES ฝั่ง api */
+const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'];
+
+interface BulkResult {
+  succeeded: { id: string; ticketNo: string; status: string }[];
+  failed: { id: string; code: string; message: string }[];
+}
+
+/**
+ * แผงดำเนินการกับ Ticket ที่เลือกไว้หลายใบ
+ * ตั้งใจให้เลือกได้ทีละอย่าง (มอบหมาย หรือ เปลี่ยนสถานะ) เพื่อให้ worklog อ่านแล้วรู้ว่าเกิดอะไรขึ้น
+ */
+function BulkTicketPanel({
+  ids,
+  staff,
+  onClose,
+  onDone,
+}: {
+  ids: string[];
+  staff: AssignableStaff[];
+  onClose: () => void;
+  onDone: (result: BulkResult) => void;
+}) {
+  const [action, setAction] = useState<'assign' | 'status'>('assign');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [status, setStatus] = useState<TicketStatus>('กำลังดำเนินการ');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<BulkResult>('/api/v1/tickets/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ids,
+        note: note.trim() || undefined,
+        ...(action === 'assign' ? { assigneeId: assigneeId || null } : { status }),
+      }),
+    }),
+    onSuccess: onDone,
+    onError: (mutationError) => setError(mutationError instanceof ApiError ? mutationError.message : 'ดำเนินการไม่สำเร็จ'),
+  });
+
+  return (
+    <FormModal
+      title={`ดำเนินการ ${ids.length.toLocaleString('th-TH')} รายการ`}
+      description="ระบบจะตรวจสิทธิ์และสถานะของแต่ละใบแยกกัน ใบที่ทำไม่ได้จะรายงานกลับพร้อมเหตุผล"
+      closeDisabled={mutation.isPending}
+      onClose={onClose}
+    >
+      <div className="space-y-4 p-1">
+        <div className="flex flex-wrap gap-2">
+          {([['assign', 'มอบหมายผู้รับผิดชอบ'], ['status', 'เปลี่ยนสถานะ']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setAction(value)}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {action === 'assign' ? (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">ผู้รับผิดชอบ</span>
+            <select
+              aria-label="ผู้รับผิดชอบ"
+              value={assigneeId}
+              onChange={(event) => setAssigneeId(event.target.value)}
+              className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            >
+              <option value="">ไม่มีผู้รับผิดชอบ</option>
+              {staff.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+            </select>
+          </label>
+        ) : (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">สถานะใหม่</span>
+            <select
+              aria-label="สถานะใหม่"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as TicketStatus)}
+              className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            >
+              {BULK_STATUSES.map((item) => <option key={item} value={item}>{ticketStatusLabel[item]}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              การปิดงาน ยกเลิก ส่งต่อ Outsource และยกระดับเป็น Incident ต้องทำทีละใบ เพราะแต่ละใบต้องระบุข้อมูลของตัวเอง
+            </p>
+          </label>
+        )}
+
+        <label className="block text-sm">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">บันทึกการดำเนินงาน (ไม่บังคับ)</span>
+          <textarea
+            aria-label="บันทึกการดำเนินงาน"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={1000}
+            rows={3}
+            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+          />
+        </label>
+
+        {error && <p className="text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button>
+          <Button type="button" isLoading={mutation.isPending} onClick={() => { setError(null); mutation.mutate(); }}>
+            ดำเนินการ
+          </Button>
+        </div>
+      </div>
+    </FormModal>
   );
 }
 
@@ -318,6 +436,10 @@ export function TicketsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
   // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
   const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine'>({
     filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
@@ -374,6 +496,12 @@ export function TicketsPage() {
     queryFn: () => apiFetch<TicketSummary>('/api/v1/tickets/summary'),
   });
 
+  const staffQuery = useQuery({
+    queryKey: ['tickets', 'assignable-staff'],
+    queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/tickets/assignable-staff'),
+    enabled: showBulk,
+  });
+
   function resetFilters() {
     table.reset();
   }
@@ -428,6 +556,40 @@ export function TicketsPage() {
           </RequirePermission>
         </div>
       </div>
+
+      {showBulk && (
+        <BulkTicketPanel
+          ids={selectedIds}
+          staff={staffQuery.data ?? []}
+          onClose={() => setShowBulk(false)}
+          onDone={(result) => {
+            setShowBulk(false);
+            setBulkResult(result);
+            // เอาเฉพาะใบที่ทำไม่สำเร็จไว้ให้เลือกต่อ ผู้ใช้จะได้ลองแก้เฉพาะที่เหลือ
+            setSelectedIds(result.failed.map((item) => item.id));
+            void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+          }}
+        />
+      )}
+
+      {bulkResult && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800" role="status">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-bold text-slate-800 dark:text-slate-100">
+                สำเร็จ {bulkResult.succeeded.length.toLocaleString('th-TH')} รายการ
+                {bulkResult.failed.length > 0 && ` · ไม่สำเร็จ ${bulkResult.failed.length.toLocaleString('th-TH')} รายการ`}
+              </p>
+              {bulkResult.failed.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs text-red-600 dark:text-red-300">
+                  {bulkResult.failed.map((item) => <li key={item.id}>{item.message}</li>)}
+                </ul>
+              )}
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setBulkResult(null)}>ปิด</Button>
+          </div>
+        </div>
+      )}
 
       {showCreate && categoriesQuery.data && (
         <CreateTicketForm
@@ -540,6 +702,11 @@ export function TicketsPage() {
                 onSortChange={table.setSort}
                 stickyHeader
                 cardOnMobile
+                itemLabel="ใบงาน"
+                selectable={canManageTicket}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+                selectionActions={<Button type="button" size="sm" onClick={() => setShowBulk(true)}>ดำเนินการกับที่เลือก</Button>}
                 className="min-w-[1120px] w-full text-left text-sm"
               >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
@@ -556,7 +723,7 @@ export function TicketsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                   {ticketsQuery.data.items.map((ticket, index) => (
-                    <tr key={ticket.id} className="align-top transition hover:bg-blue-50/40 dark:hover:bg-slate-700/30">
+                    <tr key={ticket.id} data-row-id={ticket.id} className="align-top transition hover:bg-blue-50/40 dark:hover:bg-slate-700/30">
                       <td className="px-3 py-3 text-slate-500" data-label="ลำดับ">{(page - 1) * pageSize + index + 1}</td>
                       <td className="px-3 py-3" data-label="เลขที่">
                         <p className="whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-200">{ticket.ticket_no}</p>
