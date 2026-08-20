@@ -19,6 +19,14 @@ describe('ticket list filters', () => {
     if (result.success) expect(result.data).toMatchObject({ page: 2, pageSize: 10, priority: 'วิกฤต' });
   });
 
+  it('accepts sort and order, and rejects an unknown sort direction', () => {
+    const result = listTicketsQuerySchema.safeParse({ sort: 'due_at', order: 'asc' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toMatchObject({ sort: 'due_at', order: 'asc' });
+    expect(listTicketsQuerySchema.safeParse({ sort: 'due_at', order: 'sideways' }).success).toBe(false);
+    expect(listTicketsQuerySchema.safeParse({ sort: 'x'.repeat(61) }).success).toBe(false);
+  });
+
   it('rejects invalid category, priority and oversized search input', () => {
     expect(listTicketsQuerySchema.safeParse({ categoryId: 'not-uuid' }).success).toBe(false);
     expect(listTicketsQuerySchema.safeParse({ priority: 'ด่วนที่สุด' }).success).toBe(false);

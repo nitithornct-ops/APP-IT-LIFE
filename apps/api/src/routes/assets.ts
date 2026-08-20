@@ -6,6 +6,7 @@ import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
@@ -238,16 +239,19 @@ assetsRoute.get(
   },
 );
 
+/** ไม่รวม status/criticality เพราะเก็บเป็นข้อความไทย เรียงแล้วได้ลำดับตัวอักษร ไม่ใช่ลำดับที่สื่อความหมาย */
+const ASSET_SORT_COLUMNS = ['asset_code', 'name', 'location', 'purchase_date', 'warranty_expire', 'created_at'] as const;
+
 assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
-  const { page, pageSize, search, status, categoryId } = c.req.valid('query');
+  const { page, pageSize, sort, order, search, status, categoryId } = c.req.valid('query');
 
   let query = supabase
     .from('assets')
     .select(ASSET_SELECT, { count: 'exact' })
-    .order('asset_code', { ascending: true })
     .range(...paginationRange(page, pageSize));
+  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'asset_code', ascending: true });
 
   if (status) query = query.eq('status', status);
   if (categoryId) query = query.eq('category_id', categoryId);

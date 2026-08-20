@@ -9,6 +9,7 @@ import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
@@ -154,16 +155,19 @@ incidentsRoute.get('/assignees', requirePermission('incident.manage'), async (c)
   return c.json(ok(reqId, data));
 });
 
+/** risk_score เรียงได้เพราะเป็นตัวเลข ส่วน severity/risk_level เป็นข้อความไทยจึงไม่เปิดให้เรียง */
+const INCIDENT_SORT_COLUMNS = ['incident_number', 'title', 'report_date', 'risk_score', 'created_at'] as const;
+
 incidentsRoute.get('/', zValidator('query', listIncidentsQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, search, status, severity, category, personalData, riskLevel: risk, mine } = c.req.valid('query');
+  const { page, pageSize, sort, order, search, status, severity, category, personalData, riskLevel: risk, mine } = c.req.valid('query');
   let query = c
     .get('supabase')
     .from('incidents')
     .select(INCIDENT_SELECT, { count: 'exact' })
-    .order('report_date', { ascending: false })
     .range(...paginationRange(page, pageSize));
+  query = applySort(query, { sort, order }, INCIDENT_SORT_COLUMNS, { column: 'report_date', ascending: false });
   if (search) {
     const safe = cleanSearch(search);
     query = query.or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`);

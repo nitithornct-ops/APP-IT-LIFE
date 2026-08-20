@@ -1,4 +1,4 @@
-import { paginationQuerySchema } from '@itlife/shared';
+import { listQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const INCIDENT_CATEGORIES = [
@@ -21,7 +21,7 @@ export const REGULATORY_NOTIFICATION_STATUSES = ['รอแจ้ง', 'แจ�
 const optionalUrl = z.union([z.string().trim().url('URL ไม่ถูกต้อง').max(1000), z.literal('')]).optional();
 const optionalDateTime = z.union([z.string().datetime({ offset: true }), z.literal('')]).optional();
 
-export const listIncidentsQuerySchema = paginationQuerySchema.extend({
+export const listIncidentsQuerySchema = listQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.enum(INCIDENT_STATUSES).optional(),
   severity: z.enum(INCIDENT_SEVERITIES).optional(),

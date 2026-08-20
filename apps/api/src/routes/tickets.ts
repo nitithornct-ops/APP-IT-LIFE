@@ -12,6 +12,7 @@ import { createSignedUrl } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar, ticketBusinessMinutesBetween } from '../services/ticketSlaService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
@@ -110,11 +111,17 @@ async function loadTicketBusinessCalendar(c: Context<AppEnv>) {
   return parseTicketBusinessCalendar(Object.fromEntries((data ?? []).map((row) => [row.key, row.value])));
 }
 
+/**
+ * คอลัมน์ที่ยอมให้เรียงได้ — ไม่รวม priority/status เพราะทั้งคู่เก็บเป็นข้อความไทย
+ * การเรียงจะได้ลำดับตามตัวอักษร ไม่ใช่ระดับความเร่งด่วนหรือลำดับ workflow ซึ่งทำให้ผู้ใช้เข้าใจผิด
+ */
+const TICKET_SORT_COLUMNS = ['ticket_no', 'title', 'due_at', 'created_at'] as const;
+
 ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
+  const { page, pageSize, sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
 
   // RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — filter ที่นี่เป็นแค่ UX
   let query = supabase
@@ -123,8 +130,8 @@ ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationH
       'id, ticket_no, title, requester_id, requester_name_snapshot, department_name_snapshot, guest_name, guest_department, source_channel, category_id, priority, status, assignee_id, assignee_name_snapshot, is_security, incident_id, due_at, created_at, outsource_name, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name,email), assignee:profiles!tickets_assignee_id_fkey(full_name,email)',
       { count: 'exact' },
     )
-    .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
+  query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
   if (status) query = query.eq('status', status);
   if (categoryId) query = query.eq('category_id', categoryId);

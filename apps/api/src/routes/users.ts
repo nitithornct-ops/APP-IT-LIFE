@@ -7,6 +7,7 @@ import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
@@ -17,9 +18,11 @@ export const usersRoute = new Hono<AppEnv>();
 
 usersRoute.use('*', requireAuth);
 
+const USER_SORT_COLUMNS = ['full_name', 'email', 'employee_code', 'status', 'created_at'] as const;
+
 usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUsersQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
-  const { page, pageSize, search } = c.req.valid('query');
+  const { page, pageSize, sort, order, search } = c.req.valid('query');
 
   // ใช้ Admin Client เพราะหน้าจัดการผู้ใช้ต้องเห็น phone ซึ่งถูกตัดออกจาก GRANT ของ authenticated
   // (ดู 20260908100000_tighten_directory_access.sql) — สิทธิ์ถูกตรวจด้วย user.manage ที่ middleware แล้ว
@@ -29,8 +32,8 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
       'id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at',
       { count: 'exact' },
     )
-    .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
+  query = applySort(query, { sort, order }, USER_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
   const safeSearch = search ? cleanSearch(search) : '';
   if (safeSearch) {

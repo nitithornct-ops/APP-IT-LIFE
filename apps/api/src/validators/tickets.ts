@@ -1,4 +1,4 @@
-import { paginationQuerySchema, ticketRatingDetailsSchema } from '@itlife/shared';
+import { listQuerySchema, ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
 
 const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
@@ -16,7 +16,7 @@ export const createTicketSchema = z.object({
 
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
-export const listTicketsQuerySchema = paginationQuerySchema.extend({
+export const listTicketsQuerySchema = listQuerySchema.extend({
   status: z.string().trim().max(80).optional(),
   categoryId: z.string().uuid().optional(),
   priority: ticketPriorityEnum.optional(),

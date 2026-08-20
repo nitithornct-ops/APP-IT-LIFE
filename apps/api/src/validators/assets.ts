@@ -1,4 +1,4 @@
-import { paginationQuerySchema } from '@itlife/shared';
+import { listQuerySchema, paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const ASSET_TYPES = ['Server', 'Network Device', 'Software/License', 'Endpoint', 'Storage', 'อื่นๆ'] as const;
@@ -44,7 +44,7 @@ export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export const updateAssetSchema = createAssetSchema.partial();
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 
-export const listAssetsQuerySchema = paginationQuerySchema.extend({
+export const listAssetsQuerySchema = listQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.string().trim().max(60).optional(),
   categoryId: z.string().uuid().optional(),
