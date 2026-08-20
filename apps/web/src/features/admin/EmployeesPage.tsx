@@ -25,6 +25,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal, Modal } from '../../components/ui/Modal';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
 import type { Department, Employee, PaginatedResult, Position } from '../../types/admin';
 import {
@@ -263,12 +264,9 @@ function EmployeeDetailModal({ employee, departments, positions, onClose }: { em
 }
 
 function downloadEmployees(rows: Employee[], departments: Department[], positions: Position[]) {
-  const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const headers = ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ชื่อเล่น', 'ตำแหน่ง', 'Department', 'Username_AD', 'UPN', 'Email', 'สถานะ'];
-  const lines = [headers.map(quote).join(','), ...rows.map((employee) => [employee.employee_code, employeeName(employee), employee.nickname, positions.find((item) => item.id === employee.position_id)?.name_th, departments.find((item) => item.id === employee.department_id)?.name_th, employee.username_ad, employee.upn, employee.email, employee.status].map(quote).join(','))];
-  const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url);
+  const lines = [headers, ...rows.map((employee) => [employee.employee_code, employeeName(employee), employee.nickname, positions.find((item) => item.id === employee.position_id)?.name_th, departments.find((item) => item.id === employee.department_id)?.name_th, employee.username_ad, employee.upn, employee.email, employee.status])];
+  downloadCsv(lines, `employees-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export function EmployeesPage() {
