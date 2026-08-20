@@ -1,4 +1,4 @@
-import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
+import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -17,6 +17,7 @@ import {
   Ticket as TicketIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTableParams } from '../../hooks/useTableParams';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
@@ -310,15 +311,14 @@ export function TicketsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
+  // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
+  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine'>({
+    filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
+  });
+  const { page, pageSize, sort } = table;
+  const { status, categoryId, priority, search: searchInput } = table.filters;
+  const mineOnly = table.filters.mine === 'true';
   const search = useDebouncedValue(searchInput.trim(), 350);
-  const [status, setStatus] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [priority, setPriority] = useState('');
-  const [mineOnly, setMineOnly] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sort, setSort] = useState<TableSort | null>(null);
   const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canCloseTicket = hasPermission('ticket.close');
 
@@ -368,13 +368,7 @@ export function TicketsPage() {
   });
 
   function resetFilters() {
-    setSearchInput('');
-    setStatus('');
-    setCategoryId('');
-    setPriority('');
-    setMineOnly(false);
-    setSort(null);
-    setPage(1);
+    table.reset();
   }
 
   function exportCurrentPage() {
@@ -450,7 +444,7 @@ export function TicketsPage() {
             className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 xl:flex-row xl:items-center dark:border-slate-700 dark:bg-slate-900/40"
             onSubmit={(event) => {
               event.preventDefault();
-              setPage(1);
+              table.setPage(1);
             }}
           >
             <label className="relative min-w-0 flex-1 xl:max-w-sm">
@@ -458,7 +452,7 @@ export function TicketsPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
                 value={searchInput}
-                onChange={(event) => { setSearchInput(event.target.value); setPage(1); }}
+                onChange={(event) => table.setFilter('search', event.target.value, { replace: true })}
                 maxLength={120}
                 className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 placeholder="ค้นหาเลขที่ เรื่อง ผู้แจ้ง..."
@@ -467,7 +461,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามสถานะ"
               value={status}
-              onChange={(event) => { setStatus(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('status', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">สถานะ: ทั้งหมด</option>
@@ -476,7 +470,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามประเภทปัญหา"
               value={categoryId}
-              onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('categoryId', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">ประเภท: ทั้งหมด</option>
@@ -485,7 +479,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามความเร่งด่วน"
               value={priority}
-              onChange={(event) => { setPriority(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('priority', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">ความเร่งด่วน: ทั้งหมด</option>
@@ -496,8 +490,7 @@ export function TicketsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setMineOnly((value) => !value);
-                  setPage(1);
+                  table.setFilter('mine', mineOnly ? '' : 'true');
                 }}
                 className={`h-9 rounded-lg px-3 text-xs font-semibold ${mineOnly ? 'bg-blue-600 text-white' : 'border border-slate-300 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
               >
@@ -537,7 +530,7 @@ export function TicketsPage() {
               <DataTable
                 mode="server"
                 sort={sort}
-                onSortChange={(next) => { setSort(next); setPage(1); }}
+                onSortChange={table.setSort}
                 className="min-w-[1120px] w-full text-left text-sm"
               >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
@@ -609,7 +602,7 @@ export function TicketsPage() {
             </div>
           )}
 
-          {ticketsQuery.data && <TablePagination page={ticketsQuery.data.pagination.page} pageSize={pageSize} totalItems={totalItems} totalPages={ticketsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {ticketsQuery.data && <TablePagination page={ticketsQuery.data.pagination.page} pageSize={pageSize} totalItems={totalItems} totalPages={ticketsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
     </div>

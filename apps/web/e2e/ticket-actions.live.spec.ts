@@ -74,3 +74,44 @@ test('sorts the Ticket list by SLA due date and keeps the sort across pages', as
 
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-sort-sla.png'), fullPage: true });
 });
+
+test('keeps the Ticket list filter and sort in the URL across reload and browser back', async ({ page }) => {
+  const email = process.env.UAT_ADMIN_EMAIL;
+  const password = process.env.UAT_ADMIN_PASSWORD;
+  if (!email || !password) throw new Error('UAT credentials are required');
+
+  await page.goto('/login');
+  await page.getByLabel('อีเมล', { exact: true }).fill(email);
+  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+
+  await page.goto('/tickets');
+  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+
+  const priorityFilter = page.getByLabel('กรองตามความเร่งด่วน', { exact: true });
+  await priorityFilter.selectOption('วิกฤต');
+  await expect(page).toHaveURL(/[?&]priority=/);
+
+  await page.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA', exact: true }).click();
+  await expect(page).toHaveURL(/[?&]sort=due_at/);
+  await expect(page).toHaveURL(/[?&]order=asc/);
+
+  // refresh แล้วค่าต้องคงเดิม — สถานะอยู่ใน URL ไม่ใช่ใน memory
+  const sharedUrl = page.url();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(priorityFilter).toHaveValue('วิกฤต');
+  await expect(page.getByRole('columnheader', { name: /สถานะ\/SLA/ })).toHaveAttribute('aria-sort', 'ascending');
+  expect(page.url()).toBe(sharedUrl);
+
+  // ปุ่ม Back ต้องย้อนการเรียงออกก่อน แล้วค่อยย้อนตัวกรอง
+  await page.goBack();
+  await expect(page).not.toHaveURL(/[?&]sort=due_at/);
+  await expect(priorityFilter).toHaveValue('วิกฤต');
+
+  await page.goBack();
+  await expect(priorityFilter).toHaveValue('');
+
+  await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-url-state.png'), fullPage: true });
+});
