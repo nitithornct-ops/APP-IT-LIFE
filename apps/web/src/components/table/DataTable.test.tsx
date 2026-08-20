@@ -99,4 +99,56 @@ describe('DataTable', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:table-export');
     click.mockRestore();
   });
+
+  it('ส่งออกเซลล์ที่ขึ้นต้นด้วยสูตรเป็นข้อความ ไม่ให้ Excel รันเป็นสูตร', () => {
+    const written: string[] = [];
+    class RecordingBlob {
+      constructor(parts: string[]) { written.push(parts.join('')); }
+    }
+    vi.stubGlobal('Blob', RecordingBlob);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:table-export') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+
+    render(
+      <DataTable exportFileName="assets.csv">
+        <thead><tr><th>ชื่อ</th><th>หมายเหตุ</th></tr></thead>
+        <tbody><tr><td>=cmd|' /C calc'!A0</td><td>ปกติ</td></tr></tbody>
+      </DataTable>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งออก CSV' }));
+    vi.unstubAllGlobals();
+
+    expect(written).toHaveLength(1);
+    expect(written[0]).toContain(`"'=cmd|' /C calc'!A0"`);
+    expect(written[0]).not.toContain(`,"=cmd`);
+  });
+
+  it('mode="server" ไม่ render ช่องค้นหา ตัวกรอง ส่งออก และการแบ่งหน้าในตัว', () => {
+    render(
+      <DataTable mode="server">
+        <thead><tr><th>ชื่อ</th></tr></thead>
+        <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>แถว {index + 1}</td></tr>)}</tbody>
+      </DataTable>,
+    );
+
+    expect(screen.queryByRole('searchbox', { name: 'ค้นหาในตาราง' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'เลือกคอลัมน์สำหรับกรอง' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ส่งออก CSV' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /คอลัมน์/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'การแบ่งหน้าตาราง' })).not.toBeInTheDocument();
+  });
+
+  it('mode="server" แสดงทุกแถวที่หน้าส่งมาโดยไม่ตัดหน้าเอง', () => {
+    render(
+      <DataTable mode="server">
+        <thead><tr><th>ชื่อ</th></tr></thead>
+        <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>แถว {index + 1}</td></tr>)}</tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getByText('แถว 1')).toBeVisible();
+    expect(screen.getByText('แถว 12')).toBeVisible();
+  });
 });

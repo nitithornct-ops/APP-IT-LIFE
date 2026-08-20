@@ -27,9 +27,23 @@ import {
 } from 'react';
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/cn';
+import { downloadCsv } from '../../utils/csv';
+
+/**
+ * client = ตารางถือข้อมูลครบชุด จึงค้นหา/กรอง/แบ่งหน้า/ส่งออกในตัวได้
+ * server = หน้าเป็นคนจัดการ search/filter/pagination เอง (ยิง API หรือ slice เอง)
+ *          ตารางจะ render เฉพาะแถวที่ได้รับมา และไม่สร้าง toolbar/pagination ซ้อน
+ *          — สำคัญเพราะ toolbar ในตัวจะค้นได้แค่แถวของหน้าปัจจุบัน ทำให้ผลลัพธ์ผิด
+ */
+export type DataTableMode = 'client' | 'server';
 
 interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   containerClassName?: string;
+  /**
+   * แหล่งที่จัดการ search/filter/sort/pagination
+   * ค่าเริ่มต้น 'client' เพื่อให้หน้าเดิมทั้งหมดทำงานเหมือนเดิม
+   */
+  mode?: DataTableMode;
   /** ปิดเมื่อหน้าจัดการ pagination จาก API ภายนอก component */
   pagination?: boolean;
   /** แสดงแถบค้นหา กรอง เลือกคอลัมน์ และส่งออกข้อมูล */
@@ -51,27 +65,17 @@ function rowCells(row: ReactNode): ReactNode[] {
   return Children.toArray(row.props.children);
 }
 
-function csvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
 function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[], fileName: string) {
-  const lines = [
-    visibleColumns.map((index) => csvCell(headers[index] || `คอลัมน์ ${index + 1}`)).join(','),
-    ...rows.map((row) => {
-      const cells = rowCells(row);
-      return visibleColumns.map((index) => csvCell(nodeText(cells[index]).replace(/\s+/g, ' ').trim())).join(',');
-    }),
-  ];
-  const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = href;
-  anchor.download = fileName.endsWith('.csv') ? fileName : `${fileName}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(href);
+  downloadCsv(
+    [
+      visibleColumns.map((index) => headers[index] || `คอลัมน์ ${index + 1}`),
+      ...rows.map((row) => {
+        const cells = rowCells(row);
+        return visibleColumns.map((index) => nodeText(cells[index]).replace(/\s+/g, ' ').trim());
+      }),
+    ],
+    fileName,
+  );
 }
 
 function withVisibleColumns(node: ReactNode, hiddenColumns: Set<number>): ReactNode {
@@ -101,6 +105,7 @@ export function DataTable({
   className,
   containerClassName,
   children,
+  mode = 'client',
   pagination = true,
   toolbar = true,
   initialPageSize = 10,
@@ -115,6 +120,7 @@ export function DataTable({
   const [filterValue, setFilterValue] = useState('');
   const [hiddenColumnIndexes, setHiddenColumnIndexes] = useState<number[]>([]);
   const [showColumns, setShowColumns] = useState(false);
+  const isServerMode = mode === 'server';
   const childArray = Children.toArray(children);
   const headIndex = childArray.findIndex((child) => isValidElement(child) && child.type === 'thead');
   const bodyIndex = childArray.findIndex((child) => isValidElement(child) && child.type === 'tbody');
@@ -127,18 +133,22 @@ export function DataTable({
   const visibleColumns = headers.map((_, index) => index).filter((index) => !hiddenColumns.has(index));
   const normalizedSearch = search.trim().toLocaleLowerCase('th-TH');
   const normalizedFilter = filterValue.trim().toLocaleLowerCase('th-TH');
-  const filteredRows = rows.filter((row) => {
+  // server mode: หน้าเป็นคนกรอง/แบ่งหน้าเองแล้ว ตารางแสดงแถวที่ได้รับมาตรง ๆ
+  const filteredRows = isServerMode ? rows : rows.filter((row) => {
     const cells = rowCells(row).map((cell) => nodeText(cell).replace(/\s+/g, ' ').trim().toLocaleLowerCase('th-TH'));
     if (normalizedSearch && !cells.some((cell) => cell.includes(normalizedSearch))) return false;
     if (filterColumn !== '' && normalizedFilter && !cells[Number(filterColumn)]?.includes(normalizedFilter)) return false;
     return true;
   });
+  const showToolbar = toolbar && !isServerMode && rows.length > 0;
+  const showPagination = pagination && !isServerMode && filteredRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const visibleRows = pagination
+  const visibleRows = pagination && !isServerMode
     ? filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
     : filteredRows;
-  const renderedChildren = childArray.map((child, index) => {
+  // ไม่ clone children ใน server mode เพราะไม่มี column visibility ให้ประมวลผล
+  const renderedChildren = isServerMode ? childArray : childArray.map((child, index) => {
     if (index === headIndex && head) {
       return cloneElement(head, {}, Children.map(head.props.children, (row) => withVisibleColumns(row, hiddenColumns)));
     }
@@ -172,7 +182,7 @@ export function DataTable({
         containerClassName,
       )}
     >
-      {toolbar && rows.length > 0 && (
+      {showToolbar && (
         <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/60 p-3 lg:flex-row lg:items-center lg:justify-between dark:border-slate-700 dark:bg-slate-900/30">
           <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
             <label className="relative block min-w-0 flex-1 sm:max-w-xs">
@@ -273,12 +283,12 @@ export function DataTable({
           {renderedChildren}
         </table>
       </div>
-      {filteredRows.length === 0 && rows.length > 0 && (
+      {!isServerMode && filteredRows.length === 0 && rows.length > 0 && (
         <div className="border-t border-slate-100 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700">
           ไม่พบข้อมูลที่ตรงกับคำค้นหาหรือตัวกรอง
         </div>
       )}
-      {pagination && filteredRows.length > 0 && (
+      {showPagination && (
         <div className="px-4 pb-4">
           <TablePagination page={safePage} pageSize={pageSize} totalItems={filteredRows.length} totalPages={totalPages} itemLabel={itemLabel} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </div>
