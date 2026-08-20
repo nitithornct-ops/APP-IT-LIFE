@@ -1,4 +1,4 @@
-import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
@@ -163,6 +163,7 @@ export function AssetsPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sort, setSort] = useState<TableSort | null>(null);
 
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'asset-categories'],
@@ -172,10 +173,10 @@ export function AssetsPage() {
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
   const assetsQuery = useQuery({
-    queryKey: ['assets', page, pageSize, status, categoryId, debouncedSearch],
+    queryKey: ['assets', page, pageSize, sort?.key, sort?.order, status, categoryId, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<Asset>>(
-        `/api/v1/assets?page=${page}&pageSize=${pageSize}${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/assets?page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -289,14 +290,19 @@ export function AssetsPage() {
 
           {assetsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable mode="server" className="w-full text-left text-sm">
+              <DataTable
+                mode="server"
+                sort={sort}
+                onSortChange={(next) => { setSort(next); setPage(1); }}
+                className="w-full text-left text-sm"
+              >
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
-                    <th className="px-2 py-2">รหัส</th>
-                    <th className="px-2 py-2">ชื่อทรัพย์สิน</th>
+                    <th className="px-2 py-2" data-sort-key="asset_code">รหัส</th>
+                    <th className="px-2 py-2" data-sort-key="name">ชื่อทรัพย์สิน</th>
                     <th className="px-2 py-2">หมวดหมู่</th>
                     <th className="px-2 py-2">ผู้ถือครอง</th>
-                    <th className="px-2 py-2">สถานที่</th>
+                    <th className="px-2 py-2" data-sort-key="location">สถานที่</th>
                     <th className="px-2 py-2">สถานะ</th>
                     <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>

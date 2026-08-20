@@ -1,4 +1,4 @@
-import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
@@ -502,14 +502,15 @@ export function UsersPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sort, setSort] = useState<TableSort | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const usersQuery = useQuery({
-    queryKey: ['admin', 'users', page, pageSize, debouncedSearch],
+    queryKey: ['admin', 'users', page, pageSize, sort?.key, sort?.order, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<UserListItem>>(
-        `/api/v1/users?page=${page}&pageSize=${pageSize}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/users?page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -595,13 +596,18 @@ export function UsersPage() {
 
       {usersQuery.data && usersQuery.data.items.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-          <DataTable mode="server" className="w-full text-left text-sm">
+          <DataTable
+            mode="server"
+            sort={sort}
+            onSortChange={(next) => { setSort(next); setPage(1); }}
+            className="w-full text-left text-sm"
+          >
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-2">ชื่อ-สกุล</th>
-                <th className="px-4 py-2">อีเมล</th>
-                <th className="px-4 py-2">สถานะ</th>
-                <th className="px-4 py-2">เข้าร่วมเมื่อ</th>
+                <th className="px-4 py-2" data-sort-key="full_name">ชื่อ-สกุล</th>
+                <th className="px-4 py-2" data-sort-key="email">อีเมล</th>
+                <th className="px-4 py-2" data-sort-key="status">สถานะ</th>
+                <th className="px-4 py-2" data-sort-key="created_at">เข้าร่วมเมื่อ</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
