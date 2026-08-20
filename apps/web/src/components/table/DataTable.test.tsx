@@ -332,4 +332,94 @@ describe('DataTable', () => {
     );
     expect(screen.getByText('แถว 1')).toBeVisible();
   });
+  it('เลือกทีละแถวและแจ้ง id กลับไปให้หน้า', () => {
+    const onSelectionChange = vi.fn();
+    render(
+      <DataTable mode="server" selectable selectedIds={[]} onSelectionChange={onSelectionChange}>
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        <tbody>
+          <tr data-row-id="t-1"><td>ใบที่ 1</td></tr>
+          <tr data-row-id="t-2"><td>ใบที่ 2</td></tr>
+        </tbody>
+      </DataTable>,
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'เลือกรายการ t-2' }));
+    expect(onSelectionChange).toHaveBeenCalledWith(['t-2']);
+  });
+
+  it('เลือกทั้งหน้าแล้วกดซ้ำเพื่อยกเลิกเฉพาะแถวในหน้านี้', () => {
+    const onSelectionChange = vi.fn();
+    const rows = (
+      <tbody>
+        <tr data-row-id="t-1"><td>ใบที่ 1</td></tr>
+        <tr data-row-id="t-2"><td>ใบที่ 2</td></tr>
+      </tbody>
+    );
+
+    const { rerender } = render(
+      <DataTable mode="server" selectable selectedIds={['จากหน้าอื่น']} onSelectionChange={onSelectionChange}>
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        {rows}
+      </DataTable>,
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'เลือกทุกรายการในหน้านี้' }));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['จากหน้าอื่น', 't-1', 't-2']);
+
+    rerender(
+      <DataTable mode="server" selectable selectedIds={['จากหน้าอื่น', 't-1', 't-2']} onSelectionChange={onSelectionChange}>
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        {rows}
+      </DataTable>,
+    );
+    // ยกเลิกทั้งหน้าแล้วต้องไม่ไปลบรายการที่เลือกไว้จากหน้าอื่น
+    fireEvent.click(screen.getByRole('checkbox', { name: 'เลือกทุกรายการในหน้านี้' }));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['จากหน้าอื่น']);
+  });
+
+  it('แสดงแถบสรุปพร้อมปุ่มของหน้าเมื่อมีรายการที่เลือกอยู่', () => {
+    render(
+      <DataTable
+        mode="server"
+        selectable
+        itemLabel="ใบงาน"
+        selectedIds={['t-1', 't-2']}
+        onSelectionChange={vi.fn()}
+        selectionActions={<button type="button">มอบหมาย</button>}
+      >
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        <tbody><tr data-row-id="t-1"><td>ใบที่ 1</td></tr></tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('เลือก 2 ใบงาน');
+    expect(screen.getByRole('button', { name: 'มอบหมาย' })).toBeVisible();
+  });
+
+  it('แถวที่ไม่มี data-row-id ได้ช่องว่างแทนช่องเลือก คอลัมน์จึงไม่เหลื่อม', () => {
+    render(
+      <DataTable mode="server" selectable selectedIds={[]} onSelectionChange={vi.fn()}>
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        <tbody>
+          <tr data-row-id="t-1"><td>ใบที่ 1</td></tr>
+          <tr><td colSpan={1}>แถวขยาย</td></tr>
+        </tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    const expandedRow = screen.getByText('แถวขยาย').closest('tr');
+    expect(expandedRow?.querySelectorAll('td')).toHaveLength(2);
+  });
+
+  it('ไม่มีช่องเลือกเลยเมื่อไม่ได้เปิด selectable', () => {
+    render(
+      <DataTable mode="server">
+        <thead><tr><th>เรื่อง</th></tr></thead>
+        <tbody><tr data-row-id="t-1"><td>ใบที่ 1</td></tr></tbody>
+      </DataTable>,
+    );
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
 });

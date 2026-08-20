@@ -84,6 +84,13 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   cardOnMobile?: boolean;
   /** จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้ใน localStorage ด้วยคีย์นี้ */
   tableId?: string;
+  /** เพิ่มคอลัมน์ช่องเลือก — <tr> ต้องมี data-row-id เพื่อบอกว่าแถวนั้นคือรายการไหน */
+  selectable?: boolean;
+  /** รายการที่เลือกอยู่ ส่งมาคู่กับ onSelectionChange เพื่อให้หน้าเป็นเจ้าของ state */
+  selectedIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
+  /** ปุ่มที่จะโผล่บนแถบ "เลือก N รายการ" */
+  selectionActions?: ReactNode;
 }
 
 interface StoredTablePrefs {
@@ -216,6 +223,24 @@ function withSortableHeaders(
   );
 }
 
+const SELECT_CELL_CLASS = 'w-10 px-3 py-3 align-middle';
+
+function rowId(row: ReactNode): string | null {
+  if (!isValidElement<{ 'data-row-id'?: string }>(row)) return null;
+  return row.props['data-row-id'] ?? null;
+}
+
+/** เก็บ id ของทุกแถวที่เลือกได้ในชุดที่กำลังแสดงอยู่ (ข้ามแถวขยาย/แถวสรุปที่ไม่มี data-row-id) */
+function selectableRowIds(rows: ReactNode[]): string[] {
+  return rows.map(rowId).filter((id): id is string => Boolean(id));
+}
+
+/** เติมช่องเลือกไว้หน้าแถว — ทำเป็นขั้นตอนสุดท้ายเสมอ เพราะการซ่อนคอลัมน์อ้างอิงตำแหน่งเดิม */
+function withSelectionCell(row: ReactNode, cell: ReactNode): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(row)) return row;
+  return cloneElement(row, {}, [cell, ...Children.toArray(row.props.children)]);
+}
+
 function withVisibleColumns(node: ReactNode, hiddenColumns: Set<number>): ReactNode {
   if (!isValidElement<{ children?: ReactNode }>(node)) return node;
   const cells = Children.toArray(node.props.children);
@@ -256,6 +281,10 @@ export function DataTable({
   freezeFirstColumn = false,
   cardOnMobile = false,
   tableId,
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
+  selectionActions,
   ...props
 }: DataTableProps) {
   const [storedPrefs] = useState(() => readTablePrefs(tableId));
@@ -268,7 +297,13 @@ export function DataTable({
   const [hiddenColumnNames, setHiddenColumnNames] = useState<string[]>(storedPrefs.hidden ?? []);
   const [showColumns, setShowColumns] = useState(false);
   const [internalSort, setInternalSort] = useState<TableSort | null>(null);
+  const [internalSelection, setInternalSelection] = useState<string[]>([]);
   const isServerMode = mode === 'server';
+  const selection = onSelectionChange ? selectedIds ?? [] : internalSelection;
+  const setSelection = (ids: string[]) => {
+    if (onSelectionChange) onSelectionChange(ids);
+    else setInternalSelection(ids);
+  };
   // controlled เมื่อหน้าส่ง onSortChange มา ไม่งั้นตารางจำสถานะเอง
   const isSortControlled = Boolean(onSortChange);
   const activeSort = isSortControlled ? controlledSort ?? null : internalSort;
@@ -312,15 +347,65 @@ export function DataTable({
     else setInternalSort(next);
   };
 
+  // id ของแถวที่เลือกได้ "ในหน้านี้" — ใช้กับช่องเลือกทั้งหมดบนหัวตาราง
+  const pageRowIds = selectable ? selectableRowIds(visibleRows) : [];
+  const selectedOnPage = pageRowIds.filter((id) => selection.includes(id));
+  const allOnPageSelected = pageRowIds.length > 0 && selectedOnPage.length === pageRowIds.length;
+
+  const toggleRow = (id: string) => {
+    setSelection(selection.includes(id) ? selection.filter((item) => item !== id) : [...selection, id]);
+  };
+  // เลือก/ยกเลิกเฉพาะแถวในหน้านี้ ไม่ไปแตะรายการที่เลือกไว้จากหน้าอื่น
+  const toggleAllOnPage = () => {
+    setSelection(allOnPageSelected
+      ? selection.filter((id) => !pageRowIds.includes(id))
+      : [...selection, ...pageRowIds.filter((id) => !selection.includes(id))]);
+  };
+
   const renderedChildren = childArray.map((child, index) => {
     if (index === headIndex && head) {
-      const headRows = Children.map(head.props.children, (row) => withSortableHeaders(row, activeSort, handleSort));
-      // server mode ไม่มี column visibility ให้ประมวลผล จึงข้าม clone รอบที่สอง
-      return cloneElement(head, {}, isServerMode ? headRows : Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns)));
+      let headRows = Children.map(head.props.children, (row) => withSortableHeaders(row, activeSort, handleSort));
+      if (!isServerMode) headRows = Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns));
+      if (selectable) {
+        headRows = Children.map(headRows, (row) => withSelectionCell(
+          row,
+          <th key="select" scope="col" className={SELECT_CELL_CLASS}>
+            <input
+              type="checkbox"
+              aria-label="เลือกทุกรายการในหน้านี้"
+              className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400 dark:border-slate-600"
+              checked={allOnPageSelected}
+              disabled={pageRowIds.length === 0}
+              onChange={toggleAllOnPage}
+            />
+          </th>,
+        ));
+      }
+      return cloneElement(head, {}, headRows);
     }
     if (index === bodyIndex && body) {
-      if (isServerMode) return child;
-      return cloneElement(body, {}, visibleRows.map((row) => withVisibleColumns(row, hiddenColumns)));
+      if (isServerMode && !selectable) return child;
+      let bodyRows = isServerMode ? visibleRows : visibleRows.map((row) => withVisibleColumns(row, hiddenColumns));
+      if (selectable) {
+        bodyRows = bodyRows.map((row, rowIndex) => {
+          const id = rowId(visibleRows[rowIndex]);
+          // แถวขยาย/แถวสรุปที่ไม่มี data-row-id ยังต้องได้ช่องว่าง ไม่งั้นคอลัมน์จะเหลื่อมกัน
+          if (!id) return withSelectionCell(row, <td key="select" className={SELECT_CELL_CLASS} />);
+          return withSelectionCell(
+            row,
+            <td key="select" className={SELECT_CELL_CLASS}>
+              <input
+                type="checkbox"
+                aria-label={`เลือกรายการ ${id}`}
+                className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400 dark:border-slate-600"
+                checked={selection.includes(id)}
+                onChange={() => toggleRow(id)}
+              />
+            </td>,
+          );
+        });
+      }
+      return cloneElement(body, {}, bodyRows);
     }
     return child;
   });
@@ -482,6 +567,21 @@ export function DataTable({
       {showPagination && (
         <div className="px-4 pb-4">
           <TablePagination page={safePage} pageSize={pageSize} totalItems={filteredRows.length} totalPages={totalPages} itemLabel={itemLabel} onPageChange={setPage} onPageSizeChange={setPageSize} />
+        </div>
+      )}
+      {selectable && selection.length > 0 && (
+        <div
+          // ลอยเหนือเนื้อหาเสมอ เพราะรายการที่เลือกไว้ข้ามหน้าได้ ผู้ใช้จึงต้องเห็นยอดรวมตลอด
+          className="fixed inset-x-0 bottom-6 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-elevated dark:border-slate-600 dark:bg-slate-800"
+          role="status"
+        >
+          <span className="text-sm font-bold text-slate-700 dark:text-slate-100">
+            เลือก {selection.length.toLocaleString('th-TH')} {itemLabel}
+          </span>
+          {selectionActions}
+          <Button type="button" variant="ghost" size="sm" onClick={() => setSelection([])}>
+            ล้างการเลือก
+          </Button>
         </div>
       )}
     </div>
