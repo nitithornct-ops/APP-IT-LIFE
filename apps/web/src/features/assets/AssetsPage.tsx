@@ -1,4 +1,5 @@
-import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
@@ -157,13 +158,10 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
 
 export function AssetsPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const [status, setStatus] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [search, setSearch] = useState('');
+  const table = useTableParams<'status' | 'categoryId' | 'search'>({ filters: ['status', 'categoryId', 'search'] });
+  const { page, pageSize, sort } = table;
+  const { status, categoryId, search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sort, setSort] = useState<TableSort | null>(null);
 
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'asset-categories'],
@@ -218,8 +216,7 @@ export function AssetsPage() {
             <select
               value={categoryId}
               onChange={(e) => {
-                setCategoryId(e.target.value);
-                setPage(1);
+                table.setFilter('categoryId', e.target.value);
               }}
               className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900"
             >
@@ -233,8 +230,7 @@ export function AssetsPage() {
             <select
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(1);
+                table.setFilter('status', e.target.value);
               }}
               className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900"
             >
@@ -254,8 +250,7 @@ export function AssetsPage() {
               placeholder="ค้นหาชื่อ รหัสทรัพย์สิน หรือ S/N..."
               value={search}
               onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
+                table.setFilter('search', e.target.value, { replace: true });
               }}
               className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
             />
@@ -293,7 +288,7 @@ export function AssetsPage() {
               <DataTable
                 mode="server"
                 sort={sort}
-                onSortChange={(next) => { setSort(next); setPage(1); }}
+                onSortChange={table.setSort}
                 className="w-full text-left text-sm"
               >
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
@@ -336,7 +331,7 @@ export function AssetsPage() {
             </div>
           )}
 
-          {assetsQuery.data && <TablePagination page={assetsQuery.data.pagination.page} pageSize={pageSize} totalItems={assetsQuery.data.pagination.totalItems} totalPages={assetsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {assetsQuery.data && <TablePagination page={assetsQuery.data.pagination.page} pageSize={pageSize} totalItems={assetsQuery.data.pagination.totalItems} totalPages={assetsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
 
