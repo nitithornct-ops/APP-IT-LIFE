@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -289,13 +290,23 @@ export function CmdbPage() {
         <CardBody>
           {showCreate && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && <FormModal title="เพิ่ม Configuration Item" description="บันทึก CI และความเชื่อมโยงกับ Asset, Vendor และ Contract" size="xl" onClose={() => setShowCreate(false)}><CreateCiForm employees={employeesQuery.data} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowCreate(false)} /></FormModal>}
 
-          <input
-            type="search"
-            placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+            />
+            <ExportCsvButton
+              disabled={!items.length}
+              fileName={`cmdb-page-${page}.csv`}
+              getRows={() => [
+                ['รหัส', 'ชื่อ CI', 'ประเภท', 'Environment', 'Criticality', 'เจ้าของ', 'สถานะ'],
+                ...items.map((c) => [c.ci_code, c.name, c.ci_type, c.environment, c.criticality, employeeName(c.owner), c.status]),
+              ]}
+            />
+          </div>
 
           {itemsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -311,7 +322,7 @@ export function CmdbPage() {
 
           {itemsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable pagination={false} className="w-full text-left text-sm">
+              <DataTable mode="server" className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
