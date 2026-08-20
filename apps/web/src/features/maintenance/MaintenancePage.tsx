@@ -33,6 +33,7 @@ import type { Employee, EmployeeOption, PaginatedResult } from '../../types/admi
 import type { AssetOption, ChecklistItem, MaintenancePlan, PmTemplate } from '../../types/assets';
 import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
+import { downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
 import { formatThaiDate } from '../../utils/date';
 
@@ -467,12 +468,9 @@ function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: Mainte
 function ExportPanel({ plans, onClose }: { plans: MaintenancePlan[]; onClose: () => void }) {
   const download = () => {
     const headers = ['Asset Code', 'Asset Name', 'Plan Date', 'Recurrence', 'Owner', 'Status'];
-    const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const rows = plans.map((plan) => [plan.asset?.asset_code ?? '', plan.asset?.name ?? '', plan.plan_date, plan.recurrence, employeeName(plan.technician), plan.status].map(escape).join(','));
-    const blob = new Blob([`\uFEFF${headers.join(',')}\n${rows.join('\n')}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `pm-plans-${localDateKey()}.csv`; anchor.click(); URL.revokeObjectURL(url); onClose();
+    const rows = plans.map((plan) => [plan.asset?.asset_code ?? '', plan.asset?.name ?? '', plan.plan_date, plan.recurrence, employeeName(plan.technician), plan.status]);
+    downloadCsv([headers, ...rows], `pm-plans-${localDateKey()}.csv`);
+    onClose();
   };
   return (
     <div className="p-5">
@@ -573,7 +571,7 @@ export function MaintenancePage() {
             {plansQuery.data && filteredItems.length === 0 && <EmptyState icon={<Wrench className="h-10 w-10" />} title="ยังไม่มีแผน PM" message="ลองเปลี่ยนตัวกรอง หรือเพิ่มแผน PM ใหม่" />}
             {plansQuery.data && filteredItems.length > 0 && (
               <div className="overflow-x-auto border-y border-slate-200 dark:border-slate-700">
-                <DataTable pagination={false} className="w-full min-w-[860px] text-left text-sm">
+                <DataTable mode="server" className="w-full min-w-[860px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="w-16 px-4 py-3 text-center">ลำดับ</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">แผนวันที่</th><th className="px-4 py-3">รอบ</th><th className="px-4 py-3">ผู้รับผิดชอบ</th><th className="px-4 py-3">สถานะ</th><th className="w-20 px-4 py-3 text-center">Action</th></tr></thead>
                   <tbody>{pagedItems.map((plan, index) => <tr key={plan.id} data-testid={`pm-row-${plan.id}`} className="border-t border-slate-100 transition hover:bg-primary-50/40 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="px-4 py-3 text-center text-xs text-slate-400">{(currentPage - 1) * pageSize + index + 1}</td><td className="px-4 py-3"><p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.name ?? 'ไม่พบข้อมูล Asset'}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{plan.asset?.asset_code ?? '—'}</p></td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatThaiDate(plan.plan_date, 'd MMM yyyy')}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><Repeat2 className="h-3.5 w-3.5 text-slate-400" />{plan.recurrence}</span></td><td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{employeeName(plan.technician)}</td><td className="px-4 py-3"><Badge variant={statusTone[plan.status]}>{plan.status}</Badge></td><td className="px-4 py-3 text-center"><RowActions recordLabel={plan.asset?.name ?? plan.asset?.asset_code ?? plan.id} actions={[{ kind: 'custom', icon: MoreHorizontal, label: 'จัดการแผน', permission: 'maintenance.manage', onClick: () => setSelectedPlan(plan) }]} /></td></tr>)}</tbody>
                 </DataTable>
