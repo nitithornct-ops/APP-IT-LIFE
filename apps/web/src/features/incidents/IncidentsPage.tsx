@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -146,13 +147,34 @@ export function IncidentsPage() {
           <select value={personalData} onChange={(e) => { setPersonalData(e.target.value); setPage(1); }} className="rounded-full border px-3 py-1 dark:bg-slate-900"><option value="">ทุกประเภทข้อมูล</option><option value="true">ข้อมูลส่วนบุคคล</option><option value="false">ไม่ใช่ข้อมูลส่วนบุคคล</option></select>
         </div></CardHeader>
         <CardBody>
-          <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="ค้นหาเลข Incident หรือหัวข้อ..." className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="ค้นหาเลข Incident หรือหัวข้อ..." className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+            <ExportCsvButton
+              disabled={!items.length}
+              fileName={`incidents-page-${page}.csv`}
+              getRows={() => [
+                ['เลขที่', 'วันที่แจ้ง', 'เหตุการณ์', 'หมวด', 'ความรุนแรง', 'Risk', 'Risk Score', 'ข้อมูลส่วนบุคคล', 'ผู้รับผิดชอบ', 'สถานะ'],
+                ...items.map((item) => [
+                  item.incident_number,
+                  formatThaiDate(item.report_date, 'd MMM yyyy HH:mm'),
+                  item.title,
+                  item.category,
+                  item.severity ?? 'ยังไม่จำแนก',
+                  item.risk_level ?? '',
+                  item.risk_score ?? '',
+                  item.contains_personal_data ? 'ใช่' : 'ไม่ใช่',
+                  item.assignee?.full_name ?? '',
+                  item.status,
+                ]),
+              ]}
+            />
+          </div>
           {query.isLoading && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>}
           {query.isError && (
             <QueryError title="โหลดรายการ Incident ไม่สำเร็จ" error={query.error} onRetry={() => void query.refetch()} isRetrying={query.isFetching} />
           )}
           {!query.isError && query.data && items.length === 0 && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="ไม่พบ Incident" />}
-          {items.length > 0 && <div className="overflow-x-auto"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2">เลขที่</th><th className="px-2 py-2">เหตุการณ์</th><th className="px-2 py-2">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead><tbody>
+          {items.length > 0 && <div className="overflow-x-auto"><DataTable mode="server" className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2">เลขที่</th><th className="px-2 py-2">เหตุการณ์</th><th className="px-2 py-2">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead><tbody>
             {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p></td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td><td className="px-2 py-2 text-right"><RowActions recordLabel={item.incident_number} actions={[{ kind: 'view', to: `/incidents/${item.id}` }]} /></td></tr>)}
           </tbody></DataTable></div>}
           {query.data && <TablePagination page={query.data.pagination.page} pageSize={pageSize} totalItems={query.data.pagination.totalItems} totalPages={query.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
