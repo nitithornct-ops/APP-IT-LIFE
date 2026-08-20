@@ -39,6 +39,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { apiFetch, ApiError } from '../../services/apiClient';
+import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
 import type { Task, TaskDashboard, TaskStatus, TaskType } from '../../types/tasks';
 import { formatThaiDate } from '../../utils/date';
@@ -354,18 +355,11 @@ export function TasksPage() {
   };
 
   const exportCsv = () => {
-    const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
     const rows = [
       ['งาน', 'ประเภท', 'ความสำคัญ', 'สถานะ', 'ความคืบหน้า', 'ครบกำหนด'],
       ...filteredTasks.map((task) => [task.title, task.category, task.priority, task.status, `${task.progress}%`, task.due_date ?? '']),
     ];
-    const blob = new Blob([`\ufeff${rows.map((row) => row.map(escape).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `my-tasks-${today}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(rows, `my-tasks-${today}.csv`);
   };
 
   const viewItems: { value: View; label: string; icon: typeof LayoutList }[] = [
@@ -537,7 +531,7 @@ export function TasksPage() {
 
           {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'table' && (
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
-              <DataTable pagination={false} className="w-full min-w-[850px] text-left text-xs">
+              <DataTable mode="server" className="w-full min-w-[850px] text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">งาน</th><th className="px-3 py-3">ประเภท</th><th className="px-3 py-3">ความสำคัญ</th><th className="px-3 py-3">ครบกำหนด</th><th className="px-3 py-3">ความคืบหน้า</th><th className="px-3 py-3">สถานะ</th><th className="px-3 py-3">จัดการ</th></tr></thead>
                 <tbody>{pagedTasks.map((task) => <tr key={task.id} onClick={() => setSelectedTaskId(task.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-slate-400">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} pending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setSelectedTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} /></td></tr>)}</tbody>
               </DataTable>
