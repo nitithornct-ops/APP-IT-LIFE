@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  ChevronDown,
   CircleHelp,
   ClipboardCopy,
   Clock3,
@@ -39,8 +38,13 @@ interface FormData {
   privacy: { version: string; summary: string; dpoContact: string };
 }
 
-interface SubmitResult { id: string; ticketNo?: string; trackingToken: string; }
-
+interface SubmitResult {
+  id: string;
+  ticketNo?: string;
+  trackingToken: string;
+  attachmentCount?: number;
+  attachmentWarning?: string;
+}
 interface TrackedTicket {
   ticket: {
     id: string;
@@ -61,6 +65,13 @@ interface TrackedTicket {
     status_from: string | null;
     status_to: string | null;
     created_at: string;
+  }>;
+  attachments: Array<{
+    id: string;
+    original_filename: string;
+    mime_type: string;
+    size_bytes: number;
+    signed_url: string | null;
   }>;
 }
 
@@ -109,6 +120,9 @@ const DEFAULT_PRIVACY = {
   summary: 'ระบบใช้ข้อมูลผู้แจ้งเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket เท่านั้น',
   dpoContact: 'DPO / ส่วนงาน IT',
 };
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
 
 function getSavedTickets(): SubmitResult[] {
   try {
@@ -284,10 +298,33 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
   const [priority, setPriority] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [privacyConsent, setPrivacyConsent] = useState(false);
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function selectAttachments(event: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selected.length === 0) return;
+    if (attachments.length + selected.length > MAX_ATTACHMENTS) {
+      setError(`แนบได้สูงสุด ${MAX_ATTACHMENTS} ไฟล์ต่อ Ticket`);
+      return;
+    }
+    const invalidType = selected.find((file) => !ATTACHMENT_TYPES.includes(file.type));
+    if (invalidType) {
+      setError(`ไฟล์ ${invalidType.name} ไม่รองรับ — เลือกได้เฉพาะ JPG, PNG, GIF, WebP หรือ PDF`);
+      return;
+    }
+    const oversized = selected.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      setError(`ไฟล์ ${oversized.name} มีขนาดเกิน 10 MB`);
+      return;
+    }
+    setAttachments((current) => [...current, ...selected]);
+    setError(null);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -318,7 +355,26 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
           website: website || undefined,
         }),
       });
-      onSubmitted(submitted);
+      let attachmentCount = 0;
+      let attachmentWarning: string | undefined;
+      for (const file of attachments) {
+        try {
+          const uploadBody = new window.FormData();
+          uploadBody.append('file', file);
+          await publicTicketApiFetch(`/api/v1/public/tickets/${submitted.id}/attachments`, {
+            method: 'POST',
+            headers: { 'x-tracking-token': submitted.trackingToken },
+            body: uploadBody,
+          });
+          attachmentCount += 1;
+        } catch (uploadError) {
+          attachmentWarning = uploadError instanceof ApiError
+            ? `สร้าง Ticket แล้ว แต่อัปโหลดไฟล์บางรายการไม่สำเร็จ: ${uploadError.message}`
+            : 'สร้าง Ticket แล้ว แต่อัปโหลดไฟล์บางรายการไม่สำเร็จ';
+          break;
+        }
+      }
+      onSubmitted({ ...submitted, attachmentCount, attachmentWarning });
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : 'ส่งแจ้งซ่อมไม่สำเร็จ');
     } finally {
@@ -347,6 +403,27 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
         )}
 
         <FormSection icon={CircleHelp} title="ปัญหาที่พบ" subtitle="บอกอาการหรือปัญหา IT เข้าใจง่ายและแก้ได้เร็วขึ้น">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-sm font-bold text-slate-700">
+            <UserRound className="h-4 w-4 text-blue-600" aria-hidden="true" /> ข้อมูลผู้แจ้งและติดต่อกลับ
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={LABEL} htmlFor="guestName">ชื่อผู้แจ้ง <Required /></label>
+              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
+            </div>
+            <div>
+              <label className={LABEL} htmlFor="phone">เบอร์โทร <Required /></label>
+              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} minLength={8} maxLength={40} required placeholder="ใช้ติดต่อกลับและค้นหาสถานะ" inputMode="tel" />
+              <p className="mt-1 text-[11px] text-slate-500">ใช้คู่กับชื่อ–นามสกุลเพื่อค้นหา Ticket โดยไม่ต้องจำเลข Ticket</p>
+            </div>
+          </div>
+          <div className="sm:max-w-[calc(50%-0.5rem)]">
+            <label className={LABEL} htmlFor="department">แผนก/หน่วยงาน</label>
+            <input id="department" className={INPUT} value={guestDepartment} onChange={(event) => setGuestDepartment(event.target.value)} maxLength={160} />
+          </div>
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-2 pt-1 text-sm font-bold text-slate-700">
+            <CircleHelp className="h-4 w-4 text-blue-600" aria-hidden="true" /> รายละเอียดปัญหา
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={LABEL} htmlFor="category">ประเภทปัญหา <Required /></label>
@@ -383,37 +460,27 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
               <input id="assetCode" className={INPUT} value={assetCode} onChange={(event) => setAssetCode(event.target.value)} maxLength={80} placeholder="เช่น NB-0231" />
             </div>
           </div>
-          <details className="group border-t border-slate-100 pt-3">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-slate-600">
-              <ChevronDown className="h-4 w-4 transition group-open:rotate-180" aria-hidden="true" />
-              <FileImage className="h-4 w-4 text-blue-600" aria-hidden="true" />
-              แนบรูปภาพหรือไฟล์ประกอบ
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-500">เร็ว ๆ นี้</span>
-            </summary>
-            <p className="ml-10 mt-2 text-xs text-slate-500">ระบบจัดเก็บไฟล์สำหรับผู้แจ้งแบบไม่เข้าสู่ระบบยังไม่เปิดใช้งาน</p>
-          </details>
-        </FormSection>
-
-        <FormSection icon={UserRound} title="ข้อมูลสำหรับติดต่อกลับ" subtitle="ใช้เฉพาะการรับเรื่อง ประสานงาน และแจ้งความคืบหน้า">
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
+          <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/40 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className="flex items-center gap-2"><MessageCircle className="h-4 w-4 fill-[#06c755] text-[#06c755]" aria-hidden="true" /> เข้าสู่ระบบด้วย LINE เพื่อระบุตัวบุคคลและรับแจ้งเตือนใน LINE</span>
-              <Link to="/line" className="shrink-0 rounded-md bg-[#06c755] px-3 py-1.5 text-center text-[11px] font-bold text-white">LINE Login</Link>
+              <div>
+                <p className="flex items-center gap-2 text-sm font-bold text-slate-700"><FileImage className="h-4 w-4 text-blue-600" aria-hidden="true" />แนบรูปภาพหรือไฟล์ประกอบ</p>
+                <p className="mt-1 text-xs text-slate-500">JPG, PNG, GIF, WebP หรือ PDF · สูงสุด 5 ไฟล์ · ไฟล์ละไม่เกิน 10 MB</p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-blue-300 bg-white px-4 py-2 text-xs font-bold text-blue-700 shadow-sm hover:bg-blue-50">
+                เลือกไฟล์
+                <input type="file" className="sr-only" multiple accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" onChange={selectAttachments} />
+              </label>
             </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={LABEL} htmlFor="guestName">ชื่อผู้แจ้ง <Required /></label>
-              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
-            </div>
-            <div>
-              <label className={LABEL} htmlFor="phone">เบอร์โทร</label>
-              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} maxLength={40} placeholder="ติดต่อกลับได้สะดวก" inputMode="tel" />
-            </div>
-          </div>
-          <div className="sm:max-w-[calc(50%-0.5rem)]">
-            <label className={LABEL} htmlFor="department">แผนก/หน่วยงาน</label>
-            <input id="department" className={INPUT} value={guestDepartment} onChange={(event) => setGuestDepartment(event.target.value)} maxLength={160} />
+            {attachments.length > 0 && (
+              <ul className="mt-3 space-y-2" aria-label="ไฟล์ที่เลือก">
+                {attachments.map((file, index) => (
+                  <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs">
+                    <span className="min-w-0 truncate text-slate-700">{file.name} <span className="text-slate-400">({(file.size / (1024 * 1024)).toFixed(1)} MB)</span></span>
+                    <button type="button" onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="shrink-0 font-semibold text-red-600 hover:underline">นำออก</button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </FormSection>
 
@@ -538,7 +605,23 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
   return (
     <div className={`${CARD} mx-auto max-w-2xl p-6`}>
       <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง</p></div>
-      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">เลข Ticket</p><p className="break-all font-mono text-sm text-slate-800">{result.ticketNo ?? result.id}</p><p className="mt-3 text-xs text-slate-500">รหัสติดตาม</p><div className="flex items-center gap-2"><p className="break-all font-mono text-sm text-slate-800">{result.trackingToken}</p><button type="button" onClick={() => void copyToken()} className="shrink-0 text-slate-400 hover:text-blue-600" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /></button></div>{copied && <p className="mt-1 text-xs text-emerald-600">คัดลอกแล้ว</p>}</div>
+      <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <p className="text-xs text-slate-500">เลข Ticket</p>
+        <p className="break-all font-mono text-sm text-slate-800">{result.ticketNo ?? result.id}</p>
+        <p className="mt-4 text-xs font-semibold text-blue-800">รหัสติดตามของคุณ</p>
+        <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-white px-4 py-3">
+          <p className="font-mono text-lg font-extrabold tracking-wider text-blue-900" data-testid="public-tracking-code">{result.trackingToken}</p>
+          <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-blue-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
+        </div>
+        <p className="mt-2 text-xs text-blue-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
+        {copied && <p className="mt-1 text-xs font-semibold text-emerald-600">คัดลอกรหัสแล้ว</p>}
+      </div>
+      {result.attachmentCount !== undefined && result.attachmentCount > 0 && (
+        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">แนบไฟล์สำเร็จ {result.attachmentCount} ไฟล์</p>
+      )}
+      {result.attachmentWarning && (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="alert">{result.attachmentWarning}</p>
+      )}
       <button type="button" onClick={onTrackStatus} className={`${PRIMARY_BUTTON} mt-4 w-full`}><Search className="h-4 w-4" aria-hidden="true" /> ไปที่หน้าติดตามสถานะ</button>
     </div>
   );
@@ -606,8 +689,22 @@ function StatusTab() {
     return (
       <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
         <button type="button" onClick={() => setDetail(null)} className="mb-4 text-sm text-slate-500 hover:text-blue-700">← กลับ</button>
-        <p className="font-mono text-xs text-slate-500">{detail.ticket.ticket_no}</p><h2 className="mt-1 font-bold text-slate-900">{detail.ticket.title}</h2><p className="mt-1 text-xs text-slate-500">สถานะ: {detail.ticket.status} · {detail.ticket.category?.name ?? '-'} · ความเร่งด่วน {detail.ticket.priority}</p><p className="mt-4 text-sm text-slate-600">{detail.ticket.description}</p>
+        <p className="font-mono text-xs text-slate-500">{detail.ticket.ticket_no}</p><h2 className="mt-1 font-bold text-slate-900">{detail.ticket.title}</h2><p className="mt-1 text-xs text-slate-500">สถานะ: {ticketStatusLabel(detail.ticket.status)} · {detail.ticket.category?.name ?? '-'} · ความเร่งด่วน {detail.ticket.priority}</p><p className="mt-4 text-sm text-slate-600">{detail.ticket.description}</p>
         {detail.ticket.resolution && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">ผลดำเนินการ: {detail.ticket.resolution}</p>}
+        {(detail.attachments ?? []).length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-xs font-bold text-slate-700">ไฟล์แนบ ({detail.attachments.length})</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {detail.attachments.map((attachment) => (
+                <a key={attachment.id} href={attachment.signed_url ?? undefined} target="_blank" rel="noreferrer" className={`rounded-lg border border-slate-200 p-2 text-xs text-blue-700 hover:bg-blue-50 ${attachment.signed_url ? '' : 'pointer-events-none opacity-60'}`}>
+                  {attachment.mime_type.startsWith('image/') && attachment.signed_url && <img src={attachment.signed_url} alt={attachment.original_filename} className="mb-2 h-28 w-full rounded object-cover" />}
+                  <span className="block truncate font-semibold">{attachment.original_filename}</span>
+                  <span className="text-slate-400">{(attachment.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         <ul className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">{detail.worklogs.map((log, index) => <li key={index}>{log.action}{log.detail ? ` — ${log.detail}` : ''}</li>)}</ul>
       </div>
     );
@@ -664,7 +761,7 @@ function StatusTab() {
                     <td className="max-w-xs px-4 py-4"><p className="truncate font-medium text-slate-800" title={ticket.title}>{ticket.title}</p></td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.category?.name ?? '-'}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.priority}</td>
-                    <td className="whitespace-nowrap px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ticketStatusClass(ticket.status)}`}>{ticket.status}</span></td>
+                    <td className="whitespace-nowrap px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ticketStatusClass(ticket.status)}`}>{ticketStatusLabel(ticket.status)}</span></td>
                     <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">{formatTicketDate(ticket.created_at)}</td>
                     <td className="px-5 py-4 text-right"><button type="button" disabled={loading} onClick={() => void openLineDetail(ticket.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">รายละเอียด</button></td>
                   </tr>
@@ -687,10 +784,11 @@ function StatusTab() {
       )}
       {lineError && <div className="mb-5 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
       {saved.length > 0 && <div className="mb-5"><p className="mb-2 text-xs font-bold text-slate-500">Ticket ที่เคยแจ้งจากเครื่องนี้</p><ul className="space-y-2">{saved.map((row) => <li key={row.id}><button type="button" onClick={() => void lookup(row.ticketNo ?? row.id, row.trackingToken)} className="w-full truncate rounded-lg border border-slate-200 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50">{row.ticketNo ?? row.id}</button></li>)}</ul></div>}
-      <form onSubmit={(event) => { event.preventDefault(); void lookup(ticketId, token); }} className="space-y-4">
+      <div className="mb-5 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">เพื่อปกป้องรายละเอียดและไฟล์แนบ ต้องใช้เลข Ticket คู่กับรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE</div>
+      <form onSubmit={(event) => { event.preventDefault(); void lookup(ticketId, token); }} className="space-y-4" data-testid="public-ticket-code-search">
         <div><label className={LABEL} htmlFor="ticketId">เลข Ticket</label><input id="ticketId" className={INPUT} value={ticketId} onChange={(event) => setTicketId(event.target.value)} required placeholder="เช่น TCK-2026-0001" /></div>
-        <div><label className={LABEL} htmlFor="token">รหัสติดตาม</label><input id="token" className={INPUT} value={token} onChange={(event) => setToken(event.target.value)} required /></div>
-        {error && <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</div>}
+        <div><label className={LABEL} htmlFor="token">รหัสติดตาม</label><input id="token" className={INPUT} value={token} onChange={(event) => setToken(event.target.value)} required maxLength={64} placeholder="เช่น ABCD-EFGH-JKLM" autoComplete="off" /><p className="mt-1 text-[11px] text-slate-500">รหัสนี้แสดงหลังส่งแจ้งซ่อมสำเร็จ และระบบบันทึกไว้ในเครื่องที่ใช้แจ้งให้อัตโนมัติ</p></div>
+        {error && <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</div>}
         <button type="submit" disabled={loading} className={`${PRIMARY_BUTTON} w-full`}>{loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />} ตรวจสอบสถานะ</button>
       </form>
     </div>
@@ -706,6 +804,12 @@ function ticketStatusClass(status: string) {
   if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'bg-red-50 text-red-700';
   if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'bg-amber-50 text-amber-700';
   return 'bg-blue-50 text-blue-700';
+}
+
+function ticketStatusLabel(status: string) {
+  if (status === 'เสร็จสิ้น') return 'ซ่อมเสร็จ (รอยืนยัน)';
+  if (status === 'ปิดงาน') return 'ปิดงานแล้ว';
+  return status;
 }
 
 function ErrorCard({ message }: { message: string }) {

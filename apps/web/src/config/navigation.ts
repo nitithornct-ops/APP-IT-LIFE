@@ -64,7 +64,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'บริการ',
     items: [
-      { label: 'งานของฉัน', path: '/tasks', icon: ListTodo, permission: 'task.view' },
+      { label: 'ศูนย์งานของฉัน', path: '/my-work', icon: ClipboardList, permission: 'dashboard.view' },
+      { label: 'งานส่วนตัว', path: '/tasks', icon: ListTodo, permission: 'task.view' },
       { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
       { label: 'Service Catalog / คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'คำขอสิทธิ์ระบบ', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },

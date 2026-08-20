@@ -103,7 +103,10 @@ test('live API enforces Settings and Audit role boundaries', async () => {
   const settings = await request(adminToken, '/settings');
   expect(settings.status).toBe(200);
   const settingsData = settings.body.data as { settings: Array<{ key: string }>; notices: { secretsStoredHere: boolean } };
-  expect(settingsData.settings).toHaveLength(52);
+  const settingKeys = settingsData.settings.map((setting) => setting.key);
+  expect(settingKeys).toEqual(expect.arrayContaining(['ORG_NAME', 'ORG_LOGO_URL', 'TICKET_FORM_SIGNATURE_PATH']));
+  expect(new Set(settingKeys).size).toBe(settingKeys.length);
+  expect(settingsData.settings.length).toBeGreaterThanOrEqual(52);
   expect(settingsData.notices.secretsStoredHere).toBe(false);
 
   const update = await request(adminToken, '/settings/ORG_NAME', { method: 'PATCH', body: JSON.stringify({ value: `LIFE Module 22 API ${runId}` }) });
@@ -127,7 +130,7 @@ test('administrator can view and safely edit an allowlisted setting', async ({ p
   await page.goto('/admin/settings');
   await expect(page.getByTestId('settings-page')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('หน้านี้ไม่เก็บหรือแสดง Secret', { exact: true })).toBeVisible();
-  await expect(page.getByText('52', { exact: true })).toBeVisible();
+  await expect(page.getByText('ค่าตั้งค่าทั้งหมด', { exact: true }).locator('..').locator('p').first()).toHaveText(/^\d+$/);
   const orgName = page.getByLabel('ORG_NAME', { exact: true });
   await orgName.fill(`LIFE Module 22 UI ${runId}`);
   await page.getByRole('button', { name: 'บันทึก ORG_NAME', exact: true }).click();

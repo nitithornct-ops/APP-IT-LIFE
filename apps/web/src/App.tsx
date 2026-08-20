@@ -38,6 +38,9 @@ const TicketsPage = lazy(() => import('./features/tickets/TicketsPage').then((m)
 const TicketDetailPage = lazy(() =>
   import('./features/tickets/TicketDetailPage').then((m) => ({ default: m.TicketDetailPage })),
 );
+const TicketFormPage = lazy(() =>
+  import('./features/tickets/TicketFormPage').then((m) => ({ default: m.TicketFormPage })),
+);
 const ServiceRequestsPage = lazy(() =>
   import('./features/serviceRequests/ServiceRequestsPage').then((m) => ({ default: m.ServiceRequestsPage })),
 );
@@ -54,6 +57,7 @@ const AccessRegistryPage = lazy(() =>
   import('./features/admin/AccessRegistryPage').then((m) => ({ default: m.AccessRegistryPage })),
 );
 const TasksPage = lazy(() => import('./features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })));
+const MyWorkPage = lazy(() => import('./features/myWork/MyWorkPage').then((m) => ({ default: m.MyWorkPage })));
 const AssetsPage = lazy(() => import('./features/assets/AssetsPage').then((m) => ({ default: m.AssetsPage })));
 const AssetDetailPage = lazy(() => import('./features/assets/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })));
 const AssetBorrowPage = lazy(() => import('./features/assets/AssetBorrowPage').then((m) => ({ default: m.AssetBorrowPage })));
@@ -146,6 +150,16 @@ export function App() {
         <Route path="/profile" element={<ProfilePage />} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
         <Route path="/system-status" element={<HealthPage standalone={false} />} />
+        <Route
+          path="/my-work"
+          element={
+            <ProtectedRoute permission="dashboard.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <MyWorkPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/tasks"
           element={
@@ -402,6 +416,16 @@ export function App() {
             <ProtectedRoute permission="ticket.view">
               <Suspense fallback={<LazyPageFallback />}>
                 <TicketsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tickets/:id/form"
+          element={
+            <ProtectedRoute permission="ticket.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <TicketFormPage />
               </Suspense>
             </ProtectedRoute>
           }

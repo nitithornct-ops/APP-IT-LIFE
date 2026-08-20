@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffRows } from '../src/services/auditService';
+import { diffRows, sanitizeAuditData } from '../src/services/auditService';
 
 /**
  * Audit log เคยเก็บเพียง payload ที่ผู้ใช้ส่งมา ซึ่งตอบคำถามของผู้ตรวจสอบไม่ได้ว่า "ค่าเดิมคืออะไร"
@@ -59,5 +59,27 @@ describe('diffRows', () => {
   it('ignores values that are not row objects', () => {
     expect(diffRows('not a row', { a: 1 })).toEqual({});
     expect(diffRows([{ a: 1 }], { a: 1 })).toEqual({});
+  });
+});
+
+describe('sanitizeAuditData', () => {
+  it('redacts credentials, PII and free-text fields recursively', () => {
+    expect(sanitizeAuditData({
+      status: 'active',
+      email: 'person@example.com',
+      detail: { phone: '0812345678', accessToken: 'secret', priority: 'HIGH' },
+      notes: 'may contain personal information',
+    })).toEqual({
+      status: 'active',
+      email: '[REDACTED]',
+      detail: { phone: '[REDACTED]', accessToken: '[REDACTED]', priority: 'HIGH' },
+      notes: '[REDACTED]',
+    });
+  });
+
+  it('bounds long values and arrays', () => {
+    const result = sanitizeAuditData({ title: 'x'.repeat(600), values: Array.from({ length: 30 }, (_, index) => index) });
+    expect(String(result?.title).length).toBe(501);
+    expect(result?.values).toHaveLength(20);
   });
 });

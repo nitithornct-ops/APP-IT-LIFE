@@ -452,7 +452,7 @@ export function TasksPage() {
               { title: 'วันนี้', items: dashboard?.todayItems.filter((task) => task.due_days === 0).slice(0, 4) ?? [], empty: 'วันนี้ยังไม่มีงานครบกำหนด' },
               { title: 'Upcoming', items: dashboard?.upcoming.slice(0, 4) ?? [], empty: 'ยังไม่มีงานใน 7 วันข้างหน้า' },
             ].map((widget) => (
-              <div key={widget.title} className="rounded-lg border border-slate-200 bg-white p-4 shadow-card dark:border-slate-700 dark:bg-slate-800">
+              <div key={widget.title} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-card dark:border-slate-700 dark:bg-slate-800">
                 <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{widget.title}</h3><CalendarDays className="h-4 w-4 text-primary-600" /></div>
                 {dashboardQuery.isLoading && <div className="h-16 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-700" />}
                 {dashboardQuery.isError && <p className="text-xs text-red-600">โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</p>}

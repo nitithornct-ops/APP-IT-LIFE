@@ -6,6 +6,18 @@ import { ok } from '../utils/response';
 
 export const healthRoute = new Hono<AppEnv>();
 
+/** Process liveness: does not depend on Supabase and is not suitable as a deploy/readiness gate. */
+healthRoute.get('/live', (c) => {
+  const reqId = c.get('requestId');
+  return c.json(ok(reqId, {
+    status: 'ok' as const,
+    service: 'itlife-api',
+    environment: c.env.ENVIRONMENT,
+    timestamp: new Date().toISOString(),
+    checks: { database: 'not_checked' as const },
+  }));
+});
+
 /** ตรวจว่าต่อ Supabase (Postgres) ได้จริงหรือไม่ — timeout สั้นกันค้าง ไม่ให้ health check เองแฮงก์ */
 async function checkDatabase(env: Bindings): Promise<'ok' | 'error'> {
   try {
@@ -33,5 +45,6 @@ healthRoute.get('/', async (c) => {
       timestamp: new Date().toISOString(),
       checks,
     }),
+    status === 'ok' ? 200 : 503,
   );
 });

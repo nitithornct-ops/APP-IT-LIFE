@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
@@ -197,45 +198,29 @@ inventoryItemsRoute.post(
   requirePermission('inventory.manage'),
   zValidator('json', recordInventoryTransactionSchema, zodValidationHook),
   async (c) => {
-    const supabase = c.get('supabase');
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
     const id = c.req.param('id')!;
     const { transactionType, qty, notes } = c.req.valid('json');
 
-    const { data: item, error: itemError } = await supabase.from('inventory_items').select('*').eq('id', id).maybeSingle();
-    if (itemError) return c.json(fail(reqId, 'INVENTORY_ITEM_LOAD_FAILED', 'ดึงข้อมูลรายการไม่สำเร็จ'), 400);
-    if (!item) return c.json(fail(reqId, 'INVENTORY_ITEM_NOT_FOUND', 'ไม่พบรายการนี้'), 404);
-
-    const currentStock = Number(item.stock_qty);
-    const delta = transactionType === 'IN' ? qty : -qty;
-    const balanceAfter = currentStock + delta;
-    if (balanceAfter < 0) {
+    const { data, error } = await createAdminClient(c.env).rpc('record_inventory_transaction', {
+      item_id_input: id,
+      transaction_type_input: transactionType,
+      qty_input: qty,
+      notes_input: notes ?? '',
+      actor_id_input: actorId,
+      actor_email_input: c.get('userEmail'),
+      request_id_input: reqId,
+    });
+    if (error?.message.includes('INVENTORY_ITEM_NOT_FOUND')) {
+      return c.json(fail(reqId, 'INVENTORY_ITEM_NOT_FOUND', 'ไม่พบรายการนี้'), 404);
+    }
+    if (error?.message.includes('INVENTORY_INSUFFICIENT_STOCK')) {
       return c.json(fail(reqId, 'INVENTORY_INSUFFICIENT_STOCK', 'สต็อกคงเหลือไม่พอสำหรับการเบิกครั้งนี้'), 400);
     }
+    if (error) return dbFailJson(c, 'INVENTORY_TX_FAILED', error);
 
-    const { error: updateError } = await supabase.from('inventory_items').update({ stock_qty: balanceAfter, updated_by: actorId }).eq('id', id);
-    if (updateError) return dbFailJson(c, 'INVENTORY_STOCK_UPDATE_FAILED', updateError);
-
-    const { data: tx, error: txError } = await supabase
-      .from('inventory_transactions')
-      .insert({ item_id: id, transaction_type: transactionType, qty, balance_after: balanceAfter, notes: notes ?? null, created_by: actorId })
-      .select()
-      .single();
-    if (txError) return dbFailJson(c, 'INVENTORY_TX_FAILED', txError);
-
-    await writeAuditLog(c.env, {
-      actorId,
-      actorEmail: c.get('userEmail'),
-      action: transactionType,
-      module: 'inventory',
-      targetTable: 'inventory_transactions',
-      targetId: tx.id,
-      detail: { itemId: id, qty, balanceAfter },
-      requestId: reqId,
-    });
-
-    return c.json(ok(reqId, { transaction: tx, balanceAfter }), 201);
+    return c.json(ok(reqId, data), 201);
   },
 );
 
@@ -245,49 +230,24 @@ inventoryItemsRoute.post(
   requirePermission('inventory.manage'),
   zValidator('json', adjustInventoryStockSchema, zodValidationHook),
   async (c) => {
-    const supabase = c.get('supabase');
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
     const id = c.req.param('id')!;
     const { counted, notes } = c.req.valid('json');
 
-    const { data: item, error: itemError } = await supabase.from('inventory_items').select('*').eq('id', id).maybeSingle();
-    if (itemError) return c.json(fail(reqId, 'INVENTORY_ITEM_LOAD_FAILED', 'ดึงข้อมูลรายการไม่สำเร็จ'), 400);
-    if (!item) return c.json(fail(reqId, 'INVENTORY_ITEM_NOT_FOUND', 'ไม่พบรายการนี้'), 404);
-
-    const currentStock = Number(item.stock_qty);
-    const variance = counted - currentStock;
-
-    const { error: updateError } = await supabase.from('inventory_items').update({ stock_qty: counted, updated_by: actorId }).eq('id', id);
-    if (updateError) return dbFailJson(c, 'INVENTORY_STOCK_UPDATE_FAILED', updateError);
-
-    const noteText = `จาก ${currentStock} → ${counted}${notes ? ` — ${notes}` : ''}`;
-    const { data: tx, error: txError } = await supabase
-      .from('inventory_transactions')
-      .insert({
-        item_id: id,
-        transaction_type: 'ADJUST',
-        qty: Math.abs(variance),
-        balance_after: counted,
-        variance,
-        notes: noteText,
-        created_by: actorId,
-      })
-      .select()
-      .single();
-    if (txError) return dbFailJson(c, 'INVENTORY_TX_FAILED', txError);
-
-    await writeAuditLog(c.env, {
-      actorId,
-      actorEmail: c.get('userEmail'),
-      action: 'ADJUST',
-      module: 'inventory',
-      targetTable: 'inventory_transactions',
-      targetId: tx.id,
-      detail: { itemId: id, counted, variance },
-      requestId: reqId,
+    const { data, error } = await createAdminClient(c.env).rpc('adjust_inventory_stock', {
+      item_id_input: id,
+      counted_input: counted,
+      notes_input: notes ?? '',
+      actor_id_input: actorId,
+      actor_email_input: c.get('userEmail'),
+      request_id_input: reqId,
     });
+    if (error?.message.includes('INVENTORY_ITEM_NOT_FOUND')) {
+      return c.json(fail(reqId, 'INVENTORY_ITEM_NOT_FOUND', 'ไม่พบรายการนี้'), 404);
+    }
+    if (error) return dbFailJson(c, 'INVENTORY_ADJUST_FAILED', error);
 
-    return c.json(ok(reqId, { transaction: tx, balanceAfter: counted, variance }));
+    return c.json(ok(reqId, data));
   },
 );

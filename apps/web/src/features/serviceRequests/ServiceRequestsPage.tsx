@@ -113,15 +113,34 @@ function RequestDialog({ item, onClose }: { item: ServiceCatalogItem; onClose: (
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const { register, handleSubmit, formState: { errors } } = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema),
     defaultValues: { summary: item.service_name, priority: 'ปานกลาง' },
   });
   const mutation = useMutation({
-    mutationFn: (values: RequestFormValues) => apiFetch('/api/v1/service-requests', {
-      method: 'POST',
-      body: JSON.stringify({ catalogId: item.id, ...values, answers }),
-    }),
+    mutationFn: async (values: RequestFormValues) => {
+      if (item.attachment_required && !attachment) {
+        throw new ApiError('SERVICE_REQUEST_ATTACHMENT_REQUIRED', 'บริการนี้บังคับแนบเอกสาร');
+      }
+      if (attachment && attachment.size > 10 * 1024 * 1024) {
+        throw new ApiError('FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
+      }
+      const request = await apiFetch<{ id: string }>('/api/v1/service-requests', {
+        method: 'POST',
+        body: JSON.stringify({ catalogId: item.id, ...values, answers, idempotencyKey }),
+      });
+      if (attachment) {
+        const data = new FormData();
+        data.append('file', attachment);
+        data.append('module', 'service_request');
+        data.append('targetTable', 'service_requests');
+        data.append('targetId', request.id);
+        await apiFetch('/api/v1/files', { method: 'POST', body: data });
+      }
+      return request;
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['service-requests'] });
       onClose();
@@ -149,7 +168,17 @@ function RequestDialog({ item, onClose }: { item: ServiceCatalogItem; onClose: (
             return <label key={key} className={labelClass}>{label}{required && <span className="text-red-500"> *</span>}<input type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} className={fieldClass} onChange={(event) => setAnswers((value) => ({ ...value, [key]: event.target.value }))} required={required} /></label>;
           })}
           <label className={labelClass}>เหตุผล / รายละเอียดเพิ่มเติม<textarea rows={3} className={`${fieldClass} py-3`} {...register('businessJustification')} /></label>
-          {item.attachment_required && <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><Paperclip className="h-4 w-4" />บริการนี้บังคับแนบเอกสาร กรุณาแนบในหน้ารายละเอียดหลังสร้างคำขอ</div>}
+          <label className={labelClass}>
+            ไฟล์แนบ {item.attachment_required && <span className="text-red-500">*</span>}
+            <input
+              type="file"
+              className={`${fieldClass} py-2`}
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.txt"
+              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
+            />
+            <span className="mt-1 block text-xs font-normal text-slate-400">PDF, รูปภาพ, Office หรือ TXT ไม่เกิน 10 MB</span>
+          </label>
+          {item.attachment_required && <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><Paperclip className="h-4 w-4" />ต้องแนบเอกสารก่อนยื่นคำขอและก่อนอนุมัติ/เริ่มดำเนินการ</div>}
           {errors.priority && <p className="text-sm text-red-600">{errors.priority.message}</p>}
           {serverError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{serverError}</p>}
         </div>

@@ -81,8 +81,9 @@ test('workspace matches catalog, request and management flows', async ({ page })
   await page.getByTestId('service-request-close').click();
 
   await page.getByRole('button', { name: 'จัดการ Catalog', exact: true }).click();
-  await expect(page.getByPlaceholder('ค้นหาในรายการ...')).toBeVisible();
-  await page.getByPlaceholder('ค้นหาในรายการ...').fill(serviceCode);
+  const catalogSearch = page.getByRole('searchbox', { name: 'ค้นหาในตาราง', exact: true });
+  await expect(catalogSearch).toBeVisible();
+  await catalogSearch.fill(serviceCode);
   await expect(page.getByText(serviceCode, { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/service-catalog-management.png', fullPage: true });
 
@@ -91,5 +92,5 @@ test('workspace matches catalog, request and management flows', async ({ page })
   await expect(page.getByLabel('รหัสบริการ *')).toBeVisible();
   await expect(page.getByLabel('Checklist (JSON)')).toBeVisible();
   await page.screenshot({ path: 'test-results/service-catalog-editor.png', fullPage: true });
-  await page.getByRole('button', { name: 'ปิด', exact: true }).click();
+  await page.getByRole('dialog', { name: 'เพิ่มรายการบริการ', exact: true }).getByRole('button', { name: 'ปิดหน้าต่าง', exact: true }).click();
 });

@@ -1,3 +1,4 @@
+import { ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const lineLoginUrlQuerySchema = z.object({
@@ -19,7 +20,7 @@ export const lineSubmitTicketSchema = z.object({
 });
 
 export const lineTicketFeedbackSchema = z.object({
-  rating: z.coerce.number().int().min(1, 'คะแนนต้องอยู่ระหว่าง 1-5').max(5, 'คะแนนต้องอยู่ระหว่าง 1-5'),
+  ratings: ticketRatingDetailsSchema,
   comment: z.string().trim().max(1000).optional(),
 });
 

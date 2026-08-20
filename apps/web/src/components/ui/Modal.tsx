@@ -1,5 +1,5 @@
 import { AlertTriangle, Trash2, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { Button } from './Button';
@@ -20,18 +20,18 @@ const contentPaddingClasses: Record<ModalContentPadding, string> = {
   default: 'px-5 py-5 sm:px-6 sm:py-6',
 };
 
-const modalStack: number[] = [];
-let nextModalOrder = 0;
+interface ModalStackEntry { id: number; depth: number }
+
+const ModalDepthContext = createContext(0);
+const modalStack: ModalStackEntry[] = [];
+let nextModalId = 0;
 
 /**
  * ชั้นความสูงของ overlay กำหนดไว้ที่เดียวเพื่อไม่ให้แต่ละคอมโพเนนต์เดาเลขกันเอง
  *
- * ลำดับต้องมาจากตัวนับตอน render (nextModalOrder) เพราะ modal ที่ซ้อนกันแบบ JSX จะรัน useEffect
- * "ลูกก่อนแม่" การนับความลึกตอน effect จึงได้ลำดับกลับด้าน ทำให้ modal แม่ไปทับลูก
- *
- * ปัญหาจริงคือตัวนับนั้นไม่เคยถูกรีเซ็ต ค่า z-index จึงไต่ขึ้นทั้ง session และเมื่อเปิด/ปิดเกิน ~21 ครั้ง
- * จะแซงชั้นของ Toast ทำให้ข้อความ "บันทึกสำเร็จ/ไม่สำเร็จ" ถูกบังหายไปทั้งที่ระบบส่งออกมาแล้ว
- * (พบตอน Pre-production QA audit 2026-08-13) — จึงรีเซ็ตตัวนับทุกครั้งที่ modal ปิดหมด
+ * React context ติดตามความลึกจริงข้าม portal ได้ จึงไม่ขึ้นกับลำดับ effect หรือจำนวน modal ที่เคยเปิด
+ * ก่อนหน้านี้หมายเลขสะสมอาจทำให้ modal แม่ได้ z-index สูงกว่าลูกหลังเปิด/ปิดหลายรอบจนลูกกดไม่ได้
+ * และเลขที่ไต่ขึ้นเรื่อย ๆ ยังเคยแซงชั้น Toast อีกด้วย
  */
 const MODAL_BASE_Z = 50;
 /** เพดานที่ยอมให้ดันชั้นขึ้น กันกรณีซ้อนผิดปกติไม่ให้ไปแตะชั้นของ Toast */
@@ -76,7 +76,8 @@ export function Modal({
   closeTestId,
 }: ModalProps) {
   const titleId = useId();
-  const [instanceId] = useState(() => ++nextModalOrder);
+  const depth = useContext(ModalDepthContext);
+  const [instanceId] = useState(() => ++nextModalId);
   const descriptionId = useId();
   const dialogRef = useRef<HTMLElement>(null);
   const discardDialogRef = useRef<HTMLElement>(null);
@@ -115,7 +116,7 @@ export function Modal({
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = 'hidden';
-    modalStack.push(instanceId);
+    modalStack.push({ id: instanceId, depth });
     const focusTimer = window.setTimeout(() => {
       const preferredFocus = initialFocusRef?.current
         ?? dialogRef.current?.querySelector<HTMLElement>('[data-autofocus], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
@@ -123,9 +124,17 @@ export function Modal({
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (Math.max(...modalStack) !== instanceId) return;
+      const topmost = modalStack.reduce<ModalStackEntry | null>(
+        (current, entry) => !current || entry.depth >= current.depth ? entry : current,
+        null,
+      );
+      if (topmost?.id !== instanceId) return;
       if (event.key === 'Escape') {
         event.preventDefault();
+        // Closing the child can synchronously remove it from modalStack while the
+        // same document event is still reaching the parent listener. Stop that
+        // event here so one Escape never closes two nested dialogs.
+        event.stopImmediatePropagation();
         if (showDiscardConfirmRef.current) setShowDiscardConfirm(false);
         else if (!closeDisabledRef.current) requestClose();
         return;
@@ -152,20 +161,19 @@ export function Modal({
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      const stackIndex = modalStack.lastIndexOf(instanceId);
+      const stackIndex = modalStack.map((entry) => entry.id).lastIndexOf(instanceId);
       if (stackIndex >= 0) modalStack.splice(stackIndex, 1);
-      // ปิดหมดแล้วเริ่มนับใหม่ ไม่งั้นตัวเลขจะไต่ขึ้นทั้ง session จนแซงชั้นของ Toast
-      if (modalStack.length === 0) nextModalOrder = 0;
       window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [initialFocusRef, instanceId]);
+  }, [depth, initialFocusRef, instanceId]);
 
   return createPortal(
+    <ModalDepthContext.Provider value={depth + 1}>
     <div
       className="global-modal-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-[1px] sm:items-center sm:p-6"
-      style={{ zIndex: MODAL_BASE_Z + Math.min(instanceId, MODAL_MAX_DEPTH) }}
+      style={{ zIndex: MODAL_BASE_Z + Math.min(depth, MODAL_MAX_DEPTH) }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && closeOnBackdrop && !closeDisabled) requestClose();
       }}
@@ -230,7 +238,8 @@ export function Modal({
           </section>
         </div>
       )}
-    </div>,
+    </div>
+    </ModalDepthContext.Provider>,
     document.body,
   );
 }
@@ -254,6 +263,8 @@ interface ConfirmModalProps {
   cancelLabel?: string;
   tone?: 'primary' | 'danger';
   isPending?: boolean;
+  /** กันการยืนยันจนกว่าเนื้อในกล่อง (เช่น ช่องเหตุผลบังคับ) จะครบ */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
   testId?: string;
@@ -267,6 +278,7 @@ export function ConfirmModal({
   cancelLabel = 'ยกเลิก',
   tone = 'primary',
   isPending = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
   testId,
@@ -282,7 +294,7 @@ export function ConfirmModal({
       onClose={onClose}
       testId={testId}
       contentPadding="compact"
-      footer={<><Button type="button" variant="outline" disabled={isPending} onClick={onClose}>{cancelLabel}</Button><Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} isLoading={isPending} onClick={onConfirm}>{confirmLabel}</Button></>}
+      footer={<><Button type="button" variant="outline" disabled={isPending} onClick={onClose}>{cancelLabel}</Button><Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} isLoading={isPending} disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</Button></>}
     >
       {children}
     </Modal>

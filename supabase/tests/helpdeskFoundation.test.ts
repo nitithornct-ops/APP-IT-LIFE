@@ -36,6 +36,38 @@ afterAll(async () => {
 });
 
 describe('Help Desk Phase 2 foundation', () => {
+  it('seeds administrator-managed rating criteria and private Ticket signature fields', async () => {
+    const criteria = await db.query<{ key: string; label: string; status: string }>(
+      'select key, label, status from public.ticket_rating_criteria order by sort_order',
+    );
+    expect(criteria.rows).toHaveLength(5);
+    expect(criteria.rows.every((item) => item.status === 'active')).toBe(true);
+    expect(criteria.rows.map((item) => item.key)).toEqual([
+      'responsiveness', 'workQuality', 'serviceManners', 'expertise', 'communication',
+    ]);
+
+    const validation = await db.query<{ valid: boolean }>(
+      `select public.is_valid_ticket_rating_details('{"criterion_custom":4}'::jsonb) as valid`,
+    );
+    expect(validation.rows[0]?.valid).toBe(true);
+
+    await asUser(db, ADMIN_ID, async () => db.query(
+      `insert into public.ticket_rating_criteria (key, label, status, created_by)
+       values ('criterion_cleanliness', 'ความสะอาดหลังซ่อม', 'inactive', $1)`,
+      [ADMIN_ID],
+    ));
+    await expect(asUser(db, REQUESTER_ID, async () => db.query(
+      `insert into public.ticket_rating_criteria (key, label) values ('criterion_forbidden', 'หัวข้อต้องห้าม')`,
+    ))).rejects.toThrow();
+
+    const ticketColumns = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'tickets'
+         and column_name in ('rating_criteria_snapshot','signature_storage_path','signature_uploaded_by','signature_uploaded_at')`,
+    );
+    expect(ticketColumns.rows).toHaveLength(4);
+  });
+
   it('seeds the exact Legacy priorities, statuses and category-based SLA masters', async () => {
     const priorities = await db.query<{ ticket_value: string; name_th: string }>(
       'select ticket_value, name_th from public.ticket_priorities order by sort_order',
@@ -235,6 +267,22 @@ describe('Help Desk Phase 2 foundation', () => {
   });
 
   it('allows only the requester to submit an immutable satisfaction score', async () => {
+    await expect(
+      asUser(db, REQUESTER_ID, async () =>
+        db.query(
+          `update public.tickets set rating = 5 where id = $1`,
+          [ticketId],
+        ),
+      ),
+    ).rejects.toThrow(/หลังปิดงาน Ticket/);
+
+    await asUser(db, ADMIN_ID, async () =>
+      db.query(
+        `update public.tickets set status = 'ปิดงาน' where id = $1`,
+        [ticketId],
+      ),
+    );
+
     const submitted = await asUser(db, REQUESTER_ID, async () =>
       db.query(
         `update public.tickets
@@ -245,6 +293,17 @@ describe('Help Desk Phase 2 foundation', () => {
     );
     expect((submitted.rows[0] as { rating: number }).rating).toBe(5);
     expect((submitted.rows[0] as { feedback_at: string | null }).feedback_at).not.toBeNull();
+
+    await expect(
+      asServiceRole(db, async () =>
+        db.query(
+          `update public.tickets
+           set rating_details = '{"responsiveness":5,"workQuality":5}'::jsonb
+           where id = $1`,
+          [ticketId],
+        ),
+      ),
+    ).rejects.toThrow(/ส่งแล้ว/);
 
     await expect(
       asUser(db, TECHNICIAN_ID, async () =>
@@ -260,7 +319,17 @@ describe('Help Desk Phase 2 foundation', () => {
   });
 
   it('keeps internal notes hidden from the requester', async () => {
-    const inserted = await asUser(db, TECHNICIAN_ID, async () =>
+    await expect(asUser(db, TECHNICIAN_ID, async () =>
+      db.query(
+        `insert into public.ticket_worklogs
+          (ticket_id, entry_type, action, detail, is_public, actor_id)
+         values ($1, 'internal_note', 'บันทึกภายใน', 'ใช้บัญชีทดสอบตรวจสอบ', false, $2)
+         returning id`,
+        [ticketId, TECHNICIAN_ID],
+      ),
+    )).rejects.toThrow(/row-level security|policy/i);
+
+    const inserted = await asServiceRole(db, async () =>
       db.query(
         `insert into public.ticket_worklogs
           (ticket_id, entry_type, action, detail, is_public, actor_id)
@@ -280,5 +349,12 @@ describe('Help Desk Phase 2 foundation', () => {
 
     expect(requesterView.rows).toHaveLength(0);
     expect(technicianView.rows).toHaveLength(1);
+  });
+
+  it('provides one global signature setting inherited by Ticket forms', async () => {
+    const result = await asServiceRole(db, async () => db.query(
+      `select key, is_editable, support_status from public.system_settings where key = 'TICKET_FORM_SIGNATURE_PATH'`,
+    ));
+    expect(result.rows).toEqual([expect.objectContaining({ key: 'TICKET_FORM_SIGNATURE_PATH', is_editable: false, support_status: 'active' })]);
   });
 });

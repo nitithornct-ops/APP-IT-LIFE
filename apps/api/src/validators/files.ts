@@ -16,11 +16,11 @@ export const ALLOWED_FILE_MIME_TYPES = [
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — ตรงกับ file_size_limit ของ bucket
 
-export const uploadFileMetaSchema = z.object({
-  module: z.string().trim().min(1).max(50).default('general'),
-  targetTable: z.string().trim().max(100).optional(),
-  targetId: z.string().trim().max(100).optional(),
-});
+/** คู่ module/table ที่ API รู้วิธีตรวจ ownership/permission เท่านั้น */
+export const uploadFileMetaSchema = z.discriminatedUnion('module', [
+  z.object({ module: z.literal('ticket'), targetTable: z.literal('tickets'), targetId: z.string().uuid() }),
+  z.object({ module: z.literal('service_request'), targetTable: z.literal('service_requests'), targetId: z.string().uuid() }),
+]);
 
 export const signedUrlQuerySchema = z.object({
   expiresIn: z.coerce.number().int().min(60).max(3600).default(300),

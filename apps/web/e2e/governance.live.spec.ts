@@ -98,6 +98,10 @@ test.afterAll(async () => {
 });
 
 test('live API covers all active Governance surfaces, workflows and RBAC', async () => {
+  // This flow exercises every governance domain against remote staging. On CI
+  // it can exceed Playwright's 30s default; cleanup must not start while the
+  // final verification request is still in flight.
+  test.setTimeout(90_000);
   const adminToken = await token(emails.admin); const dpoToken = await token(emails.dpo);
   const auditorToken = await token(emails.auditor); const userToken = await token(emails.user);
   const domains = ['data-classification','compliance','privacy','risk','ai-cloud','awareness','evidence','audit-management','documents','operations','integrations'];

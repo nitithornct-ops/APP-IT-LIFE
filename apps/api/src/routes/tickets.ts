@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
+import { calculateTicketOverallRating, type TicketRatingDetails } from '@itlife/shared';
 import { Hono } from 'hono';
 import { resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
@@ -7,14 +8,16 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
+import { createSignedUrl } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar, ticketBusinessMinutesBetween } from '../services/ticketSlaService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
+import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -37,6 +40,26 @@ const TICKET_STATUS = {
   CANCELLED: 'ยกเลิก',
   ESCALATED: 'ยกระดับเป็น Incident',
 } as const;
+
+const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
+const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
+const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
+
+export function ratingsMatchCriteria(ratings: TicketRatingDetails, criterionKeys: string[]): boolean {
+  const submittedKeys = Object.keys(ratings).sort();
+  const expectedKeys = [...criterionKeys].sort();
+  return submittedKeys.length === expectedKeys.length
+    && submittedKeys.every((key, index) => key === expectedKeys[index]);
+}
+
+async function loadActiveRatingCriteria(client: ReturnType<typeof createAdminClient>) {
+  return client
+    .from('ticket_rating_criteria')
+    .select('id, key, label, description, sort_order, status')
+    .eq('status', 'active')
+    .order('sort_order')
+    .order('created_at');
+}
 
 const ACTIVE_WORK_STATUSES: string[] = [
   TICKET_STATUS.IN_PROGRESS,
@@ -202,8 +225,126 @@ ticketsRoute.get('/:id', async (c) => {
     return c.json(fail(reqId, 'TICKET_WORKLOGS_LOAD_FAILED', 'ดึงประวัติการดำเนินงานไม่สำเร็จ'), 400);
   }
 
-  return c.json(ok(reqId, { ...ticket, worklogs: worklogs ?? [] }));
+  const admin = createAdminClient(c.env);
+  const { data: attachmentRows, error: attachmentError } = await admin
+    .from('file_attachments')
+    .select('id, storage_path, original_filename, mime_type, size_bytes, created_at, uploader_label')
+    .eq('module', 'ticket')
+    .eq('target_table', 'tickets')
+    .eq('target_id', id)
+    .order('created_at', { ascending: true });
+  if (attachmentError) {
+    return c.json(fail(reqId, 'TICKET_ATTACHMENTS_LOAD_FAILED', 'ดึงไฟล์แนบไม่สำเร็จ'), 400);
+  }
+  const attachments = await Promise.all((attachmentRows ?? []).map(async ({ storage_path, ...attachment }) => {
+    const signed = await createSignedUrl(admin, storage_path, 3600);
+    return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
+  }));
+
+  let signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
+  let signatureSource: 'ticket' | 'default' | null = signaturePath ? 'ticket' : null;
+  let signatureUploadedAt = ticket.signature_uploaded_at ?? null;
+  if (!signaturePath) {
+    const { data: setting } = await admin.from('system_settings').select('value, updated_at').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
+    signaturePath = String(setting?.value ?? '');
+    if (signaturePath) {
+      signatureSource = 'default';
+      signatureUploadedAt = setting?.updated_at ?? null;
+    }
+  }
+  let signatureUrl: string | null = null;
+  if (signaturePath) {
+    const { data } = await admin.storage
+      .from(TICKET_SIGNATURE_BUCKET)
+      .createSignedUrl(signaturePath, 3600);
+    signatureUrl = data?.signedUrl ?? null;
+  }
+
+  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_source: signatureSource, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [] }));
 });
+
+ticketsRoute.post(
+  '/:id/conversation',
+  zValidator('json', addTicketConversationSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+
+    // RLS on tickets establishes that the caller is the requester, assignee or ticket.view_all staff.
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('id, ticket_no, title, status, requester_id, assignee_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (ticketError || !ticket) {
+      return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+    }
+
+    const internal = body.visibility === 'internal';
+    if (internal) {
+      const [canWriteInternal, canUpdate] = await Promise.all([
+        hasPerm(c, 'ticket.internal_note'),
+        hasPerm(c, 'ticket.update'),
+      ]);
+      if (!canWriteInternal || !canUpdate) {
+        return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์เพิ่มบันทึกภายใน'), 403);
+      }
+    } else {
+      if (!await hasPerm(c, 'ticket.comment')) {
+        return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์สนทนาใน Ticket นี้'), 403);
+      }
+      if ([TICKET_STATUS.CLOSED, TICKET_STATUS.CANCELLED].includes(ticket.status as typeof TICKET_STATUS.CLOSED)) {
+        return c.json(fail(reqId, 'TICKET_CONVERSATION_LOCKED', 'Ticket ที่ปิดหรือยกเลิกแล้วไม่รับข้อความสาธารณะเพิ่มเติม'), 409);
+      }
+    }
+
+    // Internal notes are service-role writes because RLS deliberately blocks all browser-direct
+    // internal_note inserts. The permission and record-access checks above are both required.
+    const client = internal ? createAdminClient(c.env) : supabase;
+    const { data, error } = await client
+      .from('ticket_worklogs')
+      .insert({
+        ticket_id: id,
+        entry_type: internal ? 'internal_note' : 'comment',
+        action: internal ? 'บันทึกภายใน' : 'ข้อความสนทนา',
+        detail: body.message,
+        is_public: !internal,
+        actor_id: actorId,
+        actor_email_snapshot: c.get('userEmail'),
+      })
+      .select('*, actor:profiles!ticket_worklogs_actor_id_fkey(full_name, email)')
+      .single();
+    if (error) return dbFailJson(c, 'TICKET_CONVERSATION_CREATE_FAILED', error);
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: internal ? 'INTERNAL_NOTE' : 'COMMENT',
+      module: 'ticket',
+      targetTable: 'ticket_worklogs',
+      targetId: data.id,
+      detail: { ticketId: id, visibility: body.visibility },
+      requestId: reqId,
+    });
+
+    if (!internal) {
+      const recipientId = actorId === ticket.requester_id ? ticket.assignee_id : ticket.requester_id;
+      if (recipientId && recipientId !== actorId) {
+        await sendNotification(c.env, {
+          recipientId,
+          type: 'ticket_comment',
+          title: `มีข้อความใหม่ใน ${ticket.ticket_no}`,
+          link: `/tickets/${id}`,
+        });
+      }
+    }
+
+    return c.json(ok(reqId, data), 201);
+  },
+);
 
 ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', createTicketSchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
@@ -525,6 +666,102 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
 });
 
 ticketsRoute.post(
+  '/:id/signature',
+  requirePermission('setting.manage'),
+  async (c) => {
+    const requestId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) {
+      return c.json(fail(requestId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเลือกไฟล์ลายเซ็น PNG'), 400);
+    }
+    if (file.type !== 'image/png') {
+      return c.json(fail(requestId, 'TICKET_SIGNATURE_TYPE_NOT_ALLOWED', 'ลายเซ็นต้องเป็นไฟล์ PNG เท่านั้น'), 400);
+    }
+    if (file.size > MAX_TICKET_SIGNATURE_BYTES) {
+      return c.json(fail(requestId, 'TICKET_SIGNATURE_TOO_LARGE', 'ไฟล์ลายเซ็นต้องมีขนาดไม่เกิน 2 MB'), 400);
+    }
+    const signature = await verifyFileSignature(file, 'image/png');
+    if (!signature.ok) {
+      return c.json(fail(requestId, 'TICKET_SIGNATURE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ใช่ PNG'), 400);
+    }
+
+    const admin = createAdminClient(c.env);
+    const { data: ticket, error: ticketError } = await admin
+      .from('tickets')
+      .select('id, signature_storage_path')
+      .eq('id', id)
+      .maybeSingle();
+    if (ticketError || !ticket) return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุ'), 404);
+
+    const path = `tickets/${id}/${crypto.randomUUID()}.png`;
+    const { error: uploadError } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).upload(path, file, {
+      contentType: 'image/png',
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (uploadError) return dbFailJson(c, 'TICKET_SIGNATURE_UPLOAD_FAILED', uploadError);
+
+    const uploadedAt = new Date().toISOString();
+    const { error: updateError } = await admin.from('tickets').update({
+      signature_storage_path: path,
+      signature_uploaded_by: actorId,
+      signature_uploaded_at: uploadedAt,
+    }).eq('id', id);
+    if (updateError) {
+      await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([path]);
+      return dbFailJson(c, 'TICKET_SIGNATURE_SAVE_FAILED', updateError);
+    }
+    if (ticket.signature_storage_path && ticket.signature_storage_path !== path) {
+      await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([String(ticket.signature_storage_path)]);
+    }
+    const { data: signed } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).createSignedUrl(path, 3600);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPLOAD_SIGNATURE',
+      module: 'ticket',
+      targetTable: 'tickets',
+      targetId: id,
+      detail: { mimeType: 'image/png', sizeBytes: file.size, replaced: Boolean(ticket.signature_storage_path) },
+      requestId,
+    });
+    return c.json(ok(requestId, { signatureUrl: signed?.signedUrl ?? null, uploadedAt }));
+  },
+);
+
+ticketsRoute.delete('/:id/signature', requirePermission('setting.manage'), async (c) => {
+  const requestId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id');
+  const admin = createAdminClient(c.env);
+  const { data: ticket, error } = await admin.from('tickets').select('id, signature_storage_path').eq('id', id).maybeSingle();
+  if (error || !ticket) return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุ'), 404);
+  if (!ticket.signature_storage_path) return c.json(ok(requestId, { deleted: false }));
+
+  const path = String(ticket.signature_storage_path);
+  const { error: updateError } = await admin.from('tickets').update({
+    signature_storage_path: null,
+    signature_uploaded_by: null,
+    signature_uploaded_at: null,
+  }).eq('id', id);
+  if (updateError) return dbFailJson(c, 'TICKET_SIGNATURE_DELETE_FAILED', updateError);
+  await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([path]);
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'DELETE_SIGNATURE',
+    module: 'ticket',
+    targetTable: 'tickets',
+    targetId: id,
+    requestId,
+  });
+  return c.json(ok(requestId, { deleted: true }));
+});
+
+ticketsRoute.post(
   '/:id/feedback',
   zValidator('json', submitTicketFeedbackSchema, zodValidationHook),
   async (c) => {
@@ -541,14 +778,28 @@ ticketsRoute.post(
     if (current.requester_id !== actorId) {
       return c.json(fail(reqId, 'PERMISSION_DENIED', 'ให้คะแนนได้เฉพาะผู้แจ้ง Ticket นี้เท่านั้น'), 403);
     }
-    const ratable = [TICKET_STATUS.RESOLVED, TICKET_STATUS.CLOSED].includes(current.status) && !current.rating;
+    const ratable = current.status === TICKET_STATUS.CLOSED && !current.rating;
     if (!ratable) {
-      return c.json(fail(reqId, 'TICKET_NOT_RATABLE', 'ให้คะแนนได้เฉพาะ Ticket ที่เสร็จสิ้น/ปิดงานแล้ว และยังไม่เคยให้คะแนน'), 400);
+      return c.json(fail(reqId, 'TICKET_NOT_RATABLE', 'ให้คะแนนได้เฉพาะ Ticket ที่ปิดงานแล้วและยังไม่เคยให้คะแนน'), 400);
     }
 
-    const { data, error } = await supabase
+    const admin = createAdminClient(c.env);
+    const { data: criteria, error: criteriaError } = await loadActiveRatingCriteria(admin);
+    if (criteriaError || !criteria?.length) {
+      return c.json(fail(reqId, 'TICKET_RATING_CRITERIA_UNAVAILABLE', 'ไม่พบหัวข้อประเมินที่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 409);
+    }
+    if (!ratingsMatchCriteria(body.ratings, criteria.map((criterion) => String(criterion.key)))) {
+      return c.json(fail(reqId, 'TICKET_RATING_CRITERIA_CHANGED', 'หัวข้อประเมินมีการเปลี่ยนแปลง กรุณารีเฟรชหน้าแล้วให้คะแนนใหม่'), 409);
+    }
+    const rating = calculateTicketOverallRating(body.ratings);
+    const ratingSnapshot = criteria.map((criterion) => ({
+      key: String(criterion.key),
+      label: String(criterion.label),
+      score: body.ratings[String(criterion.key)],
+    }));
+    const { data, error } = await admin
       .from('tickets')
-      .update({ rating: body.rating, feedback: body.feedback ?? null, feedback_at: new Date().toISOString() })
+      .update({ rating, rating_details: body.ratings, rating_criteria_snapshot: ratingSnapshot, feedback: body.feedback ?? null, feedback_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single();
@@ -564,7 +815,7 @@ ticketsRoute.post(
       module: 'ticket',
       targetTable: 'tickets',
       targetId: id,
-      detail: body,
+      detail: { ...body, rating },
       requestId: reqId,
     });
 

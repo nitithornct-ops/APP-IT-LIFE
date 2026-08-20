@@ -12,14 +12,23 @@ import {
   List,
   ListOrdered,
   Minus,
+  Move,
   Printer,
   Redo2,
   Table2,
+  Trash2,
   Underline,
   Undo2,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Button } from '../../components/ui/Button';
 import { FormModal } from '../../components/ui/Modal';
 import { apiFetch } from '../../services/apiClient';
@@ -33,6 +42,13 @@ interface WordLikeEditorProps {
   fileName: string;
   readOnly?: boolean;
   className?: string;
+}
+
+interface ImageSelectionBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
 const tools = [
@@ -73,12 +89,16 @@ function escapeHtml(value: string): string {
 
 export function WordLikeEditor({ value, onChange, fileName, readOnly = false, className }: WordLikeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const lastEmitted = useRef('');
   const savedRange = useRef<Range | null>(null);
+  const pointerCleanup = useRef<(() => void) | null>(null);
   const [promptKind, setPromptKind] = useState<'link' | 'field' | 'image' | null>(null);
   const [promptValue, setPromptValue] = useState('');
   const [imageWidth, setImageWidth] = useState<string>(IMAGE_WIDTHS[0].value);
   const [imageError, setImageError] = useState('');
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
+  const [imageBounds, setImageBounds] = useState<ImageSelectionBounds | null>(null);
 
   // หน้า Vendor เปิดแบบไม่ต้องล็อกอินและเป็นโหมดอ่านอย่างเดียว จึงต้องไม่ยิงคำขอที่ต้องยืนยันตัวตน
   const brandingQuery = useQuery({
@@ -89,12 +109,47 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   });
   const organizationLogoUrl = brandingQuery.data?.logoUrl ?? '';
 
+  const updateImageBounds = useCallback((image = selectedImage) => {
+    const scrollArea = scrollAreaRef.current;
+    if (!image || !scrollArea || !image.isConnected) {
+      setImageBounds(null);
+      if (image && !image.isConnected) setSelectedImage(null);
+      return;
+    }
+    const imageRect = image.getBoundingClientRect();
+    const scrollRect = scrollArea.getBoundingClientRect();
+    setImageBounds({
+      left: imageRect.left - scrollRect.left + scrollArea.scrollLeft,
+      top: imageRect.top - scrollRect.top + scrollArea.scrollTop,
+      width: imageRect.width,
+      height: imageRect.height,
+    });
+  }, [selectedImage]);
+
+  const selectImage = useCallback((image: HTMLImageElement | null) => {
+    setSelectedImage(image);
+    if (!image) {
+      setImageBounds(null);
+      return;
+    }
+    window.requestAnimationFrame(() => updateImageBounds(image));
+  }, [updateImageBounds]);
+
   useEffect(() => {
     if (!editorRef.current || value === lastEmitted.current) return;
     const safe = sanitizeFormHtml(value);
     editorRef.current.innerHTML = safe;
     lastEmitted.current = safe;
-  }, [value]);
+    selectImage(null);
+  }, [selectImage, value]);
+
+  useEffect(() => {
+    const update = () => updateImageBounds();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [updateImageBounds]);
+
+  useEffect(() => () => pointerCleanup.current?.(), []);
 
   function emitChange() {
     if (!editorRef.current) return;
@@ -141,7 +196,168 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     setPromptKind(null);
     restoreSelection();
     const sizing = imageWidth === '100%' ? 'max-width:100%' : `width:${imageWidth};max-width:100%`;
-    run('insertHTML', `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" style="${sizing};height:auto" /><p><br></p>`);
+    run('insertHTML', `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" data-image-layout="inline" draggable="false" style="${sizing};height:auto;display:block;margin-left:0;margin-right:auto" /><p><br></p>`);
+  }
+
+  function imageFromEventTarget(target: EventTarget | null): HTMLImageElement | null {
+    if (!(target instanceof Element)) return null;
+    const image = target.closest('img');
+    return image instanceof HTMLImageElement && editorRef.current?.contains(image) ? image : null;
+  }
+
+  function makeImageFree(image: HTMLImageElement) {
+    const editor = editorRef.current;
+    if (!editor || image.dataset.imageLayout === 'free') return;
+    const imageRect = image.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    image.dataset.imageLayout = 'free';
+    image.style.position = 'absolute';
+    image.style.left = `${Math.max(0, imageRect.left - editorRect.left)}px`;
+    image.style.top = `${Math.max(0, imageRect.top - editorRect.top)}px`;
+    image.style.width = `${imageRect.width}px`;
+    image.style.height = `${imageRect.height}px`;
+    image.style.margin = '0';
+    image.style.zIndex = '1';
+  }
+
+  function setImageInline(alignment: 'left' | 'center' | 'right' = 'left') {
+    if (!selectedImage) return;
+    selectedImage.dataset.imageLayout = 'inline';
+    selectedImage.style.position = 'static';
+    selectedImage.style.removeProperty('left');
+    selectedImage.style.removeProperty('top');
+    selectedImage.style.removeProperty('z-index');
+    selectedImage.style.display = 'block';
+    selectedImage.style.marginLeft = alignment === 'left' ? '0' : 'auto';
+    selectedImage.style.marginRight = alignment === 'right' ? '0' : 'auto';
+    emitChange();
+    window.requestAnimationFrame(() => updateImageBounds(selectedImage));
+  }
+
+  function setImageFree() {
+    if (!selectedImage) return;
+    makeImageFree(selectedImage);
+    emitChange();
+    window.requestAnimationFrame(() => updateImageBounds(selectedImage));
+  }
+
+  function removeSelectedImage() {
+    if (!selectedImage) return;
+    selectedImage.remove();
+    selectImage(null);
+    emitChange();
+  }
+
+  function startPointerTracking(onMove: (event: PointerEvent) => void, onEnd: () => void) {
+    pointerCleanup.current?.();
+    const finish = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      pointerCleanup.current = null;
+      onEnd();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    pointerCleanup.current = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+  }
+
+  function handleImagePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (readOnly || event.button !== 0) return;
+    const image = imageFromEventTarget(event.target);
+    if (!image) return;
+    event.preventDefault();
+    selectImage(image);
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus({ preventScroll: true });
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const initialRect = image.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    const initialLeft = Math.max(0, initialRect.left - editorRect.left);
+    const initialTop = Math.max(0, initialRect.top - editorRect.top);
+    let didMove = false;
+
+    startPointerTracking((pointerEvent) => {
+      const deltaX = pointerEvent.clientX - startX;
+      const deltaY = pointerEvent.clientY - startY;
+      if (!didMove && Math.hypot(deltaX, deltaY) < 3) return;
+      if (!didMove) {
+        makeImageFree(image);
+        didMove = true;
+      }
+      const maxLeft = Math.max(0, editor.clientWidth - image.offsetWidth);
+      const maxTop = Math.max(0, editor.scrollHeight - image.offsetHeight);
+      image.style.left = `${Math.min(maxLeft, Math.max(0, initialLeft + deltaX))}px`;
+      image.style.top = `${Math.min(maxTop, Math.max(0, initialTop + deltaY))}px`;
+      updateImageBounds(image);
+    }, () => {
+      if (didMove) emitChange();
+      updateImageBounds(image);
+    });
+  }
+
+  function handleResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>, horizontalDirection: -1 | 1) {
+    if (!selectedImage || !editorRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const image = selectedImage;
+    const editor = editorRef.current;
+    const startX = event.clientX;
+    const startRect = image.getBoundingClientRect();
+    const startWidth = startRect.width;
+    const aspectRatio = startRect.height > 0 ? startRect.width / startRect.height : 1;
+    const startLeft = Number.parseFloat(image.style.left) || image.offsetLeft || 0;
+    const isFree = image.dataset.imageLayout === 'free';
+    const maxWidth = Math.max(40, horizontalDirection < 0 && isFree
+      ? startLeft + startWidth
+      : editor.clientWidth - startLeft);
+
+    startPointerTracking((pointerEvent) => {
+      const requestedWidth = startWidth + ((pointerEvent.clientX - startX) * horizontalDirection);
+      const nextWidth = Math.min(maxWidth, Math.max(40, requestedWidth));
+      image.style.width = `${nextWidth}px`;
+      image.style.maxWidth = '100%';
+      image.style.height = `${nextWidth / aspectRatio}px`;
+      if (horizontalDirection < 0 && isFree) {
+        image.style.left = `${Math.max(0, startLeft - (nextWidth - startWidth))}px`;
+      }
+      updateImageBounds(image);
+    }, () => {
+      emitChange();
+      updateImageBounds(image);
+    });
+  }
+
+  function handleEditorKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!selectedImage || readOnly) return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      removeSelectedImage();
+      return;
+    }
+    if (event.key === 'Escape') {
+      selectImage(null);
+      return;
+    }
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    makeImageFree(selectedImage);
+    const step = event.shiftKey ? 10 : 1;
+    const currentLeft = Number.parseFloat(selectedImage.style.left) || 0;
+    const currentTop = Number.parseFloat(selectedImage.style.top) || 0;
+    const nextLeft = currentLeft + (event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0);
+    const nextTop = currentTop + (event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0);
+    selectedImage.style.left = `${Math.max(0, nextLeft)}px`;
+    selectedImage.style.top = `${Math.max(0, nextTop)}px`;
+    emitChange();
+    updateImageBounds(selectedImage);
   }
 
   function insertImageFile(file: File) {
@@ -216,7 +432,12 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           <button type="button" title="พิมพ์ / บันทึก PDF" aria-label="พิมพ์ / บันทึก PDF" className="form-toolbar-button" onClick={() => window.print()}><Printer className="h-4 w-4" /></button>
         </span>
       </div>
-      <div id="form-print-area" className="max-h-[calc(100vh-260px)] overflow-auto px-3 py-5 md:px-8">
+      <div
+        id="form-print-area"
+        ref={scrollAreaRef}
+        onScroll={() => updateImageBounds()}
+        className="relative max-h-[calc(100vh-260px)] overflow-auto px-3 py-5 md:px-8"
+      >
         <div
           ref={editorRef}
           role="textbox"
@@ -226,8 +447,38 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           suppressContentEditableWarning
           spellCheck
           onInput={emitChange}
+          onClick={(event) => selectImage(readOnly ? null : imageFromEventTarget(event.target))}
+          onPointerDown={handleImagePointerDown}
+          onDragStart={(event) => {
+            if (imageFromEventTarget(event.target)) event.preventDefault();
+          }}
+          onKeyDown={handleEditorKeyDown}
           className={cn('form-document mx-auto bg-white text-slate-900 shadow-xl outline-none', readOnly && 'cursor-default')}
         />
+        {!readOnly && selectedImage && imageBounds && (
+          <div
+            data-testid="editor-image-selection"
+            className="form-image-selection"
+            style={{ left: imageBounds.left, top: imageBounds.top, width: imageBounds.width, height: imageBounds.height }}
+          >
+            <div
+              role="toolbar"
+              aria-label="เครื่องมือจัดรูปภาพ"
+              className={cn('form-image-context-toolbar', imageBounds.top < 52 && 'form-image-context-toolbar-below')}
+            >
+              <span className="whitespace-nowrap px-1 text-[11px] font-bold text-slate-500">รูปภาพ</span>
+              <button type="button" title="ลากย้ายอิสระ" aria-label="ลากย้ายอิสระ" onClick={setImageFree}><Move className="h-3.5 w-3.5" /></button>
+              <button type="button" title="วางตามแนวข้อความ ชิดซ้าย" aria-label="วางตามแนวข้อความ ชิดซ้าย" onClick={() => setImageInline('left')}><AlignLeft className="h-3.5 w-3.5" /></button>
+              <button type="button" title="วางตามแนวข้อความ กึ่งกลาง" aria-label="วางตามแนวข้อความ กึ่งกลาง" onClick={() => setImageInline('center')}><AlignCenter className="h-3.5 w-3.5" /></button>
+              <button type="button" title="วางตามแนวข้อความ ชิดขวา" aria-label="วางตามแนวข้อความ ชิดขวา" onClick={() => setImageInline('right')}><AlignRight className="h-3.5 w-3.5" /></button>
+              <button type="button" title="ลบรูปภาพ" aria-label="ลบรูปภาพ" className="text-rose-600" onClick={removeSelectedImage}><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+            <button type="button" aria-label="ปรับขนาดรูปจากมุมซ้ายบน" className="form-image-resize-handle -left-1.5 -top-1.5 cursor-nwse-resize" onPointerDown={(event) => handleResizePointerDown(event, -1)} />
+            <button type="button" aria-label="ปรับขนาดรูปจากมุมขวาบน" className="form-image-resize-handle -right-1.5 -top-1.5 cursor-nesw-resize" onPointerDown={(event) => handleResizePointerDown(event, 1)} />
+            <button type="button" aria-label="ปรับขนาดรูปจากมุมซ้ายล่าง" className="form-image-resize-handle -bottom-1.5 -left-1.5 cursor-nesw-resize" onPointerDown={(event) => handleResizePointerDown(event, -1)} />
+            <button type="button" aria-label="ปรับขนาดรูปจากมุมขวาล่าง" className="form-image-resize-handle -bottom-1.5 -right-1.5 cursor-nwse-resize" onPointerDown={(event) => handleResizePointerDown(event, 1)} />
+          </div>
+        )}
       </div>
 
       {promptKind && (

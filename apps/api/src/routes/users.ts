@@ -65,7 +65,7 @@ usersRoute.post('/invite', requirePermission('user.manage'), zValidator('json', 
     return dbFailJson(c, 'USER_INVITE_FAILED', inviteError, 'เชิญผู้ใช้ไม่สำเร็จ');
   }
 
-  const supabase = c.get('supabase');
+  const supabase = createAdminClient(c.env);
   let profileWarning: string | null = null;
 
   if (body.employeeCode || body.departmentId || body.positionId) {
@@ -99,10 +99,10 @@ usersRoute.post('/invite', requirePermission('user.manage'), zValidator('json', 
 });
 
 usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', updateUserSchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
+  const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const targetId = c.req.param('id');
+  const targetId = c.req.param('id')!;
   const body = c.req.valid('json');
 
   const patch: Record<string, unknown> = { updated_by: actorId };
@@ -114,19 +114,40 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
   if (body.supervisorId !== undefined) patch.supervisor_id = body.supervisorId;
   if (body.status !== undefined) patch.status = body.status;
 
-  // เขียนผ่าน Client ของผู้ใช้เพื่อให้ RLS ตรวจซ้ำอีกชั้น แล้วค่อยอ่านค่ากลับด้วย Admin Client
-  // เพราะ RETURNING ของ update จะแตะคอลัมน์ phone ที่ authenticated ไม่มีสิทธิ์อ่าน
-  // ใช้ Admin client เพราะ authenticated ไม่มีสิทธิ์อ่านทุกคอลัมน์ของ profiles คนอื่น (20260908100000)
-  // สิทธิ์ที่แท้จริงถูกตรวจไปแล้วที่ middleware ของเส้นทางนี้ (user.manage)
-  const auditBefore = await loadAuditSnapshot(createAdminClient(c.env), 'profiles', targetId);
+  // profiles ปิด UPDATE ของ authenticated แล้ว (20260915100000) จึงเขียนด้วย Admin client
+  // หลัง requirePermission('user.manage') ตรวจสิทธิ์เรียบร้อย และบันทึก audit ทุกครั้ง
+  const auditBefore = await loadAuditSnapshot(supabase, 'profiles', targetId);
+
+  if (!auditBefore) {
+    return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้ที่ระบุ'), 404);
+  }
+
+  if (body.status !== undefined && body.status !== auditBefore.status) {
+    const { error: authStatusError } = await supabase.auth.admin.updateUserById(targetId, {
+      // Supabase ใช้ "none" สำหรับยกเลิกการ ban; 100 ปีใช้แทนการระงับแบบไม่มีกำหนด
+      ban_duration: body.status === 'inactive' ? '876000h' : 'none',
+    });
+    if (authStatusError) {
+      return c.json(fail(reqId, 'USER_AUTH_STATUS_UPDATE_FAILED', 'ปรับสถานะบัญชีเข้าสู่ระบบไม่สำเร็จ'), 502);
+    }
+  }
 
   const { error } = await supabase.from('profiles').update(patch).eq('id', targetId);
 
   if (error) {
+    if (body.status !== undefined && body.status !== auditBefore.status) {
+      // คืนสถานะ Auth แบบ best effort หาก profile update ล้ม เพื่อไม่ให้สองระบบค้างคนละสถานะ
+      const rollback = await supabase.auth.admin.updateUserById(targetId, {
+        ban_duration: auditBefore.status === 'inactive' ? '876000h' : 'none',
+      });
+      if (rollback.error) {
+        console.error(JSON.stringify({ requestId: reqId, code: 'USER_AUTH_STATUS_ROLLBACK_FAILED', targetId }));
+      }
+    }
     return c.json(fail(reqId, 'USER_UPDATE_FAILED', 'บันทึกข้อมูลผู้ใช้ไม่สำเร็จ'), 400);
   }
 
-  const { data } = await createAdminClient(c.env)
+  const { data } = await supabase
     .from('profiles')
     .select('id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at')
     .eq('id', targetId)

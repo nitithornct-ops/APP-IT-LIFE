@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FormModal, Modal } from './Modal';
 
@@ -99,6 +100,26 @@ describe('Modal', () => {
     expect(closeParent).not.toHaveBeenCalled();
   });
 
+  it('does not close the parent when the child unmounts during the Escape event', () => {
+    const closeParent = vi.fn();
+
+    function NestedModals() {
+      const [showChild, setShowChild] = useState(true);
+      return (
+        <Modal title="Parent" onClose={closeParent}>
+          {showChild && <Modal title="Child" onClose={() => setShowChild(false)}><p>Nested content</p></Modal>}
+        </Modal>
+      );
+    }
+
+    render(<NestedModals />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Child' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Parent' })).toBeVisible();
+    expect(closeParent).not.toHaveBeenCalled();
+  });
+
   it('asks before discarding changed form data', () => {
     const onClose = vi.fn();
     render(
@@ -148,10 +169,9 @@ describe('Modal', () => {
 
     it('raises a nested modal above the one that opened it', () => {
       render(
-        <>
-          <Modal title="ชั้นล่าง" onClose={() => {}}>เนื้อหา</Modal>
+        <Modal title="ชั้นล่าง" onClose={() => {}}>
           <Modal title="ชั้นบน" onClose={() => {}}>เนื้อหา</Modal>
-        </>,
+        </Modal>,
       );
       expect(Number(backdropOf('ชั้นบน').style.zIndex)).toBeGreaterThan(Number(backdropOf('ชั้นล่าง').style.zIndex));
     });

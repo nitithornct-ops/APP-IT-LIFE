@@ -58,6 +58,16 @@ export interface ServiceRequestHistoryEntry {
   created_at: string;
 }
 
+export interface ServiceRequestAttachment {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  uploader_label: string | null;
+  signed_url: string | null;
+}
+
 export interface ServiceRequestDetail extends ServiceRequestListItem {
   catalog_id: string | null;
   requested_for: string | null;
@@ -86,4 +96,5 @@ export interface ServiceRequestDetail extends ServiceRequestListItem {
   approval_group: { code: string; name: string } | null;
   tasks: ServiceRequestTask[];
   history: ServiceRequestHistoryEntry[];
+  attachments: ServiceRequestAttachment[];
 }

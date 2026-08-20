@@ -6,13 +6,17 @@ import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
 import type { AppEnv, Bindings } from '../types';
 import { dbFailJson } from '../utils/dbError';
+import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { updateSystemSettingSchema } from '../validators/settings';
 
 const BRANDING_BUCKET = 'branding';
 const ORGANIZATION_LOGO_KEY = 'ORG_LOGO_URL';
+const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
+const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
 const LOGO_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -105,6 +109,65 @@ settingsRoute.use('*', requireAuth);
 
 settingsRoute.get('/branding', async (c) => {
   return c.json(ok(c.get('requestId'), await loadBranding(c.env)));
+});
+
+async function loadTicketFormSignature(env: Bindings) {
+  const admin = createAdminClient(env);
+  const { data: setting } = await admin.from('system_settings')
+    .select('value, updated_at')
+    .eq('key', TICKET_FORM_SIGNATURE_KEY)
+    .maybeSingle();
+  const storagePath = String(setting?.value ?? '');
+  let signatureUrl: string | null = null;
+  if (storagePath) {
+    const { data } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).createSignedUrl(storagePath, 3600);
+    signatureUrl = data?.signedUrl ?? null;
+  }
+  return { signatureUrl, uploadedAt: storagePath ? setting?.updated_at ?? null : null };
+}
+
+settingsRoute.get('/ticket-form-signature', requirePermission('setting.view'), async (c) => {
+  return c.json(ok(c.get('requestId'), await loadTicketFormSignature(c.env)));
+});
+
+settingsRoute.post('/ticket-form-signature', requirePermission('setting.manage'), async (c) => {
+  const requestId = c.get('requestId');
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_REQUIRED', 'กรุณาเลือกไฟล์ลายเซ็น PNG'), 400);
+  if (file.type !== 'image/png') return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_TYPE_NOT_ALLOWED', 'ลายเซ็นต้องเป็นไฟล์ PNG เท่านั้น'), 400);
+  if (file.size > MAX_TICKET_SIGNATURE_BYTES) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_TOO_LARGE', 'ไฟล์ลายเซ็นต้องมีขนาดไม่เกิน 2 MB'), 400);
+  const signature = await verifyFileSignature(file, 'image/png');
+  if (!signature.ok) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ใช่ PNG'), 400);
+
+  const admin = createAdminClient(c.env);
+  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
+  if (loadError || !current) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าลายเซ็นกลาง กรุณาอัปเดตฐานข้อมูลก่อน'), 409);
+  const path = `default/${crypto.randomUUID()}.png`;
+  const { error: uploadError } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).upload(path, file, { contentType: 'image/png', cacheControl: '3600', upsert: false });
+  if (uploadError) return dbFailJson(c, 'TICKET_FORM_SIGNATURE_UPLOAD_FAILED', uploadError);
+  const { error: updateError } = await admin.from('system_settings').update({ value: path, updated_by: c.get('userId'), updated_at: new Date().toISOString() }).eq('key', TICKET_FORM_SIGNATURE_KEY);
+  if (updateError) {
+    await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([path]);
+    return dbFailJson(c, 'TICKET_FORM_SIGNATURE_SAVE_FAILED', updateError);
+  }
+  const previousPath = String(current.value ?? '');
+  if (previousPath && previousPath !== path) await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([previousPath]);
+  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE_TICKET_FORM_SIGNATURE', module: 'settings', targetTable: 'system_settings', targetId: TICKET_FORM_SIGNATURE_KEY, detail: { sizeBytes: file.size, replaced: Boolean(previousPath) }, requestId });
+  return c.json(ok(requestId, await loadTicketFormSignature(c.env)));
+});
+
+settingsRoute.delete('/ticket-form-signature', requirePermission('setting.manage'), async (c) => {
+  const requestId = c.get('requestId');
+  const admin = createAdminClient(c.env);
+  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
+  if (loadError || !current) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าลายเซ็นกลาง'), 404);
+  const previousPath = String(current.value ?? '');
+  const { error: updateError } = await admin.from('system_settings').update({ value: '', updated_by: c.get('userId'), updated_at: new Date().toISOString() }).eq('key', TICKET_FORM_SIGNATURE_KEY);
+  if (updateError) return dbFailJson(c, 'TICKET_FORM_SIGNATURE_DELETE_FAILED', updateError);
+  if (previousPath) await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([previousPath]);
+  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'DELETE_TICKET_FORM_SIGNATURE', module: 'settings', targetTable: 'system_settings', targetId: TICKET_FORM_SIGNATURE_KEY, requestId });
+  return c.json(ok(requestId, await loadTicketFormSignature(c.env)));
 });
 
 settingsRoute.post('/logo', requirePermission('setting.manage'), async (c) => {

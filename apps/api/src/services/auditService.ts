@@ -6,6 +6,7 @@ import type { Bindings } from '../types';
  * อ่านสถานะของแถวก่อนแก้ไข เพื่อส่งเข้า writeAuditLog เป็นค่า before
  * ใช้ client ที่ผูกกับ JWT ของผู้ใช้เสมอ — ถ้า RLS ไม่ให้เห็นแถวนั้น ก็ไม่ควรบันทึกเนื้อหาของมันลง log
  * คืน null เมื่ออ่านไม่ได้ ผู้เรียกยังบันทึก audit ต่อได้ (แค่ไม่มีรายการ changes)
+ * Snapshot ที่คืนถูกลบข้อมูลส่วนบุคคล/เนื้อหาอิสระก่อนเสมอ เพื่อลดการคัดลอกข้อมูลทั้งแถวลง audit
  */
 export async function loadAuditSnapshot(
   supabase: SupabaseClient,
@@ -14,7 +15,7 @@ export async function loadAuditSnapshot(
 ): Promise<Record<string, unknown> | null> {
   if (!id) return null;
   const { data } = await supabase.from(table).select('*').eq('id', id).maybeSingle();
-  return asPlainObject(data);
+  return sanitizeAuditData(asPlainObject(data));
 }
 
 /** รับค่าที่ Supabase คืนมาแล้วคัดเฉพาะกรณีที่เป็น object ธรรมดาจริง ๆ (ไม่ใช่ error หรือ array) */
@@ -42,6 +43,30 @@ export interface AuditLogEntry {
 
 /** คอลัมน์ที่เปลี่ยนทุกครั้งอยู่แล้ว ไม่ใช่สาระของการแก้ไข จึงไม่ต้องรกอยู่ในรายการ changes */
 const NOISE_COLUMNS = new Set(['updated_at', 'updated_by', 'created_at', 'created_by']);
+const SENSITIVE_AUDIT_KEY = /(?:password|passcode|token|secret|signature|signed_?url|storage_?path|file_?path|attachment|phone|e-?mail|employee_?code|full_?name|first_?name|last_?name|description|resolution|reason|notes?|body|comment|address|symptom|root_?cause)/i;
+const REDACTED = '[REDACTED]';
+
+function sanitizeAuditValue(value: unknown, depth: number): unknown {
+  if (depth > 4) return '[TRUNCATED]';
+  if (typeof value === 'string') return value.length > 500 ? `${value.slice(0, 500)}…` : value;
+  if (Array.isArray(value)) return value.slice(0, 20).map((entry) => sanitizeAuditValue(entry, depth + 1));
+  const objectValue = asPlainObject(value);
+  if (!objectValue) return value;
+
+  return Object.fromEntries(
+    Object.entries(objectValue).map(([key, entry]) => [
+      key,
+      SENSITIVE_AUDIT_KEY.test(key) ? REDACTED : sanitizeAuditValue(entry, depth + 1),
+    ]),
+  );
+}
+
+/** ลบ credentials, PII และ free text ที่อาจมี PII ก่อนเขียนลงหลักฐาน audit */
+export function sanitizeAuditData(value: unknown): Record<string, unknown> | null {
+  const plain = asPlainObject(value);
+  if (!plain) return null;
+  return sanitizeAuditValue(plain, 0) as Record<string, unknown>;
+}
 
 function sameValue(left: unknown, right: unknown): boolean {
   if (left === right) return true;
@@ -75,16 +100,21 @@ export function diffRows(
 /**
  * บันทึก Audit Log — ต้องใช้ Service Role เท่านั้น เพราะ audit_logs ไม่มี insert policy
  * ให้ authenticated (ป้องกันผู้ใช้ทั่วไปปลอมแปลง Log ของตัวเอง)
- * ความล้มเหลวของการเขียน Audit Log ต้องไม่ทำให้ request หลักล้มตาม จึง catch ไว้ในนี้
+ * หากเขียนไม่ได้จะ throw ให้ request ล้มและส่ง structured log ออกไป แทนการ fail-open แบบเดิม
+ * ส่วน mutation ที่มีผลต่อ security/ledger มี database trigger หรือ transactional RPC เป็นหลักฐาน
+ * แบบ atomic อีกชั้นหนึ่ง
  */
 export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promise<void> {
   try {
     const supabase = createAdminClient(env);
-    const changes = diffRows(entry.before, entry.after);
+    const safeBefore = sanitizeAuditData(entry.before);
+    const safeAfter = sanitizeAuditData(entry.after);
+    const changes = diffRows(safeBefore, safeAfter);
+    const safeDetail = sanitizeAuditData(entry.detail);
     const detail =
       entry.before || entry.after
-        ? { ...(entry.detail ?? {}), changes, changedFields: Object.keys(changes) }
-        : entry.detail;
+        ? { ...(safeDetail ?? {}), changes, changedFields: Object.keys(changes) }
+        : safeDetail;
     const { error } = await supabase.from('audit_logs').insert({
       actor_id: entry.actorId ?? null,
       actor_email: entry.actorEmail ?? null,
@@ -99,9 +129,10 @@ export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promis
     });
 
     if (error) {
-      console.error(JSON.stringify({ msg: 'audit_log_write_failed', error: error.message }));
+      throw new Error(error.message);
     }
   } catch (err) {
     console.error(JSON.stringify({ msg: 'audit_log_write_exception', error: String(err) }));
+    throw new Error('AUDIT_LOG_WRITE_FAILED', { cause: err });
   }
 }

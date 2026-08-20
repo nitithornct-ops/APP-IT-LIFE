@@ -7,6 +7,7 @@ import {
   Clock3,
   Download,
   FilterX,
+  FileText,
   Loader2,
   Plus,
   Search,
@@ -35,6 +36,7 @@ import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
 import { formatThaiDate } from '../../utils/date';
+import { LOCKED_TICKET_STATUSES, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
 
 const TICKET_STATUSES: TicketStatus[] = [
   'ใหม่',
@@ -50,7 +52,6 @@ const TICKET_STATUSES: TicketStatus[] = [
 ];
 
 const TICKET_PRIORITIES: TicketPriority[] = ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'];
-
 const priorityTone: Record<TicketPriority, 'secondary' | 'info' | 'warning' | 'danger'> = {
   ต่ำ: 'secondary',
   ปานกลาง: 'info',
@@ -58,21 +59,8 @@ const priorityTone: Record<TicketPriority, 'secondary' | 'info' | 'warning' | 'd
   วิกฤต: 'danger',
 };
 
-const statusTone: Record<TicketStatus, 'secondary' | 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  ใหม่: 'info',
-  รับเรื่องแล้ว: 'primary',
-  กำลังดำเนินการ: 'primary',
-  รออะไหล่: 'warning',
-  รอผู้ใช้งาน: 'warning',
-  'ส่งต่อ Outsource': 'warning',
-  เสร็จสิ้น: 'success',
-  ปิดงาน: 'success',
-  ยกเลิก: 'secondary',
-  'ยกระดับเป็น Incident': 'danger',
-};
-
 function StatusBadge({ status }: { status: TicketStatus }) {
-  return <Badge variant={statusTone[status]}>{status}</Badge>;
+  return <Badge variant={ticketStatusTone[status]}>{ticketStatusLabel[status]}</Badge>;
 }
 
 function TicketMetricCard({
@@ -325,6 +313,7 @@ function CreateTicketForm({
 export function TicketsPage() {
   const { me, hasPermission } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebouncedValue(searchInput.trim(), 350);
@@ -334,6 +323,20 @@ export function TicketsPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
+  const canCloseTicket = hasPermission('ticket.close');
+
+  /**
+   * แก้ไขและยกเลิกจากหน้ารายการ ใช้ปลายทางเดียวกับหน้ารายละเอียด จึงผ่านกฎการเปลี่ยนสถานะ
+   * และการตรวจสิทธิ์ชุดเดียวกันทั้งหมด — ฝั่งเซิร์ฟเวอร์เป็นผู้ตัดสินเสมอ ปุ่มที่ซ่อนเป็นเรื่องของสายตา
+   */
+  const updateTicket = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      apiFetch(`/api/v1/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
 
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'ticket-categories'],
@@ -473,7 +476,7 @@ export function TicketsPage() {
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">สถานะ: ทั้งหมด</option>
-              {TICKET_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+              {TICKET_STATUSES.map((item) => <option key={item} value={item}>{ticketStatusLabel[item]}</option>)}
             </select>
             <select
               aria-label="กรองตามประเภทปัญหา"
@@ -576,7 +579,28 @@ export function TicketsPage() {
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.outsource_name ?? '—'}</td>
                       <td className="px-3 py-3 text-right">
-                        <RowActions recordLabel={ticket.ticket_no} actions={[{ kind: 'view', to: `/tickets/${ticket.id}`, label: 'รายละเอียด' }]} />
+                        <RowActions
+                          recordLabel={ticket.ticket_no}
+                          actions={[
+                            { kind: 'view', to: `/tickets/${ticket.id}`, label: 'รายละเอียด' },
+                            { kind: 'custom', icon: FileText, to: `/tickets/${ticket.id}/form`, label: 'ดูแบบฟอร์ม' },
+                            {
+                              kind: 'edit',
+                              label: ticket.status === 'เสร็จสิ้น' ? 'ตรวจสอบ / ปิดงาน' : 'ดำเนินการ',
+                              hidden: !canManageTicket || LOCKED_TICKET_STATUSES.includes(ticket.status),
+                              to: `/tickets/${ticket.id}?action=edit#ticket-work-panel`,
+                            },
+                            {
+                              kind: 'cancel',
+                              hidden: !canCloseTicket || LOCKED_TICKET_STATUSES.includes(ticket.status),
+                              isPending: updateTicket.isPending,
+                              reasonLabel: 'เหตุผลที่ยกเลิก',
+                              reasonPlaceholder: 'เช่น ผู้แจ้งแก้ไขเองได้แล้ว / แจ้งซ้ำกับใบอื่น',
+                              confirmDescription: 'Ticket จะถูกยกเลิกแต่ยังอยู่ในระบบพร้อมเหตุผล เพื่อให้ตรวจสอบย้อนหลังและออกรายงานได้ครบ',
+                              onConfirm: (reason) => updateTicket.mutate({ id: ticket.id, body: { status: 'ยกเลิก', note: reason } }),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}
