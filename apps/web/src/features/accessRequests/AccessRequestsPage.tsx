@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
@@ -146,11 +147,11 @@ function SubmitAccessRequestForm({ systems, onClose }: { systems: AccessSystem[]
 export function AccessRequestsPage() {
   const { me, hasPermission } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
-  const [status, setStatus] = useState('');
-  const [mineOnly, setMineOnly] = useState(false);
-  const [pendingApprovalOnly, setPendingApprovalOnly] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const table = useTableParams<'status' | 'mine' | 'pendingMyApproval'>({ filters: ['status', 'mine', 'pendingMyApproval'] });
+  const { page, pageSize } = table;
+  const { status } = table.filters;
+  const mineOnly = table.filters.mine === 'true';
+  const pendingApprovalOnly = table.filters.pendingMyApproval === 'true';
 
   const systemsQuery = useQuery({
     queryKey: ['access-systems'],
@@ -200,8 +201,7 @@ export function AccessRequestsPage() {
             <button
               type="button"
               onClick={() => {
-                setMineOnly((v) => !v);
-                setPage(1);
+                table.setFilter('mine', mineOnly ? '' : 'true');
               }}
               className={`rounded-full px-3 py-1 ${mineOnly ? 'bg-primary-700 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
             >
@@ -210,8 +210,7 @@ export function AccessRequestsPage() {
             <button
               type="button"
               onClick={() => {
-                setPendingApprovalOnly((v) => !v);
-                setPage(1);
+                table.setFilter('pendingMyApproval', pendingApprovalOnly ? '' : 'true');
               }}
               className={`rounded-full px-3 py-1 ${pendingApprovalOnly ? 'bg-primary-700 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
             >
@@ -220,8 +219,7 @@ export function AccessRequestsPage() {
             <select
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(1);
+                table.setFilter('status', e.target.value);
               }}
               className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900"
             >
@@ -301,7 +299,7 @@ export function AccessRequestsPage() {
             </div>
           )}
 
-          {requestsQuery.data && <TablePagination page={requestsQuery.data.pagination.page} pageSize={pageSize} totalItems={requestsQuery.data.pagination.totalItems} totalPages={requestsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {requestsQuery.data && <TablePagination page={requestsQuery.data.pagination.page} pageSize={pageSize} totalItems={requestsQuery.data.pagination.totalItems} totalPages={requestsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
     </div>
