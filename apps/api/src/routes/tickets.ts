@@ -9,7 +9,15 @@ import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
-import { addTicketBusinessHours, parseTicketBusinessCalendar, ticketBusinessMinutesBetween } from '../services/ticketSlaService';
+import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
+import {
+  ACTIVE_WORK_STATUSES,
+  TICKET_STATUS,
+  WAITING_STATUSES,
+  applyStatusChange,
+  assertTransition,
+  changesSlaPause,
+} from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { applySort } from '../utils/sort';
@@ -29,19 +37,6 @@ import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema
 export const ticketsRoute = new Hono<AppEnv>();
 ticketsRoute.use('*', requireAuth);
 
-const TICKET_STATUS = {
-  NEW: 'ใหม่',
-  ACK: 'รับเรื่องแล้ว',
-  IN_PROGRESS: 'กำลังดำเนินการ',
-  WAITING_PARTS: 'รออะไหล่',
-  WAITING_USER: 'รอผู้ใช้งาน',
-  OUTSOURCE: 'ส่งต่อ Outsource',
-  RESOLVED: 'เสร็จสิ้น',
-  CLOSED: 'ปิดงาน',
-  CANCELLED: 'ยกเลิก',
-  ESCALATED: 'ยกระดับเป็น Incident',
-} as const;
-
 const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
 const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
 const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
@@ -60,44 +55,6 @@ async function loadActiveRatingCriteria(client: ReturnType<typeof createAdminCli
     .eq('status', 'active')
     .order('sort_order')
     .order('created_at');
-}
-
-const ACTIVE_WORK_STATUSES: string[] = [
-  TICKET_STATUS.IN_PROGRESS,
-  TICKET_STATUS.WAITING_PARTS,
-  TICKET_STATUS.WAITING_USER,
-  TICKET_STATUS.OUTSOURCE,
-  TICKET_STATUS.RESOLVED,
-  TICKET_STATUS.CLOSED,
-  TICKET_STATUS.CANCELLED,
-  TICKET_STATUS.ESCALATED,
-];
-
-const TRANSITIONS: Record<string, string[]> = {
-  [TICKET_STATUS.NEW]: [
-    TICKET_STATUS.ACK,
-    TICKET_STATUS.IN_PROGRESS,
-    TICKET_STATUS.OUTSOURCE,
-    TICKET_STATUS.CLOSED,
-    TICKET_STATUS.CANCELLED,
-    TICKET_STATUS.ESCALATED,
-  ],
-  [TICKET_STATUS.ACK]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.IN_PROGRESS]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.WAITING_PARTS]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.WAITING_USER]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.OUTSOURCE]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.RESOLVED]: [TICKET_STATUS.CLOSED],
-  [TICKET_STATUS.CLOSED]: [],
-  [TICKET_STATUS.CANCELLED]: [],
-  [TICKET_STATUS.ESCALATED]: [],
-};
-
-function assertTransition(from: string, to: string) {
-  if (!to || from === to) return;
-  if (!(TRANSITIONS[from] ?? []).includes(to)) {
-    throw new Error(`ไม่สามารถเปลี่ยนสถานะ Ticket จาก "${from}" เป็น "${to}" ได้`);
-  }
 }
 
 async function hasPerm(c: Context<AppEnv>, permissionKey: string): Promise<boolean> {
@@ -520,10 +477,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
 
   const patch: Record<string, unknown> = { updated_by: actorId };
   const now = new Date();
-  const waitingStatuses = new Set<string>([TICKET_STATUS.WAITING_PARTS, TICKET_STATUS.WAITING_USER]);
-  const changesSlaPause = toStatus !== fromStatus
-    && (waitingStatuses.has(toStatus) || Boolean(current.sla_paused_at));
-  const businessCalendar = body.categoryId !== undefined || isReopen || changesSlaPause
+  const businessCalendar = body.categoryId !== undefined || isReopen || changesSlaPause(current, toStatus)
     ? await loadTicketBusinessCalendar(c)
     : null;
 
@@ -570,39 +524,9 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     patch.due_at = addTicketBusinessHours(now, resolutionSlaHours, businessCalendar!).toISOString();
     patch.reopen_count = (current.reopen_count ?? 0) + 1;
   } else if (toStatus !== fromStatus) {
-    patch.status = toStatus;
-    if (toStatus === TICKET_STATUS.ACK && !current.acknowledged_at) patch.acknowledged_at = now.toISOString();
-    if (toStatus === TICKET_STATUS.RESOLVED) patch.resolved_at = current.resolved_at ?? now.toISOString();
-    if (toStatus === TICKET_STATUS.CLOSED) {
-      patch.resolved_at = current.resolved_at ?? now.toISOString();
-      patch.closed_at = now.toISOString();
-    }
-    if (toStatus === TICKET_STATUS.CANCELLED) patch.closed_at = now.toISOString();
-    if (toStatus === TICKET_STATUS.OUTSOURCE) patch.outsource_sent_at = current.outsource_sent_at ?? now.toISOString();
+    applyStatusChange(patch, current, toStatus, now, businessCalendar!);
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
-
-  if (toStatus !== fromStatus && !isReopen) {
-    if (!current.sla_paused_at && waitingStatuses.has(toStatus)) {
-      patch.sla_paused_at = now.toISOString();
-    } else if (current.sla_paused_at && !waitingStatuses.has(toStatus)) {
-      const pausedBusinessMinutes = ticketBusinessMinutesBetween(
-        new Date(current.sla_paused_at),
-        now,
-        businessCalendar!,
-      );
-      patch.sla_paused_at = null;
-      patch.sla_paused_minutes = Number(current.sla_paused_minutes ?? 0) + pausedBusinessMinutes;
-      const effectiveDueAt = patch.due_at ?? current.due_at;
-      if (effectiveDueAt && pausedBusinessMinutes > 0) {
-        patch.due_at = addTicketBusinessHours(
-          new Date(String(effectiveDueAt)),
-          pausedBusinessMinutes / 60,
-          businessCalendar!,
-        ).toISOString();
-      }
-    }
-  }
 
   const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
