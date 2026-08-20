@@ -1,3 +1,4 @@
+import { csvCell } from '@itlife/shared';
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
@@ -242,11 +243,8 @@ function buildDataset(config: ReportConfig, definition: ReportDefinition, entrie
   };
 }
 
-export function csvCell(input: unknown): string {
-  let text = input === null || input === undefined ? '' : String(input);
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
+/** re-export ตัวกลางเพื่อให้จุดเรียกเดิมยังใช้ path นี้ได้ */
+export { csvCell };
 
 export function reportCsv(dataset: ReturnType<typeof buildDataset>): string {
   const header = dataset.columns.map((column) => csvCell(column.label)).join(',');

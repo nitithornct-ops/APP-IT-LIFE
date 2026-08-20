@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { csvCell } from '@itlife/shared';
 import { Hono } from 'hono';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '../lib/supabase';
@@ -233,9 +234,8 @@ governanceRoute.post('/:domain/exports/csv', async (c) => {
   if (!(await hasPermission(c, 'evidence.export'))) return c.json(fail(requestId, 'FORBIDDEN', 'ไม่มีสิทธิ์ Export Evidence'), 403);
   try {
     const result = await loadDomain(c.get('supabase'), domain, config, false, false, c.get('userEmail'));
-    const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
     const lines = ['domain,entity,code,title,status,owner,due_date,score'];
-    for (const record of result.records) lines.push([domain, record.entity, record.code, record.title, record.status, record.owner, record.due_date, record.score].map(quote).join(','));
+    for (const record of result.records) lines.push([domain, record.entity, record.code, record.title, record.status, record.owner, record.due_date, record.score].map(csvCell).join(','));
     await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'EXPORT_CSV', module: 'governance', detail: { domain, rows: result.records.length }, requestId });
     return c.json(ok(requestId, { filename: `governance-${domain}-${new Date().toISOString().slice(0, 10)}.csv`, csv: lines.join('\r\n') }));
   } catch (error) {
