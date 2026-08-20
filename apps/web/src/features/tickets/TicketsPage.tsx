@@ -538,6 +538,8 @@ export function TicketsPage() {
                 mode="server"
                 sort={sort}
                 onSortChange={table.setSort}
+                stickyHeader
+                cardOnMobile
                 className="min-w-[1120px] w-full text-left text-sm"
               >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
@@ -555,30 +557,30 @@ export function TicketsPage() {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                   {ticketsQuery.data.items.map((ticket, index) => (
                     <tr key={ticket.id} className="align-top transition hover:bg-blue-50/40 dark:hover:bg-slate-700/30">
-                      <td className="px-3 py-3 text-slate-500">{(page - 1) * pageSize + index + 1}</td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 text-slate-500" data-label="ลำดับ">{(page - 1) * pageSize + index + 1}</td>
+                      <td className="px-3 py-3" data-label="เลขที่">
                         <p className="whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-200">{ticket.ticket_no}</p>
                         <div className="mt-1"><Badge variant={priorityTone[ticket.priority]}>{ticket.priority}</Badge></div>
                       </td>
-                      <td className="max-w-[260px] px-3 py-3">
+                      <td className="max-w-[260px] px-3 py-3" data-label="เรื่อง">
                         <Link to={`/tickets/${ticket.id}`} className="font-semibold text-slate-800 hover:text-blue-700 hover:underline dark:text-slate-100 dark:hover:text-blue-300">
                           {ticket.title}
                         </Link>
                         {ticket.is_security && <AlertTriangle className="ml-1 inline h-3.5 w-3.5 text-red-500" aria-label="Security" />}
                         <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{ticket.ticket_categories?.name ?? 'ไม่ระบุประเภท'} · {ticket.priority}</p>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3" data-label="ผู้แจ้ง">
                         <p className="font-medium text-slate-700 dark:text-slate-200">{requesterName(ticket)}{ticket.requester_id === me?.profile.id ? ' (ของฉัน)' : ''}</p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{requesterDepartment(ticket)}</p>
                         <span className="mt-1 inline-flex rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{sourceLabel(ticket.source_channel)}</span>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3" data-label="สถานะ/SLA">
                         <StatusBadge status={ticket.status} />
                         <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{ticket.due_at ? formatThaiDate(ticket.due_at, 'd/MM/yyyy HH:mm') : 'ไม่กำหนด SLA'}</p>
                         <SlaBadge dueAt={ticket.due_at} status={ticket.status} />
                       </td>
-                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
-                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.outsource_name ?? '—'}</td>
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300" data-label="ผู้รับผิดชอบ">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300" data-label="Outsource">{ticket.outsource_name ?? '—'}</td>
                       <td className="px-3 py-3 text-right">
                         <RowActions
                           recordLabel={ticket.ticket_no}

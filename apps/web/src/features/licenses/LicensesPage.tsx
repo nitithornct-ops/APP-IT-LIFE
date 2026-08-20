@@ -389,7 +389,7 @@ export function LicensesPage() {
 
           {visibleItems.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable className="w-full text-left text-sm">
+              <DataTable tableId="licenses" className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="p-2">ซอฟต์แวร์</th>

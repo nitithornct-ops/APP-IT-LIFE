@@ -289,6 +289,8 @@ export function AssetsPage() {
                 mode="server"
                 sort={sort}
                 onSortChange={table.setSort}
+                freezeFirstColumn
+                cardOnMobile
                 className="w-full text-left text-sm"
               >
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
@@ -305,20 +307,20 @@ export function AssetsPage() {
                 <tbody>
                   {items.map((a) => (
                     <tr key={a.id} data-testid={`asset-row-${a.id}`} className="border-t border-slate-100 dark:border-slate-700">
-                      <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{a.asset_code}</td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400" data-label="รหัส">{a.asset_code}</td>
+                      <td className="px-2 py-2" data-label="ชื่อทรัพย์สิน">
                         <Link to={`/assets/${a.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
                           {a.name}
                         </Link>
                       </td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400" data-label="หมวดหมู่">
                         {a.category?.name ?? (a.category_id ? categoryById.get(a.category_id) : null) ?? '—'}
                       </td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400" data-label="ผู้ถือครอง">
                         {a.owner ? `${a.owner.first_name_th} ${a.owner.last_name_th}` : '—'}
                       </td>
-                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{a.location ?? '—'}</td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 text-slate-500 dark:text-slate-400" data-label="สถานที่">{a.location ?? '—'}</td>
+                      <td className="px-2 py-2" data-label="สถานะ">
                         <Badge variant={assetStatusTone[a.status]}>{a.status}</Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
