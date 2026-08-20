@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -204,13 +205,10 @@ function DataQualityPanel() {
 export function CmdbPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showDataQuality, setShowDataQuality] = useState(false);
-  const [ciType, setCiType] = useState('');
-  const [environment, setEnvironment] = useState('');
-  const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
+  const table = useTableParams<'ciType' | 'environment' | 'status' | 'search'>({ filters: ['ciType', 'environment', 'status', 'search'] });
+  const { page, pageSize } = table;
+  const { ciType, environment, status, search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
@@ -267,19 +265,19 @@ export function CmdbPage() {
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <span>รายการ Configuration Item</span>
           <div className="flex flex-wrap items-center gap-2 text-xs font-normal">
-            <select value={ciType} onChange={(e) => { setCiType(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={ciType} onChange={(e) => table.setFilter('ciType', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุกประเภท</option>
               {CI_TYPES.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            <select value={environment} onChange={(e) => { setEnvironment(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={environment} onChange={(e) => table.setFilter('environment', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุก Environment</option>
               {CI_ENVIRONMENTS.map((env) => (
                 <option key={env} value={env}>{env}</option>
               ))}
             </select>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={status} onChange={(e) => table.setFilter('status', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุกสถานะ</option>
               {CI_STATUSES.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -295,7 +293,7 @@ export function CmdbPage() {
               type="search"
               placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => table.setFilter('search', e.target.value, { replace: true })}
               className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
             />
             <ExportCsvButton
@@ -363,7 +361,7 @@ export function CmdbPage() {
             </div>
           )}
 
-          {itemsQuery.data && <TablePagination page={itemsQuery.data.pagination.page} pageSize={pageSize} totalItems={itemsQuery.data.pagination.totalItems} totalPages={itemsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {itemsQuery.data && <TablePagination page={itemsQuery.data.pagination.page} pageSize={pageSize} totalItems={itemsQuery.data.pagination.totalItems} totalPages={itemsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
     </div>
