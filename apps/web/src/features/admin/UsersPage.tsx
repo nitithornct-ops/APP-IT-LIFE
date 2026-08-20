@@ -1,4 +1,5 @@
-import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
+import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
@@ -498,11 +499,10 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
 }
 
 export function UsersPage() {
-  const [search, setSearch] = useState('');
+  const table = useTableParams<'search'>({ filters: ['search'] });
+  const { page, pageSize, sort } = table;
+  const { search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sort, setSort] = useState<TableSort | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -569,8 +569,7 @@ export function UsersPage() {
           placeholder="ค้นหาชื่อหรืออีเมล..."
           value={search}
           onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
+            table.setFilter('search', e.target.value, { replace: true });
           }}
           className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
         />
@@ -599,7 +598,7 @@ export function UsersPage() {
           <DataTable
             mode="server"
             sort={sort}
-            onSortChange={(next) => { setSort(next); setPage(1); }}
+            onSortChange={table.setSort}
             className="w-full text-left text-sm"
           >
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -651,7 +650,7 @@ export function UsersPage() {
         </div>
       )}
 
-      {usersQuery.data && <TablePagination page={usersQuery.data.pagination.page} pageSize={pageSize} totalItems={usersQuery.data.pagination.totalItems} totalPages={usersQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+      {usersQuery.data && <TablePagination page={usersQuery.data.pagination.page} pageSize={pageSize} totalItems={usersQuery.data.pagination.totalItems} totalPages={usersQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
     </div>
   );
 }
