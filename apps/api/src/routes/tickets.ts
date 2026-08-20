@@ -11,9 +11,7 @@ import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import {
-  ACTIVE_WORK_STATUSES,
   TICKET_STATUS,
-  WAITING_STATUSES,
   applyStatusChange,
   assertTransition,
   changesSlaPause,
@@ -26,7 +24,7 @@ import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -385,6 +383,130 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
   });
 
   return c.json(ok(reqId, ticket), 201);
+});
+
+/**
+ * แก้ไข Ticket หลายใบพร้อมกัน — มอบหมายผู้รับผิดชอบ หรือเปลี่ยนสถานะระหว่างการทำงาน
+ *
+ * ตรวจสิทธิ์และ state machine "รายใบ" ไม่ใช่รายชุด แล้วคืนผลแยกต่อ id เพราะการเลือก
+ * 20 ใบแล้วล้มทั้งชุดเพราะใบเดียวปิดไปแล้ว บังคับให้ผู้ใช้มานั่งไล่หาเองว่าใบไหนพัง
+ * ใบที่ผ่านจะถูกบันทึกจริง ใบที่ไม่ผ่านจะบอกเหตุผลกลับไปเป็นรายใบ
+ *
+ * ทำทีละใบตามลำดับ ไม่ขนาน เพื่อให้ worklog กับ audit log เรียงตามที่เกิดจริง —
+ * ISMS ต้องตรวจย้อนได้ว่าใครทำอะไรกับใบไหนเมื่อไร ซึ่ง audit รายชุดรายการเดียวตอบไม่ได้
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
+ */
+ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { ids, status, assigneeId, note } = c.req.valid('json');
+
+  const [canUpdate, canAssign, canTriage] = await Promise.all([
+    hasPerm(c, 'ticket.update'),
+    hasPerm(c, 'ticket.assign'),
+    hasPerm(c, 'ticket.triage'),
+  ]);
+  if (!canUpdate && !canAssign && !canTriage) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
+  }
+  if (assigneeId !== undefined && !canAssign && !canUpdate) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์มอบหมายผู้รับผิดชอบ'), 403);
+  }
+
+  // RLS กรองใบที่ผู้ใช้ไม่มีสิทธิ์เห็นออกไปเอง ใบที่หายไปจะถูกรายงานว่าไม่พบ
+  const { data: currentRows, error: loadError } = await supabase.from('tickets').select('*').in('id', ids);
+  if (loadError) return dbFailJson(c, 'TICKETS_BULK_LOAD_FAILED', loadError);
+  const byId = new Map((currentRows ?? []).map((row) => [String(row.id), row]));
+
+  const needsCalendar = status !== undefined
+    && (currentRows ?? []).some((row) => changesSlaPause(row as never, status));
+  const businessCalendar = needsCalendar ? await loadTicketBusinessCalendar(c) : null;
+
+  const succeeded: { id: string; ticketNo: string; status: string }[] = [];
+  const failed: { id: string; code: string; message: string }[] = [];
+
+  for (const id of ids) {
+    const current = byId.get(id);
+    if (!current) {
+      failed.push({ id, code: 'TICKET_NOT_FOUND', message: 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง' });
+      continue;
+    }
+
+    const fromStatus = String(current.status);
+    const toStatus = status ?? fromStatus;
+
+    if (toStatus !== fromStatus) {
+      const isLegacyTriage = fromStatus === TICKET_STATUS.NEW && toStatus === TICKET_STATUS.ACK && canTriage;
+      if (!canUpdate && !isLegacyTriage) {
+        failed.push({ id, code: 'PERMISSION_DENIED', message: 'ท่านไม่มีสิทธิ์เปลี่ยนสถานะใบนี้' });
+        continue;
+      }
+      try {
+        assertTransition(fromStatus, toStatus);
+      } catch (error) {
+        failed.push({ id, code: 'TICKET_TRANSITION_INVALID', message: (error as Error).message });
+        continue;
+      }
+    }
+
+    const now = new Date();
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (assigneeId !== undefined) patch.assignee_id = assigneeId;
+    if (toStatus !== fromStatus) applyStatusChange(patch, current as never, toStatus, now, businessCalendar!);
+
+    const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
+    const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
+    if (error || !updated) {
+      failed.push({ id, code: 'TICKET_UPDATE_FAILED', message: 'บันทึกไม่สำเร็จ' });
+      continue;
+    }
+
+    await supabase.from('ticket_worklogs').insert({
+      ticket_id: id,
+      action: assigneeId !== undefined && toStatus === fromStatus ? 'คัดแยก/มอบหมาย' : 'บันทึกการดำเนินงาน',
+      detail: note ?? null,
+      status_from: fromStatus,
+      status_to: (patch.status as string) ?? fromStatus,
+      is_public: true,
+      actor_id: actorId,
+    });
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'ticket',
+      targetTable: 'tickets',
+      targetId: id,
+      detail: { status, assigneeId, note, bulk: true },
+      requestId: reqId,
+      before: auditBefore,
+      after: updated,
+    });
+
+    if (assigneeId && assigneeId !== current.assignee_id) {
+      await sendNotification(c.env, {
+        recipientId: assigneeId,
+        type: 'ticket_assigned',
+        title: `ท่านได้รับมอบหมาย Ticket: ${updated.title}`,
+        link: `/tickets/${id}`,
+      });
+    }
+    if (patch.status && patch.status !== fromStatus && current.requester_id !== actorId) {
+      await sendNotification(c.env, {
+        recipientId: current.requester_id,
+        type: 'ticket_status_changed',
+        title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
+        link: `/tickets/${id}`,
+      });
+    }
+
+    succeeded.push({ id, ticketNo: String(updated.ticket_no), status: String(updated.status) });
+  }
+
+  return c.json(ok(reqId, { succeeded, failed }));
 });
 
 ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationHook), async (c) => {
