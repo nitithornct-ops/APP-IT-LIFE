@@ -31,3 +31,46 @@ test('opens the shared work panel from the Ticket list and explains final status
   await expect(status.locator('option', { hasText: 'ปิดงานแล้ว' })).toHaveCount(1);
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-actions-fixed.png'), fullPage: true });
 });
+
+test('sorts the Ticket list by SLA due date and keeps the sort across pages', async ({ page }) => {
+  const email = process.env.UAT_ADMIN_EMAIL;
+  const password = process.env.UAT_ADMIN_PASSWORD;
+  if (!email || !password) throw new Error('UAT credentials are required');
+
+  await page.goto('/login');
+  await page.getByLabel('อีเมล', { exact: true }).fill(email);
+  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+
+  await page.goto('/tickets');
+  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+
+  const slaHeader = page.getByRole('columnheader', { name: /สถานะ\/SLA/ });
+  await expect(slaHeader).toHaveAttribute('aria-sort', 'none');
+
+  const sortButton = page.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA', exact: true });
+  const ascendingRequest = page.waitForResponse((response) =>
+    response.url().includes('/api/v1/tickets?') && response.url().includes('sort=due_at') && response.url().includes('order=asc'));
+  await sortButton.click();
+  await ascendingRequest;
+  await expect(slaHeader).toHaveAttribute('aria-sort', 'ascending');
+
+  // ข้ามไปหน้าถัดไปแล้วการเรียงต้องยังอยู่ ทั้งใน request และใน aria-sort
+  const nextPage = page.getByRole('button', { name: 'หน้าถัดไป', exact: true });
+  if (await nextPage.isEnabled()) {
+    const pagedRequest = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/tickets?') && response.url().includes('sort=due_at') && response.url().includes('page=2'));
+    await nextPage.click();
+    await pagedRequest;
+    await expect(slaHeader).toHaveAttribute('aria-sort', 'ascending');
+  }
+
+  const descendingRequest = page.waitForResponse((response) =>
+    response.url().includes('/api/v1/tickets?') && response.url().includes('order=desc'));
+  await sortButton.click();
+  await descendingRequest;
+  await expect(slaHeader).toHaveAttribute('aria-sort', 'descending');
+
+  await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-sort-sla.png'), fullPage: true });
+});

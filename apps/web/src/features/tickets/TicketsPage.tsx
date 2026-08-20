@@ -1,4 +1,4 @@
-import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { DataTable, TablePagination, type TableSort } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -318,6 +318,7 @@ export function TicketsPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sort, setSort] = useState<TableSort | null>(null);
   const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canCloseTicket = hasPermission('ticket.close');
 
@@ -345,9 +346,13 @@ export function TicketsPage() {
   });
 
   const ticketsQuery = useQuery({
-    queryKey: ['tickets', page, pageSize, status, categoryId, priority, search, mineOnly],
+    queryKey: ['tickets', page, pageSize, sort?.key, sort?.order, status, categoryId, priority, search, mineOnly],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      if (sort) {
+        params.set('sort', sort.key);
+        params.set('order', sort.order);
+      }
       if (status) params.set('status', status);
       if (categoryId) params.set('categoryId', categoryId);
       if (priority) params.set('priority', priority);
@@ -368,6 +373,7 @@ export function TicketsPage() {
     setCategoryId('');
     setPriority('');
     setMineOnly(false);
+    setSort(null);
     setPage(1);
   }
 
@@ -528,14 +534,19 @@ export function TicketsPage() {
 
           {ticketsQuery.data && ticketsQuery.data.items.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-              <DataTable mode="server" className="min-w-[1120px] w-full text-left text-sm">
+              <DataTable
+                mode="server"
+                sort={sort}
+                onSortChange={(next) => { setSort(next); setPage(1); }}
+                className="min-w-[1120px] w-full text-left text-sm"
+              >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                   <tr>
                     <th className="px-3 py-3">ลำดับ</th>
-                    <th className="px-3 py-3">เลขที่</th>
-                    <th className="px-3 py-3">เรื่อง</th>
+                    <th className="px-3 py-3" data-sort-key="ticket_no">เลขที่</th>
+                    <th className="px-3 py-3" data-sort-key="title">เรื่อง</th>
                     <th className="px-3 py-3">ผู้แจ้ง</th>
-                    <th className="px-3 py-3">สถานะ/SLA</th>
+                    <th className="px-3 py-3" data-sort-key="due_at" data-sort-label="เรียงตามวันครบกำหนด SLA">สถานะ/SLA</th>
                     <th className="px-3 py-3">ผู้รับผิดชอบ</th>
                     <th className="px-3 py-3">Outsource</th>
                     <th className="px-3 py-3 text-center">ดำเนินการ</th>
