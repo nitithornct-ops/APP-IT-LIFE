@@ -76,6 +76,27 @@ describe('profiles column privileges', () => {
       asUser(db, NO_ROLE_ID, async () => db.query('select * from public.profiles')),
     ).rejects.toThrow(/permission denied/i);
   });
+
+  it('refuses every direct profile update, including the caller own status and department', async () => {
+    await expect(
+      asUser(db, NO_ROLE_ID, async () =>
+        db.query(`update public.profiles set status = 'inactive', department_id = null where id = $1`, [NO_ROLE_ID]),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
+describe('attachment write privileges', () => {
+  it('blocks authenticated users from forging or deleting attachment metadata directly', async () => {
+    await expect(
+      asUser(db, NO_ROLE_ID, async () => db.query(
+        `insert into public.file_attachments
+          (storage_path, original_filename, mime_type, size_bytes, module, target_table, target_id, uploaded_by)
+         values ('forged/path', 'forged.pdf', 'application/pdf', 10, 'ticket', 'tickets', $1, $2)`,
+        [OTHER_USER_ID, NO_ROLE_ID],
+      )),
+    ).rejects.toThrow(/permission denied/i);
+  });
 });
 
 describe('my_profile()', () => {
@@ -101,5 +122,27 @@ describe('my_profile()', () => {
     );
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].id).toBe(ADMIN_ID);
+  });
+});
+
+describe('update_my_profile()', () => {
+  it('allows only the safe self-service fields through the narrow RPC', async () => {
+    const result = await asUser(db, NO_ROLE_ID, async () =>
+      db.query<{ full_name: string; phone: string; status: string }>(
+        `select full_name, phone, status from public.update_my_profile('ชื่อใหม่', '081-234-5678')`,
+      ),
+    );
+    expect(result.rows).toEqual([{ full_name: 'ชื่อใหม่', phone: '081-234-5678', status: 'active' }]);
+  });
+
+  it('rejects profile changes after the account is inactive', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(`update public.profiles set status = 'inactive' where id = $1`, [NO_ROLE_ID]);
+    });
+    await expect(
+      asUser(db, NO_ROLE_ID, async () =>
+        db.query(`select * from public.update_my_profile('กลับมาเอง', null)`),
+      ),
+    ).rejects.toThrow(/inactive|permission denied/i);
   });
 });

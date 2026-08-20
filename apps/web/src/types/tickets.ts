@@ -1,3 +1,5 @@
+import type { TicketRatingDetails, TicketRatingSnapshotItem } from '@itlife/shared';
+
 export type TicketPriority = 'ต่ำ' | 'ปานกลาง' | 'สูง' | 'วิกฤต';
 
 export type TicketStatus =
@@ -54,9 +56,20 @@ export interface TicketWorklog {
   status_to: TicketStatus | null;
   minutes_spent: number | null;
   is_public: boolean;
+  entry_type: 'timeline' | 'comment' | 'internal_note' | 'worklog';
   actor_id: string;
   actor: { full_name: string; email: string } | null;
   created_at: string;
+}
+
+export interface TicketAttachment {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  uploader_label: string | null;
+  signed_url: string | null;
 }
 
 export interface TicketDetail extends TicketListItem {
@@ -71,8 +84,15 @@ export interface TicketDetail extends TicketListItem {
   resolution: string | null;
   closed_at: string | null;
   rating: number | null;
+  rating_details: TicketRatingDetails | null;
+  rating_criteria_snapshot: TicketRatingSnapshotItem[] | null;
   feedback: string | null;
   feedback_at: string | null;
+  signature_storage_path: string | null;
+  signature_url: string | null;
+  signature_source: 'ticket' | 'default' | null;
+  signature_uploaded_by: string | null;
+  signature_uploaded_at: string | null;
   outsource_name: string | null;
   outsource_vendor_id: string | null;
   outsource_issue_no: string | null;
@@ -81,6 +101,7 @@ export interface TicketDetail extends TicketListItem {
   reopen_count: number;
   requester: { full_name: string; email: string } | null;
   assignee: { full_name: string; email: string } | null;
+  attachments: TicketAttachment[];
   worklogs: TicketWorklog[];
 }
 

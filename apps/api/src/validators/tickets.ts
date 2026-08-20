@@ -1,4 +1,4 @@
-import { paginationQuerySchema } from '@itlife/shared';
+import { paginationQuerySchema, ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
 
 const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
@@ -51,8 +51,15 @@ export const updateTicketSchema = z.object({
 
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 
+export const addTicketConversationSchema = z.object({
+  message: z.string().trim().min(1, 'กรุณากรอกข้อความ').max(2000),
+  visibility: z.enum(['public', 'internal']).default('public'),
+});
+
+export type AddTicketConversationInput = z.infer<typeof addTicketConversationSchema>;
+
 export const submitTicketFeedbackSchema = z.object({
-  rating: z.coerce.number().int().min(1, 'คะแนนต้องอยู่ระหว่าง 1-5').max(5, 'คะแนนต้องอยู่ระหว่าง 1-5'),
+  ratings: ticketRatingDetailsSchema,
   feedback: z.string().trim().max(2000).optional(),
 });
 

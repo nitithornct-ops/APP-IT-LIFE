@@ -54,7 +54,10 @@ export function classifyDbError(error: DbErrorLike | null | undefined): {
   if (code === 'PGRST116' || message.includes('Cannot coerce the result to a single JSON object')) {
     return { kind: 'notFound', status: 404 };
   }
-  return { kind: 'unknown', status: 400 };
+  // Unknown SQLSTATEs include connection failures and internal database errors; they are
+  // server failures, not malformed client requests. Returning 500 also makes monitoring
+  // and retry behaviour accurate instead of hiding outages in the 4xx bucket.
+  return { kind: 'unknown', status: 500 };
 }
 
 /**

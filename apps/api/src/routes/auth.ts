@@ -56,26 +56,21 @@ authRoute.patch('/profile', requireAuth, zValidator('json', updateOwnProfileSche
   const reqId = c.get('requestId');
   const body = c.req.valid('json');
 
-  // ไม่ใช้ .select() ต่อท้าย update เพราะ RETURNING จะแตะคอลัมน์ phone ที่ authenticated ไม่มีสิทธิ์อ่าน
-  // — อ่านค่าที่บันทึกแล้วกลับมาผ่าน my_profile() ซึ่งจำกัดไว้ที่เจ้าของแถวเท่านั้น
-  // profiles ถูกจำกัดสิทธิ์อ่านระดับคอลัมน์ไว้ (20260908100000) จึงอ่านสถานะเดิมผ่าน my_profile()
-  // ซึ่งเป็น SECURITY DEFINER ที่ล็อกไว้ที่ auth.uid() แทนการ select * ที่จะถูกปฏิเสธ
+  // profiles ไม่ให้ authenticated UPDATE ตารางตรงอีกแล้ว (20260915100000) เพื่อป้องกัน
+  // ผู้ใช้ข้าม Worker ไปแก้ status/department ของตนเองผ่าน PostgREST
   const beforeProfile = await supabase.rpc('my_profile');
   const auditBefore = Array.isArray(beforeProfile.data) ? beforeProfile.data[0] : beforeProfile.data;
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ full_name: body.fullName, phone: body.phone || null })
-    .eq('id', userId);
+  const { data: updatedRows, error } = await supabase.rpc('update_my_profile', {
+    full_name_input: body.fullName,
+    phone_input: body.phone || null,
+  });
 
   if (error) {
     return c.json(fail(reqId, 'PROFILE_UPDATE_FAILED', 'บันทึกข้อมูลไม่สำเร็จ'), 400);
   }
 
-  const { data: refreshed, error: refreshError } = await supabase.rpc('my_profile');
-  const data = refreshError
-    ? (await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()).data
-    : (Array.isArray(refreshed) ? refreshed[0] : refreshed);
+  const data = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
 
   await writeAuditLog(c.env, {
     actorId: userId,

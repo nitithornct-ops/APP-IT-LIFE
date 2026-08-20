@@ -132,18 +132,16 @@ describe('profiles RLS', () => {
   // เปิดให้อ่านได้ทุกคนที่ login แล้ว ตั้งแต่ Phase 6 Module 6 (ดู header comment ของ
   // 20260812100000_access_requests.sql) — แก้บั๊กแฝงที่ embedded join ไปยัง profiles ของอีกฝ่าย
   // (เช่น requester ของ Ticket/Service Request/Access Request) ถูก RLS กรองเป็น null สำหรับผู้ใช้ที่
-  // ไม่มี user.manage เขียน (update) ยังคงจำกัดเฉพาะเจ้าของแถวหรือผู้มี user.manage เหมือนเดิม
+  // ไม่มี user.manage ส่วน write ถูกปิดจาก browser ทั้งหมดและทำผ่าน Worker/RPC ที่จำกัดคอลัมน์
   it('lets any authenticated user read every profile row (directory-style data)', async () => {
     const result = await asUser(db, REGULAR_USER_ID, async () => db.query('select id from public.profiles'));
     expect(result.rows.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('rejects a plain user updating another profile (write stays self-or-user.manage only)', async () => {
-    const result = await asUser(db, REGULAR_USER_ID, async () =>
+  it('rejects a browser session updating any profile directly', async () => {
+    await expect(asUser(db, REGULAR_USER_ID, async () =>
       db.query(`update public.profiles set full_name = 'สวมรอย' where id = $1 returning id`, [SUPER_ADMIN_ID]),
-    );
-    // RLS USING กรองแถวออกแบบเงียบๆ (ไม่ error) — ยืนยันว่าไม่มีแถวถูกแก้ไข
-    expect(result.rows).toHaveLength(0);
+    )).rejects.toThrow(/permission denied/i);
   });
 
   it('lets super_admin (user.manage) see every profile', async () => {

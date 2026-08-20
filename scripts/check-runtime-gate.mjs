@@ -113,7 +113,7 @@ const REQUIRED_COLUMNS = {
   personal_tasks: ['title', 'status', 'priority', 'due_date', 'recurrence_rule'],
   file_attachments: ['storage_path', 'original_filename', 'mime_type', 'size_bytes', 'module', 'target_table', 'target_id'],
   login_logs: ['user_id', 'email_attempted', 'success', 'failure_reason', 'ip_address', 'user_agent'],
-  audit_logs: ['actor_id', 'actor_email', 'action', 'module', 'target_table', 'target_id', 'detail', 'result'],
+  audit_logs: ['actor_id', 'actor_email', 'action', 'module', 'target_table', 'target_id', 'detail', 'result', 'request_id'],
   system_settings: ['key', 'value', 'group_key', 'is_editable', 'support_status', 'sort_order'],
   line_users: ['link_status'],
   line_sessions: ['session_hash', 'line_user_id', 'expires_at'],
@@ -148,6 +148,31 @@ for (const [fn, body] of [
   ['my_roles', {}],
   ['my_permissions', {}],
   ['has_permission', { permission_key_input: 'dashboard.view' }],
+  ['update_my_profile', { full_name_input: null, phone_input: null }],
+  ['record_inventory_transaction', {
+    item_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    transaction_type_input: 'IN',
+    qty_input: 1,
+    notes_input: null,
+    actor_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    actor_email_input: 'runtime-gate@invalid.local',
+    request_id_input: 'runtime-gate',
+  }],
+  ['adjust_inventory_stock', {
+    item_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    counted_input: 0,
+    notes_input: null,
+    actor_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    actor_email_input: 'runtime-gate@invalid.local',
+    request_id_input: 'runtime-gate',
+  }],
+  ['deactivate_user_access', {
+    user_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    actor_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    actor_email_input: 'runtime-gate@invalid.local',
+    reason_input: 'runtime-gate probe',
+    request_id_input: 'runtime-gate',
+  }],
   // แหล่งข้อมูลจริงของการตรวจสุขภาพระบบใน Governance — ถ้าไม่มี ปุ่มตรวจจะบันทึกผล FAIL ทุกครั้ง
   ['governance_health_snapshot', {}],
 ]) {
@@ -156,7 +181,21 @@ for (const [fn, body] of [
     headers: { ...adminHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (response.status === 404) fail(`database function public.${fn}() is missing; a migration has not been applied.`);
+  if (response.status === 404) {
+    // A real RPC may deliberately raise SQLSTATE P0002 for the non-existent probe ID,
+    // which PostgREST also maps to 404. Only its own schema-cache error means the
+    // migration/function is missing.
+    const responseBody = await response.text();
+    let errorCode = '';
+    try {
+      errorCode = String(JSON.parse(responseBody).code ?? '');
+    } catch {
+      /* a non-PostgREST 404 is handled conservatively below */
+    }
+    if (!errorCode || errorCode.startsWith('PGRST')) {
+      fail(`database function public.${fn}() is missing; a migration has not been applied.`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

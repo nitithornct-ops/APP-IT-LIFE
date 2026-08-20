@@ -1,16 +1,18 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { randomToken } from '../lib/lineAuth';
 import { notifyTicketTeam } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
+import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { publicSubmitTicketSchema, publicTicketStatusQuerySchema } from '../validators/publicTickets';
+import { MAX_FILE_SIZE_BYTES } from '../validators/files';
 
 /**
  * Public (no-login) ticket report page — port of legacy-gas/PublicTicket.html's "แจ้งซ่อม" +
@@ -28,13 +30,44 @@ const PRIVACY_NOTICE = {
   dpoContact: 'DPO / ส่วนงาน IT',
 };
 
+const TRACKING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MAX_PUBLIC_TICKET_ATTACHMENTS = 5;
+const PUBLIC_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
+
+function normalizeTrackingToken(token: string): string {
+  const compact = token.trim().replaceAll('-', '');
+  return /^[0-9a-f]{64}$/i.test(compact) ? compact.toLowerCase() : compact.toUpperCase();
+}
+
+export function generateTrackingCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const compact = [...bytes].map((byte) => TRACKING_CODE_ALPHABET[byte % TRACKING_CODE_ALPHABET.length]).join('');
+  return compact.match(/.{1,4}/g)!.join('-');
+}
+
 async function hashTrackingToken(token: string): Promise<string> {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizeTrackingToken(token)));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function formEnabled(env: AppEnv['Bindings']): boolean {
   return env.PUBLIC_TICKET_FORM_ENABLED !== 'false';
+}
+
+async function loadPublicAttachments(admin: ReturnType<typeof createAdminClient>, ticketIds: string[]) {
+  if (ticketIds.length === 0) return [];
+  const { data } = await admin
+    .from('file_attachments')
+    .select('id, target_id, storage_path, original_filename, mime_type, size_bytes, created_at')
+    .eq('module', 'ticket')
+    .eq('target_table', 'tickets')
+    .in('target_id', ticketIds)
+    .order('created_at', { ascending: true });
+
+  return Promise.all((data ?? []).map(async ({ storage_path, ...attachment }) => {
+    const signed = await createSignedUrl(admin, storage_path, 600);
+    return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
+  }));
 }
 
 publicTicketsRoute.get('/form-data', async (c) => {
@@ -71,7 +104,7 @@ publicTicketsRoute.post(
     // without touching the database, so scripted bots get no signal that they were caught.
     if (body.website) {
       const fakeId = crypto.randomUUID();
-      return c.json(ok(reqId, { id: fakeId, ticketNo: fakeId, trackingToken: randomToken() }), 201);
+      return c.json(ok(reqId, { id: fakeId, ticketNo: fakeId, trackingToken: generateTrackingCode() }), 201);
     }
 
     const admin = createAdminClient(c.env);
@@ -100,7 +133,7 @@ publicTicketsRoute.post(
       Object.fromEntries((slaSettingRows ?? []).map((row) => [row.key, row.value])),
     );
 
-    const trackingToken = randomToken();
+    const trackingToken = generateTrackingCode();
     const trackingTokenHash = await hashTrackingToken(trackingToken);
 
     const { data: ticket, error } = await admin
@@ -143,6 +176,126 @@ publicTicketsRoute.post(
   },
 );
 
+publicTicketsRoute.post(
+  '/:id/attachments',
+  edgeRateLimit({ keyFn: (c) => `public_ticket_attachment:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 20, keyFn: (c) => `public_ticket_attachment:${clientIp(c)}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const tokenResult = publicTicketStatusQuerySchema.safeParse({ token: c.req.header('x-tracking-token') });
+    if (!tokenResult.success) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    }
+
+    const contentLength = Number(c.req.header('content-length') ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE_BYTES + 1024 * 1024) {
+      return c.json(fail(reqId, 'FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB'), 413);
+    }
+
+    const ticketId = c.req.param('id');
+    const admin = createAdminClient(c.env);
+    const tokenHash = await hashTrackingToken(tokenResult.data.token);
+    const { data: ticket } = await admin
+      .from('tickets')
+      .select('id, ticket_no, guest_name')
+      .eq('id', ticketId)
+      .eq('source_channel', 'guest')
+      .eq('public_tracking_token_hash', tokenHash)
+      .maybeSingle();
+    if (!ticket) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    }
+
+    const { count, error: countError } = await admin
+      .from('file_attachments')
+      .select('id', { count: 'exact', head: true })
+      .eq('module', 'ticket')
+      .eq('target_table', 'tickets')
+      .eq('target_id', ticket.id);
+    if (countError) return dbFailJson(c, 'FILE_ATTACHMENT_COUNT_FAILED', countError, 'ตรวจสอบจำนวนไฟล์ไม่สำเร็จ');
+    if ((count ?? 0) >= MAX_PUBLIC_TICKET_ATTACHMENTS) {
+      return c.json(fail(reqId, 'FILE_LIMIT_REACHED', `แนบได้สูงสุด ${MAX_PUBLIC_TICKET_ATTACHMENTS} ไฟล์ต่อ Ticket`), 400);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) {
+      return c.json(fail(reqId, 'VALIDATION_ERROR', 'กรุณาเลือกไฟล์ที่ต้องการแนบ'), 400);
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return c.json(fail(reqId, 'FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB'), 413);
+    }
+    if (!(PUBLIC_TICKET_ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+      return c.json(fail(reqId, 'FILE_TYPE_NOT_ALLOWED', 'รองรับเฉพาะ JPG, PNG, GIF, WebP และ PDF'), 400);
+    }
+
+    const signature = await verifyFileSignature(file, file.type);
+    if (!signature.ok || !signature.resolvedMime) {
+      await writeAuditLog(c.env, {
+        actorEmail: `GUEST:${clientIp(c)}`,
+        action: 'UPLOAD_REJECTED',
+        module: 'file',
+        targetTable: 'file_attachments',
+        targetId: ticket.id,
+        detail: { filename: file.name, declaredMimeType: file.type, sizeBytes: file.size, reason: signature.reason },
+        result: 'denied',
+        requestId: reqId,
+      });
+      return c.json(fail(reqId, 'FILE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ตรงกับชนิดไฟล์ที่ระบุ'), 400);
+    }
+
+    const uploaded = await uploadPublicTicketFile(admin, ticket.id, file, signature.resolvedMime);
+    if ('error' in uploaded) return c.json(fail(reqId, 'FILE_UPLOAD_FAILED', uploaded.error), 400);
+
+    const { data: attachment, error: metadataError } = await admin
+      .from('file_attachments')
+      .insert({
+        storage_path: uploaded.path,
+        original_filename: file.name,
+        mime_type: signature.resolvedMime,
+        size_bytes: file.size,
+        module: 'ticket',
+        target_table: 'tickets',
+        target_id: ticket.id,
+        uploaded_by: null,
+        uploader_label: `ผู้แจ้งผ่านหน้าสาธารณะ: ${ticket.guest_name ?? '-'}`,
+      })
+      .select('id, original_filename, mime_type, size_bytes, created_at')
+      .single();
+    if (metadataError || !attachment) {
+      await deleteFile(admin, uploaded.path);
+      return c.json(fail(reqId, 'FILE_METADATA_SAVE_FAILED', 'บันทึกข้อมูลไฟล์ไม่สำเร็จ'), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorEmail: `GUEST:${clientIp(c)}`,
+      action: 'UPLOAD',
+      module: 'file',
+      targetTable: 'file_attachments',
+      targetId: attachment.id,
+      detail: { ticketId: ticket.id, originalFilename: file.name, sizeBytes: file.size, channel: 'guest' },
+      requestId: reqId,
+    });
+    const signed = await createSignedUrl(admin, uploaded.path, 600);
+    return c.json(ok(reqId, { ...attachment, signed_url: 'url' in signed ? signed.url : null }), 201);
+  },
+);
+
+publicTicketsRoute.post(
+  '/lookup',
+  edgeRateLimit({ keyFn: (c) => `public_ticket_identity_lookup:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `public_ticket_identity_lookup:${clientIp(c)}` }),
+  rateLimit({ windowMs: 86_400_000, max: 40, keyFn: (c) => `public_ticket_identity_lookup_day:${clientIp(c)}` }),
+  async (c) => {
+    // ชื่อและเบอร์โทรเป็นข้อมูลที่ผู้อื่นทราบหรือคาดเดาได้ จึงห้ามใช้เป็น authentication
+    // endpoint เดิมตอบ 410 อย่างชัดเจนเพื่อให้ client รุ่นเก่าไม่ retry/ตีความเป็นผลค้นหาว่าง
+    return c.json(
+      fail(c.get('requestId'), 'TRACKING_TOKEN_REQUIRED', 'กรุณาใช้เลข Ticket และรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE'),
+      410,
+    );
+  },
+);
+
 publicTicketsRoute.get(
   '/:id',
   edgeRateLimit({ keyFn: (c) => `public_ticket_track:${clientIp(c)}` }),
@@ -171,6 +324,8 @@ publicTicketsRoute.get(
       .select('action, detail, status_from, status_to, created_at')
       .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true });
 
-    return c.json(ok(reqId, { ticket, worklogs: worklogs ?? [] }));
+    const attachments = await loadPublicAttachments(admin, [ticket.id]);
+
+    return c.json(ok(reqId, { ticket, worklogs: worklogs ?? [], attachments }));
   },
 );

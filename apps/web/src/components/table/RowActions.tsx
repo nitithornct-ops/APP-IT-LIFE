@@ -27,8 +27,11 @@ export interface RowAction {
   /** view: ลิงก์ไปหน้ารายละเอียด (ใช้แทน onClick) */
   to?: string;
   onClick?: () => void;
-  /** cancel/delete: เรียกเมื่อผู้ใช้กดยืนยันในกล่องแล้วเท่านั้น */
-  onConfirm?: () => void;
+  /** cancel/delete: เรียกเมื่อผู้ใช้กดยืนยันในกล่องแล้วเท่านั้น — ได้เหตุผลมาด้วยเมื่อตั้ง reasonLabel */
+  onConfirm?: (reason: string) => void;
+  /** บังคับให้พิมพ์เหตุผลก่อนยืนยัน สำหรับงานที่ต้องตอบให้ได้ภายหลังว่าทำไมถึงยกเลิก */
+  reasonLabel?: string;
+  reasonPlaceholder?: string;
   confirmTitle?: string;
   confirmDescription?: ReactNode;
   isPending?: boolean;
@@ -59,6 +62,7 @@ const BUTTON_CLASS = 'inline-flex min-h-8 items-center gap-1.5 rounded-lg border
 
 export function RowActions({ recordLabel, actions, className }: RowActionsProps) {
   const [pending, setPending] = useState<RowAction | null>(null);
+  const [reason, setReason] = useState('');
   const visible = actions.filter((action) => !action.hidden);
   if (visible.length === 0) return <span className="text-xs text-slate-400">—</span>;
 
@@ -82,7 +86,7 @@ export function RowActions({ recordLabel, actions, className }: RowActionsProps)
                 type="button"
                 disabled={action.disabled}
                 aria-label={`${label} ${recordLabel}`}
-                onClick={() => (base.needsConfirm ? setPending(action) : action.onClick?.())}
+                onClick={() => { if (!base.needsConfirm) { action.onClick?.(); return; } setReason(''); setPending(action); }}
                 className={cn(BUTTON_CLASS, base.tone)}
               >
                 {content}
@@ -106,12 +110,28 @@ export function RowActions({ recordLabel, actions, className }: RowActionsProps)
           cancelLabel="ไม่ใช่ตอนนี้"
           isPending={pending.isPending}
           testId="row-actions-confirm"
+          confirmDisabled={Boolean(pending.reasonLabel) && !reason.trim()}
           onConfirm={() => {
-            pending.onConfirm?.();
+            pending.onConfirm?.(reason.trim());
             setPending(null);
           }}
           onClose={() => setPending(null)}
-        />
+        >
+          {pending.reasonLabel && (
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+              {pending.reasonLabel} <span className="text-rose-600">*</span>
+              <textarea
+                data-autofocus
+                data-testid="row-actions-reason"
+                rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder={pending.reasonPlaceholder}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+          )}
+        </ConfirmModal>
       )}
     </>
   );

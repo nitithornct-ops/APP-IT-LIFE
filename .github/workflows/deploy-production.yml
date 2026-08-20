@@ -21,7 +21,7 @@ on:
         description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
         required: false
       staging_e2e_run_ref:
-        description: Successful Staging Live E2E workflow run URL or approval reference
+        description: Successful Staging Live E2E run URL/ID for this exact master commit
         required: true
       attachments_approved:
         description: All attachment migration exceptions were reviewed (ไม่มีผลในโหมด fresh-start)
@@ -34,6 +34,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
@@ -47,6 +48,7 @@ jobs:
       MIGRATION_MODE: ${{ inputs.migration_mode }}
       FRESH_START_CONFIRM: ${{ inputs.fresh_start_confirm }}
       STAGING_E2E_APPROVAL_REF: ${{ inputs.staging_e2e_run_ref }}
+      STAGING_E2E_RUN_REF: ${{ inputs.staging_e2e_run_ref }}
       MIGRATION_ATTACHMENTS_APPROVED: ${{ inputs.attachments_approved }}
       PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
@@ -77,6 +79,10 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Verify Staging Live E2E evidence for this commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run staging:gate
       - name: Validate production configuration and migration approval
         run: |
           npm run predeploy
@@ -90,8 +96,8 @@ jobs:
           npm run build
       - name: Apply reviewed database migrations
         run: |
-          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --include-seed --dry-run
-          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --include-seed
+          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
+          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all
       - name: Verify the database matches this release and Auth is locked down
         run: npm run runtime:gate
       - name: Synchronize Worker secrets

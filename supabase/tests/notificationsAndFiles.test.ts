@@ -90,7 +90,7 @@ describe('notifications RLS', () => {
 });
 
 describe('storage.objects RLS (attachments bucket)', () => {
-  it('lets a user insert only into their own folder', async () => {
+  it('blocks all browser-direct object writes, including the caller own folder', async () => {
     await expect(
       asUser(db, USER_A_ID, async () =>
         db.query(`insert into storage.objects (bucket_id, name, owner) values ('attachments', $1, $2)`, [
@@ -98,7 +98,7 @@ describe('storage.objects RLS (attachments bucket)', () => {
           USER_A_ID,
         ]),
       ),
-    ).resolves.toBeDefined();
+    ).rejects.toThrow(/row-level security|policy/i);
 
     await expect(
       asUser(db, USER_A_ID, async () =>
@@ -110,8 +110,12 @@ describe('storage.objects RLS (attachments bucket)', () => {
     ).rejects.toThrow();
   });
 
-  it('lets a user see only objects inside their own folder', async () => {
+  it('keeps storage paths private from browser sessions after API-only hardening', async () => {
     await asServiceRole(db, async () => {
+      await db.query(`insert into storage.objects (bucket_id, name, owner) values ('attachments', $1, $2)`, [
+        `${USER_A_ID}/own.pdf`,
+        USER_A_ID,
+      ]);
       await db.query(`insert into storage.objects (bucket_id, name, owner) values ('attachments', $1, $2)`, [
         `${USER_B_ID}/secret.pdf`,
         USER_B_ID,
@@ -121,7 +125,7 @@ describe('storage.objects RLS (attachments bucket)', () => {
     const result = await asUser(db, USER_A_ID, async () =>
       db.query("select name from storage.objects where bucket_id = 'attachments'"),
     );
-    expect(result.rows.every((row) => (row as { name: string }).name.startsWith(`${USER_A_ID}/`))).toBe(true);
+    expect(result.rows).toHaveLength(0);
   });
 });
 

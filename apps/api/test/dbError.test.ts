@@ -24,9 +24,9 @@ describe('classifyDbError', () => {
     });
   });
 
-  it('falls back to 400 for anything it does not recognise', () => {
-    expect(classifyDbError({ code: 'XX000', message: 'boom' })).toEqual({ kind: 'unknown', status: 400 });
-    expect(classifyDbError(null)).toEqual({ kind: 'unknown', status: 400 });
+  it('treats unknown database failures as server errors', () => {
+    expect(classifyDbError({ code: 'XX000', message: 'boom' })).toEqual({ kind: 'unknown', status: 500 });
+    expect(classifyDbError(null)).toEqual({ kind: 'unknown', status: 500 });
   });
 });
 

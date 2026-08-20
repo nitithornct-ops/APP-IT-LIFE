@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
+import { createSignedUrl } from '../services/storageService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
@@ -100,6 +101,27 @@ async function activeApprovalGroupIdsFor(c: Context<AppEnv>): Promise<string[]> 
   return (data ?? []).map((row) => row.group_id as string);
 }
 
+async function isRequiredAttachmentMissing(
+  admin: ReturnType<typeof createAdminClient>,
+  request: { id: string; catalog_id: string | null },
+): Promise<boolean> {
+  if (!request.catalog_id) return false;
+  const { data: catalog } = await admin
+    .from('service_catalog')
+    .select('attachment_required')
+    .eq('id', request.catalog_id)
+    .maybeSingle();
+  if (!catalog?.attachment_required) return false;
+
+  const { count } = await admin
+    .from('file_attachments')
+    .select('id', { head: true, count: 'exact' })
+    .eq('module', 'service_request')
+    .eq('target_table', 'service_requests')
+    .eq('target_id', request.id);
+  return (count ?? 0) === 0;
+}
+
 serviceRequestsRoute.get('/', zValidator('query', listServiceRequestsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -184,7 +206,23 @@ serviceRequestsRoute.get('/:id', async (c) => {
     return c.json(fail(reqId, 'SERVICE_REQUEST_CHILDREN_LOAD_FAILED', 'ดึงรายละเอียดคำขอบริการไม่สำเร็จ'), 400);
   }
 
-  return c.json(ok(reqId, { ...request, tasks: tasks ?? [], history: history ?? [] }));
+  const admin = createAdminClient(c.env);
+  const { data: attachmentRows, error: attachmentError } = await admin
+    .from('file_attachments')
+    .select('id, storage_path, original_filename, mime_type, size_bytes, created_at, uploader_label')
+    .eq('module', 'service_request')
+    .eq('target_table', 'service_requests')
+    .eq('target_id', id)
+    .order('created_at', { ascending: true });
+  if (attachmentError) {
+    return c.json(fail(reqId, 'SERVICE_REQUEST_ATTACHMENTS_LOAD_FAILED', 'ดึงไฟล์แนบไม่สำเร็จ'), 500);
+  }
+  const attachments = await Promise.all((attachmentRows ?? []).map(async ({ storage_path, ...attachment }) => {
+    const signed = await createSignedUrl(admin, storage_path, 3600);
+    return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
+  }));
+
+  return c.json(ok(reqId, { ...request, tasks: tasks ?? [], history: history ?? [], attachments }));
 });
 
 serviceRequestsRoute.post(
@@ -358,6 +396,9 @@ serviceRequestsRoute.post(
     if (!body.approved && !body.comment) {
       return c.json(fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุเหตุผลการปฏิเสธ', [{ field: 'comment', message: 'จำเป็น' }]), 400);
     }
+    if (body.approved && await isRequiredAttachmentMissing(createAdminClient(c.env), current)) {
+      return c.json(fail(reqId, 'SERVICE_REQUEST_ATTACHMENT_REQUIRED', 'บริการนี้ต้องมีไฟล์แนบก่อนอนุมัติคำขอ'), 400);
+    }
 
     const newStatus = body.approved ? STATUS.PENDING_ASSIGNMENT : STATUS.REJECTED;
     try {
@@ -439,6 +480,11 @@ serviceRequestsRoute.patch('/:id', zValidator('json', updateServiceRequestSchema
     (toStatus === STATUS.CLOSED || toStatus === STATUS.IN_PROGRESS);
   const isCancel = toStatus === STATUS.CANCELLED && toStatus !== fromStatus;
   const isFinalizing = FINALIZING_STATUSES.includes(toStatus) && toStatus !== fromStatus && !isConfirmPath;
+
+  if (toStatus !== fromStatus && toStatus !== STATUS.CANCELLED
+    && await isRequiredAttachmentMissing(createAdminClient(c.env), current)) {
+    return c.json(fail(reqId, 'SERVICE_REQUEST_ATTACHMENT_REQUIRED', 'บริการนี้ต้องมีไฟล์แนบก่อนเริ่มดำเนินการ'), 400);
+  }
 
   let requesterAuthoredHistory = false;
 

@@ -20,5 +20,5 @@ export const publicSubmitTicketSchema = z.object({
 export type PublicSubmitTicketInput = z.infer<typeof publicSubmitTicketSchema>;
 
 export const publicTicketStatusQuerySchema = z.object({
-  token: z.string().trim().regex(/^[0-9a-f]{64}$/i, 'รหัสติดตามไม่ถูกต้อง'),
+  token: z.string().trim().regex(/^(?:[0-9a-f]{64}|[A-HJ-NP-Z2-9]{12}|[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2})$/i, 'รหัสติดตามไม่ถูกต้อง'),
 });

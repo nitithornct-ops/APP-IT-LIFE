@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context, MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
+import { calculateTicketOverallRating } from '@itlife/shared';
 import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
 } from '../lib/lineAuth';
@@ -15,6 +16,7 @@ import type { AppEnv, LineUserProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
+import { ratingsMatchCriteria } from './tickets';
 import {
   lineAdminListQuerySchema, lineAdminUpdateStatusSchema, lineLinkEmployeeSchema,
   lineLoginUrlQuerySchema, lineSubmitTicketSchema, lineTicketFeedbackSchema,
@@ -350,10 +352,25 @@ lineRoute.get(
     if (!ticket || !belongsToLineUser) {
       return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
     }
-    const { data: worklogs } = await admin
+    const [{ data: worklogs }, { data: ratingCriteria }] = await Promise.all([
+      admin
       .from('ticket_worklogs').select('action, detail, status_from, status_to, created_at')
-      .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true });
-    return c.json(ok(reqId, { ticket, worklogs: worklogs ?? [] }));
+      .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
+      admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status').eq('status', 'active').order('sort_order').order('created_at'),
+    ]);
+    let signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
+    let signatureSource: 'ticket' | 'default' | null = signaturePath ? 'ticket' : null;
+    if (!signaturePath) {
+      const { data: setting } = await admin.from('system_settings').select('value').eq('key', 'TICKET_FORM_SIGNATURE_PATH').maybeSingle();
+      signaturePath = String(setting?.value ?? '');
+      if (signaturePath) signatureSource = 'default';
+    }
+    let signatureUrl: string | null = null;
+    if (signaturePath) {
+      const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(signaturePath, 3600);
+      signatureUrl = data?.signedUrl ?? null;
+    }
+    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl, signature_source: signatureSource }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [] }));
   },
 );
 
@@ -371,11 +388,25 @@ lineRoute.post(
     if (!ticket || !belongsToLineUser) {
       return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
     }
-    if (!['เสร็จสิ้น', 'ปิดงาน'].includes(ticket.status) || ticket.rating != null) {
-      return c.json(fail(reqId, 'LINE_TICKET_FEEDBACK_NOT_ALLOWED', 'ให้คะแนนได้เฉพาะงานที่เสร็จสิ้น/ปิดงานแล้ว และยังไม่เคยประเมิน'), 400);
+    if (ticket.status !== 'ปิดงาน' || ticket.rating != null) {
+      return c.json(fail(reqId, 'LINE_TICKET_FEEDBACK_NOT_ALLOWED', 'ให้คะแนนได้เฉพาะ Ticket ที่ปิดงานแล้วและยังไม่เคยประเมิน'), 400);
     }
-    const { rating, comment } = c.req.valid('json');
-    const { error } = await admin.from('tickets').update({ rating, feedback: comment ?? null, feedback_at: new Date().toISOString() }).eq('id', ticket.id);
+    const { ratings, comment } = c.req.valid('json');
+    const { data: criteria, error: criteriaError } = await admin
+      .from('ticket_rating_criteria')
+      .select('key, label')
+      .eq('status', 'active')
+      .order('sort_order')
+      .order('created_at');
+    if (criteriaError || !criteria?.length) {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_CRITERIA_UNAVAILABLE', 'ไม่พบหัวข้อประเมินที่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 409);
+    }
+    if (!ratingsMatchCriteria(ratings, criteria.map((criterion) => String(criterion.key)))) {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_CRITERIA_CHANGED', 'หัวข้อประเมินมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่'), 409);
+    }
+    const rating = calculateTicketOverallRating(ratings);
+    const ratingSnapshot = criteria.map((criterion) => ({ key: String(criterion.key), label: String(criterion.label), score: ratings[String(criterion.key)] }));
+    const { error } = await admin.from('tickets').update({ rating, rating_details: ratings, rating_criteria_snapshot: ratingSnapshot, feedback: comment ?? null, feedback_at: new Date().toISOString() }).eq('id', ticket.id);
     if (error) return dbFailJson(c, 'LINE_TICKET_FEEDBACK_FAILED', error);
     return c.json(ok(reqId, { submitted: true }));
   },

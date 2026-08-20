@@ -7,6 +7,8 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { BrandingSettings, SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
+import { TicketRatingCriteriaSetting } from './TicketRatingCriteriaSetting';
+import { TicketFormSignatureSetting } from './TicketFormSignatureSetting';
 
 const STATUS_COPY: Record<SettingSupportStatus, { label: string; className: string }> = {
   active: { label: 'ใช้งานในระบบ', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200' },
@@ -114,7 +116,7 @@ export function SettingsPage() {
   const visible = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('th');
     return (settingsQuery.data?.settings ?? []).filter((setting) => {
-      if (setting.key === 'ORG_LOGO_URL') return false;
+      if (setting.key === 'ORG_LOGO_URL' || setting.key === 'TICKET_FORM_SIGNATURE_PATH') return false;
       if (activeGroup !== 'ทั้งหมด' && setting.group_key !== activeGroup) return false;
       return !keyword || `${setting.key} ${setting.description} ${setting.group_key}`.toLocaleLowerCase('th').includes(keyword);
     });
@@ -136,6 +138,8 @@ export function SettingsPage() {
 
       {settingsQuery.data && <>
         <OrganizationLogoSetting currentUrl={settingsQuery.data.settings.find((setting) => setting.key === 'ORG_LOGO_URL')?.value ?? ''} canManage={hasPermission('setting.manage')} />
+        <TicketFormSignatureSetting canManage={hasPermission('setting.manage')} />
+        <TicketRatingCriteriaSetting canManage={hasPermission('setting.manage')} />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={<Settings2 className="h-5 w-5" />} label="ค่าตั้งค่าทั้งหมด" value={settingsQuery.data.summary.total} tone="primary" />

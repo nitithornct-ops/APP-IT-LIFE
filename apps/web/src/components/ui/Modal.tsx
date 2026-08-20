@@ -254,6 +254,8 @@ interface ConfirmModalProps {
   cancelLabel?: string;
   tone?: 'primary' | 'danger';
   isPending?: boolean;
+  /** กันการยืนยันจนกว่าเนื้อในกล่อง (เช่น ช่องเหตุผลบังคับ) จะครบ */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
   testId?: string;
@@ -267,6 +269,7 @@ export function ConfirmModal({
   cancelLabel = 'ยกเลิก',
   tone = 'primary',
   isPending = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
   testId,
@@ -282,7 +285,7 @@ export function ConfirmModal({
       onClose={onClose}
       testId={testId}
       contentPadding="compact"
-      footer={<><Button type="button" variant="outline" disabled={isPending} onClick={onClose}>{cancelLabel}</Button><Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} isLoading={isPending} onClick={onConfirm}>{confirmLabel}</Button></>}
+      footer={<><Button type="button" variant="outline" disabled={isPending} onClick={onClose}>{cancelLabel}</Button><Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} isLoading={isPending} disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</Button></>}
     >
       {children}
     </Modal>

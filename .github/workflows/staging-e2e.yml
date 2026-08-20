@@ -12,6 +12,9 @@ on:
       - 'apps/web/e2e/**'
       - 'apps/web/index.html'
       - 'apps/api/src/**'
+      - 'supabase/migrations/**'
+      - 'supabase/seed.sql'
+      - '.github/workflows/staging-e2e.yml'
 
 concurrency:
   # ใช้ staging จริงร่วมกัน จึงต้องต่อคิวทีละงาน ห้ามยกเลิกกลางคันเพราะจะเหลือข้อมูลทดสอบค้างไว้
@@ -30,6 +33,10 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      UAT_ADMIN_EMAIL: ${{ secrets.UAT_ADMIN_EMAIL }}
+      UAT_ADMIN_PASSWORD: ${{ secrets.UAT_ADMIN_PASSWORD }}
+      UAT_SIGNATURE_SOURCE_TICKET_ID: ${{ vars.UAT_SIGNATURE_SOURCE_TICKET_ID }}
+      UAT_FORM_TICKET_ID: ${{ vars.UAT_FORM_TICKET_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,41 +45,37 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # โปรเจกต์อาจยังไม่มี staging (เช่นช่วงเริ่มต้นที่ใช้ Supabase โปรเจกต์เดียว) ถ้าปล่อยให้รันต่อ
-      # ชุดทดสอบสดจะยิงด้วย credential ว่างแล้วล้มทุก PR จนคนเลิกอ่านผลตรวจไปเลย — ซึ่งอันตรายกว่า
-      # การไม่มีด่านนี้ ที่นี่จึงข้ามเมื่อยังไม่ได้ตั้งค่า แต่ต้องข้ามแบบ "ส่งเสียง" ผ่าน warning บนหน้า PR
-      # เพื่อไม่ให้ใครเข้าใจผิดว่าเครื่องหมายถูกสีเขียวแปลว่าผ่านการทดสอบสดมาแล้ว
-      - name: Check whether a staging environment is configured
-        id: staging
+      - name: Require a complete staging environment
         shell: bash
         run: |
-          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "พบการตั้งค่า staging — จะรันชุดทดสอบสดทั้งหมด"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=ข้ามการทดสอบสด::ยังไม่ได้ตั้งค่า GitHub Environment 'staging' (ต้องมี SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY) — ชุดทดสอบสดถูกข้าม ผลสีเขียวของงานนี้ไม่ได้แปลว่าผ่านการทดสอบกับระบบจริง"
-          fi
+          missing=0
+          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD UAT_SIGNATURE_SOURCE_TICKET_ID UAT_FORM_TICKET_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Staging configuration missing::$name is required"
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
 
-      - if: steps.staging.outputs.configured == 'true'
-        run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium
       - name: Create ephemeral staging configuration
-        if: steps.staging.outputs.configured == 'true'
         shell: bash
         run: |
           node -e "const fs=require('fs'); fs.writeFileSync('apps/api/.dev.vars', ['SUPABASE_URL='+process.env.SUPABASE_URL,'SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'SUPABASE_SERVICE_ROLE_KEY='+process.env.SUPABASE_SERVICE_ROLE_KEY,'ALLOWED_ORIGINS=http://localhost:5173','ENVIRONMENT=staging','PUBLIC_APP_URL=http://localhost:5173','PUBLIC_TICKET_FORM_ENABLED=true'].join('\n')+'\n')"
           node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY].join('\n')+'\n')"
       - name: Run all live browser and API flows
-        if: steps.staging.outputs.configured == 'true'
         env:
           LIVE_E2E: "1"
           LIVE_DASHBOARD_E2E: "1"
+          LIVE_PUBLIC_TRACKING_E2E: "1"
           LIVE_REPORT_E2E: "1"
           LIVE_SETTINGS_E2E: "1"
           LIVE_TASKS_E2E: "1"
+          LIVE_TICKET_ACTIONS_E2E: "1"
+          LIVE_TICKET_FORM_E2E: "1"
         run: npm run test:e2e
       - name: Upload browser evidence
-        if: always() && steps.staging.outputs.configured == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: staging-e2e-evidence

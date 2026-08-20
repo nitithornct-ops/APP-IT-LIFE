@@ -467,38 +467,35 @@ accessRegistryRoute.post(
     const body = c.req.valid('json');
     const admin = createAdminClient(c.env);
 
-    const { error: profileError } = await admin.from('profiles').update({ status: 'inactive', updated_by: actorId }).eq('id', body.userId);
-    if (profileError) {
-      return dbFailJson(c, 'EMPLOYEE_DEACTIVATE_FAILED', profileError);
+    const { error: authStatusError } = await admin.auth.admin.updateUserById(body.userId, { ban_duration: '876000h' });
+    if (authStatusError) {
+      return c.json(fail(reqId, 'EMPLOYEE_AUTH_DEACTIVATE_FAILED', 'ระงับบัญชีเข้าสู่ระบบไม่สำเร็จ'), 502);
     }
 
-    const { data: suspended, error: registryError } = await admin
-      .from('user_access_registry')
-      .update({ status: 'suspended', notes: `พ้นสภาพ: ${body.reason}`, updated_by: actorId })
-      .eq('user_id', body.userId)
-      .eq('status', 'active')
-      .select('id');
-
-    if (registryError) {
-      return dbFailJson(c, 'ACCESS_SUSPEND_FAILED', registryError);
-    }
-
-    await writeAuditLog(c.env, {
-      actorId,
-      actorEmail: c.get('userEmail'),
-      action: 'DEACTIVATE_USER',
-      module: 'access_registry',
-      targetTable: 'profiles',
-      targetId: body.userId,
-      detail: { reason: body.reason, suspendedCount: suspended?.length ?? 0 },
-      requestId: reqId,
+    const { data: deactivationResult, error: deactivationError } = await admin.rpc('deactivate_user_access', {
+      user_id_input: body.userId,
+      actor_id_input: actorId,
+      actor_email_input: c.get('userEmail'),
+      reason_input: body.reason,
+      request_id_input: reqId,
     });
+    if (deactivationError) {
+      const rollback = await admin.auth.admin.updateUserById(body.userId, { ban_duration: 'none' });
+      if (rollback.error) {
+        console.error(JSON.stringify({ requestId: reqId, code: 'EMPLOYEE_AUTH_DEACTIVATE_ROLLBACK_FAILED', targetId: body.userId }));
+      }
+      return dbFailJson(c, 'EMPLOYEE_DEACTIVATE_FAILED', deactivationError);
+    }
+
+    const suspendedCount = Number(
+      (deactivationResult as { suspendedCount?: number } | null)?.suspendedCount ?? 0,
+    );
 
     await notifyItAdmins(c.env, {
       type: 'employee_access_suspended',
-      title: `ระงับสิทธิ์ผู้พ้นสภาพ (${suspended?.length ?? 0} รายการ)`,
+      title: `ระงับสิทธิ์ผู้พ้นสภาพ (${suspendedCount} รายการ)`,
     });
 
-    return c.json(ok(reqId, { deactivated: true, suspendedCount: suspended?.length ?? 0 }));
+    return c.json(ok(reqId, { deactivated: true, suspendedCount }));
   },
 );

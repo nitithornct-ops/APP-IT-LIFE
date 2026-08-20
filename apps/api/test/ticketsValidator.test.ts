@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createTicketSchema, listTicketsQuerySchema } from '../src/validators/tickets';
+import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema } from '../src/validators/tickets';
+import { ratingsMatchCriteria } from '../src/routes/tickets';
 
 const CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -38,5 +39,38 @@ describe('ticket create form', () => {
       isSecurity: true,
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('ticket satisfaction form', () => {
+  const ratings = { responsiveness: 5, workQuality: 4, serviceManners: 5, expertise: 4, communication: 3 };
+
+  it('accepts all five criteria from 1 to 5 with an optional comment', () => {
+    expect(submitTicketFeedbackSchema.safeParse({ ratings }).success).toBe(true);
+    expect(submitTicketFeedbackSchema.safeParse({ ratings, feedback: 'บริการรวดเร็ว' }).success).toBe(true);
+  });
+
+  it('rejects empty criteria and scores outside 1 to 5', () => {
+    expect(submitTicketFeedbackSchema.safeParse({ ratings: {} }).success).toBe(false);
+    expect(submitTicketFeedbackSchema.safeParse({ ratings: { ...ratings, expertise: 6 } }).success).toBe(false);
+  });
+
+  it('requires submitted keys to exactly match the currently active criteria', () => {
+    const keys = Object.keys(ratings);
+    expect(ratingsMatchCriteria(ratings, keys)).toBe(true);
+    expect(ratingsMatchCriteria({ responsiveness: 5 }, keys)).toBe(false);
+    expect(ratingsMatchCriteria({ ...ratings, retiredCriterion: 3 }, keys)).toBe(false);
+  });
+});
+
+describe('ticket conversation form', () => {
+  it('accepts public comments and internal notes with bounded content', () => {
+    expect(addTicketConversationSchema.safeParse({ message: 'ขอข้อมูลเพิ่ม', visibility: 'public' }).success).toBe(true);
+    expect(addTicketConversationSchema.safeParse({ message: 'ตรวจสอบกับทีมระบบ', visibility: 'internal' }).success).toBe(true);
+  });
+
+  it('rejects empty and oversized conversation entries', () => {
+    expect(addTicketConversationSchema.safeParse({ message: '   ', visibility: 'public' }).success).toBe(false);
+    expect(addTicketConversationSchema.safeParse({ message: 'x'.repeat(2001), visibility: 'internal' }).success).toBe(false);
   });
 });

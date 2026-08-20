@@ -52,3 +52,21 @@ export interface DashboardSummary {
   generatedAt: string;
 }
 
+export interface MyWorkItem {
+  id: string;
+  kind: 'ticket' | 'service_request' | 'task' | 'service_approval' | 'access_approval' | 'access_fulfillment' | 'workflow_approval';
+  source: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  dueAt: string | null;
+  path: string;
+  action: string;
+}
+
+export interface MyWorkResponse {
+  items: MyWorkItem[];
+  summary: { total: number; overdue: number; approvals: number; assigned: number };
+  generatedAt: string;
+}
+

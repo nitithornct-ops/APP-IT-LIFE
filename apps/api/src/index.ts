@@ -36,6 +36,7 @@ import { serviceRequestsRoute } from './routes/serviceRequests';
 import { settingsRoute } from './routes/settings';
 import { tasksRoute } from './routes/tasks';
 import { ticketsRoute } from './routes/tickets';
+import { ticketRatingCriteriaRoute } from './routes/ticketRatingCriteria';
 import { usersRoute } from './routes/users';
 import { contractsRoute, vendorsRoute } from './routes/vendorsContracts';
 import { vulnerabilitiesRoute } from './routes/vulnerabilities';
@@ -52,7 +53,7 @@ app.use('*', (c, next) =>
   cors({
     origin: parseAllowedOrigins(c.env.ALLOWED_ORIGINS),
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-tracking-token'],
   })(c, next),
 );
 
@@ -77,6 +78,7 @@ app.route('/api/v1/permission-overrides', permissionOverridesRoute);
 app.route('/api/v1/approval-groups', approvalGroupsRoute);
 app.route('/api/v1/employees', employeesRoute);
 app.route('/api/v1/tickets', ticketsRoute);
+app.route('/api/v1/ticket-rating-criteria', ticketRatingCriteriaRoute);
 app.route('/api/v1/service-catalog', serviceCatalogRoute);
 app.route('/api/v1/service-requests', serviceRequestsRoute);
 app.route('/api/v1/settings', settingsRoute);

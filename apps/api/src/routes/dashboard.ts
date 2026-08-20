@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import type { AppEnv } from '../types';
@@ -153,6 +154,93 @@ async function loadSource(
 export const dashboardRoute = new Hono<AppEnv>();
 dashboardRoute.use('*', requireAuth);
 dashboardRoute.use('*', requirePermission('dashboard.view'));
+
+interface MyWorkItem {
+  id: string;
+  kind: 'ticket' | 'service_request' | 'task' | 'service_approval' | 'access_approval' | 'access_fulfillment' | 'workflow_approval';
+  source: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  dueAt: string | null;
+  path: string;
+  action: string;
+}
+
+dashboardRoute.get('/my-work', async (c) => {
+  const requestId = c.get('requestId');
+  const actorId = c.get('userId');
+  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
+  const { data: permissionRows, error: permissionError } = await supabase.rpc('my_permissions');
+  if (permissionError) return dbFailJson(c, 'MY_WORK_PERMISSIONS_FAILED', permissionError);
+  const permissions = new Set((permissionRows ?? []).map((row: { permission_key: string }) => row.permission_key));
+  const items: MyWorkItem[] = [];
+
+  const [groupsResult, ticketsResult, requestsResult, tasksResult, accessApprovalsResult, accessFulfillmentResult, workflowResult] = await Promise.all([
+    supabase.from('approval_group_members').select('group_id').eq('user_id', actorId).eq('status', 'active'),
+    permissions.has('ticket.view')
+      ? supabase.from('tickets').select('id,ticket_no,title,status,priority,due_at').eq('assignee_id', actorId).not('status', 'in', '(เสร็จสิ้น,ปิดงาน,ยกเลิก,ยกระดับเป็น Incident)').order('due_at').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    permissions.has('service_request.view')
+      ? supabase.from('service_requests').select('id,service_code,summary,service_name,status,priority,due_at').eq('assignee_id', actorId).not('status', 'in', '(ปิดงาน,ปฏิเสธ,ยกเลิก)').order('due_at').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    permissions.has('task.view')
+      ? supabase.from('personal_tasks').select('id,title,status,priority,due_date').eq('owner_id', actorId).not('status', 'in', '(เสร็จแล้ว,ยกเลิก)').order('due_date').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    permissions.has('access_request.view')
+      ? supabase.from('access_requests').select('id,status,access_level,review_due,access_systems(name)').eq('approver_id', actorId).eq('status', 'รออนุมัติจากหัวหน้างาน').order('created_at').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    permissions.has('access_request.process')
+      ? supabase.from('access_requests').select('id,status,access_level,review_due,access_systems(name)').eq('status', 'รอส่วนงานไอทีดำเนินการ').or(`it_handler_id.is.null,it_handler_id.eq.${actorId}`).order('created_at').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+    permissions.has('workflow.approve')
+      ? admin.from('workflow_approvals').select('id,status,due_at,workflow_instances(instance_code,record_label)').eq('approver_id', actorId).eq('status', 'รอพิจารณา').order('due_at').limit(100)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const firstError = ticketsResult.error ?? requestsResult.error ?? tasksResult.error
+    ?? accessApprovalsResult.error ?? accessFulfillmentResult.error ?? workflowResult.error ?? groupsResult.error;
+  if (firstError) return dbFailJson(c, 'MY_WORK_LOAD_FAILED', firstError);
+
+  for (const row of ticketsResult.data ?? []) items.push({ id: row.id, kind: 'ticket', source: 'Ticket', title: `${row.ticket_no} · ${row.title}`, status: row.status, priority: row.priority, dueAt: row.due_at, path: `/tickets/${row.id}`, action: 'ดำเนินการ' });
+  for (const row of requestsResult.data ?? []) items.push({ id: row.id, kind: 'service_request', source: 'คำขอบริการ', title: `${row.service_code} · ${row.summary || row.service_name}`, status: row.status, priority: row.priority, dueAt: row.due_at, path: `/service-requests/${row.id}`, action: 'ดำเนินการ' });
+  for (const row of tasksResult.data ?? []) items.push({ id: row.id, kind: 'task', source: 'งานส่วนตัว', title: row.title, status: row.status, priority: row.priority, dueAt: row.due_date, path: '/tasks', action: 'เปิดงาน' });
+
+  const groupIds = (groupsResult.data ?? []).map((row) => row.group_id as string);
+  if (groupIds.length && permissions.has('service_request.view')) {
+    const { data, error } = await supabase.from('service_requests')
+      .select('id,service_code,summary,service_name,status,priority,due_at')
+      .eq('status', 'รออนุมัติ').in('approval_group_id', groupIds).order('due_at').limit(100);
+    if (error) return dbFailJson(c, 'MY_WORK_SERVICE_APPROVALS_FAILED', error);
+    for (const row of data ?? []) items.push({ id: row.id, kind: 'service_approval', source: 'อนุมัติบริการ', title: `${row.service_code} · ${row.summary || row.service_name}`, status: row.status, priority: row.priority, dueAt: row.due_at, path: `/service-requests/${row.id}`, action: 'พิจารณา' });
+  }
+
+  const accessItem = (row: Record<string, unknown>, kind: MyWorkItem['kind'], action: string): MyWorkItem => {
+    const system = row.access_systems as { name?: string } | null;
+    return { id: String(row.id), kind, source: 'คำขอสิทธิ์', title: `${system?.name ?? 'ระบบ'} · ${String(row.access_level ?? '')}`, status: String(row.status), priority: null, dueAt: row.review_due ? String(row.review_due) : null, path: `/access-requests/${String(row.id)}`, action };
+  };
+  for (const row of accessApprovalsResult.data ?? []) items.push(accessItem(row as unknown as Record<string, unknown>, 'access_approval', 'พิจารณา'));
+  for (const row of accessFulfillmentResult.data ?? []) items.push(accessItem(row as unknown as Record<string, unknown>, 'access_fulfillment', 'ดำเนินการให้สิทธิ์'));
+  for (const row of workflowResult.data ?? []) {
+    const instance = row.workflow_instances as unknown as { instance_code?: string; record_label?: string } | null;
+    items.push({ id: row.id, kind: 'workflow_approval', source: 'Workflow', title: `${instance?.instance_code ?? ''} · ${instance?.record_label ?? 'งานอนุมัติ'}`.replace(/^ · /, ''), status: row.status, priority: null, dueAt: row.due_at, path: '/workflows', action: 'พิจารณา' });
+  }
+
+  const timestamp = (value: string | null) => value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+  items.sort((left, right) => timestamp(left.dueAt) - timestamp(right.dueAt) || left.source.localeCompare(right.source, 'th'));
+  const now = Date.now();
+  return c.json(ok(requestId, {
+    items,
+    summary: {
+      total: items.length,
+      overdue: items.filter((item) => item.dueAt && timestamp(item.dueAt) < now).length,
+      approvals: items.filter((item) => item.kind.includes('approval')).length,
+      assigned: items.filter((item) => ['ticket', 'service_request', 'access_fulfillment'].includes(item.kind)).length,
+    },
+    generatedAt: new Date().toISOString(),
+  }));
+});
 
 dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, zodValidationHook), async (c) => {
   const requestId = c.get('requestId');

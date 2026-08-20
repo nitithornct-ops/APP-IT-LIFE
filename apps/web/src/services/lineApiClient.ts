@@ -1,7 +1,4 @@
-import type { ApiResponse } from '@itlife/shared';
-import { ApiError } from './apiClient';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { ApiError, requestApiData } from './apiClient';
 const STORAGE_KEY = 'line_session_token';
 
 /** LINE users have no Supabase session — the token lives in localStorage and rides on x-line-session instead of Authorization. */
@@ -19,19 +16,13 @@ export function clearLineSessionToken(): void {
 
 export async function lineApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getLineSessionToken();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'x-line-session': token } : {}),
-      ...init?.headers,
-    },
-  });
-
-  const body = (await res.json()) as ApiResponse<T>;
-  if (!body.success) {
-    if (body.error.code === 'LINE_SESSION_REQUIRED') clearLineSessionToken();
-    throw new ApiError(body.error.code, body.error.message);
+  const headers = new Headers(init?.headers);
+  if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('x-line-session', token);
+  try {
+    return await requestApiData<T>(path, { ...init, headers });
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'LINE_SESSION_REQUIRED') clearLineSessionToken();
+    throw error;
   }
-  return body.data;
 }

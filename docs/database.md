@@ -204,16 +204,19 @@ CLI) แล้วจำลอง Role/`auth.uid()` ของ Supabase เพื�
 
 ## วิธี Deploy Migration ไปยัง Supabase โปรเจกต์จริง (Phase 9 หรือเมื่อพร้อม)
 
+สำหรับโปรเจกต์ที่ bootstrap และมีข้อมูลใช้งานแล้ว ให้ deploy เฉพาะ migration เพื่อไม่ให้ seed
+เขียนทับ master/business configuration ในทุก release:
+
 ```bash
 npx supabase link --project-ref <project-ref>
-npx supabase db push --linked --include-all --include-seed --dry-run
-npx supabase db push --linked --include-all --include-seed
+npx supabase db push --linked --include-all --dry-run
+npx supabase db push --linked --include-all
 npx supabase migration list --linked
 ```
 
-`supabase/config.toml` กำหนด `supabase/seed.sql` เป็น seed path แล้ว จึงใช้ `--include-seed` ได้โดยไม่ต้องใช้คำสั่ง
-`db execute` ที่ Supabase CLI เวอร์ชันปัจจุบันไม่มี ดูขั้นตอนเต็มที่
-[`helpdesk/NEW_SUPABASE_SETUP.md`](helpdesk/NEW_SUPABASE_SETUP.md)
+ใช้ `--include-seed` เพียงครั้งเดียวเมื่อติดตั้ง **โปรเจกต์ใหม่ที่ยังไม่มีข้อมูลธุรกิจ** ตาม
+[`helpdesk/NEW_SUPABASE_SETUP.md`](helpdesk/NEW_SUPABASE_SETUP.md) เท่านั้น หลังจากนั้นค่าตั้งต้นที่ต้อง
+เปลี่ยนในระบบจริงต้องส่งเป็น migration แบบ idempotent ที่ตรวจค่าปัจจุบัน ไม่รัน seed ซ้ำใน routine deploy
 
 ยังไม่ได้ดำเนินการจริงใน Phase 2 — ต้องมี Supabase Project จริงก่อน (สร้างใน Phase 3) และต้องผ่าน Environment
 Approval ตามกฎ "Production Migration ต้องสั่งทำงานด้วยตนเองหรือมี Environment Approval"

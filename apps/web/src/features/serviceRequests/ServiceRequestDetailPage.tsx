@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Paperclip, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
@@ -319,6 +319,67 @@ function TasksPanel({ request, canManage }: { request: ServiceRequestDetail; can
   );
 }
 
+function AttachmentsPanel({ request, canUpload }: { request: ServiceRequestDetail; canUpload: boolean }) {
+  const queryClient = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!file) throw new ApiError('FILE_REQUIRED', 'กรุณาเลือกไฟล์');
+      if (file.size > 10 * 1024 * 1024) throw new ApiError('FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
+      const data = new FormData();
+      data.append('file', file);
+      data.append('module', 'service_request');
+      data.append('targetTable', 'service_requests');
+      data.append('targetId', request.id);
+      return apiFetch('/api/v1/files', { method: 'POST', body: data });
+    },
+    onSuccess: () => {
+      setFile(null);
+      setServerError(null);
+      void queryClient.invalidateQueries({ queryKey: ['service-requests', request.id] });
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'อัปโหลดไฟล์ไม่สำเร็จ'),
+  });
+
+  return (
+    <Card>
+      <CardHeader><span className="flex items-center gap-2"><Paperclip className="h-4 w-4" />ไฟล์แนบ ({request.attachments?.length ?? 0})</span></CardHeader>
+      <CardBody className="space-y-3">
+        {(request.attachments ?? []).length > 0 ? (
+          <ul className="space-y-2">
+            {request.attachments.map((attachment) => (
+              <li key={attachment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-800 dark:text-slate-200">{attachment.original_filename}</p>
+                  <p className="text-xs text-slate-400">{Math.ceil(attachment.size_bytes / 1024).toLocaleString()} KB · {formatThaiDate(attachment.created_at, 'd MMM yyyy HH:mm')}</p>
+                </div>
+                {attachment.signed_url && <a className="shrink-0 text-primary-700 hover:underline dark:text-primary-300" href={attachment.signed_url} target="_blank" rel="noreferrer">เปิดไฟล์</a>}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-sm text-slate-500">ยังไม่มีไฟล์แนบ</p>}
+
+        {canUpload && (
+          <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-700 sm:flex-row sm:items-center">
+            <input
+              aria-label="เลือกไฟล์แนบคำขอบริการ"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.txt"
+              className="min-w-0 flex-1 text-sm"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+            <Button size="sm" disabled={!file} isLoading={mutation.isPending} onClick={() => mutation.mutate()}>
+              <Upload className="h-4 w-4" />อัปโหลด
+            </Button>
+          </div>
+        )}
+        {serverError && <p className="text-xs text-red-600">{serverError}</p>}
+      </CardBody>
+    </Card>
+  );
+}
+
 export function ServiceRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { me, hasPermission } = useAuth();
@@ -402,6 +463,7 @@ export function ServiceRequestDetailPage() {
           {canManage && <UpdateWorkPanel request={request} staff={staffQuery.data ?? []} />}
           {canConfirm && <ConfirmPanel requestId={request.id} />}
           <TasksPanel request={request} canManage={canManage} />
+          <AttachmentsPanel request={request} canUpload={nonTerminal} />
 
           <Card>
             <CardHeader>ประวัติการดำเนินงาน</CardHeader>

@@ -9,7 +9,8 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
 - PR Checks บน commit เดียวกับที่จะ deploy ต้องผ่านทั้งหมด: typecheck, lint, unit tests, build,
   production dependency audit, browser smoke test และ migration dry-run
 - Workflow `Staging Live E2E` ต้องผ่านครบทุก live suite บน Supabase staging และต้องเก็บ URL/run ID
-  ไว้เป็น `staging_e2e_run_ref`
+  ไว้เป็น `staging_e2e_run_ref` โดย run ต้องเป็น workflow `.github/workflows/staging-e2e.yml`, สำเร็จบน
+  `master` commit SHA เดียวกับที่จะ deploy และอายุไม่เกิน 72 ชั่วโมง ระบบจะตรวจผ่าน GitHub API ก่อน deploy
 
 ### 1.1 เลือก `migration_mode` ให้ตรงกับรุ่นที่ปล่อย
 
@@ -48,6 +49,10 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
 - LINE secrets ตาม feature ที่เปิด: `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`,
   `LINE_SESSION_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_DEFAULT_TO`
+
+Environment `staging` ต้องมี `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`UAT_ADMIN_EMAIL`, `UAT_ADMIN_PASSWORD` และ Variables `UAT_SIGNATURE_SOURCE_TICKET_ID`,
+`UAT_FORM_TICKET_ID` ให้ครบ หากขาดแม้แต่ค่าเดียว Staging Live E2E จะ fail ไม่ใช่ skip แล้วแสดงผลเขียว
 
 Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
 ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์
