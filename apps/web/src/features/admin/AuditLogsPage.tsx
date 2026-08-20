@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -89,9 +90,40 @@ export function AuditLogsPage() {
 
       <Card>
         <CardBody className="space-y-4">
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="ประเภทประวัติ">
-            <button type="button" role="tab" aria-selected={tab === 'audit'} onClick={() => switchTab('audit')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === 'audit' ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>Audit Trail</button>
-            <button type="button" role="tab" aria-selected={tab === 'login'} onClick={() => switchTab('login')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === 'login' ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>Login History</button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="ประเภทประวัติ">
+              <button type="button" role="tab" aria-selected={tab === 'audit'} onClick={() => switchTab('audit')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === 'audit' ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>Audit Trail</button>
+              <button type="button" role="tab" aria-selected={tab === 'login'} onClick={() => switchTab('login')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === 'login' ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>Login History</button>
+            </div>
+            <ExportCsvButton
+              disabled={!logsQuery.data?.items.length}
+              fileName={`${tab === 'audit' ? 'audit-trail' : 'login-history'}-page-${page}.csv`}
+              getRows={() => (tab === 'audit'
+                ? [
+                  ['เวลา', 'ผู้ดำเนินการ', 'การกระทำ', 'โมดูล', 'ตารางเป้าหมาย', 'Target ID', 'รายละเอียด', 'ผลลัพธ์'],
+                  ...((logsQuery.data?.items ?? []) as AuditLogItem[]).map((log) => [
+                    formatThaiDate(log.created_at, 'd MMM yyyy HH:mm'),
+                    log.actor_email ?? 'ระบบ',
+                    log.action,
+                    log.module,
+                    log.target_table ?? '',
+                    log.target_id ?? '',
+                    detailText(log.detail),
+                    log.result,
+                  ]),
+                ]
+                : [
+                  ['เวลา', 'อีเมล', 'ผลลัพธ์', 'MFA', 'IP Address', 'หมายเหตุ'],
+                  ...((logsQuery.data?.items ?? []) as LoginLogItem[]).map((log) => [
+                    formatThaiDate(log.created_at, 'd MMM yyyy HH:mm'),
+                    log.email_attempted,
+                    log.success ? 'success' : 'fail',
+                    log.mfa_used ? 'ผ่าน' : '',
+                    log.ip_address ?? '',
+                    log.failure_reason ?? '',
+                  ]),
+                ])}
+            />
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -118,9 +150,9 @@ export function AuditLogsPage() {
 }
 
 function AuditTable({ items }: { items: AuditLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">ผู้ดำเนินการ</th><th className="px-4 py-3">การกระทำ / โมดูล</th><th className="px-4 py-3">เป้าหมาย</th><th className="px-4 py-3">รายละเอียด</th><th className="px-4 py-3">ผลลัพธ์</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td><td className="px-4 py-3"><code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code><p className="mt-1 text-xs text-slate-500">{log.module}</p></td><td className="px-4 py-3 text-xs text-slate-500">{log.target_table ?? '—'}{log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}</td><td className="max-w-xs px-4 py-3"><span className="block truncate text-xs text-slate-500" title={detailText(log.detail)}>{detailText(log.detail)}</span></td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td></tr>)}</tbody></DataTable></div>;
+  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable mode="server" className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">ผู้ดำเนินการ</th><th className="px-4 py-3">การกระทำ / โมดูล</th><th className="px-4 py-3">เป้าหมาย</th><th className="px-4 py-3">รายละเอียด</th><th className="px-4 py-3">ผลลัพธ์</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td><td className="px-4 py-3"><code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code><p className="mt-1 text-xs text-slate-500">{log.module}</p></td><td className="px-4 py-3 text-xs text-slate-500">{log.target_table ?? '—'}{log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}</td><td className="max-w-xs px-4 py-3"><span className="block truncate text-xs text-slate-500" title={detailText(log.detail)}>{detailText(log.detail)}</span></td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td></tr>)}</tbody></DataTable></div>;
 }
 
 function LoginTable({ items }: { items: LoginLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable pagination={false} className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.success ? resultStyles.success : resultStyles.fail}`}>{log.success ? 'success' : 'fail'}</span></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></DataTable></div>;
+  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable mode="server" className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.success ? resultStyles.success : resultStyles.fail}`}>{log.success ? 'success' : 'fail'}</span></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></DataTable></div>;
 }
