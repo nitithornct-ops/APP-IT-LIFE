@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
+import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -18,7 +19,8 @@ import { QueryError } from '../../components/ui/QueryError';
 import { Modal } from '../../components/ui/Modal';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import type { AssetCategory, PaginatedResult } from '../../types/admin';
+import { useAuth } from '../../stores/authContext';
+import type { AssetCategory, EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { Asset } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { ASSET_STATUSES, ASSET_TYPES, assetStatusTone } from './assetDisplay';
@@ -36,6 +38,144 @@ const createAssetSchema = z.object({
   price: z.coerce.number().nonnegative().optional().or(z.literal('')),
 });
 type CreateAssetForm = z.infer<typeof createAssetSchema>;
+
+/** สถานะที่เปลี่ยนทีละหลายชิ้นได้ — ต้องตรงกับ BULK_ASSET_STATUSES ฝั่ง api */
+const BULK_ASSET_STATUSES = ['พร้อมใช้งาน', 'ใช้งานอยู่', 'ซ่อมบำรุง'] as const;
+
+type AssetBulkResult = BulkResult<{ id: string; assetCode: string; status: string }>;
+
+/**
+ * แผงดำเนินการกับทรัพย์สินที่เลือกไว้หลายชิ้น
+ * เลือกได้ทีละอย่างเช่นเดียวกับหน้า Ticket เพื่อให้ประวัติการเคลื่อนไหว (asset_movements)
+ * อ่านแล้วรู้ว่าเกิดอะไรขึ้น
+ */
+function BulkAssetPanel({
+  ids,
+  employees,
+  canUpdate,
+  canTransfer,
+  onClose,
+  onDone,
+}: {
+  ids: string[];
+  employees: EmployeeOption[];
+  canUpdate: boolean;
+  canTransfer: boolean;
+  onClose: () => void;
+  onDone: (result: AssetBulkResult) => void;
+}) {
+  const actions = [
+    ...(canUpdate ? ([['status', 'เปลี่ยนสถานะ'], ['location', 'ย้ายสถานที่']] as const) : []),
+    ...(canTransfer ? ([['owner', 'มอบหมาย/รับคืน']] as const) : []),
+  ];
+  const [action, setAction] = useState<'status' | 'location' | 'owner'>(actions[0]![0]);
+  const [status, setStatus] = useState<string>(BULK_ASSET_STATUSES[0]);
+  const [location, setLocation] = useState('');
+  const [ownerEmployeeId, setOwnerEmployeeId] = useState('');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<AssetBulkResult>('/api/v1/assets/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ids,
+        notes: notes.trim() || undefined,
+        ...(action === 'status' ? { status } : {}),
+        ...(action === 'location' ? { location: location.trim() } : {}),
+        // ช่องว่าง = รับคืนเข้าคลัง ซึ่ง api แยกออกจาก "ไม่ได้สั่งเปลี่ยนผู้ถือครอง" ด้วย null
+        ...(action === 'owner' ? { ownerEmployeeId: ownerEmployeeId || null } : {}),
+      }),
+    }),
+    onSuccess: onDone,
+    onError: (mutationError) => setError(mutationError instanceof ApiError ? mutationError.message : 'ดำเนินการไม่สำเร็จ'),
+  });
+
+  return (
+    <BulkActionModal
+      count={ids.length}
+      itemLabel="รายการ"
+      isPending={mutation.isPending}
+      error={error}
+      onClose={onClose}
+      onSubmit={() => {
+        if (action === 'location' && !location.trim()) {
+          setError('กรุณากรอกสถานที่ปลายทาง');
+          return;
+        }
+        setError(null);
+        mutation.mutate();
+      }}
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {actions.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setAction(value)}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {action === 'status' && (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">สถานะใหม่</span>
+            <select aria-label="สถานะใหม่" value={status} onChange={(event) => setStatus(event.target.value)} className={bulkFieldClass}>
+              {BULK_ASSET_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              การจำหน่าย/เลิกใช้ และการแจ้งสูญหาย ต้องทำทีละชิ้น เพราะเป็นการนำของออกจากทะเบียนใช้งานและต้องบันทึกเหตุผลของชิ้นนั้น
+            </p>
+          </label>
+        )}
+
+        {action === 'location' && (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">สถานที่ปลายทาง</span>
+            <input
+              aria-label="สถานที่ปลายทาง"
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              maxLength={120}
+              className={bulkFieldClass}
+            />
+          </label>
+        )}
+
+        {action === 'owner' && (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">ผู้ถือครอง</span>
+            <select aria-label="ผู้ถือครอง" value={ownerEmployeeId} onChange={(event) => setOwnerEmployeeId(event.target.value)} className={bulkFieldClass}>
+              <option value="">รับคืนเข้าคลัง (ล้างผู้ถือครอง)</option>
+              {employees.map((person) => (
+                <option key={person.id} value={person.id}>{`${person.first_name_th} ${person.last_name_th}`}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              ชิ้นที่ถูกจำหน่าย/สูญหายไปแล้วจะถูกข้ามและรายงานกลับพร้อมรหัสทรัพย์สิน
+            </p>
+          </label>
+        )}
+
+        <label className="block text-sm">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">หมายเหตุ (ไม่บังคับ)</span>
+          <textarea
+            aria-label="หมายเหตุ"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            maxLength={500}
+            rows={3}
+            className={bulkTextareaClass}
+          />
+        </label>
+      </div>
+    </BulkActionModal>
+  );
+}
 
 function CreateAssetForm({ categories, vendors, contracts, onClose }: { categories: AssetCategory[]; vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -158,6 +298,14 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
 
 export function AssetsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const queryClient = useQueryClient();
+  const { hasPermission } = useAuth();
+  const canUpdateAsset = hasPermission('asset.update');
+  const canTransferAsset = hasPermission('asset.transfer');
+  // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkResult, setBulkResult] = useState<AssetBulkResult | null>(null);
   const table = useTableParams<'status' | 'categoryId' | 'search'>({ filters: ['status', 'categoryId', 'search'] });
   const { page, pageSize, sort } = table;
   const { status, categoryId, search } = table.filters;
@@ -166,6 +314,11 @@ export function AssetsPage() {
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'asset-categories'],
     queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories'),
+  });
+  const employeeOptionsQuery = useQuery({
+    queryKey: ['employee-options'],
+    queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options'),
+    enabled: showBulk && canTransferAsset,
   });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
@@ -291,6 +444,11 @@ export function AssetsPage() {
                 onSortChange={table.setSort}
                 freezeFirstColumn
                 cardOnMobile
+                itemLabel="รายการ"
+                selectable={canUpdateAsset || canTransferAsset}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+                selectionActions={<Button type="button" size="sm" onClick={() => setShowBulk(true)}>ดำเนินการกับที่เลือก</Button>}
                 className="w-full text-left text-sm"
               >
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
@@ -306,7 +464,7 @@ export function AssetsPage() {
                 </thead>
                 <tbody>
                   {items.map((a) => (
-                    <tr key={a.id} data-testid={`asset-row-${a.id}`} className="border-t border-slate-100 dark:border-slate-700">
+                    <tr key={a.id} data-row-id={a.id} data-testid={`asset-row-${a.id}`} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400" data-label="รหัส">{a.asset_code}</td>
                       <td className="px-2 py-2" data-label="ชื่อทรัพย์สิน">
                         <Link to={`/assets/${a.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
@@ -336,6 +494,25 @@ export function AssetsPage() {
           {assetsQuery.data && <TablePagination page={assetsQuery.data.pagination.page} pageSize={pageSize} totalItems={assetsQuery.data.pagination.totalItems} totalPages={assetsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
+
+      {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="รายการ" onDismiss={() => setBulkResult(null)} />}
+
+      {showBulk && (
+        <BulkAssetPanel
+          ids={selectedIds}
+          employees={employeeOptionsQuery.data ?? []}
+          canUpdate={canUpdateAsset}
+          canTransfer={canTransferAsset}
+          onClose={() => setShowBulk(false)}
+          onDone={(result) => {
+            setShowBulk(false);
+            setBulkResult(result);
+            // เหลือเฉพาะชิ้นที่ทำไม่สำเร็จไว้ให้เลือกต่อ ผู้ใช้จะได้ลองแก้เฉพาะที่เหลือ
+            setSelectedIds(result.failed.map((item) => item.id));
+            void queryClient.invalidateQueries({ queryKey: ['assets'] });
+          }}
+        />
+      )}
 
       {showCreate && (
         <Modal title="เพิ่มทรัพย์สิน" size="xl" onClose={() => setShowCreate(false)} testId="asset-create-dialog">
