@@ -118,3 +118,19 @@ export function auditSummary(detail: unknown): string {
 export function hasAuditDetail(detail: unknown): boolean {
   return auditChanges(detail).length > 0 || auditContext(detail).length > 0;
 }
+
+/**
+ * ข้อความเต็มของสิ่งที่เปลี่ยน สำหรับไฟล์ที่ส่งออก
+ *
+ * ต่างจาก auditSummary ตรงที่ใส่ค่าก่อน/หลังมาด้วยครบทุกฟิลด์ — ในไฟล์ไม่มีปุ่มให้กางดู
+ * ถ้าใส่แค่ชื่อฟิลด์ ผู้ตรวจสอบที่ทำงานจากไฟล์จะเสียข้อมูลที่หน้าจอมีให้
+ */
+export function auditChangesText(detail: unknown): string {
+  const changes = auditChanges(detail);
+  const context = auditContext(detail);
+
+  const parts = changes.map((change) => `${change.label}: ${auditValueText(change.from)} → ${auditValueText(change.to)}`);
+  for (const [key, value] of context) parts.push(`${auditFieldLabel(key)}: ${auditValueText(value)}`);
+
+  return parts.length > 0 ? parts.join(' | ') : '—';
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   auditChanges,
+  auditChangesText,
   auditContext,
   auditFieldLabel,
   auditSummary,
@@ -89,5 +90,18 @@ describe('hasAuditDetail', () => {
     expect(hasAuditDetail({ rowCount: 1 })).toBe(true);
     expect(hasAuditDetail({})).toBe(false);
     expect(hasAuditDetail(null)).toBe(false);
+  });
+});
+
+describe('auditChangesText', () => {
+  it('ใส่ค่าก่อน/หลังมาด้วยครบ เพราะในไฟล์ไม่มีปุ่มให้กางดู', () => {
+    expect(auditChangesText(editDetail)).toBe(
+      'ผู้รับผิดชอบ: (ว่าง) → u-2 | สถานะ: กำลังดำเนินการ → เสร็จสิ้น',
+    );
+  });
+
+  it('รวมบริบทอื่นของ log ที่ไม่ใช่การแก้ไขด้วย', () => {
+    expect(auditChangesText({ rowCount: 240 })).toBe('rowCount: 240');
+    expect(auditChangesText(null)).toBe('—');
   });
 });

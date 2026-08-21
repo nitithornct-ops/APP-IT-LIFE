@@ -11,7 +11,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AuditLogItem, AuditOverview, LoginLogItem, PaginatedResult } from '../../types/admin';
 import { formatThaiDate } from '../../utils/date';
-import { auditChanges, auditContext, auditFieldLabel, auditSummary, auditValueText, hasAuditDetail } from './auditDisplay';
+import { auditChanges, auditChangesText, auditContext, auditFieldLabel, auditSummary, auditValueText, hasAuditDetail } from './auditDisplay';
 
 type LogTab = 'audit' | 'login';
 
@@ -25,9 +25,12 @@ function errorText(reason: unknown): string {
   return reason instanceof ApiError || reason instanceof Error ? reason.message : 'โหลดข้อมูลไม่สำเร็จ';
 }
 
-/** ข้อความสรุปสำหรับไฟล์ส่งออก — บนหน้าจอใช้ auditSummary กับหน้าต่างรายละเอียดแทน */
+/**
+ * ข้อความสำหรับไฟล์ส่งออก — ใส่ค่าก่อน/หลังมาด้วยครบ เพราะในไฟล์ไม่มีปุ่มให้กางดู
+ * ส่วนบนหน้าจอใช้ auditSummary กับหน้าต่างรายละเอียดแทน
+ */
 function detailText(detail: Record<string, unknown> | null): string {
-  return auditSummary(detail);
+  return auditChangesText(detail);
 }
 
 /**
