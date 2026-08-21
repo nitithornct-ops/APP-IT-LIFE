@@ -49,7 +49,7 @@ test('sorts the Ticket list by SLA due date and keeps the sort across pages', as
   const slaHeader = page.getByRole('columnheader', { name: /สถานะ\/SLA/ });
   await expect(slaHeader).toHaveAttribute('aria-sort', 'none');
 
-  const sortButton = page.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA', exact: true });
+  const sortButton = page.getByRole('button', { name: /เรียงตามวันครบกำหนด SLA/ });
   const ascendingRequest = page.waitForResponse((response) =>
     response.url().includes('/api/v1/tickets?') && response.url().includes('sort=due_at') && response.url().includes('order=asc'));
   await sortButton.click();
@@ -89,29 +89,32 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
 
+  // เรียงก่อนกรอง เพราะเมื่อกรองแคบลงแล้วอาจไม่เหลือแถวในสภาพแวดล้อมจริง และหัวตารางจะหายไปพร้อมกับปุ่มเรียง
+  await page.getByRole('button', { name: /เรียงตามวันครบกำหนด SLA/ }).click();
+  await expect(page).toHaveURL(/[?&]sort=due_at/);
+  await expect(page).toHaveURL(/[?&]order=asc/);
+
   const priorityFilter = page.getByLabel('กรองตามความเร่งด่วน', { exact: true });
   await priorityFilter.selectOption('วิกฤต');
   await expect(page).toHaveURL(/[?&]priority=/);
-
-  await page.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA', exact: true }).click();
   await expect(page).toHaveURL(/[?&]sort=due_at/);
-  await expect(page).toHaveURL(/[?&]order=asc/);
 
   // refresh แล้วค่าต้องคงเดิม — สถานะอยู่ใน URL ไม่ใช่ใน memory
   const sharedUrl = page.url();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(priorityFilter).toHaveValue('วิกฤต');
-  await expect(page.getByRole('columnheader', { name: /สถานะ\/SLA/ })).toHaveAttribute('aria-sort', 'ascending');
   expect(page.url()).toBe(sharedUrl);
 
-  // ปุ่ม Back ต้องย้อนการเรียงออกก่อน แล้วค่อยย้อนตัวกรอง
-  await page.goBack();
-  await expect(page).not.toHaveURL(/[?&]sort=due_at/);
-  await expect(priorityFilter).toHaveValue('วิกฤต');
-
+  // ปุ่ม Back ต้องย้อนตัวกรองออกก่อน แล้วค่อยย้อนการเรียง
   await page.goBack();
   await expect(priorityFilter).toHaveValue('');
+  await expect(page).toHaveURL(/[?&]sort=due_at/);
+  // พอตัวกรองหลุดออก ตารางกลับมามีแถว การเรียงที่อ่านจาก URL ต้องยังอยู่
+  await expect(page.getByRole('columnheader', { name: /สถานะ\/SLA/ })).toHaveAttribute('aria-sort', 'ascending');
+
+  await page.goBack();
+  await expect(page).not.toHaveURL(/[?&]sort=due_at/);
 
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-url-state.png'), fullPage: true });
 });
@@ -138,7 +141,7 @@ test('selects tickets and reports bulk results per ticket', async ({ page }) => 
   await expect(summary).toBeVisible();
 
   await page.getByRole('button', { name: 'ดำเนินการกับที่เลือก', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /ดำเนินการ \d+ รายการ/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /ดำเนินการ \d+ ใบงาน/ })).toBeVisible();
 
   // เปลี่ยนสถานะทีละหลายใบต้องเลือกได้เฉพาะสถานะระหว่างทำงานเท่านั้น
   await page.getByRole('button', { name: 'เปลี่ยนสถานะ', exact: true }).click();

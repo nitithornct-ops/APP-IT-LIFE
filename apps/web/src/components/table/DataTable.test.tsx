@@ -286,7 +286,9 @@ describe('DataTable', () => {
       </DataTable>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'เรียงตามวันครบกำหนด SLA' }));
+    // หัวคอลัมน์ต้องยังหาเจอด้วยชื่อของมันเอง ไม่ใช่ถูกคำขยายของปุ่มกลบทับ
+    expect(screen.getByRole('columnheader', { name: /สถานะ\/SLA/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /เรียงตามวันครบกำหนด SLA/ }));
     expect(onSortChange).toHaveBeenCalledWith({ key: 'due_at', order: 'asc' });
   });
   it('จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้เมื่อมี tableId', () => {

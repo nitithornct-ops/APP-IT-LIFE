@@ -211,11 +211,15 @@ function withSortableHeaders(
         <button
           type="button"
           onClick={() => onSort(key)}
-          // ใช้เมื่อหัวคอลัมน์รวมหลายอย่างไว้ด้วยกัน (เช่น "สถานะ/SLA") จะได้บอกชัดว่าปุ่มเรียงตามอะไร
-          aria-label={cell.props['data-sort-label']}
           className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left font-semibold hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:text-primary-300"
         >
           {cell.props.children}
+          {/*
+            คำขยายเมื่อหัวคอลัมน์รวมหลายอย่างไว้ด้วยกัน (เช่น "สถานะ/SLA")
+            ต่อท้ายชื่อคอลัมน์ ไม่ใช้ aria-label ทับ — aria-label จะแทนที่ชื่อของปุ่ม
+            และชื่อของ <th> ก็คำนวณจากเนื้อหาข้างใน ทำให้หัวคอลัมน์หายชื่อตัวเองไปจาก screen reader
+          */}
+          {cell.props['data-sort-label'] && <span className="sr-only"> ({cell.props['data-sort-label']})</span>}
           <Icon className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-primary-600 dark:text-primary-300' : 'text-slate-400')} aria-hidden="true" />
         </button>,
       );
