@@ -34,3 +34,16 @@ export const listEmployeesQuerySchema = paginationQuerySchema.extend({
 });
 
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
+
+export const bulkUpdateEmployeesSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1, 'กรุณาเลือกพนักงานอย่างน้อย 1 คน').max(50, 'เลือกได้สูงสุด 50 คนต่อครั้ง'),
+    status: z.enum(['active', 'inactive']).optional(),
+    departmentId: z.string().uuid().optional(),
+  })
+  .refine((body) => body.status !== undefined || body.departmentId !== undefined, {
+    message: 'กรุณาเลือกสิ่งที่ต้องการเปลี่ยน',
+    path: ['status'],
+  });
+
+export type BulkUpdateEmployeesInput = z.infer<typeof bulkUpdateEmployeesSchema>;

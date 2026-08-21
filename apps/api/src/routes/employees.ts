@@ -5,12 +5,13 @@ import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { BulkItemError, runBulk } from '../utils/bulk';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
-import { createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../validators/employees';
+import { bulkUpdateEmployeesSchema, createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../validators/employees';
 
 /**
  * ทะเบียนพนักงาน — สืบทอดจาก Employees เดิม (Module_Employee.gs) แยกจาก profiles (บัญชี login)
@@ -167,6 +168,65 @@ employeesRoute.post(
     });
 
     return c.json(ok(reqId, data), 201);
+  },
+);
+
+/**
+ * แก้ไขพนักงานหลายคนพร้อมกัน — ย้ายแผนก หรือเปลี่ยนสถานะ active/inactive
+ *
+ * รองรับเฉพาะสองอย่างนี้เพราะเป็นงานที่เกิดกับคนหลายคนพร้อมกันจริง (ย้ายทั้งแผนก, ปิดสถานะ
+ * ตามรอบพ้นสภาพ) ส่วนชื่อ รหัสพนักงาน บัญชี AD เป็นข้อมูลเฉพาะตัว ต้องแก้ทีละคนเสมอ
+ *
+ * เขียน audit log ทีละรายการ ไม่ใช่รายชุด — ทะเบียนพนักงานเป็นต้นทางของเจ้าของทรัพย์สิน
+ * งาน ISMS จึงต้องตรวจย้อนได้ว่าใครย้ายใครไปแผนกไหนเมื่อไร
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
+ */
+employeesRoute.patch(
+  '/bulk',
+  requirePermission('employee.manage'),
+  zValidator('json', bulkUpdateEmployeesSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const { ids, status, departmentId } = c.req.valid('json');
+
+    const { data: currentRows, error: loadError } = await supabase.from('employees').select('*').in('id', ids);
+    if (loadError) return dbFailJson(c, 'EMPLOYEES_BULK_LOAD_FAILED', loadError);
+    const byId = new Map((currentRows ?? []).map((row) => [String(row.id), row]));
+
+    const result = await runBulk(ids, async (id) => {
+      const current = byId.get(id);
+      if (!current) throw new BulkItemError('EMPLOYEE_NOT_FOUND', 'ไม่พบพนักงานคนนี้ หรือท่านไม่มีสิทธิ์เข้าถึง');
+
+      const patch: Record<string, unknown> = { updated_by: actorId };
+      if (status !== undefined) patch.status = status;
+      if (departmentId !== undefined) patch.department_id = departmentId;
+
+      const auditBefore = await loadAuditSnapshot(supabase, 'employees', id);
+      const { data: updated, error } = await supabase.from('employees').update(patch).eq('id', id).select().single();
+      if (error || !updated) {
+        throw new BulkItemError('EMPLOYEE_UPDATE_FAILED', `${current.employee_code ?? id}: บันทึกไม่สำเร็จ`);
+      }
+
+      await writeAuditLog(c.env, {
+        actorId,
+        actorEmail: c.get('userEmail'),
+        action: 'UPDATE',
+        module: 'employee',
+        targetTable: 'employees',
+        targetId: id,
+        detail: { status, departmentId, bulk: true },
+        requestId: reqId,
+        before: auditBefore,
+        after: updated,
+      });
+
+      return { id, employeeCode: String(updated.employee_code ?? ''), status: String(updated.status) };
+    });
+
+    return c.json(ok(reqId, result));
   },
 );
 
