@@ -21,6 +21,7 @@ import { useTableParams } from '../../hooks/useTableParams';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
+import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -100,10 +101,7 @@ function TicketMetricCard({
 /** สถานะที่เปลี่ยนทีละหลายใบได้ — ต้องตรงกับ BULK_TICKET_STATUSES ฝั่ง api */
 const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'];
 
-interface BulkResult {
-  succeeded: { id: string; ticketNo: string; status: string }[];
-  failed: { id: string; code: string; message: string }[];
-}
+type TicketBulkResult = BulkResult<{ id: string; ticketNo: string; status: string }>;
 
 /**
  * แผงดำเนินการกับ Ticket ที่เลือกไว้หลายใบ
@@ -118,7 +116,7 @@ function BulkTicketPanel({
   ids: string[];
   staff: AssignableStaff[];
   onClose: () => void;
-  onDone: (result: BulkResult) => void;
+  onDone: (result: TicketBulkResult) => void;
 }) {
   const [action, setAction] = useState<'assign' | 'status'>('assign');
   const [assigneeId, setAssigneeId] = useState('');
@@ -127,7 +125,7 @@ function BulkTicketPanel({
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => apiFetch<BulkResult>('/api/v1/tickets/bulk', {
+    mutationFn: () => apiFetch<TicketBulkResult>('/api/v1/tickets/bulk', {
       method: 'PATCH',
       body: JSON.stringify({
         ids,
@@ -140,13 +138,15 @@ function BulkTicketPanel({
   });
 
   return (
-    <FormModal
-      title={`ดำเนินการ ${ids.length.toLocaleString('th-TH')} รายการ`}
-      description="ระบบจะตรวจสิทธิ์และสถานะของแต่ละใบแยกกัน ใบที่ทำไม่ได้จะรายงานกลับพร้อมเหตุผล"
-      closeDisabled={mutation.isPending}
+    <BulkActionModal
+      count={ids.length}
+      itemLabel="ใบงาน"
+      isPending={mutation.isPending}
+      error={error}
       onClose={onClose}
+      onSubmit={() => { setError(null); mutation.mutate(); }}
     >
-      <div className="space-y-4 p-1">
+      <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           {([['assign', 'มอบหมายผู้รับผิดชอบ'], ['status', 'เปลี่ยนสถานะ']] as const).map(([value, label]) => (
             <button
@@ -167,7 +167,7 @@ function BulkTicketPanel({
               aria-label="ผู้รับผิดชอบ"
               value={assigneeId}
               onChange={(event) => setAssigneeId(event.target.value)}
-              className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={bulkFieldClass}
             >
               <option value="">ไม่มีผู้รับผิดชอบ</option>
               {staff.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
@@ -180,7 +180,7 @@ function BulkTicketPanel({
               aria-label="สถานะใหม่"
               value={status}
               onChange={(event) => setStatus(event.target.value as TicketStatus)}
-              className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={bulkFieldClass}
             >
               {BULK_STATUSES.map((item) => <option key={item} value={item}>{ticketStatusLabel[item]}</option>)}
             </select>
@@ -198,20 +198,11 @@ function BulkTicketPanel({
             onChange={(event) => setNote(event.target.value)}
             maxLength={1000}
             rows={3}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            className={bulkTextareaClass}
           />
         </label>
-
-        {error && <p className="text-sm font-semibold text-red-600">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button>
-          <Button type="button" isLoading={mutation.isPending} onClick={() => { setError(null); mutation.mutate(); }}>
-            ดำเนินการ
-          </Button>
-        </div>
       </div>
-    </FormModal>
+    </BulkActionModal>
   );
 }
 
@@ -439,7 +430,7 @@ export function TicketsPage() {
   // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBulk, setShowBulk] = useState(false);
-  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
+  const [bulkResult, setBulkResult] = useState<TicketBulkResult | null>(null);
   // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
   const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine'>({
     filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
@@ -572,24 +563,7 @@ export function TicketsPage() {
         />
       )}
 
-      {bulkResult && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800" role="status">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-bold text-slate-800 dark:text-slate-100">
-                สำเร็จ {bulkResult.succeeded.length.toLocaleString('th-TH')} รายการ
-                {bulkResult.failed.length > 0 && ` · ไม่สำเร็จ ${bulkResult.failed.length.toLocaleString('th-TH')} รายการ`}
-              </p>
-              {bulkResult.failed.length > 0 && (
-                <ul className="mt-2 space-y-1 text-xs text-red-600 dark:text-red-300">
-                  {bulkResult.failed.map((item) => <li key={item.id}>{item.message}</li>)}
-                </ul>
-              )}
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setBulkResult(null)}>ปิด</Button>
-          </div>
-        </div>
-      )}
+      {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="ใบงาน" onDismiss={() => setBulkResult(null)} />}
 
       {showCreate && categoriesQuery.data && (
         <CreateTicketForm
