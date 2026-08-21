@@ -115,6 +115,18 @@ describe('useTableParams', () => {
     expect(param('pageSize')).toBe('10');
   });
 
+  it('เปลี่ยนตัวกรองแล้วการเรียงต้องไม่หาย — ทั้งสองอยู่ใน URL เดียวกัน', () => {
+    renderAt('/tickets');
+
+    act(() => table.setSort({ key: 'due_at', order: 'asc' }));
+    expect(param('sort')).toBe('due_at');
+
+    act(() => table.setFilter('status', 'วิกฤต'));
+    expect(param('status')).toBe('วิกฤต');
+    expect(param('sort')).toBe('due_at');
+    expect(param('order')).toBe('asc');
+  });
+
   it('ปุ่ม Back ย้อนการกรองกลับไปสถานะก่อนหน้าได้', () => {
     renderAt('/tickets');
 

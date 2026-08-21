@@ -93,6 +93,9 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
   await page.getByRole('button', { name: /เรียงตามวันครบกำหนด SLA/ }).click();
   await expect(page).toHaveURL(/[?&]sort=due_at/);
   await expect(page).toHaveURL(/[?&]order=asc/);
+  // รอให้หน้าจอสะท้อนการเรียงก่อนค่อยแตะตัวกรอง — URL เปลี่ยนทันทีที่ pushState
+  // แต่ React อาจยัง render ไม่เสร็จ การกดต่อทันทีจึงเป็นการแข่งกับจังหวะที่ผู้ใช้จริงไม่เจอ
+  await expect(page.getByRole('columnheader', { name: /สถานะ\/SLA/ })).toHaveAttribute('aria-sort', 'ascending');
 
   const priorityFilter = page.getByLabel('กรองตามความเร่งด่วน', { exact: true });
   await priorityFilter.selectOption('วิกฤต');
