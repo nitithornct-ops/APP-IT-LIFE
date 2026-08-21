@@ -3,12 +3,15 @@ import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
+import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AuditLogItem, AuditOverview, LoginLogItem, PaginatedResult } from '../../types/admin';
 import { formatThaiDate } from '../../utils/date';
+import { auditChanges, auditContext, auditFieldLabel, auditSummary, auditValueText, hasAuditDetail } from './auditDisplay';
 
 type LogTab = 'audit' | 'login';
 
@@ -22,9 +25,85 @@ function errorText(reason: unknown): string {
   return reason instanceof ApiError || reason instanceof Error ? reason.message : 'โหลดข้อมูลไม่สำเร็จ';
 }
 
+/** ข้อความสรุปสำหรับไฟล์ส่งออก — บนหน้าจอใช้ auditSummary กับหน้าต่างรายละเอียดแทน */
 function detailText(detail: Record<string, unknown> | null): string {
-  if (!detail || Object.keys(detail).length === 0) return '—';
-  return JSON.stringify(detail);
+  return auditSummary(detail);
+}
+
+/**
+ * หน้าต่างเทียบค่าก่อน/หลังของ Audit Log หนึ่งรายการ
+ *
+ * ฝั่ง api เก็บผลเทียบไว้ตั้งแต่ต้นแล้ว แต่หน้าจอเดิมแสดงเป็น JSON ก้อนเดียวในช่องที่ตัดข้อความ
+ * ผู้ตรวจสอบจึงตอบไม่ได้ว่าฟิลด์ไหนเปลี่ยนจากอะไรเป็นอะไร ทั้งที่เป็นคำถามหลักของงาน ISMS
+ */
+function AuditDetailModal({ log, onClose }: { log: AuditLogItem; onClose: () => void }) {
+  const changes = auditChanges(log.detail);
+  const context = auditContext(log.detail);
+
+  return (
+    <Modal title={`${log.action} · ${log.module}`} size="lg" onClose={onClose} contentClassName="px-5 py-5">
+      <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+        {[
+          ['เวลา', `${formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.`],
+          ['ผู้ดำเนินการ', log.actor_email ?? 'ระบบ'],
+          ['ตารางเป้าหมาย', log.target_table ?? '—'],
+          ['Target ID', log.target_id ?? '—'],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs font-semibold text-slate-400">{label}</dt>
+            <dd className="mt-1 break-all font-medium text-slate-700 dark:text-slate-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {changes.length > 0 && (
+        <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
+          <h3 className="mb-3 font-bold text-slate-800 dark:text-slate-100">ค่าที่เปลี่ยน</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
+                <tr>
+                  <th className="px-3 py-2">ฟิลด์</th>
+                  <th className="px-3 py-2">ค่าเดิม</th>
+                  <th className="px-3 py-2">ค่าใหม่</th>
+                </tr>
+              </thead>
+              <tbody>
+                {changes.map((change) => (
+                  <tr key={change.field} className="border-t border-slate-100 align-top dark:border-slate-700">
+                    <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
+                      {change.label}
+                      {change.label !== change.field && <span className="block font-mono text-[11px] font-normal text-slate-400">{change.field}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-red-700 line-through decoration-red-300 dark:text-red-300">{auditValueText(change.from)}</td>
+                    <td className="px-3 py-2 font-semibold text-emerald-700 dark:text-emerald-300">{auditValueText(change.to)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {context.length > 0 && (
+        <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
+          <h3 className="mb-3 font-bold text-slate-800 dark:text-slate-100">ข้อมูลประกอบ</h3>
+          <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+            {context.map(([key, value]) => (
+              <div key={key}>
+                <dt className="text-xs font-semibold text-slate-400">{auditFieldLabel(key)}</dt>
+                <dd className="mt-1 break-all font-medium text-slate-700 dark:text-slate-200">{auditValueText(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      {changes.length === 0 && context.length === 0 && (
+        <p className="mt-5 text-sm text-slate-400">รายการนี้ไม่มีรายละเอียดเพิ่มเติม</p>
+      )}
+    </Modal>
+  );
 }
 
 export function AuditLogsPage() {
@@ -142,8 +221,61 @@ export function AuditLogsPage() {
   );
 }
 
-function AuditTable({ items }: { items: AuditLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable mode="server" className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">ผู้ดำเนินการ</th><th className="px-4 py-3">การกระทำ / โมดูล</th><th className="px-4 py-3">เป้าหมาย</th><th className="px-4 py-3">รายละเอียด</th><th className="px-4 py-3">ผลลัพธ์</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td><td className="px-4 py-3"><code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code><p className="mt-1 text-xs text-slate-500">{log.module}</p></td><td className="px-4 py-3 text-xs text-slate-500">{log.target_table ?? '—'}{log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}</td><td className="max-w-xs px-4 py-3"><span className="block truncate text-xs text-slate-500" title={detailText(log.detail)}>{detailText(log.detail)}</span></td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td></tr>)}</tbody></DataTable></div>;
+/** export ไว้ให้เทสต์เรียกตรง ๆ ได้ โดยไม่ต้องประกอบทั้งหน้าซึ่งต้องใช้ auth และ query client */
+export function AuditTable({ items }: { items: AuditLogItem[] }) {
+  const [openLog, setOpenLog] = useState<AuditLogItem | null>(null);
+
+  return (
+    <>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+        <DataTable mode="server" className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
+            <tr>
+              <th className="px-4 py-3">เวลา</th>
+              <th className="px-4 py-3">ผู้ดำเนินการ</th>
+              <th className="px-4 py-3">การกระทำ / โมดูล</th>
+              <th className="px-4 py-3">เป้าหมาย</th>
+              <th className="px-4 py-3">สิ่งที่เปลี่ยน</th>
+              <th className="px-4 py-3">ผลลัพธ์</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((log) => (
+              <tr key={log.id} className="border-t border-slate-100 align-top dark:border-slate-700">
+                <td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td>
+                <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.actor_email ?? 'ระบบ'}</td>
+                <td className="px-4 py-3">
+                  <code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code>
+                  <p className="mt-1 text-xs text-slate-500">{log.module}</p>
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-500">
+                  {log.target_table ?? '—'}
+                  {log.target_id && <span className="block max-w-40 truncate" title={log.target_id}>{log.target_id}</span>}
+                </td>
+                <td className="max-w-xs px-4 py-3">
+                  <span className="block text-xs text-slate-600 dark:text-slate-300">{auditSummary(log.detail)}</span>
+                  {hasAuditDetail(log.detail) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 h-auto px-0 text-xs"
+                      aria-label={`ดูรายละเอียด ${log.action} ${log.module}`}
+                      onClick={() => setOpenLog(log)}
+                    >
+                      ดูรายละเอียด
+                    </Button>
+                  )}
+                </td>
+                <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      </div>
+      {openLog && <AuditDetailModal log={openLog} onClose={() => setOpenLog(null)} />}
+    </>
+  );
 }
 
 function LoginTable({ items }: { items: LoginLogItem[] }) {
