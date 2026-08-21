@@ -1,11 +1,40 @@
-import { Search } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useNavItems } from '../../hooks/useNavItems';
 import type { NavItem } from '../../config/navigation';
+import { apiFetch } from '../../services/apiClient';
 import { cn } from '../../utils/cn';
 
-/** ค้นหาเมนูด่วน (Ctrl+K / Cmd+K) — สืบทอดแนวคิดจาก .cmdk-overlay ของระบบเดิม */
+/** ค้นหาด่วน (Ctrl+K / Cmd+K) — สืบทอดแนวคิดจาก .cmdk-overlay ของระบบเดิม */
+
+interface SearchResultItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  path: string;
+}
+
+interface SearchResultGroup {
+  module: string;
+  label: string;
+  items: SearchResultItem[];
+}
+
+/** หนึ่งบรรทัดที่กดได้ ไม่ว่าจะมาจากเมนูหรือจากข้อมูลจริง — ปุ่มลูกศรเลื่อนข้ามกลุ่มได้เป็นเส้นเดียว */
+interface PaletteRow {
+  key: string;
+  label: string;
+  hint?: string;
+  path: string;
+  icon?: NavItem['icon'];
+}
+
+/** ต้องตรงกับ searchQuerySchema ฝั่ง api — ต่ำกว่านี้ยิงไปก็ถูกปฏิเสธกลับมาเปล่า ๆ */
+const MIN_QUERY_LENGTH = 2;
+
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -13,12 +42,46 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const navigate = useNavigate();
   const groups = useNavItems();
 
-  const results = useMemo<NavItem[]>(() => {
-    const all = groups.flatMap((g) => g.items);
-    if (!query.trim()) return all;
-    const q = query.trim().toLowerCase();
-    return all.filter((item) => item.label.toLowerCase().includes(q));
-  }, [groups, query]);
+  const trimmed = query.trim();
+  // หน่วงก่อนยิง เพราะทุกตัวอักษรที่พิมพ์คือการค้นข้ามหลายตารางพร้อมกัน
+  const debouncedQuery = useDebouncedValue(trimmed, 250);
+  const canSearchRecords = debouncedQuery.length >= MIN_QUERY_LENGTH;
+
+  const recordsQuery = useQuery({
+    queryKey: ['global-search', debouncedQuery],
+    queryFn: () => apiFetch<{ groups: SearchResultGroup[] }>(`/api/v1/search?q=${encodeURIComponent(debouncedQuery)}`),
+    enabled: open && canSearchRecords,
+    staleTime: 30_000,
+  });
+
+  const menuRows = useMemo<PaletteRow[]>(() => {
+    const all = groups.flatMap((group) => group.items);
+    const needle = trimmed.toLowerCase();
+    const matched = needle ? all.filter((item) => item.label.toLowerCase().includes(needle)) : all;
+    return matched.map((item) => ({ key: `menu:${item.path}`, label: item.label, path: item.path, icon: item.icon }));
+  }, [groups, trimmed]);
+
+
+  // เมนูมาก่อนเสมอ เพราะตอบสนองทันทีจากข้อมูลในเครื่อง ส่วนผลจากฐานข้อมูลมาทีหลัง
+  // ถ้าสลับกัน รายการที่ผู้ใช้เล็งไว้จะขยับหนีตอนผลค้นหามาถึง แล้วกด Enter โดนผิดอัน
+  const sections = useMemo(() => {
+    const list: { label: string; rows: PaletteRow[] }[] = [];
+    if (menuRows.length > 0) list.push({ label: 'เมนู', rows: menuRows });
+    for (const group of recordsQuery.data?.groups ?? []) {
+      list.push({
+        label: group.label,
+        rows: group.items.map((item) => ({
+          key: `${group.module}:${item.id}`,
+          label: item.title,
+          hint: item.subtitle,
+          path: item.path,
+        })),
+      });
+    }
+    return list;
+  }, [menuRows, recordsQuery.data]);
+
+  const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
 
   useEffect(() => {
     if (open) {
@@ -32,28 +95,30 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     setActiveIndex(0);
   }, [query]);
 
-  function goTo(item: NavItem | undefined) {
-    if (!item) return;
-    navigate(item.path);
+  function goTo(row: PaletteRow | undefined) {
+    if (!row) return;
+    navigate(row.path);
     onClose();
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, results.length - 1));
+      setActiveIndex((index) => Math.min(index + 1, rows.length - 1));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
+      setActiveIndex((index) => Math.max(index - 1, 0));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      goTo(results[activeIndex]);
+      goTo(rows[activeIndex]);
     } else if (event.key === 'Escape') {
       onClose();
     }
   }
 
   if (!open) return null;
+
+  let rowOffset = 0;
 
   return (
     <div
@@ -63,7 +128,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="ค้นหาเมนู"
+        aria-label="ค้นหาด่วน"
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-elevated dark:bg-slate-800"
       >
@@ -74,28 +139,52 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="พิมพ์ชื่อเมนูที่ต้องการไป..."
+            placeholder="ค้นหาเมนู เลขที่ใบงาน รหัสทรัพย์สิน..."
+            aria-label="คำค้นหา"
             className="flex-1 border-none bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
           />
+          {recordsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto p-2">
-          {results.length === 0 && <p className="px-4 py-8 text-center text-sm text-slate-400">ไม่พบเมนูที่ตรงกับคำค้นหา</p>}
-          {results.map((item, index) => (
-            <button
-              key={item.path}
-              type="button"
-              onClick={() => goTo(item)}
-              onMouseEnter={() => setActiveIndex(index)}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm',
-                index === activeIndex ? 'bg-primary-50 text-primary-800 dark:bg-slate-700 dark:text-white' : 'text-slate-700 dark:text-slate-200',
-              )}
-            >
-              <item.icon className="h-[18px] w-[18px] text-primary-600 dark:text-primary-300" aria-hidden="true" />
-              {item.label}
-            </button>
-          ))}
+          {rows.length === 0 && !recordsQuery.isFetching && (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">
+              {trimmed.length > 0 && trimmed.length < MIN_QUERY_LENGTH
+                ? `พิมพ์อย่างน้อย ${MIN_QUERY_LENGTH} ตัวอักษรเพื่อค้นหาข้อมูล`
+                : 'ไม่พบสิ่งที่ตรงกับคำค้นหา'}
+            </p>
+          )}
+
+          {sections.map((section) => {
+            const offset = rowOffset;
+            rowOffset += section.rows.length;
+            return (
+              <div key={section.label} className="mb-1">
+                <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{section.label}</p>
+                {section.rows.map((row, index) => {
+                  const position = offset + index;
+                  return (
+                    <button
+                      key={row.key}
+                      type="button"
+                      onClick={() => goTo(row)}
+                      onMouseEnter={() => setActiveIndex(position)}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm',
+                        position === activeIndex ? 'bg-primary-50 text-primary-800 dark:bg-slate-700 dark:text-white' : 'text-slate-700 dark:text-slate-200',
+                      )}
+                    >
+                      {row.icon && <row.icon className="h-[18px] w-[18px] shrink-0 text-primary-600 dark:text-primary-300" aria-hidden="true" />}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{row.label}</span>
+                        {row.hint && <span className="block truncate text-xs text-slate-400">{row.hint}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex gap-4 border-t border-slate-100 px-4 py-2 text-xs text-slate-400 dark:border-slate-700">
