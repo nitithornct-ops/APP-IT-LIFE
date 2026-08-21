@@ -2,9 +2,16 @@ import { zValidator } from '@hono/zod-validator';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/permission';
+import { hasPermission, requireAnyPermission, requirePermission } from '../middleware/permission';
+import {
+  ASSET_DEFAULT_RETURN_LOCATION,
+  buildAssignPatch,
+  buildReturnPatch,
+  isAssetRetired,
+} from '../services/assetOwnership';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { BulkItemError, runBulk } from '../utils/bulk';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
@@ -15,6 +22,7 @@ import { zodValidationHook } from '../utils/validation';
 import {
   assetBorrowOverviewQuerySchema,
   assignAssetSchema,
+  bulkUpdateAssetsSchema,
   createAssetSchema,
   listAssetsQuerySchema,
   returnAssetFromRepairSchema,
@@ -130,8 +138,6 @@ async function recordMovement(supabase: SupabaseClient, m: MovementInput) {
 async function loadAssetOr404(supabase: SupabaseClient, id: string) {
   return supabase.from('assets').select('*').eq('id', id).maybeSingle();
 }
-
-const ASSET_RETIRED_STATUSES = ['จำหน่าย/เลิกใช้', 'สูญหาย'];
 
 /** dropdown แบบเบา (สำหรับฟอร์ม PM/Employee Assignment ฯลฯ) — ต้องอยู่ก่อน '/:id' */
 assetsRoute.get('/options', requirePermission('asset.view'), async (c) => {
@@ -368,6 +374,112 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
 
   return c.json(ok(reqId, enrichAsset(data as never)), 201);
 });
+
+/**
+ * แก้ไขทรัพย์สินหลายชิ้นพร้อมกัน — เปลี่ยนสถานะ ย้ายสถานที่ หรือมอบหมาย/คืนผู้ถือครอง
+ *
+ * ตรวจ "รายชิ้น" แล้วคืนผลแยกต่อ id เหมือน /tickets/bulk — เลือก 30 ชิ้นแล้วล้มทั้งชุดเพราะ
+ * ชิ้นเดียวถูกจำหน่ายไปแล้ว บังคับให้ผู้ใช้มานั่งไล่หาเองว่าชิ้นไหนพัง
+ *
+ * ฟิลด์ที่ต้องเขียนตอนมอบหมาย/คืน มาจาก services/assetOwnership ตัวเดียวกับที่ endpoint
+ * ทีละชิ้นใช้ สองเส้นทางจึงเขียนฟิลด์เหมือนกันเสมอ
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
+ */
+assetsRoute.patch(
+  '/bulk',
+  requireAnyPermission(['asset.update', 'asset.transfer']),
+  zValidator('json', bulkUpdateAssetsSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const { ids, status, location, ownerEmployeeId, notes } = c.req.valid('json');
+
+    // สิทธิ์แยกกันตามสิ่งที่ขอเปลี่ยน — การย้ายผู้ถือครองไม่ใช่เรื่องเดียวกับการแก้สถานะ
+    const changesOwner = ownerEmployeeId !== undefined;
+    const changesFields = status !== undefined || location !== undefined;
+    if (changesOwner && !(await hasPermission(c, 'asset.transfer'))) {
+      return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์มอบหมาย/รับคืนทรัพย์สิน'), 403);
+    }
+    if (changesFields && !(await hasPermission(c, 'asset.update'))) {
+      return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์แก้ไขทรัพย์สิน'), 403);
+    }
+
+    // ผู้รับคนเดียวกันทั้งชุด จึงหาแค่ครั้งเดียว ไม่ต้องถามฐานข้อมูลซ้ำทุกชิ้น
+    let toEmployee: { id: string; department_id: string | null } | null = null;
+    if (ownerEmployeeId) {
+      const { data, error } = await supabase.from('employees').select('id, department_id').eq('id', ownerEmployeeId).maybeSingle();
+      if (error || !data) return c.json(fail(reqId, 'EMPLOYEE_NOT_FOUND', 'ไม่พบพนักงานที่เลือก'), 400);
+      toEmployee = data as { id: string; department_id: string | null };
+    }
+
+    // RLS กรองชิ้นที่ผู้ใช้ไม่มีสิทธิ์เห็นออกไปเอง ชิ้นที่หายไปจะถูกรายงานว่าไม่พบ
+    const { data: currentRows, error: loadError } = await supabase.from('assets').select('*').in('id', ids);
+    if (loadError) return dbFailJson(c, 'ASSETS_BULK_LOAD_FAILED', loadError);
+    const byId = new Map((currentRows ?? []).map((row) => [String(row.id), row]));
+
+    const now = new Date();
+    const result = await runBulk(ids, async (id) => {
+      const current = byId.get(id);
+      if (!current) throw new BulkItemError('ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้ หรือท่านไม่มีสิทธิ์เข้าถึง');
+      if (isAssetRetired(current.status)) {
+        throw new BulkItemError('ASSET_RETIRED', `${current.asset_code ?? current.name}: ถูกจำหน่าย/สูญหายแล้ว`);
+      }
+
+      const patch: Record<string, unknown> = { updated_by: actorId };
+      if (toEmployee) {
+        Object.assign(patch, buildAssignPatch({
+          toEmployeeId: toEmployee.id,
+          employeeDepartmentId: toEmployee.department_id,
+          location,
+          currentLocation: current.location,
+          actorId,
+          now,
+        }));
+      } else if (ownerEmployeeId === null) {
+        Object.assign(patch, buildReturnPatch({ location, actorId }));
+      } else if (location !== undefined) {
+        patch.location = location;
+      }
+      // สถานะที่ระบุมาตรง ๆ ชนะสถานะที่ตกทอดมาจากการมอบหมาย/คืน
+      if (status !== undefined) patch.status = status;
+
+      const auditBefore = await loadAuditSnapshot(supabase, 'assets', id);
+      const { data: updated, error } = await supabase.from('assets').update(patch).eq('id', id).select('id, asset_code, status').single();
+      if (error || !updated) throw new BulkItemError('ASSET_UPDATE_FAILED', `${current.asset_code ?? current.name}: บันทึกไม่สำเร็จ`);
+
+      const action = toEmployee ? 'Assign' : ownerEmployeeId === null ? 'Return' : location !== undefined ? 'Transfer' : 'Status';
+      await recordMovement(supabase, {
+        assetId: id,
+        actionType: action,
+        fromEmployeeId: current.owner_employee_id,
+        toEmployeeId: toEmployee?.id ?? null,
+        departmentId: (patch.department_id as string | null) ?? null,
+        location: (patch.location as string | null) ?? null,
+        statusLabel: String(patch.status ?? current.status),
+        notes: notes ?? null,
+        createdBy: actorId,
+      });
+      await writeAuditLog(c.env, {
+        actorId,
+        actorEmail: c.get('userEmail'),
+        action: action === 'Status' ? 'UPDATE_STATUS' : action.toUpperCase(),
+        module: 'asset',
+        targetTable: 'assets',
+        targetId: id,
+        detail: { status, location, ownerEmployeeId, notes, bulk: true },
+        requestId: reqId,
+        before: auditBefore,
+        after: updated,
+      });
+
+      return { id, assetCode: String(updated.asset_code ?? ''), status: String(updated.status) };
+    });
+
+    return c.json(ok(reqId, result));
+  },
+);
 
 assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', updateAssetSchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
@@ -617,7 +729,7 @@ assetsRoute.post('/:id/assign', requirePermission('asset.transfer'), zValidator(
   const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
   if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
-  if (ASSET_RETIRED_STATUSES.includes(current.status)) {
+  if (isAssetRetired(current.status)) {
     return c.json(fail(reqId, 'ASSET_RETIRED', 'ทรัพย์สินนี้ถูกจำหน่าย/สูญหายแล้ว'), 400);
   }
 
@@ -626,15 +738,16 @@ assetsRoute.post('/:id/assign', requirePermission('asset.transfer'), zValidator(
 
   const { data, error } = await supabase
     .from('assets')
-    .update({
-      status: 'ใช้งานอยู่',
-      owner_employee_id: toEmployeeId,
-      department_id: departmentId || toEmployee.department_id,
-      location: location || current.location,
-      loan_date: new Date().toISOString().slice(0, 10),
-      loan_due_date: dueDate || null,
-      updated_by: actorId,
-    })
+    .update(buildAssignPatch({
+      toEmployeeId,
+      employeeDepartmentId: toEmployee.department_id,
+      departmentId,
+      location,
+      currentLocation: current.location,
+      dueDate,
+      actorId,
+      now: new Date(),
+    }))
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
@@ -678,18 +791,10 @@ assetsRoute.post('/:id/return', requirePermission('asset.transfer'), zValidator(
   if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
 
-  const resolvedLocation = location || 'คลัง IT';
+  const resolvedLocation = location || ASSET_DEFAULT_RETURN_LOCATION;
   const { data, error } = await supabase
     .from('assets')
-    .update({
-      status: 'พร้อมใช้งาน',
-      owner_employee_id: null,
-      department_id: null,
-      location: resolvedLocation,
-      loan_date: null,
-      loan_due_date: null,
-      updated_by: actorId,
-    })
+    .update(buildReturnPatch({ location: resolvedLocation, actorId }))
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
@@ -730,7 +835,7 @@ assetsRoute.post('/:id/transfer', requirePermission('asset.transfer'), zValidato
   const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
   if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
-  if (ASSET_RETIRED_STATUSES.includes(current.status)) {
+  if (isAssetRetired(current.status)) {
     return c.json(fail(reqId, 'ASSET_RETIRED', 'ทรัพย์สินนี้ถูกจำหน่าย/สูญหายแล้ว'), 400);
   }
 
@@ -791,7 +896,7 @@ assetsRoute.post(
     const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
     if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
     if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
-    if (ASSET_RETIRED_STATUSES.includes(current.status)) {
+    if (isAssetRetired(current.status)) {
       return c.json(fail(reqId, 'ASSET_RETIRED', 'ทรัพย์สินนี้ถูกจำหน่าย/สูญหายแล้ว'), 400);
     }
 
