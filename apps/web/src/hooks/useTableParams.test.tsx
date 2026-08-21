@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { useTableParams, type TableParams } from './useTableParams';
 
 afterEach(cleanup);
@@ -154,5 +154,30 @@ describe('useTableParams', () => {
     act(() => navigate(-1));
     expect(table.filters.search).toBe('');
     expect(table.filters.status).toBe('');
+  });
+});
+
+describe('useTableParams เมื่อ URL ของเบราว์เซอร์นำหน้า state ของ React', () => {
+  afterEach(() => window.history.replaceState({}, '', '/'));
+
+  it('ต่อยอดจาก URL จริง ไม่ใช่ค่าที่ React commit ไว้ — ค่าที่เพิ่งตั้งไปจึงไม่หาย', () => {
+    window.history.replaceState({}, '', '/tickets');
+
+    function Probe() {
+      table = useTableParams<Filters>({ filters: ['status', 'search'] });
+      return null;
+    }
+    render(<BrowserRouter><Probe /></BrowserRouter>);
+
+    // pushState ตรง ๆ เลียนแบบจังหวะที่ router เปลี่ยน URL แล้วแต่ React ยัง render ไม่เสร็จ
+    // (router ฟังแค่ popstate จึงไม่รู้เรื่องการเปลี่ยนครั้งนี้ เหมือน render ที่ยังไม่ commit)
+    act(() => window.history.pushState({}, '', '/tickets?sort=due_at&order=asc'));
+
+    act(() => table.setFilter('status', 'วิกฤต'));
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('status')).toBe('วิกฤต');
+    expect(params.get('sort')).toBe('due_at');
+    expect(params.get('order')).toBe('asc');
   });
 });

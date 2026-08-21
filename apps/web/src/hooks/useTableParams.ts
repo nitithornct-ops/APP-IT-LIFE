@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import type { TableSort } from '../components/table/DataTable';
 
 export interface TableParamsOptions<F extends string> {
@@ -52,20 +52,36 @@ export function useTableParams<F extends string = string>(
   { filters = [] as readonly F[], defaultPageSize = 10 }: TableParamsOptions<F> = {},
 ): TableParams<F> {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
 
   const filterKeys = useMemo(() => filters.join(','), [filters]);
 
+  /**
+   * ค่าตั้งต้นของการแก้ query ครั้งถัดไป
+   *
+   * React Router เปลี่ยน URL ของเบราว์เซอร์ทันทีที่ pushState แต่ค่าที่ hook นี้มองเห็นคือค่าของ
+   * render ที่ commit ไปแล้ว ถ้าผู้ใช้กดสองอย่างติดกันเร็วกว่าที่ React จะ render เสร็จ (กดเรียง
+   * แล้วเปลี่ยนตัวกรองทันที) การอ่านจากค่าที่ commit จะทำให้การเปลี่ยนครั้งก่อนหายไปจาก URL
+   *
+   * จึงอ่านจาก URL จริงเมื่อ router ตัวนี้เป็นเจ้าของ URL ของเบราว์เซอร์ ดูจาก pathname ที่ตรงกัน
+   * (MemoryRouter ในเทสต์จะไม่ตรง จึงกลับไปใช้ค่าจาก router ตามเดิม)
+   */
+  const currentParams = useCallback(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === pathname) {
+      return new URLSearchParams(window.location.search);
+    }
+    return new URLSearchParams(searchParams);
+  }, [pathname, searchParams]);
+
   const patch = useCallback(
     (apply: (next: URLSearchParams) => void, options?: SetParamOptions) => {
-      setSearchParams((current) => {
-        const next = new URLSearchParams(current);
-        apply(next);
-        // ค่าว่างไม่ต้องอยู่ใน URL — ถือว่ากลับไปใช้ค่าเริ่มต้น
-        for (const [key, value] of [...next.entries()]) if (value === '') next.delete(key);
-        return next;
-      }, { replace: options?.replace });
+      const next = currentParams();
+      apply(next);
+      // ค่าว่างไม่ต้องอยู่ใน URL — ถือว่ากลับไปใช้ค่าเริ่มต้น
+      for (const [key, value] of [...next.entries()]) if (value === '') next.delete(key);
+      setSearchParams(next, { replace: options?.replace });
     },
-    [setSearchParams],
+    [currentParams, setSearchParams],
   );
 
   const setPage = useCallback((page: number) => {
