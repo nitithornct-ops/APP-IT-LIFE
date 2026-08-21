@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Boxes,
-  Download,
   GitBranch,
   Loader2,
   Plus,
@@ -17,6 +16,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { BulkActionModal, BulkResultSummary, bulkFieldClass, type BulkResult } from '../../components/table/BulkAction';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -26,7 +26,6 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal, Modal } from '../../components/ui/Modal';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
 import type { Department, Employee, PaginatedResult, Position } from '../../types/admin';
 import {
@@ -264,12 +263,6 @@ function EmployeeDetailModal({ employee, departments, positions, onClose }: { em
   );
 }
 
-function downloadEmployees(rows: Employee[], departments: Department[], positions: Position[]) {
-  const headers = ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ชื่อเล่น', 'ตำแหน่ง', 'Department', 'Username_AD', 'UPN', 'Email', 'สถานะ'];
-  const lines = [headers, ...rows.map((employee) => [employee.employee_code, employeeName(employee), employee.nickname, positions.find((item) => item.id === employee.position_id)?.name_th, departments.find((item) => item.id === employee.department_id)?.name_th, employee.username_ad, employee.upn, employee.email, employee.status])];
-  downloadCsv(lines, `employees-${new Date().toISOString().slice(0, 10)}.csv`);
-}
-
 type EmployeeBulkResult = BulkResult<{ id: string; employeeCode: string; status: string }>;
 
 /**
@@ -438,7 +431,7 @@ export function EmployeesPage() {
               <select aria-label="กรอง Department" value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setPage(1); }} className={`${fieldClass} md:max-w-52`}><option value="">Department: ทั้งหมด</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}</select>
               <select aria-label="กรองการครอบครอง" value={ownership} onChange={(event) => { setOwnership(event.target.value); setPage(1); }} className={`${fieldClass} md:max-w-48`}><option value="">การครอบครอง: ทั้งหมด</option><option value="with">มีรายการครอบครอง</option><option value="without">ไม่มีรายการครอบครอง</option></select>
             </div>
-            <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={refresh}><RefreshCw className="h-4 w-4" aria-hidden="true" />รีเฟรช</Button><Button size="sm" variant="outline" disabled={!rows.length} onClick={() => downloadEmployees(rows, departments, positions)}><Download className="h-4 w-4" aria-hidden="true" />ส่งออก</Button>{(search || status || departmentId || ownership) && <Button size="sm" variant="ghost" onClick={resetFilters}>ล้างตัวกรอง</Button>}<span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500 dark:border-slate-600 dark:bg-slate-800">{employeesQuery.data?.pagination.totalItems ?? 0} รายการ</span></div>
+            <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={refresh}><RefreshCw className="h-4 w-4" aria-hidden="true" />รีเฟรช</Button><ExportAllButton disabled={!rows.length} url={`/api/v1/employees/export?${queryString.toString()}`} />{(search || status || departmentId || ownership) && <Button size="sm" variant="ghost" onClick={resetFilters}>ล้างตัวกรอง</Button>}<span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500 dark:border-slate-600 dark:bg-slate-800">{employeesQuery.data?.pagination.totalItems ?? 0} รายการ</span></div>
           </div>
 
           {employeesQuery.isLoading && <div className="flex justify-center py-12" role="status"><Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" /></div>}

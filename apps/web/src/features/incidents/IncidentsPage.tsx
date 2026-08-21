@@ -1,6 +1,6 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
-import { ExportCsvButton } from '../../components/table/ExportCsvButton';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -116,9 +116,13 @@ export function IncidentsPage() {
   const { page, pageSize, sort } = table;
   const { search, status, severity, personalData } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
+  // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
+  // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
+  const incidentListParams = `page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${severity ? `&severity=${encodeURIComponent(severity)}` : ''}${personalData ? `&personalData=${personalData}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`;
+
   const query = useQuery({
-    queryKey: ['incidents', page, pageSize, sort?.key, sort?.order, status, severity, personalData, debouncedSearch],
-    queryFn: () => apiFetch<PaginatedResult<Incident>>(`/api/v1/incidents?page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${severity ? `&severity=${encodeURIComponent(severity)}` : ''}${personalData ? `&personalData=${personalData}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`),
+    queryKey: ['incidents', incidentListParams],
+    queryFn: () => apiFetch<PaginatedResult<Incident>>(`/api/v1/incidents?${incidentListParams}`),
   });
   const items = query.data?.items ?? [];
   return (
@@ -147,25 +151,7 @@ export function IncidentsPage() {
         <CardBody>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <input type="search" value={search} onChange={(e) => table.setFilter('search', e.target.value, { replace: true })} placeholder="ค้นหาเลข Incident หรือหัวข้อ..." className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-            <ExportCsvButton
-              disabled={!items.length}
-              fileName={`incidents-page-${page}.csv`}
-              getRows={() => [
-                ['เลขที่', 'วันที่แจ้ง', 'เหตุการณ์', 'หมวด', 'ความรุนแรง', 'Risk', 'Risk Score', 'ข้อมูลส่วนบุคคล', 'ผู้รับผิดชอบ', 'สถานะ'],
-                ...items.map((item) => [
-                  item.incident_number,
-                  formatThaiDate(item.report_date, 'd MMM yyyy HH:mm'),
-                  item.title,
-                  item.category,
-                  item.severity ?? 'ยังไม่จำแนก',
-                  item.risk_level ?? '',
-                  item.risk_score ?? '',
-                  item.contains_personal_data ? 'ใช่' : 'ไม่ใช่',
-                  item.assignee?.full_name ?? '',
-                  item.status,
-                ]),
-              ]}
-            />
+            <ExportAllButton disabled={!items.length} url={`/api/v1/incidents/export?${incidentListParams}`} />
           </div>
           {query.isLoading && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>}
           {query.isError && (
