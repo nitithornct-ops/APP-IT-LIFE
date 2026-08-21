@@ -31,7 +31,7 @@ describe('ExportCsvButton', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'ส่งออก CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งออกหน้านี้' }));
     vi.unstubAllGlobals();
 
     expect(written).toHaveLength(1);
@@ -47,6 +47,6 @@ describe('ExportCsvButton', () => {
 
   it('ปิดปุ่มเมื่อไม่มีข้อมูลให้ส่งออก', () => {
     render(<ExportCsvButton fileName="x.csv" disabled getRows={() => [['หัวข้อ']]} />);
-    expect(screen.getByRole('button', { name: 'ส่งออก CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'ส่งออกหน้านี้' })).toBeDisabled();
   });
 });

@@ -95,7 +95,7 @@ describe('DataTable', () => {
     );
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'ค้นหาในตาราง' }), { target: { value: 'Printer' } });
-    fireEvent.click(screen.getByRole('button', { name: 'ส่งออก CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งออกหน้านี้' }));
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:table-export');
@@ -119,7 +119,7 @@ describe('DataTable', () => {
       </DataTable>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'ส่งออก CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งออกหน้านี้' }));
     vi.unstubAllGlobals();
 
     expect(written).toHaveLength(1);
@@ -137,7 +137,7 @@ describe('DataTable', () => {
 
     expect(screen.queryByRole('searchbox', { name: 'ค้นหาในตาราง' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'เลือกคอลัมน์สำหรับกรอง' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'ส่งออก CSV' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ส่งออกหน้านี้' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /คอลัมน์/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'การแบ่งหน้าตาราง' })).not.toBeInTheDocument();
   });
