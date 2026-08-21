@@ -22,6 +22,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -465,21 +466,25 @@ export function TicketsPage() {
     enabled: showCreate && hasPermission('asset.view'),
   });
 
+  // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
+  // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
+  const ticketListParams = (() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (sort) {
+      params.set('sort', sort.key);
+      params.set('order', sort.order);
+    }
+    if (status) params.set('status', status);
+    if (categoryId) params.set('categoryId', categoryId);
+    if (priority) params.set('priority', priority);
+    if (search) params.set('search', search);
+    if (mineOnly) params.set('mine', 'true');
+    return params.toString();
+  })();
+
   const ticketsQuery = useQuery({
-    queryKey: ['tickets', page, pageSize, sort?.key, sort?.order, status, categoryId, priority, search, mineOnly],
-    queryFn: () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (sort) {
-        params.set('sort', sort.key);
-        params.set('order', sort.order);
-      }
-      if (status) params.set('status', status);
-      if (categoryId) params.set('categoryId', categoryId);
-      if (priority) params.set('priority', priority);
-      if (search) params.set('search', search);
-      if (mineOnly) params.set('mine', 'true');
-      return apiFetch<PaginatedResult<TicketListItem>>(`/api/v1/tickets?${params.toString()}`);
-    },
+    queryKey: ['tickets', ticketListParams],
+    queryFn: () => apiFetch<PaginatedResult<TicketListItem>>(`/api/v1/tickets?${ticketListParams}`),
   });
 
   const summaryQuery = useQuery({
@@ -630,6 +635,10 @@ export function TicketsPage() {
             </select>
             <button type="submit" className="sr-only">ค้นหา</button>
             <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
+              <ExportAllButton
+                disabled={!ticketsQuery.data?.items.length}
+                url={`/api/v1/tickets/export?${ticketListParams}`}
+              />
               <button
                 type="button"
                 onClick={() => {

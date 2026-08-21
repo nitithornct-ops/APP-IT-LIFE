@@ -1,6 +1,6 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
-import { ExportCsvButton } from '../../components/table/ExportCsvButton';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Boxes, Loader2, Plus } from 'lucide-react';
@@ -323,12 +323,13 @@ export function AssetsPage() {
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
+  // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
+  // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีของไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
+  const assetListParams = `page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`;
+
   const assetsQuery = useQuery({
-    queryKey: ['assets', page, pageSize, sort?.key, sort?.order, status, categoryId, debouncedSearch],
-    queryFn: () =>
-      apiFetch<PaginatedResult<Asset>>(
-        `/api/v1/assets?page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${categoryId ? `&categoryId=${categoryId}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
-      ),
+    queryKey: ['assets', assetListParams],
+    queryFn: () => apiFetch<PaginatedResult<Asset>>(`/api/v1/assets?${assetListParams}`),
   });
 
   const categoryById = new Map((categoriesQuery.data ?? []).map((c) => [c.id, c.name]));
@@ -407,21 +408,7 @@ export function AssetsPage() {
               }}
               className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
             />
-            <ExportCsvButton
-              disabled={!items.length}
-              fileName={`assets-page-${page}.csv`}
-              getRows={() => [
-                ['รหัส', 'ชื่อทรัพย์สิน', 'หมวดหมู่', 'ผู้ถือครอง', 'สถานที่', 'สถานะ'],
-                ...items.map((a) => [
-                  a.asset_code,
-                  a.name,
-                  a.category?.name ?? (a.category_id ? categoryById.get(a.category_id) : null) ?? '',
-                  a.owner ? `${a.owner.first_name_th} ${a.owner.last_name_th}` : '',
-                  a.location ?? '',
-                  a.status,
-                ]),
-              ]}
-            />
+            <ExportAllButton disabled={!items.length} url={`/api/v1/assets/export?${assetListParams}`} />
           </div>
 
           {assetsQuery.isLoading && (
