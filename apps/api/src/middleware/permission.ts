@@ -3,7 +3,11 @@ import { writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { fail } from '../utils/response';
 
-async function checkPermission(c: Context<AppEnv>, permissionKey: string): Promise<boolean> {
+/**
+ * ถามสิทธิ์จาก Database ตรง ๆ — export ไว้ให้ route ที่ต้องตัดสินใจต่อสิทธิ์ที่มี
+ * ไม่ใช่แค่ผ่าน/ไม่ผ่าน เช่น endpoint ที่เปลี่ยนหลายอย่างในครั้งเดียว ซึ่งแต่ละอย่างใช้สิทธิ์คนละตัว
+ */
+export async function hasPermission(c: Context<AppEnv>, permissionKey: string): Promise<boolean> {
   const supabase = c.get('supabase');
   const { data, error } = await supabase.rpc('has_permission', { permission_key_input: permissionKey });
   return !error && data === true;
@@ -28,7 +32,7 @@ async function denyAndAudit(c: Context<AppEnv>, permissionKeys: string[]): Promi
  */
 export function requirePermission(permissionKey: string): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    if (!(await checkPermission(c, permissionKey))) {
+    if (!(await hasPermission(c, permissionKey))) {
       return denyAndAudit(c, [permissionKey]);
     }
     await next();
@@ -39,7 +43,7 @@ export function requirePermission(permissionKey: string): MiddlewareHandler<AppE
 export function requireAnyPermission(permissionKeys: string[]): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     for (const key of permissionKeys) {
-      if (await checkPermission(c, key)) {
+      if (await hasPermission(c, key)) {
         await next();
         return;
       }

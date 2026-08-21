@@ -17,9 +17,12 @@ import {
   Ticket as TicketIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTableParams } from '../../hooks/useTableParams';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
+import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -34,9 +37,10 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
-import type { TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
+import type { AssignableStaff, TicketListItem, TicketPriority, TicketStatus, TicketSummary } from '../../types/tickets';
+import { downloadCsv } from '../../utils/csv';
 import { formatThaiDate } from '../../utils/date';
-import { LOCKED_TICKET_STATUSES, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
 
 const TICKET_STATUSES: TicketStatus[] = [
   'ใหม่',
@@ -95,10 +99,119 @@ function TicketMetricCard({
   );
 }
 
-function csvCell(value: unknown): string {
-  const text = String(value ?? '');
-  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safe.replace(/"/g, '""')}"`;
+/** สถานะที่เปลี่ยนทีละหลายใบได้ — ต้องตรงกับ BULK_TICKET_STATUSES ฝั่ง api */
+const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'];
+
+type TicketBulkResult = BulkResult<{ id: string; ticketNo: string; status: string }>;
+
+/**
+ * แผงดำเนินการกับ Ticket ที่เลือกไว้หลายใบ
+ * ตั้งใจให้เลือกได้ทีละอย่าง (มอบหมาย หรือ เปลี่ยนสถานะ) เพื่อให้ worklog อ่านแล้วรู้ว่าเกิดอะไรขึ้น
+ */
+function BulkTicketPanel({
+  ids,
+  staff,
+  onClose,
+  onDone,
+}: {
+  ids: string[];
+  staff: AssignableStaff[];
+  onClose: () => void;
+  onDone: (result: TicketBulkResult) => void;
+}) {
+  const [action, setAction] = useState<'assign' | 'status'>('assign');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [status, setStatus] = useState<TicketStatus>('กำลังดำเนินการ');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<TicketBulkResult>('/api/v1/tickets/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ids,
+        note: note.trim() || undefined,
+        ...(action === 'assign' ? { assigneeId: assigneeId || null } : { status }),
+      }),
+    }),
+    onSuccess: onDone,
+    onError: (mutationError) => setError(mutationError instanceof ApiError ? mutationError.message : 'ดำเนินการไม่สำเร็จ'),
+  });
+
+  return (
+    <BulkActionModal
+      count={ids.length}
+      itemLabel="ใบงาน"
+      isPending={mutation.isPending}
+      error={error}
+      onClose={onClose}
+      onSubmit={() => { setError(null); mutation.mutate(); }}
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {([['assign', 'มอบหมายผู้รับผิดชอบ'], ['status', 'เปลี่ยนสถานะ']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setAction(value)}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {action === 'assign' ? (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">ผู้รับผิดชอบ</span>
+            <select
+              aria-label="ผู้รับผิดชอบ"
+              value={assigneeId}
+              onChange={(event) => setAssigneeId(event.target.value)}
+              className={bulkFieldClass}
+            >
+              <option value="">ไม่มีผู้รับผิดชอบ</option>
+              {staff.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+            </select>
+          </label>
+        ) : (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">สถานะใหม่</span>
+            <select
+              aria-label="สถานะใหม่"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as TicketStatus)}
+              className={bulkFieldClass}
+            >
+              {BULK_STATUSES.map((item) => <option key={item} value={item}>{ticketStatusLabel[item]}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              การปิดงาน ยกเลิก ส่งต่อ Outsource และยกระดับเป็น Incident ต้องทำทีละใบ เพราะแต่ละใบต้องระบุข้อมูลของตัวเอง
+            </p>
+          </label>
+        )}
+
+        <label className="block text-sm">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">บันทึกการดำเนินงาน (ไม่บังคับ)</span>
+          <textarea
+            aria-label="บันทึกการดำเนินงาน"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={1000}
+            rows={3}
+            className={bulkTextareaClass}
+          />
+        </label>
+      </div>
+    </BulkActionModal>
+  );
+}
+
+/** ป้ายเตือนเฉพาะใบที่ใกล้ครบหรือเกินกำหนด SLA — ใบที่ยังมีเวลาเหลือจะไม่มีป้ายให้รก */
+function SlaBadge({ dueAt, status }: { dueAt: string | null; status: TicketStatus }) {
+  const badge = ticketSlaBadge(dueAt, status);
+  if (!badge) return null;
+  return <div className="mt-1"><Badge variant={badge.tone}>{badge.label}</Badge></div>;
 }
 
 function requesterName(ticket: TicketListItem): string {
@@ -315,14 +428,18 @@ export function TicketsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
+  // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkResult, setBulkResult] = useState<TicketBulkResult | null>(null);
+  // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
+  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine'>({
+    filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
+  });
+  const { page, pageSize, sort } = table;
+  const { status, categoryId, priority, search: searchInput } = table.filters;
+  const mineOnly = table.filters.mine === 'true';
   const search = useDebouncedValue(searchInput.trim(), 350);
-  const [status, setStatus] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [priority, setPriority] = useState('');
-  const [mineOnly, setMineOnly] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canCloseTicket = hasPermission('ticket.close');
 
@@ -349,17 +466,25 @@ export function TicketsPage() {
     enabled: showCreate && hasPermission('asset.view'),
   });
 
+  // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
+  // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
+  const ticketListParams = (() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (sort) {
+      params.set('sort', sort.key);
+      params.set('order', sort.order);
+    }
+    if (status) params.set('status', status);
+    if (categoryId) params.set('categoryId', categoryId);
+    if (priority) params.set('priority', priority);
+    if (search) params.set('search', search);
+    if (mineOnly) params.set('mine', 'true');
+    return params.toString();
+  })();
+
   const ticketsQuery = useQuery({
-    queryKey: ['tickets', page, pageSize, status, categoryId, priority, search, mineOnly],
-    queryFn: () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (status) params.set('status', status);
-      if (categoryId) params.set('categoryId', categoryId);
-      if (priority) params.set('priority', priority);
-      if (search) params.set('search', search);
-      if (mineOnly) params.set('mine', 'true');
-      return apiFetch<PaginatedResult<TicketListItem>>(`/api/v1/tickets?${params.toString()}`);
-    },
+    queryKey: ['tickets', ticketListParams],
+    queryFn: () => apiFetch<PaginatedResult<TicketListItem>>(`/api/v1/tickets?${ticketListParams}`),
   });
 
   const summaryQuery = useQuery({
@@ -367,13 +492,14 @@ export function TicketsPage() {
     queryFn: () => apiFetch<TicketSummary>('/api/v1/tickets/summary'),
   });
 
+  const staffQuery = useQuery({
+    queryKey: ['tickets', 'assignable-staff'],
+    queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/tickets/assignable-staff'),
+    enabled: showBulk,
+  });
+
   function resetFilters() {
-    setSearchInput('');
-    setStatus('');
-    setCategoryId('');
-    setPriority('');
-    setMineOnly(false);
-    setPage(1);
+    table.reset();
   }
 
   function exportCurrentPage() {
@@ -392,13 +518,7 @@ export function TicketsPage() {
       ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '',
       ticket.outsource_name ?? '',
     ]);
-    const csv = `\uFEFF${[header, ...body].map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `tickets-page-${page}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv([header, ...body], `tickets-page-${page}.csv`);
   }
 
   const summary = summaryQuery.data;
@@ -433,6 +553,23 @@ export function TicketsPage() {
         </div>
       </div>
 
+      {showBulk && (
+        <BulkTicketPanel
+          ids={selectedIds}
+          staff={staffQuery.data ?? []}
+          onClose={() => setShowBulk(false)}
+          onDone={(result) => {
+            setShowBulk(false);
+            setBulkResult(result);
+            // เอาเฉพาะใบที่ทำไม่สำเร็จไว้ให้เลือกต่อ ผู้ใช้จะได้ลองแก้เฉพาะที่เหลือ
+            setSelectedIds(result.failed.map((item) => item.id));
+            void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+          }}
+        />
+      )}
+
+      {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="ใบงาน" onDismiss={() => setBulkResult(null)} />}
+
       {showCreate && categoriesQuery.data && (
         <CreateTicketForm
           categories={categoriesQuery.data}
@@ -455,7 +592,7 @@ export function TicketsPage() {
             className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 xl:flex-row xl:items-center dark:border-slate-700 dark:bg-slate-900/40"
             onSubmit={(event) => {
               event.preventDefault();
-              setPage(1);
+              table.setPage(1);
             }}
           >
             <label className="relative min-w-0 flex-1 xl:max-w-sm">
@@ -463,7 +600,7 @@ export function TicketsPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
                 value={searchInput}
-                onChange={(event) => { setSearchInput(event.target.value); setPage(1); }}
+                onChange={(event) => table.setFilter('search', event.target.value, { replace: true })}
                 maxLength={120}
                 className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 placeholder="ค้นหาเลขที่ เรื่อง ผู้แจ้ง..."
@@ -472,7 +609,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามสถานะ"
               value={status}
-              onChange={(event) => { setStatus(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('status', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">สถานะ: ทั้งหมด</option>
@@ -481,7 +618,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามประเภทปัญหา"
               value={categoryId}
-              onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('categoryId', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">ประเภท: ทั้งหมด</option>
@@ -490,7 +627,7 @@ export function TicketsPage() {
             <select
               aria-label="กรองตามความเร่งด่วน"
               value={priority}
-              onChange={(event) => { setPriority(event.target.value); setPage(1); }}
+              onChange={(event) => table.setFilter('priority', event.target.value)}
               className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
               <option value="">ความเร่งด่วน: ทั้งหมด</option>
@@ -498,11 +635,14 @@ export function TicketsPage() {
             </select>
             <button type="submit" className="sr-only">ค้นหา</button>
             <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
+              <ExportAllButton
+                disabled={!ticketsQuery.data?.items.length}
+                url={`/api/v1/tickets/export?${ticketListParams}`}
+              />
               <button
                 type="button"
                 onClick={() => {
-                  setMineOnly((value) => !value);
-                  setPage(1);
+                  table.setFilter('mine', mineOnly ? '' : 'true');
                 }}
                 className={`h-9 rounded-lg px-3 text-xs font-semibold ${mineOnly ? 'bg-blue-600 text-white' : 'border border-slate-300 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
               >
@@ -539,14 +679,26 @@ export function TicketsPage() {
 
           {ticketsQuery.data && ticketsQuery.data.items.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-              <DataTable pagination={false} className="min-w-[1120px] w-full text-left text-sm">
+              <DataTable
+                mode="server"
+                sort={sort}
+                onSortChange={table.setSort}
+                stickyHeader
+                cardOnMobile
+                itemLabel="ใบงาน"
+                selectable={canManageTicket}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+                selectionActions={<Button type="button" size="sm" onClick={() => setShowBulk(true)}>ดำเนินการกับที่เลือก</Button>}
+                className="min-w-[1120px] w-full text-left text-sm"
+              >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                   <tr>
                     <th className="px-3 py-3">ลำดับ</th>
-                    <th className="px-3 py-3">เลขที่</th>
-                    <th className="px-3 py-3">เรื่อง</th>
+                    <th className="px-3 py-3" data-sort-key="ticket_no">เลขที่</th>
+                    <th className="px-3 py-3" data-sort-key="title">เรื่อง</th>
                     <th className="px-3 py-3">ผู้แจ้ง</th>
-                    <th className="px-3 py-3">สถานะ/SLA</th>
+                    <th className="px-3 py-3" data-sort-key="due_at" data-sort-label="เรียงตามวันครบกำหนด SLA">สถานะ/SLA</th>
                     <th className="px-3 py-3">ผู้รับผิดชอบ</th>
                     <th className="px-3 py-3">Outsource</th>
                     <th className="px-3 py-3 text-center">ดำเนินการ</th>
@@ -554,30 +706,31 @@ export function TicketsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                   {ticketsQuery.data.items.map((ticket, index) => (
-                    <tr key={ticket.id} className="align-top transition hover:bg-blue-50/40 dark:hover:bg-slate-700/30">
-                      <td className="px-3 py-3 text-slate-500">{(page - 1) * pageSize + index + 1}</td>
-                      <td className="px-3 py-3">
+                    <tr key={ticket.id} data-row-id={ticket.id} className="align-top transition hover:bg-blue-50/40 dark:hover:bg-slate-700/30">
+                      <td className="px-3 py-3 text-slate-500" data-label="ลำดับ">{(page - 1) * pageSize + index + 1}</td>
+                      <td className="px-3 py-3" data-label="เลขที่">
                         <p className="whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-200">{ticket.ticket_no}</p>
                         <div className="mt-1"><Badge variant={priorityTone[ticket.priority]}>{ticket.priority}</Badge></div>
                       </td>
-                      <td className="max-w-[260px] px-3 py-3">
+                      <td className="max-w-[260px] px-3 py-3" data-label="เรื่อง">
                         <Link to={`/tickets/${ticket.id}`} className="font-semibold text-slate-800 hover:text-blue-700 hover:underline dark:text-slate-100 dark:hover:text-blue-300">
                           {ticket.title}
                         </Link>
                         {ticket.is_security && <AlertTriangle className="ml-1 inline h-3.5 w-3.5 text-red-500" aria-label="Security" />}
                         <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{ticket.ticket_categories?.name ?? 'ไม่ระบุประเภท'} · {ticket.priority}</p>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3" data-label="ผู้แจ้ง">
                         <p className="font-medium text-slate-700 dark:text-slate-200">{requesterName(ticket)}{ticket.requester_id === me?.profile.id ? ' (ของฉัน)' : ''}</p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{requesterDepartment(ticket)}</p>
                         <span className="mt-1 inline-flex rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{sourceLabel(ticket.source_channel)}</span>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3" data-label="สถานะ/SLA">
                         <StatusBadge status={ticket.status} />
                         <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{ticket.due_at ? formatThaiDate(ticket.due_at, 'd/MM/yyyy HH:mm') : 'ไม่กำหนด SLA'}</p>
+                        <SlaBadge dueAt={ticket.due_at} status={ticket.status} />
                       </td>
-                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
-                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{ticket.outsource_name ?? '—'}</td>
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300" data-label="ผู้รับผิดชอบ">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? '—'}</td>
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300" data-label="Outsource">{ticket.outsource_name ?? '—'}</td>
                       <td className="px-3 py-3 text-right">
                         <RowActions
                           recordLabel={ticket.ticket_no}
@@ -609,7 +762,7 @@ export function TicketsPage() {
             </div>
           )}
 
-          {ticketsQuery.data && <TablePagination page={ticketsQuery.data.pagination.page} pageSize={pageSize} totalItems={totalItems} totalPages={ticketsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {ticketsQuery.data && <TablePagination page={ticketsQuery.data.pagination.page} pageSize={pageSize} totalItems={totalItems} totalPages={ticketsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
     </div>

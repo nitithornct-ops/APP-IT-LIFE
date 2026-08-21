@@ -1,4 +1,4 @@
-import { paginationQuerySchema, ticketRatingDetailsSchema } from '@itlife/shared';
+import { listQuerySchema, ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
 
 const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
@@ -16,7 +16,7 @@ export const createTicketSchema = z.object({
 
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
-export const listTicketsQuerySchema = paginationQuerySchema.extend({
+export const listTicketsQuerySchema = listQuerySchema.extend({
   status: z.string().trim().max(80).optional(),
   categoryId: z.string().uuid().optional(),
   priority: ticketPriorityEnum.optional(),
@@ -26,6 +26,27 @@ export const listTicketsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type ListTicketsQuery = z.infer<typeof listTicketsQuerySchema>;
+
+/**
+ * สถานะที่เปลี่ยนแบบทีละหลายใบได้ — จงใจไม่รวมปิดงาน/ยกเลิก/ส่งต่อ Outsource/ยกระดับ
+ * เพราะแต่ละอย่างต้องการข้อมูลเฉพาะใบ (ผลการแก้ไข เหตุผลยกเลิก ชื่อผู้ให้บริการ)
+ * ถ้าให้กรอกครั้งเดียวแล้วใช้กับทุกใบ จะได้ข้อมูลที่ดูเหมือนครบแต่ไม่ตรงกับงานจริง
+ */
+export const BULK_TICKET_STATUSES = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'] as const;
+
+export const bulkUpdateTicketsSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1, 'กรุณาเลือกอย่างน้อย 1 รายการ').max(50, 'ทำได้ครั้งละไม่เกิน 50 รายการ'),
+    status: z.enum(BULK_TICKET_STATUSES).optional(),
+    assigneeId: z.string().uuid().nullable().optional(),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .refine((body) => body.status !== undefined || body.assigneeId !== undefined, {
+    message: 'กรุณาระบุสถานะหรือผู้รับผิดชอบที่ต้องการเปลี่ยน',
+  });
+
+export type BulkUpdateTicketsInput = z.infer<typeof bulkUpdateTicketsSchema>;
+
 
 /**
  * Endpoint เดียวรองรับทั้ง triage/รับเรื่อง/บันทึกการดำเนินงาน/ส่งต่อ Outsource/ปิดงาน/ยกเลิก/

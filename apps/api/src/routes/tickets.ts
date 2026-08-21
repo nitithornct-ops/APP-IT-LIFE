@@ -9,15 +9,24 @@ import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
-import { addTicketBusinessHours, parseTicketBusinessCalendar, ticketBusinessMinutesBetween } from '../services/ticketSlaService';
+import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
+import {
+  TICKET_STATUS,
+  applyStatusChange,
+  assertTransition,
+  changesSlaPause,
+} from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { BulkItemError, runBulk } from '../utils/bulk';
+import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -27,19 +36,6 @@ import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema
  */
 export const ticketsRoute = new Hono<AppEnv>();
 ticketsRoute.use('*', requireAuth);
-
-const TICKET_STATUS = {
-  NEW: 'ใหม่',
-  ACK: 'รับเรื่องแล้ว',
-  IN_PROGRESS: 'กำลังดำเนินการ',
-  WAITING_PARTS: 'รออะไหล่',
-  WAITING_USER: 'รอผู้ใช้งาน',
-  OUTSOURCE: 'ส่งต่อ Outsource',
-  RESOLVED: 'เสร็จสิ้น',
-  CLOSED: 'ปิดงาน',
-  CANCELLED: 'ยกเลิก',
-  ESCALATED: 'ยกระดับเป็น Incident',
-} as const;
 
 const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
 const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
@@ -61,44 +57,6 @@ async function loadActiveRatingCriteria(client: ReturnType<typeof createAdminCli
     .order('created_at');
 }
 
-const ACTIVE_WORK_STATUSES: string[] = [
-  TICKET_STATUS.IN_PROGRESS,
-  TICKET_STATUS.WAITING_PARTS,
-  TICKET_STATUS.WAITING_USER,
-  TICKET_STATUS.OUTSOURCE,
-  TICKET_STATUS.RESOLVED,
-  TICKET_STATUS.CLOSED,
-  TICKET_STATUS.CANCELLED,
-  TICKET_STATUS.ESCALATED,
-];
-
-const TRANSITIONS: Record<string, string[]> = {
-  [TICKET_STATUS.NEW]: [
-    TICKET_STATUS.ACK,
-    TICKET_STATUS.IN_PROGRESS,
-    TICKET_STATUS.OUTSOURCE,
-    TICKET_STATUS.CLOSED,
-    TICKET_STATUS.CANCELLED,
-    TICKET_STATUS.ESCALATED,
-  ],
-  [TICKET_STATUS.ACK]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.IN_PROGRESS]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.WAITING_PARTS]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.WAITING_USER]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.OUTSOURCE]: ACTIVE_WORK_STATUSES,
-  [TICKET_STATUS.RESOLVED]: [TICKET_STATUS.CLOSED],
-  [TICKET_STATUS.CLOSED]: [],
-  [TICKET_STATUS.CANCELLED]: [],
-  [TICKET_STATUS.ESCALATED]: [],
-};
-
-function assertTransition(from: string, to: string) {
-  if (!to || from === to) return;
-  if (!(TRANSITIONS[from] ?? []).includes(to)) {
-    throw new Error(`ไม่สามารถเปลี่ยนสถานะ Ticket จาก "${from}" เป็น "${to}" ได้`);
-  }
-}
-
 async function hasPerm(c: Context<AppEnv>, permissionKey: string): Promise<boolean> {
   const { data, error } = await c.get('supabase').rpc('has_permission', { permission_key_input: permissionKey });
   return !error && data === true;
@@ -110,11 +68,64 @@ async function loadTicketBusinessCalendar(c: Context<AppEnv>) {
   return parseTicketBusinessCalendar(Object.fromEntries((data ?? []).map((row) => [row.key, row.value])));
 }
 
+/**
+ * คอลัมน์ที่ยอมให้เรียงได้ — ไม่รวม priority/status เพราะทั้งคู่เก็บเป็นข้อความไทย
+ * การเรียงจะได้ลำดับตามตัวอักษร ไม่ใช่ระดับความเร่งด่วนหรือลำดับ workflow ซึ่งทำให้ผู้ใช้เข้าใจผิด
+ */
+const TICKET_SORT_COLUMNS = ['ticket_no', 'title', 'due_at', 'created_at'] as const;
+
+/** ส่วนของ query builder ที่ตัวกรองรายการ Ticket ต้องใช้ */
+interface TicketFilterableQuery {
+  eq(column: string, value: unknown): TicketFilterableQuery;
+  or(filters: string): TicketFilterableQuery;
+}
+
+interface TicketListFilters {
+  status?: string;
+  categoryId?: string;
+  priority?: string;
+  search?: string;
+  assigneeId?: string;
+  mine?: string;
+}
+
+/**
+ * ตัวกรองของรายการ Ticket — ใช้ร่วมกันระหว่างการแสดงผลกับการส่งออก
+ *
+ * ต้องเป็นตัวเดียวกันเท่านั้น ไม่งั้นไฟล์ที่ส่งออกจะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นบนหน้าจอ
+ * ซึ่งเป็นความผิดพลาดที่ตรวจจับยากมากเพราะไฟล์ก็ยัง "ดูปกติ"
+ *
+ * RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — ที่นี่เป็นแค่ UX
+ */
+function applyTicketListFilters<T>(
+  query: T,
+  { status, categoryId, priority, search, assigneeId, mine }: TicketListFilters,
+  actorId: string,
+): T {
+  // มอง builder เป็นโครงแคบ ๆ เฉพาะสอง method ที่ใช้ เพราะ generic เต็มของ supabase-js
+  // ซ้อนลึกจน TypeScript ยอมแพ้เมื่อเอามาผูกกับ generic ที่อ้างถึงตัวเอง
+  let next = query as unknown as TicketFilterableQuery;
+  if (status) next = next.eq('status', status);
+  if (categoryId) next = next.eq('category_id', categoryId);
+  if (priority) next = next.eq('priority', priority);
+  if (search) {
+    const safeSearch = cleanSearch(search);
+    if (safeSearch) {
+      next = next.or(
+        `ticket_no.ilike.%${safeSearch}%,title.ilike.%${safeSearch}%,requester_name_snapshot.ilike.%${safeSearch}%,department_name_snapshot.ilike.%${safeSearch}%`,
+      );
+    }
+  }
+  if (assigneeId) next = next.eq('assignee_id', assigneeId);
+  if (mine === 'true') next = next.eq('requester_id', actorId);
+  return next as unknown as T;
+}
+
 ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
+  const { page, pageSize, sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
 
   // RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — filter ที่นี่เป็นแค่ UX
   let query = supabase
@@ -123,22 +134,10 @@ ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationH
       'id, ticket_no, title, requester_id, requester_name_snapshot, department_name_snapshot, guest_name, guest_department, source_channel, category_id, priority, status, assignee_id, assignee_name_snapshot, is_security, incident_id, due_at, created_at, outsource_name, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name,email), assignee:profiles!tickets_assignee_id_fkey(full_name,email)',
       { count: 'exact' },
     )
-    .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
+  query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
-  if (status) query = query.eq('status', status);
-  if (categoryId) query = query.eq('category_id', categoryId);
-  if (priority) query = query.eq('priority', priority);
-  if (search) {
-    const safeSearch = cleanSearch(search);
-    if (safeSearch) {
-      query = query.or(
-        `ticket_no.ilike.%${safeSearch}%,title.ilike.%${safeSearch}%,requester_name_snapshot.ilike.%${safeSearch}%,department_name_snapshot.ilike.%${safeSearch}%`,
-      );
-    }
-  }
-  if (assigneeId) query = query.eq('assignee_id', assigneeId);
-  if (mine === 'true') query = query.eq('requester_id', actorId);
+  query = applyTicketListFilters(query, { status, categoryId, priority, search, assigneeId, mine }, actorId);
 
   const { data, count, error } = await query;
   if (error) {
@@ -423,6 +422,211 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
   return c.json(ok(reqId, ticket), 201);
 });
 
+/** แถวดิบของ Ticket เท่าที่การส่งออกต้องใช้ */
+interface TicketExportRow {
+  ticket_no: string | null;
+  title: string | null;
+  requester_name_snapshot: string | null;
+  department_name_snapshot: string | null;
+  priority: string | null;
+  status: string | null;
+  assignee_name_snapshot: string | null;
+  outsource_name: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  ticket_categories: { name: string | null } | null;
+}
+
+/** วันที่แบบอ่านออกใน Excel ไทย — ISO เต็มรูปแบบทำให้ช่องกว้างเกินและอ่านยาก */
+function exportDateTime(value: string | null): string {
+  if (!value) return '';
+  return new Date(value).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+const TICKET_EXPORT_COLUMNS: ExportColumn<TicketExportRow>[] = [
+  { label: 'เลขที่', value: (row) => row.ticket_no },
+  { label: 'เรื่อง', value: (row) => row.title },
+  { label: 'ผู้แจ้ง', value: (row) => row.requester_name_snapshot },
+  { label: 'แผนก', value: (row) => row.department_name_snapshot },
+  { label: 'ประเภทปัญหา', value: (row) => row.ticket_categories?.name ?? '' },
+  { label: 'ความเร่งด่วน', value: (row) => row.priority },
+  { label: 'สถานะ', value: (row) => row.status },
+  { label: 'ผู้รับผิดชอบ', value: (row) => row.assignee_name_snapshot },
+  { label: 'Outsource', value: (row) => row.outsource_name },
+  { label: 'ครบกำหนด SLA', value: (row) => exportDateTime(row.due_at) },
+  { label: 'วันที่แจ้ง', value: (row) => exportDateTime(row.created_at) },
+];
+
+/**
+ * ส่งออกรายการ Ticket ทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ *
+ * ใช้ตัวกรองตัวเดียวกับรายการบนหน้าจอ ไฟล์ที่ได้จึงตรงกับสิ่งที่ผู้ใช้เห็นเสมอ
+ * และ RLS ยังกรองสิทธิ์การมองเห็นให้อีกชั้นเหมือนกับตอนแสดงรายการ
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
+  const filters = { status, categoryId, priority, search, assigneeId, mine };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const countQuery = applyTicketListFilters(
+    supabase.from('tickets').select('id', { count: 'exact', head: true }),
+    filters,
+    actorId,
+  );
+  const { count, error: countError } = await countQuery;
+  if (countError) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let query = supabase
+    .from('tickets')
+    .select(
+      'ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, created_at, ticket_categories(name)',
+    )
+    .range(0, LIST_EXPORT_MAX_ROWS - 1);
+  query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
+  query = applyTicketListFilters(query, filters, actorId);
+
+  const { data, error } = await query;
+  if (error) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const rows = (data ?? []) as unknown as TicketExportRow[];
+  // การดึงข้อมูลทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'ticket',
+    targetTable: 'tickets',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('tickets'),
+    csv: listCsv(TICKET_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
+});
+
+/**
+ * แก้ไข Ticket หลายใบพร้อมกัน — มอบหมายผู้รับผิดชอบ หรือเปลี่ยนสถานะระหว่างการทำงาน
+ *
+ * ตรวจสิทธิ์และ state machine "รายใบ" ไม่ใช่รายชุด แล้วคืนผลแยกต่อ id เพราะการเลือก
+ * 20 ใบแล้วล้มทั้งชุดเพราะใบเดียวปิดไปแล้ว บังคับให้ผู้ใช้มานั่งไล่หาเองว่าใบไหนพัง
+ * ใบที่ผ่านจะถูกบันทึกจริง ใบที่ไม่ผ่านจะบอกเหตุผลกลับไปเป็นรายใบ
+ *
+ * การวนทีละใบกับรูปแบบผลลัพธ์อยู่ที่ runBulk (utils/bulk.ts) — ดูเหตุผลของการทำตามลำดับได้ที่นั่น
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
+ */
+ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { ids, status, assigneeId, note } = c.req.valid('json');
+
+  const [canUpdate, canAssign, canTriage] = await Promise.all([
+    hasPerm(c, 'ticket.update'),
+    hasPerm(c, 'ticket.assign'),
+    hasPerm(c, 'ticket.triage'),
+  ]);
+  if (!canUpdate && !canAssign && !canTriage) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
+  }
+  if (assigneeId !== undefined && !canAssign && !canUpdate) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์มอบหมายผู้รับผิดชอบ'), 403);
+  }
+
+  // RLS กรองใบที่ผู้ใช้ไม่มีสิทธิ์เห็นออกไปเอง ใบที่หายไปจะถูกรายงานว่าไม่พบ
+  const { data: currentRows, error: loadError } = await supabase.from('tickets').select('*').in('id', ids);
+  if (loadError) return dbFailJson(c, 'TICKETS_BULK_LOAD_FAILED', loadError);
+  const byId = new Map((currentRows ?? []).map((row) => [String(row.id), row]));
+
+  const needsCalendar = status !== undefined
+    && (currentRows ?? []).some((row) => changesSlaPause(row as never, status));
+  const businessCalendar = needsCalendar ? await loadTicketBusinessCalendar(c) : null;
+
+  const result = await runBulk(ids, async (id) => {
+    const current = byId.get(id);
+    if (!current) throw new BulkItemError('TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง');
+
+    const fromStatus = String(current.status);
+    const toStatus = status ?? fromStatus;
+
+    if (toStatus !== fromStatus) {
+      const isLegacyTriage = fromStatus === TICKET_STATUS.NEW && toStatus === TICKET_STATUS.ACK && canTriage;
+      if (!canUpdate && !isLegacyTriage) {
+        throw new BulkItemError('PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์เปลี่ยนสถานะใบนี้');
+      }
+      try {
+        assertTransition(fromStatus, toStatus);
+      } catch (error) {
+        throw new BulkItemError('TICKET_TRANSITION_INVALID', (error as Error).message);
+      }
+    }
+
+    const now = new Date();
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (assigneeId !== undefined) patch.assignee_id = assigneeId;
+    if (toStatus !== fromStatus) applyStatusChange(patch, current as never, toStatus, now, businessCalendar!);
+
+    const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
+    const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
+    if (error || !updated) throw new BulkItemError('TICKET_UPDATE_FAILED', 'บันทึกไม่สำเร็จ');
+
+    await supabase.from('ticket_worklogs').insert({
+      ticket_id: id,
+      action: assigneeId !== undefined && toStatus === fromStatus ? 'คัดแยก/มอบหมาย' : 'บันทึกการดำเนินงาน',
+      detail: note ?? null,
+      status_from: fromStatus,
+      status_to: (patch.status as string) ?? fromStatus,
+      is_public: true,
+      actor_id: actorId,
+    });
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'ticket',
+      targetTable: 'tickets',
+      targetId: id,
+      detail: { status, assigneeId, note, bulk: true },
+      requestId: reqId,
+      before: auditBefore,
+      after: updated,
+    });
+
+    if (assigneeId && assigneeId !== current.assignee_id) {
+      await sendNotification(c.env, {
+        recipientId: assigneeId,
+        type: 'ticket_assigned',
+        title: `ท่านได้รับมอบหมาย Ticket: ${updated.title}`,
+        link: `/tickets/${id}`,
+      });
+    }
+    if (patch.status && patch.status !== fromStatus && current.requester_id !== actorId) {
+      await sendNotification(c.env, {
+        recipientId: current.requester_id,
+        type: 'ticket_status_changed',
+        title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
+        link: `/tickets/${id}`,
+      });
+    }
+
+    return { id, ticketNo: String(updated.ticket_no), status: String(updated.status) };
+  });
+
+  return c.json(ok(reqId, result));
+});
+
 ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -513,10 +717,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
 
   const patch: Record<string, unknown> = { updated_by: actorId };
   const now = new Date();
-  const waitingStatuses = new Set<string>([TICKET_STATUS.WAITING_PARTS, TICKET_STATUS.WAITING_USER]);
-  const changesSlaPause = toStatus !== fromStatus
-    && (waitingStatuses.has(toStatus) || Boolean(current.sla_paused_at));
-  const businessCalendar = body.categoryId !== undefined || isReopen || changesSlaPause
+  const businessCalendar = body.categoryId !== undefined || isReopen || changesSlaPause(current, toStatus)
     ? await loadTicketBusinessCalendar(c)
     : null;
 
@@ -563,39 +764,9 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     patch.due_at = addTicketBusinessHours(now, resolutionSlaHours, businessCalendar!).toISOString();
     patch.reopen_count = (current.reopen_count ?? 0) + 1;
   } else if (toStatus !== fromStatus) {
-    patch.status = toStatus;
-    if (toStatus === TICKET_STATUS.ACK && !current.acknowledged_at) patch.acknowledged_at = now.toISOString();
-    if (toStatus === TICKET_STATUS.RESOLVED) patch.resolved_at = current.resolved_at ?? now.toISOString();
-    if (toStatus === TICKET_STATUS.CLOSED) {
-      patch.resolved_at = current.resolved_at ?? now.toISOString();
-      patch.closed_at = now.toISOString();
-    }
-    if (toStatus === TICKET_STATUS.CANCELLED) patch.closed_at = now.toISOString();
-    if (toStatus === TICKET_STATUS.OUTSOURCE) patch.outsource_sent_at = current.outsource_sent_at ?? now.toISOString();
+    applyStatusChange(patch, current, toStatus, now, businessCalendar!);
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
-
-  if (toStatus !== fromStatus && !isReopen) {
-    if (!current.sla_paused_at && waitingStatuses.has(toStatus)) {
-      patch.sla_paused_at = now.toISOString();
-    } else if (current.sla_paused_at && !waitingStatuses.has(toStatus)) {
-      const pausedBusinessMinutes = ticketBusinessMinutesBetween(
-        new Date(current.sla_paused_at),
-        now,
-        businessCalendar!,
-      );
-      patch.sla_paused_at = null;
-      patch.sla_paused_minutes = Number(current.sla_paused_minutes ?? 0) + pausedBusinessMinutes;
-      const effectiveDueAt = patch.due_at ?? current.due_at;
-      if (effectiveDueAt && pausedBusinessMinutes > 0) {
-        patch.due_at = addTicketBusinessHours(
-          new Date(String(effectiveDueAt)),
-          pausedBusinessMinutes / 60,
-          businessCalendar!,
-        ).toISOString();
-      }
-    }
-  }
 
   const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();

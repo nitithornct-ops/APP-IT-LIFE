@@ -1,16 +1,19 @@
 import { zValidator } from '@hono/zod-validator';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
+import { BulkItemError, runBulk } from '../utils/bulk';
+import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
-import { createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../validators/employees';
+import { bulkUpdateEmployeesSchema, createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../validators/employees';
 
 /**
  * ทะเบียนพนักงาน — สืบทอดจาก Employees เดิม (Module_Employee.gs) แยกจาก profiles (บัญชี login)
@@ -42,25 +45,76 @@ employeesRoute.get(
   },
 );
 
+/** ส่วนของ query builder ที่ตัวกรองทะเบียนพนักงานต้องใช้ */
+interface EmployeeFilterableQuery {
+  eq(column: string, value: unknown): EmployeeFilterableQuery;
+  or(filters: string): EmployeeFilterableQuery;
+  in(column: string, values: readonly unknown[]): EmployeeFilterableQuery;
+  not(column: string, operator: string, value: unknown): EmployeeFilterableQuery;
+}
+
+interface EmployeeListFilters {
+  search?: string;
+  status?: string;
+  departmentId?: string;
+  ownership?: string;
+}
+
+/**
+ * รายชื่อพนักงานที่กำลังถือครองทรัพย์สินอยู่ — ต้องหาแยกก่อน เพราะ PostgREST กรองข้ามตารางแบบนี้ไม่ได้
+ * คืน null เมื่อไม่ได้ใช้ตัวกรองการครอบครอง จะได้ไม่ต้องยิง query ที่ไม่มีใครใช้
+ */
+async function loadAssignedEmployeeIds(
+  supabase: SupabaseClient,
+  ownership: string | undefined,
+): Promise<{ ids: string[] | null; error?: string }> {
+  if (!ownership) return { ids: null };
+  const { data, error } = await supabase
+    .from('employee_assignments')
+    .select('employee_id')
+    .in('status', ['ครอบครอง', 'ส่งซ่อม'])
+    .limit(10000);
+  if (error) return { ids: null, error: 'ดึงข้อมูลการครอบครองไม่สำเร็จ' };
+  const rows = (data ?? []) as { employee_id: string }[];
+  return { ids: [...new Set(rows.map((item) => item.employee_id))] };
+}
+
+/**
+ * ตัวกรองของทะเบียนพนักงาน — ใช้ร่วมกันระหว่างการแสดงผลกับการส่งออก
+ * ต้องเป็นตัวเดียวกันเท่านั้น ไม่งั้นไฟล์ที่ส่งออกจะมีคนไม่ตรงกับที่ผู้ใช้เห็นบนหน้าจอ
+ */
+function applyEmployeeListFilters<T>(
+  query: T,
+  { search, status, departmentId, ownership }: EmployeeListFilters,
+  assignedEmployeeIds: string[] | null,
+): T {
+  // มอง builder เป็นโครงแคบ ๆ เพราะ generic เต็มของ supabase-js ซ้อนลึกจน TypeScript ยอมแพ้
+  let next = query as unknown as EmployeeFilterableQuery;
+  const safeSearch = search ? cleanSearch(search) : '';
+  if (safeSearch) {
+    next = next.or(
+      `employee_code.ilike.%${safeSearch}%,first_name_th.ilike.%${safeSearch}%,last_name_th.ilike.%${safeSearch}%,nickname.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`,
+    );
+  }
+  if (status) next = next.eq('status', status);
+  if (departmentId) next = next.eq('department_id', departmentId);
+  if (ownership === 'with' && assignedEmployeeIds) next = next.in('id', assignedEmployeeIds);
+  if (ownership === 'without' && assignedEmployeeIds?.length) {
+    next = next.not('id', 'in', `(${assignedEmployeeIds.join(',')})`);
+  }
+  return next as unknown as T;
+}
+
 employeesRoute.get('/', requirePermission('employee.manage'), zValidator('query', listEmployeesQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const { page, pageSize, search, status, departmentId, ownership } = c.req.valid('query');
 
-  let assignedEmployeeIds: string[] | null = null;
-  if (ownership) {
-    const { data: assignments, error: assignmentError } = await supabase
-      .from('employee_assignments')
-      .select('employee_id')
-      .in('status', ['ครอบครอง', 'ส่งซ่อม'])
-      .limit(10000);
-    if (assignmentError) {
-      return c.json(fail(reqId, 'EMPLOYEE_ASSIGNMENTS_LOAD_FAILED', 'ดึงข้อมูลการครอบครองไม่สำเร็จ'), 400);
-    }
-    assignedEmployeeIds = [...new Set((assignments ?? []).map((item) => item.employee_id))];
-    if (ownership === 'with' && assignedEmployeeIds.length === 0) {
-      return c.json(ok(reqId, toPaginatedData([], 0, page, pageSize)));
-    }
+  const assigned = await loadAssignedEmployeeIds(supabase, ownership);
+  if (assigned.error) return c.json(fail(reqId, 'EMPLOYEE_ASSIGNMENTS_LOAD_FAILED', assigned.error), 400);
+  const assignedEmployeeIds = assigned.ids;
+  if (ownership === 'with' && assignedEmployeeIds?.length === 0) {
+    return c.json(ok(reqId, toPaginatedData([], 0, page, pageSize)));
   }
 
   let query = supabase
@@ -69,18 +123,7 @@ employeesRoute.get('/', requirePermission('employee.manage'), zValidator('query'
     .order('first_name_th', { ascending: true })
     .range(...paginationRange(page, pageSize));
 
-  const safeSearch = search ? cleanSearch(search) : '';
-  if (safeSearch) {
-    query = query.or(
-      `employee_code.ilike.%${safeSearch}%,first_name_th.ilike.%${safeSearch}%,last_name_th.ilike.%${safeSearch}%,nickname.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`,
-    );
-  }
-  if (status) query = query.eq('status', status);
-  if (departmentId) query = query.eq('department_id', departmentId);
-  if (ownership === 'with' && assignedEmployeeIds) query = query.in('id', assignedEmployeeIds);
-  if (ownership === 'without' && assignedEmployeeIds?.length) {
-    query = query.not('id', 'in', `(${assignedEmployeeIds.join(',')})`);
-  }
+  query = applyEmployeeListFilters(query, { search, status, departmentId, ownership }, assignedEmployeeIds);
 
   const { data, count, error } = await query;
   if (error) {
@@ -167,6 +210,161 @@ employeesRoute.post(
     });
 
     return c.json(ok(reqId, data), 201);
+  },
+);
+
+/** แถวดิบของพนักงานเท่าที่การส่งออกต้องใช้ */
+interface EmployeeExportRow {
+  employee_code: string | null;
+  prefix_th: string | null;
+  first_name_th: string | null;
+  last_name_th: string | null;
+  nickname: string | null;
+  first_name_en: string | null;
+  last_name_en: string | null;
+  username_ad: string | null;
+  upn: string | null;
+  email: string | null;
+  status: string | null;
+  department: { name_th: string | null } | null;
+  position: { name_th: string | null } | null;
+}
+
+const EMPLOYEE_EXPORT_COLUMNS: ExportColumn<EmployeeExportRow>[] = [
+  { label: 'รหัสพนักงาน', value: (row) => row.employee_code },
+  { label: 'ชื่อ-นามสกุล', value: (row) => `${row.prefix_th ?? ''}${row.first_name_th ?? ''} ${row.last_name_th ?? ''}`.trim() },
+  { label: 'ชื่อเล่น', value: (row) => row.nickname },
+  { label: 'ชื่อภาษาอังกฤษ', value: (row) => `${row.first_name_en ?? ''} ${row.last_name_en ?? ''}`.trim() },
+  { label: 'ตำแหน่ง', value: (row) => row.position?.name_th ?? '' },
+  { label: 'Department', value: (row) => row.department?.name_th ?? '' },
+  { label: 'บัญชี AD', value: (row) => row.username_ad },
+  { label: 'UPN / Email', value: (row) => row.upn || row.email },
+  { label: 'สถานะ', value: (row) => row.status },
+];
+
+/**
+ * ส่งออกทะเบียนพนักงานทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ *
+ * ไฟล์นี้มีบัญชี AD และอีเมลของทุกคนในองค์กร จึงต้องมีสิทธิ์ employee.manage เท่ากับหน้าทะเบียน
+ * และเขียน audit log ทุกครั้ง — ดูรายคนบนหน้าจอกับดึงทั้งองค์กรออกไปเป็นคนละเรื่องกัน
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+employeesRoute.get(
+  '/export',
+  requirePermission('employee.manage'),
+  zValidator('query', listEmployeesQuerySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const { search, status, departmentId, ownership } = c.req.valid('query');
+    const filters = { search, status, departmentId, ownership };
+
+    const assigned = await loadAssignedEmployeeIds(supabase, ownership);
+    if (assigned.error) return c.json(fail(reqId, 'EMPLOYEE_ASSIGNMENTS_LOAD_FAILED', assigned.error), 400);
+
+    // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+    const { count, error: countError } = await applyEmployeeListFilters(
+      supabase.from('employees').select('id', { count: 'exact', head: true }),
+      filters,
+      assigned.ids,
+    );
+    if (countError) return c.json(fail(reqId, 'EMPLOYEES_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+    const tooLarge = checkExportSize(count);
+    if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+    const query = applyEmployeeListFilters(
+      supabase
+        .from('employees')
+        .select(
+          'employee_code, prefix_th, first_name_th, last_name_th, nickname, first_name_en, last_name_en, ' +
+          'username_ad, upn, email, status, department:departments(name_th), position:positions(name_th)',
+        )
+        .order('first_name_th', { ascending: true })
+        .range(0, LIST_EXPORT_MAX_ROWS - 1),
+      filters,
+      assigned.ids,
+    );
+
+    const { data, error } = await query;
+    if (error) return c.json(fail(reqId, 'EMPLOYEES_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+
+    const rows = (data ?? []) as unknown as EmployeeExportRow[];
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'),
+      actorEmail: c.get('userEmail'),
+      action: 'EXPORT',
+      module: 'employee',
+      targetTable: 'employees',
+      detail: { filters, rowCount: rows.length },
+      requestId: reqId,
+    });
+
+    return c.json(ok(reqId, {
+      filename: exportFileName('employees'),
+      csv: listCsv(EMPLOYEE_EXPORT_COLUMNS, rows),
+      rowCount: rows.length,
+    }));
+  },
+);
+
+/**
+ * แก้ไขพนักงานหลายคนพร้อมกัน — ย้ายแผนก หรือเปลี่ยนสถานะ active/inactive
+ *
+ * รองรับเฉพาะสองอย่างนี้เพราะเป็นงานที่เกิดกับคนหลายคนพร้อมกันจริง (ย้ายทั้งแผนก, ปิดสถานะ
+ * ตามรอบพ้นสภาพ) ส่วนชื่อ รหัสพนักงาน บัญชี AD เป็นข้อมูลเฉพาะตัว ต้องแก้ทีละคนเสมอ
+ *
+ * เขียน audit log ทีละรายการ ไม่ใช่รายชุด — ทะเบียนพนักงานเป็นต้นทางของเจ้าของทรัพย์สิน
+ * งาน ISMS จึงต้องตรวจย้อนได้ว่าใครย้ายใครไปแผนกไหนเมื่อไร
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'bulk' เป็น id
+ */
+employeesRoute.patch(
+  '/bulk',
+  requirePermission('employee.manage'),
+  zValidator('json', bulkUpdateEmployeesSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const { ids, status, departmentId } = c.req.valid('json');
+
+    const { data: currentRows, error: loadError } = await supabase.from('employees').select('*').in('id', ids);
+    if (loadError) return dbFailJson(c, 'EMPLOYEES_BULK_LOAD_FAILED', loadError);
+    const byId = new Map((currentRows ?? []).map((row) => [String(row.id), row]));
+
+    const result = await runBulk(ids, async (id) => {
+      const current = byId.get(id);
+      if (!current) throw new BulkItemError('EMPLOYEE_NOT_FOUND', 'ไม่พบพนักงานคนนี้ หรือท่านไม่มีสิทธิ์เข้าถึง');
+
+      const patch: Record<string, unknown> = { updated_by: actorId };
+      if (status !== undefined) patch.status = status;
+      if (departmentId !== undefined) patch.department_id = departmentId;
+
+      const auditBefore = await loadAuditSnapshot(supabase, 'employees', id);
+      const { data: updated, error } = await supabase.from('employees').update(patch).eq('id', id).select().single();
+      if (error || !updated) {
+        throw new BulkItemError('EMPLOYEE_UPDATE_FAILED', `${current.employee_code ?? id}: บันทึกไม่สำเร็จ`);
+      }
+
+      await writeAuditLog(c.env, {
+        actorId,
+        actorEmail: c.get('userEmail'),
+        action: 'UPDATE',
+        module: 'employee',
+        targetTable: 'employees',
+        targetId: id,
+        detail: { status, departmentId, bulk: true },
+        requestId: reqId,
+        before: auditBefore,
+        after: updated,
+      });
+
+      return { id, employeeCode: String(updated.employee_code ?? ''), status: String(updated.status) };
+    });
+
+    return c.json(ok(reqId, result));
   },
 );
 

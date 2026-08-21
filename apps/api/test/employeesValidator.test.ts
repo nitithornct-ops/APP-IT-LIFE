@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../src/validators/employees';
+import { bulkUpdateEmployeesSchema, createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../src/validators/employees';
 
 const DEPARTMENT_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -34,5 +34,22 @@ describe('employee validators', () => {
     expect(listEmployeesQuerySchema.safeParse({ ownership: 'unknown' }).success).toBe(false);
     expect(listEmployeesQuerySchema.safeParse({ departmentId: 'not-uuid' }).success).toBe(false);
     expect(updateEmployeeSchema.safeParse({ status: 'inactive' }).success).toBe(true);
+  });
+});
+
+describe('bulkUpdateEmployeesSchema', () => {
+  it('รับเฉพาะงานที่เกิดกับคนหลายคนพร้อมกันจริง', () => {
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: [DEPARTMENT_ID], status: 'inactive' }).success).toBe(true);
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: [DEPARTMENT_ID], departmentId: DEPARTMENT_ID }).success).toBe(true);
+  });
+
+  it('ปฏิเสธคำสั่งที่ไม่ได้บอกว่าจะเปลี่ยนอะไร', () => {
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: [DEPARTMENT_ID] }).success).toBe(false);
+  });
+
+  it('จำกัดจำนวนต่อครั้งและตรวจรูปแบบ id', () => {
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: [], status: 'active' }).success).toBe(false);
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: Array.from({ length: 51 }, () => DEPARTMENT_ID), status: 'active' }).success).toBe(false);
+    expect(bulkUpdateEmployeesSchema.safeParse({ ids: ['not-uuid'], status: 'active' }).success).toBe(false);
   });
 });

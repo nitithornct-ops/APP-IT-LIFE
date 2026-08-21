@@ -30,6 +30,7 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal } from '../../components/ui/Modal';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
 import type { ApprovalGroup, Department, PaginatedResult } from '../../types/admin';
 import type { ServiceCatalogItem, ServiceCatalogStatus } from '../../types/serviceCatalog';
@@ -336,8 +337,7 @@ function CatalogManagement({ items, onCreate, onEdit }: { items: ServiceCatalogI
   });
   function exportCsv() {
     const rows = [['รหัส', 'บริการ', 'หมวด', 'SLA', 'สถานะ'], ...filtered.map((item) => [item.service_code, item.service_name, item.category ?? '', String(item.sla_hours), catalogStatusLabel[item.status]])];
-    const blob = new Blob([`\uFEFF${rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'service-catalog.csv'; anchor.click(); URL.revokeObjectURL(url);
+    downloadCsv(rows, 'service-catalog.csv');
   }
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
     <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">

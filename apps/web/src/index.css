@@ -456,3 +456,66 @@ textarea:focus-visible,
   text-align: left;
   vertical-align: top;
 }
+
+/*
+ * มุมมองการ์ดของ DataTable บนจอแคบ (เปิดด้วย prop cardOnMobile)
+ * ตารางกว้าง ๆ บนมือถือบังคับให้เลื่อนแนวนอนซึ่งอ่านยากมาก จึงพับแต่ละแถวเป็นการ์ด
+ * โดยใช้ data-label ของ <td> เป็นชื่อฟิลด์แทนหัวตารางที่ถูกซ่อนไป
+ */
+@media (max-width: 639px) {
+  table.data-table-cards {
+    display: block;
+    min-width: 0 !important;
+  }
+
+  table.data-table-cards thead {
+    display: none;
+  }
+
+  table.data-table-cards tbody {
+    display: block;
+  }
+
+  table.data-table-cards tbody tr {
+    display: block;
+    margin: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 0.25rem 0.75rem;
+  }
+
+  table.data-table-cards tbody td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0 !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    text-align: right;
+  }
+
+  table.data-table-cards tbody tr td:last-child {
+    border-bottom: 0 !important;
+  }
+
+  /* ช่องที่ไม่ได้ระบุ data-label (เช่น คอลัมน์ปุ่มจัดการ) แสดงเต็มความกว้างโดยไม่มีหัวข้อ */
+  table.data-table-cards tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 40%;
+    text-align: left;
+    font-weight: 700;
+    color: #64748b;
+  }
+
+  .dark table.data-table-cards tbody tr {
+    border-color: #334155;
+  }
+
+  .dark table.data-table-cards tbody td {
+    border-bottom-color: #1e293b !important;
+  }
+
+  .dark table.data-table-cards tbody td[data-label]::before {
+    color: #94a3b8;
+  }
+}

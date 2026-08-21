@@ -32,13 +32,14 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useSearchParams } from 'react-router-dom';
+import { useTableParams } from '../../hooks/useTableParams';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { apiFetch, ApiError } from '../../services/apiClient';
+import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
 import type { Task, TaskDashboard, TaskStatus, TaskType } from '../../types/tasks';
 import { formatThaiDate } from '../../utils/date';
@@ -217,27 +218,18 @@ export function TasksPage() {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const quickInputRef = useRef<HTMLInputElement>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [view, setViewState] = useState<View>(() => {
-    const preferred = searchParams.get('view') ?? localStorage.getItem(VIEW_STORAGE_KEY);
-    return preferred === 'kanban' || preferred === 'calendar' || preferred === 'table' ? preferred : 'list';
+  const table = useTableParams<'view' | 'scope' | 'status' | 'priority' | 'type' | 'category' | 'dueFrom' | 'dueTo' | 'q'>({
+    filters: ['view', 'scope', 'status', 'priority', 'type', 'category', 'dueFrom', 'dueTo', 'q'],
   });
-  const [scope, setScope] = useState<Scope>(() => {
-    const value = searchParams.get('scope');
-    return value === 'today' || value === 'todayOnly' || value === 'all' || value === 'inProgress' || value === 'calendar' || value === 'recurring' || value === 'completed' || value === 'overdue' || value === 'dueSoon' || value === 'next7' ? value : 'focus';
-  });
-  const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
-  const [priority, setPriority] = useState(() => searchParams.get('priority') ?? '');
-  const [taskType, setTaskType] = useState<TaskType | ''>(() => {
-    const value = searchParams.get('type');
-    return TASK_TYPES.some((item) => item.value === value) ? (value as TaskType) : '';
-  });
-  const [category, setCategory] = useState(() => searchParams.get('category') ?? '');
-  const [dueFrom, setDueFrom] = useState(() => searchParams.get('dueFrom') ?? '');
-  const [dueTo, setDueTo] = useState(() => searchParams.get('dueTo') ?? '');
-  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
-  const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get('page')) || 1));
-  const [pageSize, setPageSize] = useState(10);
+  const { page, pageSize } = table;
+  const { status, priority, category, dueFrom, dueTo, q: search } = table.filters;
+  // มุมมองที่ผู้ใช้เลือกไว้ล่าสุดยังจำผ่าน localStorage แต่ URL มีสิทธิ์เหนือกว่าเสมอ
+  const [storedView] = useState(() => localStorage.getItem(VIEW_STORAGE_KEY));
+  const preferredView = table.filters.view || storedView;
+  const view: View = preferredView === 'kanban' || preferredView === 'calendar' || preferredView === 'table' ? preferredView : 'list';
+  const scopeParam = table.filters.scope;
+  const scope: Scope = scopeParam === 'today' || scopeParam === 'todayOnly' || scopeParam === 'all' || scopeParam === 'inProgress' || scopeParam === 'calendar' || scopeParam === 'recurring' || scopeParam === 'completed' || scopeParam === 'overdue' || scopeParam === 'dueSoon' || scopeParam === 'next7' ? scopeParam : 'focus';
+  const taskType: TaskType | '' = TASK_TYPES.some((item) => item.value === table.filters.type) ? (table.filters.type as TaskType) : '';
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -245,34 +237,10 @@ export function TasksPage() {
   const debouncedSearch = useDebouncedValue(search, 350);
 
   const setView = (nextView: View) => {
-    setViewState(nextView);
     localStorage.setItem(VIEW_STORAGE_KEY, nextView);
+    table.setFilter('view', nextView);
   };
-
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    const values: Record<string, string> = {
-      view,
-      scope,
-      status,
-      priority,
-      type: taskType,
-      category,
-      dueFrom,
-      dueTo,
-      q: debouncedSearch,
-      page: page > 1 ? String(page) : '',
-    };
-    for (const [key, value] of Object.entries(values)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
-    }
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [category, debouncedSearch, dueFrom, dueTo, page, priority, scope, searchParams, setSearchParams, status, taskType, view]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [category, debouncedSearch, dueFrom, dueTo, priority, scope, status, taskType]);
+  const setScope = (nextScope: Scope) => table.setFilter('scope', nextScope);
 
   const tasksQuery = useQuery({ queryKey: ['tasks'], queryFn: () => apiFetch<Task[]>('/api/v1/tasks') });
   const dashboardQuery = useQuery({ queryKey: ['task-dashboard'], queryFn: () => apiFetch<TaskDashboard>('/api/v1/tasks/dashboard') });
@@ -349,23 +317,16 @@ export function TasksPage() {
   ];
 
   const setTaskScope = (nextScope: Scope, nextView?: View) => {
-    setScope(nextScope);
-    if (nextView) setView(nextView);
+    if (nextView) localStorage.setItem(VIEW_STORAGE_KEY, nextView);
+    table.setFilters({ scope: nextScope, ...(nextView ? { view: nextView } : {}) });
   };
 
   const exportCsv = () => {
-    const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
     const rows = [
       ['งาน', 'ประเภท', 'ความสำคัญ', 'สถานะ', 'ความคืบหน้า', 'ครบกำหนด'],
       ...filteredTasks.map((task) => [task.title, task.category, task.priority, task.status, `${task.progress}%`, task.due_date ?? '']),
     ];
-    const blob = new Blob([`\ufeff${rows.map((row) => row.map(escape).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `my-tasks-${today}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(rows, `my-tasks-${today}.csv`);
   };
 
   const viewItems: { value: View; label: string; icon: typeof LayoutList }[] = [
@@ -501,15 +462,15 @@ export function TasksPage() {
 
             <div className="mt-2 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(125px,155px))_40px]">
               <label className="flex h-10 min-w-0 items-center rounded-lg border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900 sm:col-span-2 xl:col-span-1">
-                <Search className="mx-3 h-4 w-4 shrink-0 text-slate-400" /><input aria-label="ค้นหางาน" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาเลขที่งาน ชื่อ รายละเอียด หมวดหมู่ หรือแท็ก" className="min-w-0 flex-1 bg-transparent pr-3 text-xs outline-none" />
+                <Search className="mx-3 h-4 w-4 shrink-0 text-slate-400" /><input aria-label="ค้นหางาน" value={search} onChange={(event) => table.setFilter('q', event.target.value, { replace: true })} placeholder="ค้นหาเลขที่งาน ชื่อ รายละเอียด หมวดหมู่ หรือแท็ก" className="min-w-0 flex-1 bg-transparent pr-3 text-xs outline-none" />
               </label>
-              <select aria-label="กรองสถานะ" value={status} onChange={(event) => setStatus(event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{TASK_STATUSES.map((value) => <option key={value}>{value}</option>)}</select>
-              <select aria-label="กรองความสำคัญ" value={priority} onChange={(event) => setPriority(event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกความสำคัญ</option>{TASK_PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select>
-              <select aria-label="กรองประเภทงาน" value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType | '')} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกประเภทงาน</option>{TASK_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
-              <button type="button" title="ล้างตัวกรอง" aria-label="ล้างตัวกรอง" onClick={() => { setSearch(''); setStatus(''); setPriority(''); setTaskType(''); setCategory(''); setDueFrom(''); setDueTo(''); setScope('all'); }} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900"><RefreshCw className="h-4 w-4" /></button>
-              <select aria-label="กรองหมวดหมู่" value={category} onChange={(event) => setCategory(event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกหมวดหมู่</option>{TASK_CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select>
-              <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900"><span className="shrink-0">ครบกำหนดจาก</span><input aria-label="วันครบกำหนดตั้งแต่" type="date" value={dueFrom} onChange={(event) => setDueFrom(event.target.value)} className="min-w-0 flex-1 bg-transparent text-slate-700 dark:text-slate-200" /></label>
-              <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900"><span className="shrink-0">ถึง</span><input aria-label="วันครบกำหนดถึง" type="date" value={dueTo} min={dueFrom || undefined} onChange={(event) => setDueTo(event.target.value)} className="min-w-0 flex-1 bg-transparent text-slate-700 dark:text-slate-200" /></label>
+              <select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{TASK_STATUSES.map((value) => <option key={value}>{value}</option>)}</select>
+              <select aria-label="กรองความสำคัญ" value={priority} onChange={(event) => table.setFilter('priority', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกความสำคัญ</option>{TASK_PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select>
+              <select aria-label="กรองประเภทงาน" value={taskType} onChange={(event) => table.setFilter('type', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกประเภทงาน</option>{TASK_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+              <button type="button" title="ล้างตัวกรอง" aria-label="ล้างตัวกรอง" onClick={() => table.setFilters({ q: '', status: '', priority: '', type: '', category: '', dueFrom: '', dueTo: '', scope: 'all' })} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900"><RefreshCw className="h-4 w-4" /></button>
+              <select aria-label="กรองหมวดหมู่" value={category} onChange={(event) => table.setFilter('category', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกหมวดหมู่</option>{TASK_CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select>
+              <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900"><span className="shrink-0">ครบกำหนดจาก</span><input aria-label="วันครบกำหนดตั้งแต่" type="date" value={dueFrom} onChange={(event) => table.setFilter('dueFrom', event.target.value)} className="min-w-0 flex-1 bg-transparent text-slate-700 dark:text-slate-200" /></label>
+              <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900"><span className="shrink-0">ถึง</span><input aria-label="วันครบกำหนดถึง" type="date" value={dueTo} min={dueFrom || undefined} onChange={(event) => table.setFilter('dueTo', event.target.value)} className="min-w-0 flex-1 bg-transparent text-slate-700 dark:text-slate-200" /></label>
             </div>
           </section>
 
@@ -537,7 +498,7 @@ export function TasksPage() {
 
           {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'table' && (
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
-              <DataTable pagination={false} className="w-full min-w-[850px] text-left text-xs">
+              <DataTable mode="server" className="w-full min-w-[850px] text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">งาน</th><th className="px-3 py-3">ประเภท</th><th className="px-3 py-3">ความสำคัญ</th><th className="px-3 py-3">ครบกำหนด</th><th className="px-3 py-3">ความคืบหน้า</th><th className="px-3 py-3">สถานะ</th><th className="px-3 py-3">จัดการ</th></tr></thead>
                 <tbody>{pagedTasks.map((task) => <tr key={task.id} onClick={() => setSelectedTaskId(task.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-slate-400">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} pending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setSelectedTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} /></td></tr>)}</tbody>
               </DataTable>
@@ -545,7 +506,7 @@ export function TasksPage() {
             </div>
           )}
 
-          {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && (view === 'list' || view === 'table') && <TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredTasks.length} totalPages={pageCount} itemLabel="งาน" onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && (view === 'list' || view === 'table') && <TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredTasks.length} totalPages={pageCount} itemLabel="งาน" onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </main>
       </div>
 

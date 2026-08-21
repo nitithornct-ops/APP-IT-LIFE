@@ -1,4 +1,6 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -497,18 +499,18 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
 }
 
 export function UsersPage() {
-  const [search, setSearch] = useState('');
+  const table = useTableParams<'search'>({ filters: ['search'] });
+  const { page, pageSize, sort } = table;
+  const { search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [showInvite, setShowInvite] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const usersQuery = useQuery({
-    queryKey: ['admin', 'users', page, pageSize, debouncedSearch],
+    queryKey: ['admin', 'users', page, pageSize, sort?.key, sort?.order, debouncedSearch],
     queryFn: () =>
       apiFetch<PaginatedResult<UserListItem>>(
-        `/api/v1/users?page=${page}&pageSize=${pageSize}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+        `/api/v1/users?page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
       ),
   });
 
@@ -561,16 +563,25 @@ export function UsersPage() {
 
       {showInvite && departmentsQuery.data && positionsQuery.data && <FormModal title="เชิญผู้ใช้งาน" description="สร้างคำเชิญและผูกข้อมูลบุคลากรโดยใช้สิทธิ์เดิมของระบบ" size="lg" onClose={() => setShowInvite(false)}><InviteUserForm departments={departmentsQuery.data} positions={positionsQuery.data} onClose={() => setShowInvite(false)} /></FormModal>}
 
-      <input
-        type="search"
-        placeholder="ค้นหาชื่อหรืออีเมล..."
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setPage(1);
-        }}
-        className="mb-3 w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-      />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          placeholder="ค้นหาชื่อหรืออีเมล..."
+          value={search}
+          onChange={(e) => {
+            table.setFilter('search', e.target.value, { replace: true });
+          }}
+          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        />
+        <ExportCsvButton
+          disabled={!visibleUsers.length}
+          fileName={`users-page-${page}.csv`}
+          getRows={() => [
+            ['ชื่อ-สกุล', 'อีเมล', 'สถานะ', 'เข้าร่วมเมื่อ'],
+            ...visibleUsers.map((user) => [user.full_name, user.email, user.status, formatThaiDate(user.created_at)]),
+          ]}
+        />
+      </div>
 
       {usersQuery.isLoading && (
         <div className="flex justify-center py-10" role="status">
@@ -584,13 +595,18 @@ export function UsersPage() {
 
       {usersQuery.data && usersQuery.data.items.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-          <DataTable pagination={false} className="w-full text-left text-sm">
+          <DataTable
+            mode="server"
+            sort={sort}
+            onSortChange={table.setSort}
+            className="w-full text-left text-sm"
+          >
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-2">ชื่อ-สกุล</th>
-                <th className="px-4 py-2">อีเมล</th>
-                <th className="px-4 py-2">สถานะ</th>
-                <th className="px-4 py-2">เข้าร่วมเมื่อ</th>
+                <th className="px-4 py-2" data-sort-key="full_name">ชื่อ-สกุล</th>
+                <th className="px-4 py-2" data-sort-key="email">อีเมล</th>
+                <th className="px-4 py-2" data-sort-key="status">สถานะ</th>
+                <th className="px-4 py-2" data-sort-key="created_at">เข้าร่วมเมื่อ</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
@@ -634,7 +650,7 @@ export function UsersPage() {
         </div>
       )}
 
-      {usersQuery.data && <TablePagination page={usersQuery.data.pagination.page} pageSize={pageSize} totalItems={usersQuery.data.pagination.totalItems} totalPages={usersQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+      {usersQuery.data && <TablePagination page={usersQuery.data.pagination.page} pageSize={pageSize} totalItems={usersQuery.data.pagination.totalItems} totalPages={usersQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -203,13 +205,10 @@ function DataQualityPanel() {
 export function CmdbPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showDataQuality, setShowDataQuality] = useState(false);
-  const [ciType, setCiType] = useState('');
-  const [environment, setEnvironment] = useState('');
-  const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
+  const table = useTableParams<'ciType' | 'environment' | 'status' | 'search'>({ filters: ['ciType', 'environment', 'status', 'search'] });
+  const { page, pageSize } = table;
+  const { ciType, environment, status, search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
@@ -266,19 +265,19 @@ export function CmdbPage() {
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <span>รายการ Configuration Item</span>
           <div className="flex flex-wrap items-center gap-2 text-xs font-normal">
-            <select value={ciType} onChange={(e) => { setCiType(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={ciType} onChange={(e) => table.setFilter('ciType', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุกประเภท</option>
               {CI_TYPES.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            <select value={environment} onChange={(e) => { setEnvironment(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={environment} onChange={(e) => table.setFilter('environment', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุก Environment</option>
               {CI_ENVIRONMENTS.map((env) => (
                 <option key={env} value={env}>{env}</option>
               ))}
             </select>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
+            <select value={status} onChange={(e) => table.setFilter('status', e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 dark:border-slate-600 dark:bg-slate-900">
               <option value="">ทุกสถานะ</option>
               {CI_STATUSES.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -289,13 +288,23 @@ export function CmdbPage() {
         <CardBody>
           {showCreate && employeesQuery.data && assetOptionsQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && <FormModal title="เพิ่ม Configuration Item" description="บันทึก CI และความเชื่อมโยงกับ Asset, Vendor และ Contract" size="xl" onClose={() => setShowCreate(false)}><CreateCiForm employees={employeesQuery.data} assetOptions={assetOptionsQuery.data} vendorOptions={vendorOptionsQuery.data} contractOptions={contractOptionsQuery.data} onClose={() => setShowCreate(false)} /></FormModal>}
 
-          <input
-            type="search"
-            placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              placeholder="ค้นหาชื่อ, รหัส CI หรือ IP..."
+              value={search}
+              onChange={(e) => table.setFilter('search', e.target.value, { replace: true })}
+              className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+            />
+            <ExportCsvButton
+              disabled={!items.length}
+              fileName={`cmdb-page-${page}.csv`}
+              getRows={() => [
+                ['รหัส', 'ชื่อ CI', 'ประเภท', 'Environment', 'Criticality', 'เจ้าของ', 'สถานะ'],
+                ...items.map((c) => [c.ci_code, c.name, c.ci_type, c.environment, c.criticality, employeeName(c.owner), c.status]),
+              ]}
+            />
+          </div>
 
           {itemsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -311,7 +320,7 @@ export function CmdbPage() {
 
           {itemsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable pagination={false} className="w-full text-left text-sm">
+              <DataTable mode="server" className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>
@@ -352,7 +361,7 @@ export function CmdbPage() {
             </div>
           )}
 
-          {itemsQuery.data && <TablePagination page={itemsQuery.data.pagination.page} pageSize={pageSize} totalItems={itemsQuery.data.pagination.totalItems} totalPages={itemsQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {itemsQuery.data && <TablePagination page={itemsQuery.data.pagination.page} pageSize={pageSize} totalItems={itemsQuery.data.pagination.totalItems} totalPages={itemsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
     </div>

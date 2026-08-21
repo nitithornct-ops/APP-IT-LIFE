@@ -1,4 +1,4 @@
-import { paginationQuerySchema } from '@itlife/shared';
+import { listQuerySchema, paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const ASSET_TYPES = ['Server', 'Network Device', 'Software/License', 'Endpoint', 'Storage', 'อื่นๆ'] as const;
@@ -44,7 +44,7 @@ export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export const updateAssetSchema = createAssetSchema.partial();
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 
-export const listAssetsQuerySchema = paginationQuerySchema.extend({
+export const listAssetsQuerySchema = listQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.string().trim().max(60).optional(),
   categoryId: z.string().uuid().optional(),
@@ -124,3 +124,25 @@ export const returnAssetFromRepairSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 export type ReturnAssetFromRepairInput = z.infer<typeof returnAssetFromRepairSchema>;
+
+/**
+ * สถานะที่เปลี่ยนทีละหลายชิ้นได้ — จงใจไม่รวม "จำหน่าย/เลิกใช้" กับ "สูญหาย"
+ * ทั้งสองอย่างเป็นการนำของออกจากทะเบียนใช้งาน ต้องใช้สิทธิ์ asset.dispose และต้องบันทึก
+ * เหตุผลรายชิ้น การกดครั้งเดียวแล้วปลดของ 50 ชิ้นออกจากทะเบียนพร้อมกันเป็นความเสี่ยงที่ไม่คุ้ม
+ */
+export const BULK_ASSET_STATUSES = ['พร้อมใช้งาน', 'ใช้งานอยู่', 'ซ่อมบำรุง'] as const;
+
+export const bulkUpdateAssetsSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1, 'กรุณาเลือกทรัพย์สินอย่างน้อย 1 รายการ').max(50, 'เลือกได้สูงสุด 50 รายการต่อครั้ง'),
+    status: z.enum(BULK_ASSET_STATUSES).optional(),
+    location: z.string().trim().min(1).max(120).optional(),
+    /** null = คืนของ (ล้างผู้ถือครอง) — uuid = มอบหมายให้พนักงานคนนั้น */
+    ownerEmployeeId: z.string().uuid().nullable().optional(),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .refine((body) => body.status !== undefined || body.location !== undefined || body.ownerEmployeeId !== undefined, {
+    message: 'กรุณาเลือกสิ่งที่ต้องการเปลี่ยน',
+    path: ['status'],
+  });
+export type BulkUpdateAssetsInput = z.infer<typeof bulkUpdateAssetsSchema>;

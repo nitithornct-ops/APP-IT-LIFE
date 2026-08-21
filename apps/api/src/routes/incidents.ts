@@ -9,6 +9,8 @@ import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
+import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
+import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
@@ -154,33 +156,150 @@ incidentsRoute.get('/assignees', requirePermission('incident.manage'), async (c)
   return c.json(ok(reqId, data));
 });
 
+/** risk_score เรียงได้เพราะเป็นตัวเลข ส่วน severity/risk_level เป็นข้อความไทยจึงไม่เปิดให้เรียง */
+const INCIDENT_SORT_COLUMNS = ['incident_number', 'title', 'report_date', 'risk_score', 'created_at'] as const;
+
+/** ส่วนของ query builder ที่ตัวกรองรายการ Incident ต้องใช้ */
+interface IncidentFilterableQuery {
+  eq(column: string, value: unknown): IncidentFilterableQuery;
+  or(filters: string): IncidentFilterableQuery;
+  gte(column: string, value: unknown): IncidentFilterableQuery;
+  lte(column: string, value: unknown): IncidentFilterableQuery;
+}
+
+interface IncidentListFilters {
+  search?: string;
+  status?: string;
+  severity?: string;
+  category?: string;
+  personalData?: string;
+  riskLevel?: string;
+  mine?: string;
+}
+
+/**
+ * ตัวกรองของรายการ Incident — ใช้ร่วมกันระหว่างการแสดงผลกับการส่งออก
+ * ต้องเป็นตัวเดียวกันเท่านั้น ไม่งั้นไฟล์ที่ส่งออกจะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นบนหน้าจอ
+ */
+function applyIncidentListFilters<T>(
+  query: T,
+  { search, status, severity, category, personalData, riskLevel, mine }: IncidentListFilters,
+  actorId: string,
+): T {
+  // มอง builder เป็นโครงแคบ ๆ เพราะ generic เต็มของ supabase-js ซ้อนลึกจน TypeScript ยอมแพ้
+  let next = query as unknown as IncidentFilterableQuery;
+  if (search) {
+    const safe = cleanSearch(search);
+    next = next.or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`);
+  }
+  if (status) next = next.eq('status', status);
+  if (severity) next = next.eq('severity', severity);
+  if (category) next = next.eq('category', category);
+  if (personalData) next = next.eq('contains_personal_data', personalData === 'true');
+  if (mine === 'true') next = next.or(`reported_by.eq.${actorId},assignee_id.eq.${actorId}`);
+  if (riskLevel) {
+    const [min, max] = RISK_RANGES[riskLevel];
+    next = next.gte('risk_score', min).lte('risk_score', max);
+  }
+  return next as unknown as T;
+}
+
 incidentsRoute.get('/', zValidator('query', listIncidentsQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, search, status, severity, category, personalData, riskLevel: risk, mine } = c.req.valid('query');
+  const { page, pageSize, sort, order, search, status, severity, category, personalData, riskLevel: risk, mine } = c.req.valid('query');
   let query = c
     .get('supabase')
     .from('incidents')
     .select(INCIDENT_SELECT, { count: 'exact' })
-    .order('report_date', { ascending: false })
     .range(...paginationRange(page, pageSize));
-  if (search) {
-    const safe = cleanSearch(search);
-    query = query.or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`);
-  }
-  if (status) query = query.eq('status', status);
-  if (severity) query = query.eq('severity', severity);
-  if (category) query = query.eq('category', category);
-  if (personalData) query = query.eq('contains_personal_data', personalData === 'true');
-  if (mine === 'true') query = query.or(`reported_by.eq.${actorId},assignee_id.eq.${actorId}`);
-  if (risk) {
-    const [min, max] = RISK_RANGES[risk];
-    query = query.gte('risk_score', min).lte('risk_score', max);
-  }
+  query = applySort(query, { sort, order }, INCIDENT_SORT_COLUMNS, { column: 'report_date', ascending: false });
+  query = applyIncidentListFilters(query, { search, status, severity, category, personalData, riskLevel: risk, mine }, actorId);
   const { data, count, error } = await query;
   if (error) return c.json(fail(reqId, 'INCIDENTS_LIST_FAILED', 'ดึงรายการ Incident ไม่สำเร็จ'), 400);
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
   return c.json(ok(reqId, toPaginatedData(rows.map((row) => mapIncident(row)), count, page, pageSize)));
+});
+
+/** แถวดิบของ Incident เท่าที่การส่งออกต้องใช้ */
+interface IncidentExportRow {
+  incident_number: string | null;
+  title: string | null;
+  category: string | null;
+  severity: string | null;
+  status: string | null;
+  risk_score: number | null;
+  contains_personal_data: boolean | null;
+  report_date: string | null;
+  reporter: { full_name: string | null } | null;
+  assignee: { full_name: string | null } | null;
+}
+
+const INCIDENT_EXPORT_COLUMNS: ExportColumn<IncidentExportRow>[] = [
+  { label: 'เลขที่', value: (row) => row.incident_number },
+  { label: 'เรื่อง', value: (row) => row.title },
+  { label: 'ประเภท', value: (row) => row.category },
+  { label: 'ความรุนแรง', value: (row) => row.severity },
+  { label: 'สถานะ', value: (row) => row.status },
+  { label: 'คะแนนความเสี่ยง', value: (row) => row.risk_score },
+  { label: 'มีข้อมูลส่วนบุคคล', value: (row) => (row.contains_personal_data ? 'ใช่' : 'ไม่ใช่') },
+  { label: 'ผู้รายงาน', value: (row) => row.reporter?.full_name ?? '' },
+  { label: 'ผู้รับผิดชอบ', value: (row) => row.assignee?.full_name ?? '' },
+  { label: 'วันที่รายงาน', value: (row) => row.report_date },
+];
+
+/**
+ * ส่งออกรายการ Incident ทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+incidentsRoute.get('/export', zValidator('query', listIncidentsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { sort, order, search, status, severity, category, personalData, riskLevel: risk, mine } = c.req.valid('query');
+  const filters = { search, status, severity, category, personalData, riskLevel: risk, mine };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const { count, error: countError } = await applyIncidentListFilters(
+    supabase.from('incidents').select('id', { count: 'exact', head: true }),
+    filters,
+    actorId,
+  );
+  if (countError) return c.json(fail(reqId, 'INCIDENTS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let query = supabase
+    .from('incidents')
+    .select(
+      'incident_number, title, category, severity, status, risk_score, contains_personal_data, report_date, ' +
+      'reporter:profiles!incidents_reported_by_fkey(full_name), assignee:profiles!incidents_assignee_id_fkey(full_name)',
+    )
+    .range(0, LIST_EXPORT_MAX_ROWS - 1);
+  query = applySort(query, { sort, order }, INCIDENT_SORT_COLUMNS, { column: 'report_date', ascending: false });
+  query = applyIncidentListFilters(query, filters, actorId);
+
+  const { data, error } = await query;
+  if (error) return c.json(fail(reqId, 'INCIDENTS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const rows = (data ?? []) as unknown as IncidentExportRow[];
+  // ทะเบียน Incident มีรายละเอียดเหตุการณ์ด้านความมั่นคงปลอดภัย การดึงออกทั้งชุดจึงต้องตรวจย้อนได้
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'incident',
+    targetTable: 'incidents',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('incidents'),
+    csv: listCsv(INCIDENT_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
 });
 
 incidentsRoute.get('/:id', async (c) => {

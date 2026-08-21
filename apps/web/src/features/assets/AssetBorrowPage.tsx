@@ -1,4 +1,6 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { useTableParams } from '../../hooks/useTableParams';
+import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeftRight, CalendarClock, CheckCircle2, History, Loader2, Plus, Search } from 'lucide-react';
@@ -183,11 +185,10 @@ function MovementModal({
 }
 
 export function AssetBorrowPage() {
-  const [view, setView] = useState<BorrowView>('active');
-  const [search, setSearch] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const table = useTableParams<'view' | 'search' | 'departmentId'>({ filters: ['view', 'search', 'departmentId'] });
+  const { page, pageSize } = table;
+  const { search, departmentId } = table.filters;
+  const view: BorrowView = table.filters.view === 'history' ? 'history' : 'active';
   const [showMovement, setShowMovement] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
 
@@ -224,8 +225,8 @@ export function AssetBorrowPage() {
       </div>
 
       <div className="flex gap-2 border-b border-slate-200 px-2 dark:border-slate-700">
-        <button type="button" onClick={() => { setView('active'); setPage(1); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'active' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>กำลังถือครอง / ค้างคืน ({summary.active})</button>
-        <button type="button" onClick={() => { setView('history'); setPage(1); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'history' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>ประวัติเคลื่อนไหว</button>
+        <button type="button" onClick={() => table.setFilter('view', '')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'active' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>กำลังถือครอง / ค้างคืน ({summary.active})</button>
+        <button type="button" onClick={() => table.setFilter('view', 'history')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'history' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>ประวัติเคลื่อนไหว</button>
       </div>
 
       <Card>
@@ -233,13 +234,45 @@ export function AssetBorrowPage() {
           <div className="mb-4 flex flex-wrap gap-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-900/40">
             <label className="relative min-w-64 flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="ค้นหาในรายการ..." className={`${fieldClass} pl-9`} />
+              <input type="search" value={search} onChange={(event) => table.setFilter('search', event.target.value, { replace: true })} placeholder="ค้นหาในรายการ..." className={`${fieldClass} pl-9`} />
             </label>
-            <select value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setPage(1); }} className={`${fieldClass} w-auto min-w-48`}>
+            <select value={departmentId} onChange={(event) => table.setFilter('departmentId', event.target.value)} className={`${fieldClass} w-auto min-w-48`}>
               <option value="">แผนก: ทั้งหมด</option>
               {(departmentsQuery.data ?? []).map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}
             </select>
             {records && <span className="self-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800">{records.pagination.totalItems} รายการ</span>}
+            <ExportCsvButton
+              className="self-center"
+              disabled={view === 'active' ? !activeRecords.length : !historyRecords.length}
+              fileName={`asset-${view === 'active' ? 'loans' : 'movements'}-page-${page}.csv`}
+              getRows={() => (view === 'active'
+                ? [
+                  ['Asset', 'รหัสทรัพย์สิน', 'ผู้ถือครอง', 'รหัสพนักงาน', 'แผนก', 'สถานที่', 'ยืมเมื่อ', 'กำหนดคืน'],
+                  ...activeRecords.map((item) => [
+                    item.name,
+                    item.asset_code,
+                    fullName(item.owner),
+                    item.owner?.employee_code ?? '',
+                    item.department?.name_th ?? '',
+                    item.location ?? '',
+                    item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '',
+                    item.loan_due_date ? formatThaiDate(item.loan_due_date, 'd MMM yyyy') : '',
+                  ]),
+                ]
+                : [
+                  ['วันเวลา', 'Asset', 'รหัสทรัพย์สิน', 'รายการ', 'จาก', 'ไปยัง', 'แผนก / สถานที่', 'หมายเหตุ'],
+                  ...historyRecords.map((item) => [
+                    formatThaiDate(item.action_date, 'd MMM yyyy HH:mm'),
+                    item.asset?.name ?? '',
+                    item.asset?.asset_code ?? '',
+                    item.status_label ?? item.action_type,
+                    fullName(item.from_employee),
+                    fullName(item.to_employee),
+                    item.department?.name_th ?? item.location ?? '',
+                    item.notes ?? item.condition ?? '',
+                  ]),
+                ])}
+            />
           </div>
 
           {overviewQuery.isLoading && <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
@@ -247,13 +280,13 @@ export function AssetBorrowPage() {
           {records && records.items.length === 0 && <EmptyState icon={view === 'active' ? <ArrowLeftRight className="h-10 w-10" /> : <History className="h-10 w-10" />} title={view === 'active' ? 'ไม่มีทรัพย์สินที่ถูกยืมหรือถือครองอยู่' : 'ยังไม่มีประวัติการเคลื่อนไหว'} />}
 
           {view === 'active' && activeRecords.length > 0 && (
-            <div className="overflow-x-auto"><DataTable pagination={false} className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable></div>
+            <div className="overflow-x-auto"><DataTable mode="server" className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable></div>
           )}
 
           {view === 'history' && historyRecords.length > 0 && (
-            <div className="overflow-x-auto"><DataTable pagination={false} className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">วันเวลา</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">รายการ</th><th className="px-3 py-3">จาก</th><th className="px-3 py-3">ไปยัง / แผนก</th><th className="px-3 py-3">หมายเหตุ</th></tr></thead><tbody>{historyRecords.map((item) => <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatThaiDate(item.action_date, 'd MMM yyyy HH:mm')}</td><td className="px-3 py-3">{item.asset ? <Link to={`/assets/${item.asset.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.asset.name}<span className="block font-mono text-xs font-normal text-slate-400">{item.asset.asset_code}</span></Link> : '—'}</td><td className="px-3 py-3"><Badge variant={item.action_type === 'Return' ? 'success' : item.action_type === 'Transfer' ? 'warning' : 'info'}>{item.status_label ?? item.action_type}</Badge></td><td className="px-3 py-3 text-slate-500">{fullName(item.from_employee)}</td><td className="px-3 py-3">{fullName(item.to_employee)}<p className="text-xs text-slate-400">{item.department?.name_th ?? item.location ?? ''}</p></td><td className="max-w-xs px-3 py-3 text-slate-500">{item.notes ?? item.condition ?? '—'}</td></tr>)}</tbody></DataTable></div>
+            <div className="overflow-x-auto"><DataTable mode="server" className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">วันเวลา</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">รายการ</th><th className="px-3 py-3">จาก</th><th className="px-3 py-3">ไปยัง / แผนก</th><th className="px-3 py-3">หมายเหตุ</th></tr></thead><tbody>{historyRecords.map((item) => <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatThaiDate(item.action_date, 'd MMM yyyy HH:mm')}</td><td className="px-3 py-3">{item.asset ? <Link to={`/assets/${item.asset.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.asset.name}<span className="block font-mono text-xs font-normal text-slate-400">{item.asset.asset_code}</span></Link> : '—'}</td><td className="px-3 py-3"><Badge variant={item.action_type === 'Return' ? 'success' : item.action_type === 'Transfer' ? 'warning' : 'info'}>{item.status_label ?? item.action_type}</Badge></td><td className="px-3 py-3 text-slate-500">{fullName(item.from_employee)}</td><td className="px-3 py-3">{fullName(item.to_employee)}<p className="text-xs text-slate-400">{item.department?.name_th ?? item.location ?? ''}</p></td><td className="max-w-xs px-3 py-3 text-slate-500">{item.notes ?? item.condition ?? '—'}</td></tr>)}</tbody></DataTable></div>
           )}
-          {records && <TablePagination page={records.pagination.page} pageSize={pageSize} totalItems={records.pagination.totalItems} totalPages={records.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
+          {records && <TablePagination page={records.pagination.page} pageSize={pageSize} totalItems={records.pagination.totalItems} totalPages={records.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
 

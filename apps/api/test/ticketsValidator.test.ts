@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addTicketConversationSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema } from '../src/validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema } from '../src/validators/tickets';
 import { ratingsMatchCriteria } from '../src/routes/tickets';
 
 const CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
@@ -17,6 +17,14 @@ describe('ticket list filters', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data).toMatchObject({ page: 2, pageSize: 10, priority: 'วิกฤต' });
+  });
+
+  it('accepts sort and order, and rejects an unknown sort direction', () => {
+    const result = listTicketsQuerySchema.safeParse({ sort: 'due_at', order: 'asc' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toMatchObject({ sort: 'due_at', order: 'asc' });
+    expect(listTicketsQuerySchema.safeParse({ sort: 'due_at', order: 'sideways' }).success).toBe(false);
+    expect(listTicketsQuerySchema.safeParse({ sort: 'x'.repeat(61) }).success).toBe(false);
   });
 
   it('rejects invalid category, priority and oversized search input', () => {
@@ -72,5 +80,32 @@ describe('ticket conversation form', () => {
   it('rejects empty and oversized conversation entries', () => {
     expect(addTicketConversationSchema.safeParse({ message: '   ', visibility: 'public' }).success).toBe(false);
     expect(addTicketConversationSchema.safeParse({ message: 'x'.repeat(2001), visibility: 'internal' }).success).toBe(false);
+  });
+});
+
+describe('bulk ticket update', () => {
+  const ID = '22222222-2222-4222-8222-222222222222';
+
+  it('รับการมอบหมายและเปลี่ยนสถานะระหว่างทำงาน', () => {
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID], status: 'กำลังดำเนินการ' }).success).toBe(true);
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID], assigneeId: ID }).success).toBe(true);
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID], assigneeId: null }).success).toBe(true);
+  });
+
+  it('ไม่ยอมให้ปิดงาน ยกเลิก ส่งต่อ Outsource หรือยกระดับแบบทีละชุด', () => {
+    for (const status of ['ปิดงาน', 'ยกเลิก', 'ส่งต่อ Outsource', 'ยกระดับเป็น Incident', 'เสร็จสิ้น']) {
+      expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID], status }).success).toBe(false);
+    }
+  });
+
+  it('ต้องระบุสิ่งที่จะเปลี่ยนอย่างน้อยหนึ่งอย่าง', () => {
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID] }).success).toBe(false);
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [ID], note: 'หมายเหตุ' }).success).toBe(false);
+  });
+
+  it('จำกัดจำนวนต่อครั้ง และปฏิเสธ id ที่ไม่ใช่ uuid', () => {
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: [], assigneeId: ID }).success).toBe(false);
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: Array.from({ length: 51 }, () => ID), assigneeId: ID }).success).toBe(false);
+    expect(bulkUpdateTicketsSchema.safeParse({ ids: ['not-uuid'], assigneeId: ID }).success).toBe(false);
   });
 });
