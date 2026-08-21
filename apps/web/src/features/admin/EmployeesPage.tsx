@@ -16,6 +16,7 @@ import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { BulkActionModal, BulkResultSummary, bulkFieldClass, type BulkResult } from '../../components/table/BulkAction';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -269,6 +270,99 @@ function downloadEmployees(rows: Employee[], departments: Department[], position
   downloadCsv(lines, `employees-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+type EmployeeBulkResult = BulkResult<{ id: string; employeeCode: string; status: string }>;
+
+/**
+ * แผงดำเนินการกับพนักงานที่เลือกไว้หลายคน — ย้ายแผนก หรือเปลี่ยนสถานะ active/inactive
+ *
+ * holdersSelected เป็นการ "เตือน" ไม่ใช่ "ห้าม" — ฝั่ง api ไม่ได้ตั้งกฎนี้ไว้กับการแก้ทีละคน
+ * การเพิ่มกฎเฉพาะเส้นทางทีละชุดจะทำให้สองเส้นทางให้ผลไม่ตรงกัน ซึ่งแย่กว่าการเตือนแล้วให้คนตัดสินใจ
+ */
+function BulkEmployeePanel({
+  ids,
+  departments,
+  holdersSelected,
+  onClose,
+  onDone,
+}: {
+  ids: string[];
+  departments: Department[];
+  holdersSelected: number;
+  onClose: () => void;
+  onDone: (result: EmployeeBulkResult) => void;
+}) {
+  const [action, setAction] = useState<'status' | 'department'>('status');
+  const [status, setStatus] = useState<'active' | 'inactive'>('inactive');
+  const [departmentId, setDepartmentId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<EmployeeBulkResult>('/api/v1/employees/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify(action === 'status' ? { ids, status } : { ids, departmentId }),
+    }),
+    onSuccess: onDone,
+    onError: (mutationError) => setError(mutationError instanceof ApiError ? mutationError.message : 'ดำเนินการไม่สำเร็จ'),
+  });
+
+  return (
+    <BulkActionModal
+      count={ids.length}
+      itemLabel="คน"
+      isPending={mutation.isPending}
+      error={error}
+      onClose={onClose}
+      onSubmit={() => {
+        if (action === 'department' && !departmentId) {
+          setError('กรุณาเลือก Department ปลายทาง');
+          return;
+        }
+        setError(null);
+        mutation.mutate();
+      }}
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {([['status', 'เปลี่ยนสถานะ'], ['department', 'ย้าย Department']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setAction(value)}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {action === 'status' ? (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">สถานะใหม่</span>
+            <select aria-label="สถานะใหม่" value={status} onChange={(event) => setStatus(event.target.value as 'active' | 'inactive')} className={bulkFieldClass}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
+        ) : (
+          <label className="block text-sm">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">Department ปลายทาง</span>
+            <select aria-label="Department ปลายทาง" value={departmentId} onChange={(event) => setDepartmentId(event.target.value)} className={bulkFieldClass}>
+              <option value="">เลือก Department</option>
+              {departments.map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}
+            </select>
+          </label>
+        )}
+
+        {action === 'status' && status === 'inactive' && holdersSelected > 0 && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200" role="alert">
+            {holdersSelected.toLocaleString('th-TH')} คนที่เลือกไว้ยังมีทรัพย์สินครอบครองอยู่ — ปิดสถานะแล้วรายการครอบครองจะยังค้างในทะเบียน ควรรับคืนของก่อน
+          </p>
+        )}
+      </div>
+    </BulkActionModal>
+  );
+}
+
 export function EmployeesPage() {
   const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -284,6 +378,10 @@ export function EmployeesPage() {
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [assetEmployee, setAssetEmployee] = useState<Employee | null>(null);
   const [lifecycleEmployee, setLifecycleEmployee] = useState<Employee | null>(null);
+  // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkResult, setBulkResult] = useState<EmployeeBulkResult | null>(null);
 
   const queryString = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (debouncedSearch) queryString.set('search', debouncedSearch);
@@ -306,6 +404,10 @@ export function EmployeesPage() {
     mutationFn: ({ id, nextStatus }: { id: string; nextStatus: 'active' | 'inactive' }) => apiFetch(`/api/v1/employees/${id}`, { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) }),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] }); void queryClient.invalidateQueries({ queryKey: ['admin', 'employees-overview'] }); },
   });
+
+  const canManageEmployee = hasPermission('employee.manage');
+  // นับจาก assignmentCounts ของทั้งระบบ ไม่ใช่แค่หน้าปัจจุบัน เพราะรายการที่เลือกข้ามหน้าได้
+  const holdersSelected = selectedIds.filter((id) => (overview?.assignmentCounts[id] ?? 0) > 0).length;
 
   const resetFilters = () => { setSearch(''); setStatus(''); setDepartmentId(''); setOwnership(''); setPage(1); };
   const refresh = () => { void employeesQuery.refetch(); void overviewQuery.refetch(); };
@@ -341,13 +443,23 @@ export function EmployeesPage() {
 
           {employeesQuery.isLoading && <div className="flex justify-center py-12" role="status"><Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" /></div>}
           {employeesQuery.data && rows.length === 0 && <EmptyState icon={<UsersRound className="h-10 w-10" aria-hidden="true" />} title="ไม่พบพนักงาน" description="ลองเปลี่ยนคำค้นหาหรือตัวกรอง" />}
-          {rows.length > 0 && <DataTable toolbar={false} pagination={false} className="min-w-[1180px] text-xs" containerClassName="rounded-lg">
+          {rows.length > 0 && <DataTable
+            toolbar={false}
+            pagination={false}
+            itemLabel="คน"
+            selectable={canManageEmployee}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            selectionActions={<Button type="button" size="sm" onClick={() => setShowBulk(true)}>ดำเนินการกับที่เลือก</Button>}
+            className="min-w-[1180px] text-xs"
+            containerClassName="rounded-lg"
+          >
             <thead><tr><th>ลำดับ</th><th>รหัสพนักงาน</th><th>ชื่อพนักงาน</th><th>ตำแหน่ง</th><th>Department</th><th>บัญชีผู้ใช้งาน</th><th>ทรัพย์สินที่ครอบครอง</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
             <tbody>{rows.map((employee, index) => {
               const count = overview?.assignmentCounts[employee.id] ?? 0;
               const department = departments.find((item) => item.id === employee.department_id)?.name_th ?? '—';
               const position = positions.find((item) => item.id === employee.position_id)?.name_th ?? '—';
-              return <tr key={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
+              return <tr key={employee.id} data-row-id={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
                     recordLabel={employeeName(employee)}
                     actions={[
                       { kind: 'view', onClick: () => setViewingEmployee(employee) },
@@ -369,6 +481,25 @@ export function EmployeesPage() {
           {employeesQuery.data && <TablePagination page={employeesQuery.data.pagination.page} pageSize={pageSize} totalItems={employeesQuery.data.pagination.totalItems} totalPages={employeesQuery.data.pagination.totalPages} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} />}
         </CardBody>
       </Card>
+
+      {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="คน" onDismiss={() => setBulkResult(null)} />}
+
+      {showBulk && (
+        <BulkEmployeePanel
+          ids={selectedIds}
+          departments={departments}
+          holdersSelected={holdersSelected}
+          onClose={() => setShowBulk(false)}
+          onDone={(result) => {
+            setShowBulk(false);
+            setBulkResult(result);
+            // เหลือเฉพาะคนที่ทำไม่สำเร็จไว้ให้เลือกต่อ ผู้ใช้จะได้ลองแก้เฉพาะที่เหลือ
+            setSelectedIds(result.failed.map((item) => item.id));
+            void queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
+            void queryClient.invalidateQueries({ queryKey: ['admin', 'employees-overview'] });
+          }}
+        />
+      )}
 
       {showCreate && <EmployeeEditor departments={departments} positions={positions} onClose={() => setShowCreate(false)} />}
       {editingEmployee && <EmployeeEditor employee={editingEmployee} departments={departments} positions={positions} onClose={() => setEditingEmployee(null)} />}
