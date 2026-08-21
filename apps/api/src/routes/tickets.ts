@@ -19,6 +19,7 @@ import {
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { BulkItemError, runBulk } from '../utils/bulk';
+import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -73,6 +74,53 @@ async function loadTicketBusinessCalendar(c: Context<AppEnv>) {
  */
 const TICKET_SORT_COLUMNS = ['ticket_no', 'title', 'due_at', 'created_at'] as const;
 
+/** ส่วนของ query builder ที่ตัวกรองรายการ Ticket ต้องใช้ */
+interface TicketFilterableQuery {
+  eq(column: string, value: unknown): TicketFilterableQuery;
+  or(filters: string): TicketFilterableQuery;
+}
+
+interface TicketListFilters {
+  status?: string;
+  categoryId?: string;
+  priority?: string;
+  search?: string;
+  assigneeId?: string;
+  mine?: string;
+}
+
+/**
+ * ตัวกรองของรายการ Ticket — ใช้ร่วมกันระหว่างการแสดงผลกับการส่งออก
+ *
+ * ต้องเป็นตัวเดียวกันเท่านั้น ไม่งั้นไฟล์ที่ส่งออกจะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นบนหน้าจอ
+ * ซึ่งเป็นความผิดพลาดที่ตรวจจับยากมากเพราะไฟล์ก็ยัง "ดูปกติ"
+ *
+ * RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — ที่นี่เป็นแค่ UX
+ */
+function applyTicketListFilters<T>(
+  query: T,
+  { status, categoryId, priority, search, assigneeId, mine }: TicketListFilters,
+  actorId: string,
+): T {
+  // มอง builder เป็นโครงแคบ ๆ เฉพาะสอง method ที่ใช้ เพราะ generic เต็มของ supabase-js
+  // ซ้อนลึกจน TypeScript ยอมแพ้เมื่อเอามาผูกกับ generic ที่อ้างถึงตัวเอง
+  let next = query as unknown as TicketFilterableQuery;
+  if (status) next = next.eq('status', status);
+  if (categoryId) next = next.eq('category_id', categoryId);
+  if (priority) next = next.eq('priority', priority);
+  if (search) {
+    const safeSearch = cleanSearch(search);
+    if (safeSearch) {
+      next = next.or(
+        `ticket_no.ilike.%${safeSearch}%,title.ilike.%${safeSearch}%,requester_name_snapshot.ilike.%${safeSearch}%,department_name_snapshot.ilike.%${safeSearch}%`,
+      );
+    }
+  }
+  if (assigneeId) next = next.eq('assignee_id', assigneeId);
+  if (mine === 'true') next = next.eq('requester_id', actorId);
+  return next as unknown as T;
+}
+
 ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -89,19 +137,7 @@ ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationH
     .range(...paginationRange(page, pageSize));
   query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
-  if (status) query = query.eq('status', status);
-  if (categoryId) query = query.eq('category_id', categoryId);
-  if (priority) query = query.eq('priority', priority);
-  if (search) {
-    const safeSearch = cleanSearch(search);
-    if (safeSearch) {
-      query = query.or(
-        `ticket_no.ilike.%${safeSearch}%,title.ilike.%${safeSearch}%,requester_name_snapshot.ilike.%${safeSearch}%,department_name_snapshot.ilike.%${safeSearch}%`,
-      );
-    }
-  }
-  if (assigneeId) query = query.eq('assignee_id', assigneeId);
-  if (mine === 'true') query = query.eq('requester_id', actorId);
+  query = applyTicketListFilters(query, { status, categoryId, priority, search, assigneeId, mine }, actorId);
 
   const { data, count, error } = await query;
   if (error) {
@@ -384,6 +420,99 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
   });
 
   return c.json(ok(reqId, ticket), 201);
+});
+
+/** แถวดิบของ Ticket เท่าที่การส่งออกต้องใช้ */
+interface TicketExportRow {
+  ticket_no: string | null;
+  title: string | null;
+  requester_name_snapshot: string | null;
+  department_name_snapshot: string | null;
+  priority: string | null;
+  status: string | null;
+  assignee_name_snapshot: string | null;
+  outsource_name: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  ticket_categories: { name: string | null } | null;
+}
+
+/** วันที่แบบอ่านออกใน Excel ไทย — ISO เต็มรูปแบบทำให้ช่องกว้างเกินและอ่านยาก */
+function exportDateTime(value: string | null): string {
+  if (!value) return '';
+  return new Date(value).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+const TICKET_EXPORT_COLUMNS: ExportColumn<TicketExportRow>[] = [
+  { label: 'เลขที่', value: (row) => row.ticket_no },
+  { label: 'เรื่อง', value: (row) => row.title },
+  { label: 'ผู้แจ้ง', value: (row) => row.requester_name_snapshot },
+  { label: 'แผนก', value: (row) => row.department_name_snapshot },
+  { label: 'ประเภทปัญหา', value: (row) => row.ticket_categories?.name ?? '' },
+  { label: 'ความเร่งด่วน', value: (row) => row.priority },
+  { label: 'สถานะ', value: (row) => row.status },
+  { label: 'ผู้รับผิดชอบ', value: (row) => row.assignee_name_snapshot },
+  { label: 'Outsource', value: (row) => row.outsource_name },
+  { label: 'ครบกำหนด SLA', value: (row) => exportDateTime(row.due_at) },
+  { label: 'วันที่แจ้ง', value: (row) => exportDateTime(row.created_at) },
+];
+
+/**
+ * ส่งออกรายการ Ticket ทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ *
+ * ใช้ตัวกรองตัวเดียวกับรายการบนหน้าจอ ไฟล์ที่ได้จึงตรงกับสิ่งที่ผู้ใช้เห็นเสมอ
+ * และ RLS ยังกรองสิทธิ์การมองเห็นให้อีกชั้นเหมือนกับตอนแสดงรายการ
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
+  const filters = { status, categoryId, priority, search, assigneeId, mine };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const countQuery = applyTicketListFilters(
+    supabase.from('tickets').select('id', { count: 'exact', head: true }),
+    filters,
+    actorId,
+  );
+  const { count, error: countError } = await countQuery;
+  if (countError) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let query = supabase
+    .from('tickets')
+    .select(
+      'ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, created_at, ticket_categories(name)',
+    )
+    .range(0, LIST_EXPORT_MAX_ROWS - 1);
+  query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
+  query = applyTicketListFilters(query, filters, actorId);
+
+  const { data, error } = await query;
+  if (error) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const rows = (data ?? []) as unknown as TicketExportRow[];
+  // การดึงข้อมูลทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'ticket',
+    targetTable: 'tickets',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('tickets'),
+    csv: listCsv(TICKET_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
 });
 
 /**

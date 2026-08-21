@@ -12,6 +12,7 @@ import {
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { BulkItemError, runBulk } from '../utils/bulk';
+import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
@@ -248,6 +249,34 @@ assetsRoute.get(
 /** ไม่รวม status/criticality เพราะเก็บเป็นข้อความไทย เรียงแล้วได้ลำดับตัวอักษร ไม่ใช่ลำดับที่สื่อความหมาย */
 const ASSET_SORT_COLUMNS = ['asset_code', 'name', 'location', 'purchase_date', 'warranty_expire', 'created_at'] as const;
 
+/** ส่วนของ query builder ที่ตัวกรองทะเบียนทรัพย์สินต้องใช้ */
+interface AssetFilterableQuery {
+  eq(column: string, value: unknown): AssetFilterableQuery;
+  or(filters: string): AssetFilterableQuery;
+}
+
+interface AssetListFilters {
+  status?: string;
+  categoryId?: string;
+  search?: string;
+}
+
+/**
+ * ตัวกรองของทะเบียนทรัพย์สิน — ใช้ร่วมกันระหว่างการแสดงผลกับการส่งออก
+ * ต้องเป็นตัวเดียวกันเท่านั้น ไม่งั้นไฟล์ที่ส่งออกจะมีของไม่ตรงกับที่ผู้ใช้เห็นบนหน้าจอ
+ */
+function applyAssetListFilters<T>(query: T, { status, categoryId, search }: AssetListFilters): T {
+  // มอง builder เป็นโครงแคบ ๆ เพราะ generic เต็มของ supabase-js ซ้อนลึกจน TypeScript ยอมแพ้
+  let next = query as unknown as AssetFilterableQuery;
+  if (status) next = next.eq('status', status);
+  if (categoryId) next = next.eq('category_id', categoryId);
+  const safeSearch = search ? cleanSearch(search) : '';
+  if (safeSearch) {
+    next = next.or(`name.ilike.%${safeSearch}%,asset_code.ilike.%${safeSearch}%,serial_number.ilike.%${safeSearch}%`);
+  }
+  return next as unknown as T;
+}
+
 assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -259,12 +288,7 @@ assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAs
     .range(...paginationRange(page, pageSize));
   query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'asset_code', ascending: true });
 
-  if (status) query = query.eq('status', status);
-  if (categoryId) query = query.eq('category_id', categoryId);
-  const safeSearch = search ? cleanSearch(search) : '';
-  if (safeSearch) {
-    query = query.or(`name.ilike.%${safeSearch}%,asset_code.ilike.%${safeSearch}%,serial_number.ilike.%${safeSearch}%`);
-  }
+  query = applyAssetListFilters(query, { status, categoryId, search });
 
   const { data, count, error } = await query;
   if (error) return c.json(fail(reqId, 'ASSETS_LIST_FAILED', 'ดึงทะเบียนทรัพย์สินไม่สำเร็จ'), 400);
@@ -373,6 +397,95 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
   });
 
   return c.json(ok(reqId, enrichAsset(data as never)), 201);
+});
+
+/** แถวดิบของทรัพย์สินเท่าที่การส่งออกต้องใช้ */
+interface AssetExportRow {
+  asset_code: string | null;
+  name: string | null;
+  asset_type: string | null;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  location: string | null;
+  status: string | null;
+  criticality: string | null;
+  purchase_date: string | null;
+  warranty_expire: string | null;
+  price: number | null;
+  category: { name: string | null } | null;
+  department: { name_th: string | null } | null;
+  owner: { first_name_th: string | null; last_name_th: string | null } | null;
+}
+
+const ASSET_EXPORT_COLUMNS: ExportColumn<AssetExportRow>[] = [
+  { label: 'รหัสทรัพย์สิน', value: (row) => row.asset_code },
+  { label: 'ชื่อทรัพย์สิน', value: (row) => row.name },
+  { label: 'ประเภท', value: (row) => row.asset_type },
+  { label: 'หมวดหมู่', value: (row) => row.category?.name ?? '' },
+  { label: 'ยี่ห้อ', value: (row) => row.brand },
+  { label: 'รุ่น', value: (row) => row.model },
+  { label: 'Serial Number', value: (row) => row.serial_number },
+  { label: 'ผู้ถือครอง', value: (row) => (row.owner ? `${row.owner.first_name_th ?? ''} ${row.owner.last_name_th ?? ''}`.trim() : '') },
+  { label: 'แผนก', value: (row) => row.department?.name_th ?? '' },
+  { label: 'สถานที่', value: (row) => row.location },
+  { label: 'สถานะ', value: (row) => row.status },
+  { label: 'ความสำคัญ', value: (row) => row.criticality },
+  { label: 'วันที่ซื้อ', value: (row) => row.purchase_date },
+  { label: 'หมดประกัน', value: (row) => row.warranty_expire },
+  { label: 'ราคา', value: (row) => row.price },
+];
+
+/**
+ * ส่งออกทะเบียนทรัพย์สินทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+assetsRoute.get('/export', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { sort, order, search, status, categoryId } = c.req.valid('query');
+  const filters = { status, categoryId, search };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const { count, error: countError } = await applyAssetListFilters(
+    supabase.from('assets').select('id', { count: 'exact', head: true }),
+    filters,
+  );
+  if (countError) return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let query = supabase
+    .from('assets')
+    .select(
+      'asset_code, name, asset_type, brand, model, serial_number, location, status, criticality, purchase_date, warranty_expire, price, ' +
+      'category:asset_categories(name), department:departments(name_th), owner:employees(first_name_th, last_name_th)',
+    )
+    .range(0, LIST_EXPORT_MAX_ROWS - 1);
+  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'asset_code', ascending: true });
+  query = applyAssetListFilters(query, filters);
+
+  const { data, error } = await query;
+  if (error) return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const rows = (data ?? []) as unknown as AssetExportRow[];
+  // การดึงทะเบียนทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'),
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'asset',
+    targetTable: 'assets',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('assets'),
+    csv: listCsv(ASSET_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
 });
 
 /**
