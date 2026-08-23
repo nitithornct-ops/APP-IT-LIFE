@@ -24,6 +24,10 @@ const PermissionMatrixPage = lazy(() =>
 );
 const AuditLogsPage = lazy(() => import('./features/admin/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })));
 const SettingsPage = lazy(() => import('./features/admin/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const IntegrationCenterPage = lazy(() => import('./features/admin/IntegrationCenterPage').then((m) => ({ default: m.IntegrationCenterPage })));
+const TechnicianSkillMatrixPage = lazy(() => import('./features/technicianSkills/TechnicianSkillMatrixPage').then((m) => ({ default: m.TechnicianSkillMatrixPage })));
+const AssetScanPage = lazy(() => import('./features/fieldWork/AssetScanPage').then((m) => ({ default: m.AssetScanPage })));
+const FieldCloseTicketPage = lazy(() => import('./features/fieldWork/FieldCloseTicketPage').then((m) => ({ default: m.FieldCloseTicketPage })));
 const MasterDataPage = lazy(() =>
   import('./features/admin/MasterDataPage').then((m) => ({ default: m.MasterDataPage })),
 );
@@ -58,6 +62,7 @@ const AccessRegistryPage = lazy(() =>
 );
 const TasksPage = lazy(() => import('./features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })));
 const MyWorkPage = lazy(() => import('./features/myWork/MyWorkPage').then((m) => ({ default: m.MyWorkPage })));
+const WarRoomPage = lazy(() => import('./pages/WarRoomPage').then((m) => ({ default: m.WarRoomPage })));
 const AssetsPage = lazy(() => import('./features/assets/AssetsPage').then((m) => ({ default: m.AssetsPage })));
 const AssetDetailPage = lazy(() => import('./features/assets/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })));
 const AssetBorrowPage = lazy(() => import('./features/assets/AssetBorrowPage').then((m) => ({ default: m.AssetBorrowPage })));
@@ -147,6 +152,7 @@ export function App() {
         }
       >
         <Route path="/" element={<ProtectedRoute permission="dashboard.view"><HomePage /></ProtectedRoute>} />
+        <Route path="/war-room" element={<ProtectedRoute permission="dashboard.view"><WarRoomPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
         <Route path="/system-status" element={<HealthPage standalone={false} />} />
@@ -588,6 +594,46 @@ export function App() {
             <ProtectedRoute permission="line.manage">
               <Suspense fallback={<LazyPageFallback />}>
                 <LineLinksPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/integrations"
+          element={
+            <ProtectedRoute permission="integration.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <IntegrationCenterPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/field/tickets/:id/close"
+          element={
+            <ProtectedRoute permission="ticket.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <FieldCloseTicketPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/field/scan"
+          element={
+            <ProtectedRoute permission="asset.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AssetScanPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/technician-skills"
+          element={
+            <ProtectedRoute permission="technician_skill.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <TechnicianSkillMatrixPage />
               </Suspense>
             </ProtectedRoute>
           }

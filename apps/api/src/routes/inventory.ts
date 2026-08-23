@@ -201,7 +201,7 @@ inventoryItemsRoute.post(
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
     const id = c.req.param('id')!;
-    const { transactionType, qty, notes } = c.req.valid('json');
+    const { transactionType, qty, notes, ticketId } = c.req.valid('json');
 
     const { data, error } = await createAdminClient(c.env).rpc('record_inventory_transaction', {
       item_id_input: id,
@@ -211,9 +211,13 @@ inventoryItemsRoute.post(
       actor_id_input: actorId,
       actor_email_input: c.get('userEmail'),
       request_id_input: reqId,
+      ticket_id_input: ticketId ?? null,
     });
     if (error?.message.includes('INVENTORY_ITEM_NOT_FOUND')) {
       return c.json(fail(reqId, 'INVENTORY_ITEM_NOT_FOUND', 'ไม่พบรายการนี้'), 404);
+    }
+    if (error?.message.includes('INVENTORY_TICKET_NOT_FOUND')) {
+      return c.json(fail(reqId, 'INVENTORY_TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุสำหรับการเบิกครั้งนี้'), 404);
     }
     if (error?.message.includes('INVENTORY_INSUFFICIENT_STOCK')) {
       return c.json(fail(reqId, 'INVENTORY_INSUFFICIENT_STOCK', 'สต็อกคงเหลือไม่พอสำหรับการเบิกครั้งนี้'), 400);

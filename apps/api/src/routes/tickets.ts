@@ -15,6 +15,7 @@ import {
   applyStatusChange,
   assertTransition,
   changesSlaPause,
+  fieldOutcomesFor,
 } from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -259,7 +260,8 @@ ticketsRoute.get('/:id', async (c) => {
     signatureUrl = data?.signedUrl ?? null;
   }
 
-  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_source: signatureSource, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [] }));
+  // field_outcomes มาจาก state machine ตัวเดียวกับที่ PATCH บังคับ จอหน้างานจึงเสนอเฉพาะสิ่งที่ทำได้จริง
+  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_source: signatureSource, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [], field_outcomes: fieldOutcomesFor(String(ticket.status)) }));
 });
 
 ticketsRoute.post(
@@ -767,6 +769,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     applyStatusChange(patch, current, toStatus, now, businessCalendar!);
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
+  if (body.rootCause !== undefined) patch.root_cause = body.rootCause || null;
 
   const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();

@@ -51,6 +51,58 @@ export const TRANSITIONS: Record<string, string[]> = {
   [TICKET_STATUS.ESCALATED]: [],
 };
 
+/** ผลของงานที่ช่างเลือกได้จริงตอนอยู่หน้าเครื่อง พร้อมข้อความอธิบายสำหรับการ์ดตัวเลือก */
+export interface FieldOutcome {
+  status: string;
+  label: string;
+  description: string;
+  requiresResolution: boolean;
+  tone: 'success' | 'warning' | 'primary';
+}
+
+/**
+ * ตัวเลือก "ผลการแก้ไข" ของจอปิดงานหน้างาน (design handoff 3j จอ 2)
+ *
+ * กรองจาก TRANSITIONS ตัวเดียวกับที่ API ใช้บังคับจริง หน้าจอจึงไม่มีทางเสนอปุ่มที่กดแล้วถูกปฏิเสธ
+ * และไม่ต้องคัดลอกตาราง state machine ไปไว้ฝั่งเว็บให้เลื่อนไม่ตรงกันในภายหลัง
+ *
+ * ตัดการยกระดับเป็น Incident ออกเพราะต้องไปทาง /incidents/from-ticket เพื่อสร้างเคสให้ครบ
+ * และตัดการยกเลิกออกเพราะไม่ใช่ผลของการซ่อม แต่เป็นการปิดเรื่องที่ต้องมีเหตุผลจากผู้รับแจ้ง
+ */
+const FIELD_OUTCOME_COPY: Record<string, Omit<FieldOutcome, 'status'>> = {
+  [TICKET_STATUS.RESOLVED]: {
+    label: 'ซ่อมเสร็จ รอผู้ใช้ยืนยัน',
+    description: 'งานเสร็จหน้างานแล้ว ส่งให้ผู้แจ้งตรวจรับก่อนปิดงาน',
+    requiresResolution: true,
+    tone: 'success',
+  },
+  [TICKET_STATUS.CLOSED]: {
+    label: 'ปิดงานเลย',
+    description: 'ผู้แจ้งยืนยันหน้างานแล้วว่าใช้งานได้ ไม่ต้องรอตรวจรับซ้ำ',
+    requiresResolution: true,
+    tone: 'success',
+  },
+  [TICKET_STATUS.WAITING_PARTS]: {
+    label: 'รออะไหล่',
+    description: 'ยังปิดไม่ได้เพราะต้องรอของ ระบบจะหยุดนับเวลา SLA ไว้ก่อน',
+    requiresResolution: false,
+    tone: 'warning',
+  },
+  [TICKET_STATUS.OUTSOURCE]: {
+    label: 'ส่งต่อผู้ให้บริการภายนอก',
+    description: 'เกินขอบเขตที่ซ่อมเองได้ ต้องระบุผู้ให้บริการที่รับงานต่อ',
+    requiresResolution: false,
+    tone: 'primary',
+  },
+};
+
+export function fieldOutcomesFor(currentStatus: string): FieldOutcome[] {
+  const allowed = TRANSITIONS[currentStatus] ?? [];
+  return allowed
+    .filter((status) => status in FIELD_OUTCOME_COPY)
+    .map((status) => ({ status, ...FIELD_OUTCOME_COPY[status] }));
+}
+
 /** สถานะที่ถือว่ารอฝ่ายอื่น จึงหยุดนับเวลา SLA ไว้ก่อน */
 export const WAITING_STATUSES = new Set<string>([TICKET_STATUS.WAITING_PARTS, TICKET_STATUS.WAITING_USER]);
 

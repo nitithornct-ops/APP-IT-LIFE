@@ -135,7 +135,9 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('form.view', 'form', 'view', 'ดูคลังแบบฟอร์มและรายการแบบฟอร์มงาน', 'active'),
   ('form.manage', 'form', 'manage', 'สร้าง แก้ไข และเผยแพร่แบบฟอร์ม', 'active'),
   ('form.vendor_send', 'form', 'vendor_send', 'ส่งแบบฟอร์มให้ Vendor ประเมินและตอบกลับ', 'active'),
-  ('form.close', 'form', 'close', 'ตรวจรับและปิดแบบฟอร์มงาน', 'active')
+  ('form.close', 'form', 'close', 'ตรวจรับและปิดแบบฟอร์มงาน', 'active'),
+  ('technician_skill.view', 'technician_skill', 'view', 'ดูตารางทักษะเจ้าหน้าที่และความครอบคลุมรายหมวดหมู่', 'active'),
+  ('technician_skill.manage', 'technician_skill', 'manage', 'ประเมินและแก้ไขระดับทักษะของเจ้าหน้าที่', 'active')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -250,6 +252,7 @@ from (values
   ('technician', 'access_request.view'),
   ('technician', 'report.view'),
   ('technician', 'report.export'),
+  ('technician', 'technician_skill.view'),
 
   ('approver', 'dashboard.view'),
   ('approver', 'task.view'),
@@ -304,6 +307,7 @@ from (values
   ('manager', 'workflow.view_all'),
   ('manager', 'workflow.approve'),
   ('manager', 'workflow.delegate'),
+  ('manager', 'technician_skill.view'),
   ('manager', 'knowledge.view'),
   ('manager', 'knowledge.feedback'),
 
@@ -337,6 +341,7 @@ from (values
   ('executive', 'workflow.delegate'),
   ('executive', 'knowledge.view'),
   ('executive', 'knowledge.feedback'),
+  ('executive', 'technician_skill.view'),
 
   ('auditor', 'dashboard.view'),
   ('auditor', 'task.view'),

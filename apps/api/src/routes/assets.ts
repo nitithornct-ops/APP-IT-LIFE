@@ -9,6 +9,7 @@ import {
   buildReturnPatch,
   isAssetRetired,
 } from '../services/assetOwnership';
+import { buildAssetFieldSummary, parseScannedAssetCode } from '../services/assetFieldService';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { BulkItemError, runBulk } from '../utils/bulk';
@@ -54,6 +55,9 @@ const ASSET_SELECT =
   'category:asset_categories(id, name, code_prefix), department:departments(id, name_th), ' +
   'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date), ' +
   'owner:employees(id, employee_code, first_name_th, last_name_th, nickname)';
+
+/** จำนวน Ticket สูงสุดที่ดึงมาสรุปประวัติซ่อมของเครื่องหนึ่งเครื่อง */
+const ASSET_FIELD_TICKET_LIMIT = 100;
 
 function daysUntil(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null;
@@ -151,6 +155,74 @@ assetsRoute.get('/options', requirePermission('asset.view'), async (c) => {
     .limit(2000);
   if (error) return c.json(fail(reqId, 'ASSET_OPTIONS_LOAD_FAILED', 'ดึงรายการทรัพย์สินไม่สำเร็จ'), 400);
   return c.json(ok(reqId, data));
+});
+
+/**
+ * ค้นเครื่องจากรหัสที่สแกนได้หน้างาน (mockup 3j จอ 1) — ต้องอยู่ก่อน '/:id'
+ *
+ * รับข้อความดิบจากกล้องได้เลย เพราะ QR ของระบบเก็บเป็น "{asset_code} | {name}" ไม่ใช่รหัสเปล่า
+ * การแยกรหัสทำใน parseScannedAssetCode เพื่อให้ทดสอบได้โดยไม่ต้องมีกล้อง
+ *
+ * ประวัติซ่อมอ่านด้วย client ของผู้ใช้เสมอ ผู้ที่ไม่มี ticket.view_all จะเห็นเฉพาะใบที่ตนเกี่ยวข้อง
+ * และ historyScope จะบอกหน้าจอตรง ๆ ว่าประวัติที่เห็นไม่ครบ แทนการทำให้ดูเหมือนเครื่องนี้ไม่เคยซ่อม
+ */
+assetsRoute.get('/lookup', requirePermission('asset.view'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const raw = c.req.query('code') ?? '';
+
+  const code = parseScannedAssetCode(raw);
+  if (!code) {
+    return c.json(fail(reqId, 'ASSET_CODE_INVALID', 'อ่านรหัสทรัพย์สินจากรายการที่สแกนไม่ได้ กรุณาลองใหม่หรือพิมพ์รหัสเอง'), 400);
+  }
+
+  /*
+   * ค้นแบบไม่แยกตัวพิมพ์ เพราะช่างที่พิมพ์รหัสเองมักพิมพ์ตัวเล็ก แต่ assets_asset_code_unique เป็น
+   * unique แบบแยกตัวพิมพ์ ทะเบียนจึงมีทั้ง "AS-NB-001" และ "as-nb-001" พร้อมกันได้ตามกติกาของ schema
+   * จึงห้ามใช้ maybeSingle() ตรง ๆ (จะ error เป็น 500 ทันทีที่เจอสองแถว) และห้ามหยิบแถวแรกมั่ว ๆ
+   * เพราะการเปิดใบงานผิดเครื่องแก้ยากกว่าการให้ช่างพิมพ์รหัสใหม่ให้ตรงตัวพิมพ์
+   */
+  const { data: matches, error } = await supabase
+    .from('assets')
+    .select(ASSET_SELECT)
+    .ilike('asset_code', code)
+    .order('asset_code', { ascending: true })
+    .limit(5);
+  if (error) return dbFailJson(c, 'ASSET_LOOKUP_FAILED', error, 'ค้นหาทรัพย์สินไม่สำเร็จ');
+
+  const candidates = (matches ?? []) as unknown as Array<Record<string, unknown>>;
+  const asset = candidates.find((row) => String(row.asset_code) === code) ?? (candidates.length === 1 ? candidates[0] : null);
+  if (!asset) {
+    if (candidates.length > 1) {
+      return c.json(
+        fail(reqId, 'ASSET_CODE_AMBIGUOUS', `รหัส ${code} ตรงกับทรัพย์สินมากกว่าหนึ่งรายการที่ต่างกันเฉพาะตัวพิมพ์เล็ก-ใหญ่ กรุณาพิมพ์รหัสให้ตรงตัวพิมพ์`),
+        409,
+      );
+    }
+    return c.json(fail(reqId, 'ASSET_NOT_FOUND', `ไม่พบทรัพย์สินรหัส ${code} ในระบบ`), 404);
+  }
+
+  const assetRow = asset;
+  const canSeeAllTickets = await hasPermission(c, 'ticket.view_all');
+  const ticketResult = await supabase
+    .from('tickets')
+    .select(
+      'id, ticket_no, title, status, priority, created_at, resolved_at, closed_at, due_at, assignee_name_snapshot, ' +
+      'assignee:profiles!tickets_assignee_id_fkey(full_name)',
+      { count: 'exact' },
+    )
+    .eq('asset_id', assetRow.id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(ASSET_FIELD_TICKET_LIMIT);
+  if (ticketResult.error) return dbFailJson(c, 'ASSET_TICKET_HISTORY_FAILED', ticketResult.error, 'ดึงประวัติงานซ่อมไม่สำเร็จ');
+
+  return c.json(ok(reqId, buildAssetFieldSummary({
+    asset: assetRow,
+    tickets: (ticketResult.data ?? []) as unknown as Array<Record<string, unknown>>,
+    historyScope: canSeeAllTickets ? 'organization' : 'personal',
+    ticketTotal: ticketResult.count ?? undefined,
+  })));
 });
 
 /** ภาพรวมยืม/คืนสำหรับหน้าปฏิบัติงานรวม — ต้องอยู่ก่อน '/:id' */

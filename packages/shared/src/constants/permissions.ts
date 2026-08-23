@@ -118,6 +118,8 @@ export const DEFAULT_PERMISSION_KEYS = [
   'form.vendor_send',
   'form.close',
   'line.manage',
+  'technician_skill.view',
+  'technician_skill.manage',
 ] as const;
 
 export type DefaultPermissionKey = (typeof DEFAULT_PERMISSION_KEYS)[number];
