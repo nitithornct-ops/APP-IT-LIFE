@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../services/apiClient';
 import { ErrorState, LoadingState } from './AsyncState';
+import { QueryError } from './QueryError';
 import { Button } from './Button';
 import { DetailLayout } from './DetailLayout';
 import { FilterBar } from './FilterBar';
@@ -111,5 +113,49 @@ describe('shared page patterns', () => {
     expect(onRetry).toHaveBeenCalledOnce();
     expect(screen.getByRole('complementary', { name: 'แผงควบคุมและข้อมูลประกอบ' })).toHaveTextContent('ผู้รับผิดชอบ');
     expect(screen.getByText('ไทม์ไลน์')).toBeVisible();
+  });
+});
+
+describe('การ์ดสถานะผิดพลาด (design handoff 3k)', () => {
+  it('แสดงรหัสความผิดพลาดและ REQ id ให้ผู้ใช้แจ้งต่อได้', () => {
+    render(
+      <MemoryRouter>
+        <QueryError
+          error={new ApiError('GATEWAY_TIMEOUT', 'เซิร์ฟเวอร์ตอบช้าเกินกำหนด', 504, 'req-abc-123')}
+          onRetry={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('เซิร์ฟเวอร์ตอบช้าเกินกำหนด')).toBeInTheDocument();
+    expect(screen.getByText(/รหัส 504/)).toBeInTheDocument();
+    expect(screen.getByText(/REQ req-abc-123/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ลองใหม่/ })).toBeInTheDocument();
+  });
+
+  it('ไม่บอกว่าเก็บร่างไว้แล้ว เว้นแต่หน้านั้นเก็บจริง', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <QueryError error={new ApiError('TIMEOUT', 'หมดเวลา', 504, 'req-1')} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/ร่างที่กรอกไว้/)).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <QueryError error={new ApiError('TIMEOUT', 'หมดเวลา', 504, 'req-1')} draftNotice="ร่างที่กรอกไว้ถูกเก็บแล้ว" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('ร่างที่กรอกไว้ถูกเก็บแล้ว')).toBeInTheDocument();
+  });
+
+  it('ยังอ่านออกเมื่อความผิดพลาดไม่ได้มาจาก API', () => {
+    render(
+      <MemoryRouter>
+        <QueryError error={new Error('เครือข่ายขัดข้อง')} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('เครือข่ายขัดข้อง')).toBeInTheDocument();
+    expect(screen.queryByText(/REQ /)).not.toBeInTheDocument();
   });
 });

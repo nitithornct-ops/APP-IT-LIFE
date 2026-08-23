@@ -66,6 +66,8 @@ npm.cmd run dev:web
 - Mobile Field Workflow: `http://127.0.0.1:5173/field/scan` และปุ่ม `ปิดงานหน้างาน (มือถือ)` ในหน้า Ticket detail
   (ต้อง apply migration `20260917100000_field_work_parts_provenance.sql` ก่อนใช้การตัดอะไหล่)
   ตรวจที่ viewport 390px เป็นหลัก เพราะทั้งสองจอออกแบบมาสำหรับมือถือหน้างาน
+- Onboarding: การ์ด "ยินดีต้อนรับ" บนหน้าแรก แสดงเฉพาะบัญชีที่ยังไม่เคยปิด
+  (กดปิดแล้วต้องไม่กลับมาอีก แม้ล้าง cache หรือเปลี่ยนเครื่อง เพราะเก็บสถานะในฐานข้อมูล)
 
 หมายเหตุ: browser automation ใน session ก่อนหน้าติดปัญหา `codex/sandbox-state-meta: missing field sandboxPolicy` แต่ dev server และ HMR ทำงานปกติ ให้ลอง browser tooling ใหม่ได้หนึ่งครั้ง หรือเปิด URL ข้างต้นตรวจด้วยตนเอง
 
@@ -189,6 +191,29 @@ npm.cmd run dev:web
      ส่วนการสร้างบทความ KB จากใบงานยังไม่ได้ทำ (ต้องออกแบบ deep link + prefill ของ knowledge module)
    - **ต้อง apply migration ก่อนใช้งานจริง** เช่นเดียวกับข้อ 6
 
+8. Onboarding Flow และการ์ดสถานะ (design handoff 3k) — จบครบ 27 จอของดีไซน์แล้ว
+   - Migration: `supabase/migrations/20260918100000_user_onboarding_state.sql`
+     เพิ่ม `profiles.onboarding_completed_at` และ `onboarding_dismissed_at`
+     แยกสองคอลัมน์เพราะ "ดูครบแล้ว" กับ "กดข้าม" เป็นคนละเรื่องเวลาย้อนดูว่าผู้ใช้ติดตรงไหน
+   - `my_profile()` ถูก drop แล้วสร้างใหม่ (เปลี่ยน OUT parameters ด้วย create or replace ไม่ได้)
+     เพื่อคืนสองคอลัมน์นี้ให้หน้าเว็บอ่านได้
+   - RPC ใหม่ `set_my_onboarding_state(boolean)` ล็อกไว้ที่ `auth.uid()` — ต้องเป็น RPC เพราะ
+     20260915100000 ตัดสิทธิ์ UPDATE ตาราง profiles ของ authenticated ออกไปแล้ว
+   - Endpoint: `POST /api/v1/auth/onboarding` body `{ dismissed: boolean }`
+   - UI: `apps/web/src/features/onboarding/OnboardingCard.tsx` แสดงบนหน้าแรก
+     * ขั้นตอนกรองตามสิทธิ์จริงของบัญชีนั้น
+     * ติ๊กถูกเฉพาะขั้นที่ระบบตรวจได้จริง (เบอร์โทรกรอกแล้วหรือยัง) ขั้นที่เหลือเป็นทางลัด
+       ไม่ติ๊กให้ เพราะเครื่องหมายถูกที่ไม่ได้ตรวจจริงทำให้ผู้ใช้เชื่อว่าตั้งค่าครบแล้วทั้งที่ยังไม่ได้ทำ
+     * บันทึกไม่สำเร็จ = การ์ดยังอยู่และบอกเหตุผล ไม่ปิดหน้าจอทิ้งโดยที่สถานะไม่ได้บันทึก
+   - การ์ด "ผิดพลาด": `QueryError`/`ErrorState` แสดงรหัส (HTTP status หรือ error code) และ REQ id
+     จาก `meta.requestId` ที่ API ส่งมาอยู่แล้ว ผู้ใช้แจ้งเลขนี้ให้ผู้ดูแลตามใน log ได้ตรงคำขอ
+   - `draftNotice` เป็น prop ที่ต้องส่งมาเอง ไม่ตั้งเป็นค่าเริ่มต้น — mockup เขียนว่า "ร่างถูกเก็บแล้ว"
+     แต่ระบบยังไม่มี draft persistence การบอกว่าเก็บร่างทั้งที่ไม่ได้เก็บทำให้ผู้ใช้ปิดหน้าจอแล้วงานหาย
+   - การ์ด "ว่างเปล่า"/"กำลังโหลด"/"ไม่มีสิทธิ์" มีของเดิมครบแล้วจากรอบ redesign
+     (`EmptyState` มี action, `LoadingState` รับ label, `AccessDenied` ใน ProtectedRoute ลิงก์ไป
+     `/access-requests` ซึ่งเป็นเส้นทางขอสิทธิ์จริง)
+   - **ต้อง apply migration ก่อนใช้งานจริง** เช่นเดียวกับข้อ 6 และ 7
+
 ## 5. สถานะข้อมูลจริงล่าสุด
 
 จากการตรวจ Supabase ด้วย query shape เดียวกับ API:
@@ -206,10 +231,13 @@ npm.cmd run dev:web
 
 ผ่านทั้งหมด ณ เวลาส่งต่องาน:
 
-- API: 50 test files / 340 tests
-- Web: 49 test files / 269 tests
-- Supabase (pglite RLS): 19 test files / 236 tests
+- API: 50 test files / 341 tests
+- Web: 50 test files / 279 tests
+- Supabase (pglite RLS): 20 test files / 241 tests
 - Shared: 3 test files / 13 tests
+- E2E (Playwright): 4 passed / 25 skipped — specs ที่ข้ามเป็น `*.live.spec.ts` ซึ่งเป็น opt-in
+  ต้องตั้ง `LIVE_E2E=1` พร้อมบัญชีจริง จึงยังไม่เคยรันในรอบนี้
+- `npm run audit:prod`: 0 vulnerabilities
 - API typecheck, lint และ Wrangler dry-run build ผ่าน
 - Web typecheck, lint และ Vite production build ผ่าน
 - `git diff --check` ไม่มี whitespace error มีเพียงคำเตือน LF/CRLF ของ Windows
@@ -234,15 +262,9 @@ npm.cmd --workspace apps/web run build
 
 ทำตามลำดับนี้ เว้นแต่ผู้ใช้ระบุอย่างอื่น:
 
-### 1. Onboarding Flow
+ทุกจอในดีไซน์ (27 จอ) ทำครบแล้ว เหลือเฉพาะการตรวจรับกับผู้ใช้จริง
 
-อ้างอิง `02-screens.md` หัวข้อ `3k สถานะเริ่มใช้ครั้งแรก`
-
-- ตรวจว่ามี user-level onboarding state หรือยัง
-- ต้องมีทางออกและค่าเริ่มต้นที่ปลอดภัย
-- ห้ามแสดง onboarding ซ้ำทุกครั้งถ้าไม่มี state persistence
-
-### 2. External UAT
+### 1. External UAT
 
 - ทำหลังฟีเจอร์ข้างต้นเสร็จ
 - ใช้ environment/บัญชี UAT ที่ผู้ใช้อนุญาตเท่านั้น
@@ -260,16 +282,16 @@ npm.cmd --workspace apps/web run build
 
 ## 9. จุดเริ่มงานแนะนำสำหรับ AI ตัวถัดไป
 
-1. อ่านเอกสารนี้และ `02-screens.md` ส่วน 3k ให้ครบ
-2. รัน `git status --short`
-3. ยืนยันกับผู้ใช้ว่า migration สองตัวนี้ถูก apply กับ Supabase จริงแล้วหรือยัง
-   - `20260916100000_technician_skill_matrix.sql`
-   - `20260917100000_field_work_parts_provenance.sql`
-   ถ้ายัง หน้า `/admin/technician-skills`, แผงทักษะใน `/profile` และการตัดอะไหล่ในจอปิดงานหน้างาน
-   จะขึ้น error ตามคาด — เป็นพฤติกรรมที่ถูกต้อง ไม่ใช่บั๊กที่ต้องไปแก้โค้ด
-4. ตรวจว่ามี user-level onboarding state ในระบบหรือยัง ก่อนเริ่ม Onboarding Flow
-   (ห้ามแสดง onboarding ซ้ำทุกครั้งถ้าไม่มีที่เก็บสถานะจริง)
-5. เพิ่ม tests และรัน verification ชุดเต็ม
+1. รัน `git status --short` และ `git log --oneline -5`
+2. ยืนยันกับผู้ใช้ว่า migration สามตัวนี้ถูก apply กับ Supabase จริงแล้วหรือยัง
+   - `20260916100000_technician_skill_matrix.sql` (apply แล้ว 23 ส.ค. 2026)
+   - `20260917100000_field_work_parts_provenance.sql` (apply แล้ว 23 ส.ค. 2026)
+   - `20260918100000_user_onboarding_state.sql` (**ยังไม่ apply** ณ เวลาเขียนเอกสารนี้)
+   ตัวที่ยังไม่ apply จะทำให้การ์ดต้อนรับบนหน้าแรกกดปิดไม่ได้ และ `POST /api/v1/auth/onboarding`
+   จะล้มเหลว — เป็นพฤติกรรมที่ถูกต้อง ไม่ใช่บั๊กที่ต้องไปแก้โค้ด
+   คำสั่ง: `npx supabase db push --linked --include-all`
+3. งานที่เหลือคือ External UAT ให้ตกลงกับผู้ใช้ก่อนว่าจะใช้ environment/บัญชีใด
+4. ถ้าจะรัน live E2E ต้องได้รับอนุญาตและตั้ง `LIVE_E2E=1` พร้อมบัญชีทดสอบจากผู้ใช้เท่านั้น
 
 ## 10. Definition of Done ต่อหนึ่งหน้าจอ
 

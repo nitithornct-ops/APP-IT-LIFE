@@ -14,6 +14,9 @@ export interface MeProfile {
   position_id: string | null;
   supervisor_id: string | null;
   status: 'active' | 'inactive';
+  /** null ทั้งคู่ = ยังไม่เคยปิดคำแนะนำเริ่มต้น (migration 20260918100000) */
+  onboarding_completed_at?: string | null;
+  onboarding_dismissed_at?: string | null;
 }
 
 export interface MeRole {

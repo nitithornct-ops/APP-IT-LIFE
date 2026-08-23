@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { OnboardingCard } from '../features/onboarding/OnboardingCard';
 import { Link } from 'react-router-dom';
 import { DataTable } from '../components/table/DataTable';
 import { Button } from '../components/ui/Button';
@@ -135,6 +136,8 @@ export function HomePage() {
 
   return (
     <div className="space-y-3" data-testid="dashboard-page">
+      {/* แสดงเหนือทุกอย่างเฉพาะบัญชีที่ยังไม่เคยปิด — ตัวการ์ดเป็นผู้ตัดสินใจเองว่าจะแสดงหรือไม่ */}
+      <OnboardingCard />
       <section className="rounded-[13px] border border-hairline bg-white px-5 py-5 shadow-card dark:border-white/[.08] dark:bg-white/[.035] sm:px-[26px] sm:py-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-4xl">
