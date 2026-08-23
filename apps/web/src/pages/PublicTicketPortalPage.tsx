@@ -19,6 +19,7 @@ import {
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
+import { Badge } from '../components/ui/Badge';
 import { ApiError } from '../services/apiClient';
 import { getLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 import { publicTicketApiFetch } from '../services/publicTicketApiClient';
@@ -755,7 +756,7 @@ function StatusTab() {
                     <td className="max-w-xs px-4 py-4"><p className="truncate font-medium text-slate-800" title={ticket.title}>{ticket.title}</p></td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.category?.name ?? '-'}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.priority}</td>
-                    <td className="whitespace-nowrap px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ticketStatusClass(ticket.status)}`}>{ticketStatusLabel(ticket.status)}</span></td>
+                    <td className="whitespace-nowrap px-4 py-4"><Badge variant={ticketStatusTone(ticket.status)}>{ticketStatusLabel(ticket.status)}</Badge></td>
                     <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">{formatTicketDate(ticket.created_at)}</td>
                     <td className="px-5 py-4 text-right"><button type="button" disabled={loading} onClick={() => void openLineDetail(ticket.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 disabled:opacity-50">รายละเอียด</button></td>
                   </tr>
@@ -793,11 +794,11 @@ function formatTicketDate(value: string) {
   return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
-function ticketStatusClass(status: string) {
-  if (['เสร็จสิ้น', 'ปิดงาน'].includes(status)) return 'bg-emerald-50 text-emerald-700';
-  if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'bg-red-50 text-red-700';
-  if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'bg-amber-50 text-amber-700';
-  return 'bg-primary-50 text-primary-700';
+function ticketStatusTone(status: string): 'success' | 'danger' | 'warning' | 'primary' {
+  if (['เสร็จสิ้น', 'ปิดงาน'].includes(status)) return 'success';
+  if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'danger';
+  if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'warning';
+  return 'primary';
 }
 
 function ticketStatusLabel(status: string) {

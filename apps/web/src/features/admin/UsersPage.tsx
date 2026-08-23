@@ -273,15 +273,9 @@ type InviteForm = z.infer<typeof inviteSchema>;
 
 function StatusBadge({ status }: { status: 'active' | 'inactive' }) {
   return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-        status === 'active'
-          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-      }`}
-    >
+    <Badge variant={status === 'active' ? 'success' : 'secondary'}>
       {status === 'active' ? 'ใช้งาน' : 'ระงับ'}
-    </span>
+    </Badge>
   );
 }
 
