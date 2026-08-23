@@ -59,6 +59,10 @@ export interface FieldCloseTicket {
   ticket_no: string;
   title: string;
   status: string;
+  /** ใช้กรองรหัสสาเหตุให้เหลือเฉพาะที่เกี่ยวกับงานหมวดนี้ */
+  category_id: string | null;
+  resolution: string | null;
+  cause_code_id: string | null;
   field_outcomes: FieldOutcome[];
 }
 

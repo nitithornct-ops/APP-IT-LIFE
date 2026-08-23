@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
+import { buildLicenseCostSummary, type LicenseCostRow } from '../services/licenseCostService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
@@ -60,6 +61,27 @@ licensesRoute.get('/', requirePermission('license.view'), zValidator('query', li
   return c.json(ok(reqId, toPaginatedData(data ?? [], count, page, pageSize)));
 });
 
+/**
+ * สรุปเงินที่เรียกคืนได้จากสิทธิ์ที่ไม่ได้ใช้ (design handoff 3e)
+ *
+ * ต้องเป็น endpoint แยกไม่ใช่แถมไปกับ GET / เพราะรายการหลักแบ่งหน้า ถ้าคำนวณจากหน้าที่โหลดมา
+ * ตัวเลขจะเปลี่ยนไปเรื่อยตามหน้าที่เปิดอยู่ ซึ่งอ่านผิดได้ง่ายมากในหน้าที่ใช้ตัดสินใจเรื่องงบประมาณ
+ *
+ * ต้องอยู่ก่อน '/:id' ไม่งั้น Hono จะจับ 'summary' เป็น id แล้วตอบ 404
+ */
+licensesRoute.get('/summary', requirePermission('license.view'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+
+  const { data, error } = await supabase
+    .from('software_licenses')
+    .select('id, software_name, status, total_qty, used_qty, unit_price')
+    .eq('status', 'Active');
+
+  if (error) return dbFailJson(c, 'LICENSE_SUMMARY_FAILED', error);
+  return c.json(ok(reqId, buildLicenseCostSummary((data ?? []) as unknown as LicenseCostRow[])));
+});
+
 licensesRoute.get('/:id', requirePermission('license.view'), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -94,6 +116,7 @@ licensesRoute.post('/', requirePermission('license.manage'), zValidator('json', 
       vendor_id: normalized.vendorId,
       contract_id: body.contractId || null,
       assigned_to: body.assignedTo ?? null,
+      unit_price: body.unitPrice ?? null,
       expiry_notice_days: body.expiryNoticeDays,
       notes: body.notes ?? null,
       created_by: actorId,
@@ -154,6 +177,7 @@ licensesRoute.patch('/:id', requirePermission('license.manage'), zValidator('jso
   if (body.vendorId !== undefined || body.contractId !== undefined) patch.vendor_id = normalized.vendorId;
   if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.assignedTo !== undefined) patch.assigned_to = body.assignedTo;
+  if (body.unitPrice !== undefined) patch.unit_price = body.unitPrice;
   if (body.expiryNoticeDays !== undefined) patch.expiry_notice_days = body.expiryNoticeDays;
   if (body.notes !== undefined) patch.notes = body.notes;
   if (body.status !== undefined) patch.status = body.status;

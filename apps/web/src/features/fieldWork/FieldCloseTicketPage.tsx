@@ -13,6 +13,8 @@ import { useAuth } from '../../stores/authContext';
 import type { InventoryItem } from '../../types/assets';
 import type { PaginatedResult } from '../../types/admin';
 import type { FieldCloseTicket, FieldOutcome, PartUsage } from '../../types/fieldWork';
+import type { CauseCode, CreatedKnowledgeArticle } from '../../types/causeCodes';
+import { cn } from '../../utils/cn';
 
 /**
  * จอ 2 ของ Mobile Field Workflow (design handoff 3j) — ปิดงานตั้งแต่ยังยืนอยู่หน้าเครื่อง
@@ -32,6 +34,8 @@ export function FieldCloseTicketPage() {
   const [outcome, setOutcome] = useState<string>('');
   const [resolution, setResolution] = useState('');
   const [rootCause, setRootCause] = useState('');
+  const [causeCodeId, setCauseCodeId] = useState('');
+  const [createArticle, setCreateArticle] = useState(false);
   const [outsourceName, setOutsourceName] = useState('');
   const [parts, setParts] = useState<PartUsage[]>([]);
   const [photos, setPhotos] = useState<File[]>([]);
@@ -40,6 +44,7 @@ export function FieldCloseTicketPage() {
   const [error, setError] = useState<string | null>(null);
 
   const canManageInventory = hasPermission('inventory.manage');
+  const canManageKnowledge = hasPermission('knowledge.manage');
 
   const ticketQuery = useQuery({
     queryKey: ['tickets', id, 'field-close'],
@@ -54,6 +59,16 @@ export function FieldCloseTicketPage() {
         `/api/v1/inventory-items?pageSize=10&status=active${partSearch ? `&search=${encodeURIComponent(partSearch)}` : ''}`,
       ),
     enabled: canManageInventory && partSearch.trim().length >= 2,
+  });
+
+  // ทะเบียนสาเหตุกรองตามหมวดของใบงาน + สาเหตุกลางที่ใช้ได้ทุกหมวด (API เป็นคนรวมให้)
+  const causeCodesQuery = useQuery({
+    queryKey: ['cause-codes', ticketQuery.data?.category_id ?? null],
+    queryFn: () =>
+      apiFetch<CauseCode[]>(
+        `/api/v1/cause-codes${ticketQuery.data?.category_id ? `?categoryId=${ticketQuery.data.category_id}` : ''}`,
+      ),
+    enabled: Boolean(ticketQuery.data),
   });
 
   const outcomes = useMemo(() => ticketQuery.data?.field_outcomes ?? [], [ticketQuery.data]);
@@ -103,13 +118,26 @@ export function FieldCloseTicketPage() {
           status: selected.status,
           resolution: resolution.trim() || undefined,
           rootCause: rootCause.trim() || undefined,
+          causeCodeId: causeCodeId || null,
           outsourceName: selected.status === 'ส่งต่อ Outsource' ? outsourceName.trim() : undefined,
         }),
       });
+      setProgress((current) => [...current, 'อัปเดตสถานะและแจ้งผู้ใช้']);
+
+      // 4) สร้างบทความร่างจากใบงานนี้ — ทำเป็นขั้นสุดท้ายเพราะถ้าล้ม งานก็ปิดไปเรียบร้อยแล้ว
+      //    ผู้ใช้จึงเสียแค่บทความ ไม่ใช่เสียการปิดงานทั้งใบ
+      if (createArticle) {
+        const article = await apiFetch<CreatedKnowledgeArticle>('/api/v1/knowledge/articles/from-ticket', {
+          method: 'POST',
+          body: JSON.stringify({ ticketId: id }),
+        });
+        setProgress((current) => [...current, `สร้างบทความร่าง ${article.article_code}`]);
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['tickets'] });
       void queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
+      void queryClient.invalidateQueries({ queryKey: ['knowledge'] });
       navigate(`/tickets/${id}`);
     },
     onError: (reason: unknown) => {
@@ -198,9 +226,70 @@ export function FieldCloseTicketPage() {
                   className="min-h-11 w-full rounded-[8px] border border-hairline-control px-3 text-[13px] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-100"
                 />
                 <p className="mt-1 text-[10.5px] text-slate-400 dark:text-slate-500">
-                  ระบบยังไม่มีทะเบียนสาเหตุมาตรฐานให้เลือกเป็นชิป จึงบันทึกเป็นข้อความไว้ในใบงานตามจริง
+                  รายละเอียดเฉพาะหน้างานอยู่ในช่องนี้ ส่วนการจัดกลุ่มเลือกจากรหัสสาเหตุด้านล่าง
                 </p>
               </div>
+
+              <div>
+                <p className="mb-1.5 text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">จัดกลุ่มสาเหตุ</p>
+                {causeCodesQuery.isLoading && <p className="text-[11.5px] text-slate-400">กำลังโหลดทะเบียนสาเหตุ...</p>}
+                {causeCodesQuery.isError && (
+                  <p className="text-[11.5px] text-danger-700 dark:text-red-300" role="alert">
+                    โหลดทะเบียนสาเหตุไม่สำเร็จ ยังปิดงานต่อได้ แต่งานนี้จะไม่ถูกจัดกลุ่มในรายงาน
+                  </p>
+                )}
+                {causeCodesQuery.data?.length === 0 && (
+                  <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
+                    ยังไม่มีรหัสสาเหตุสำหรับงานหมวดนี้ ผู้ดูแลเพิ่มได้ที่ Master Data
+                  </p>
+                )}
+                {!!causeCodesQuery.data?.length && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {causeCodesQuery.data.map((cause) => {
+                      const active = causeCodeId === cause.id;
+                      return (
+                        <button
+                          key={cause.id}
+                          type="button"
+                          aria-pressed={active}
+                          title={cause.description ?? undefined}
+                          onClick={() => setCauseCodeId(active ? '' : cause.id)}
+                          className={cn(
+                            'min-h-9 rounded-[7px] border px-3 text-[12px] font-semibold transition-colors',
+                            active
+                              ? 'border-primary-700 bg-primary-700 text-white'
+                              : 'border-hairline-control text-slate-600 hover:bg-primary-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-primary-900/30',
+                          )}
+                        >
+                          {cause.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="mt-1 text-[10.5px] text-slate-400 dark:text-slate-500">
+                  เลือกได้หนึ่งข้อ ใช้ตอบว่าปัญหาชนิดใดเกิดซ้ำบ่อยที่สุด กดซ้ำเพื่อยกเลิกการเลือก
+                </p>
+              </div>
+
+              {canManageKnowledge && (
+                <label className="flex items-start gap-2.5 rounded-[8px] border border-hairline bg-surface-muted p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                  <input
+                    type="checkbox"
+                    checked={createArticle}
+                    onChange={(event) => setCreateArticle(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary-700"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-semibold text-ink-heading dark:text-slate-100">
+                      สร้างบทความฐานความรู้จากงานนี้
+                    </span>
+                    <span className="mt-0.5 block text-[10.5px] leading-4 text-slate-500 dark:text-slate-400">
+                      คัดอาการและวิธีแก้จากใบงานไปเป็น <strong>ร่าง</strong> ให้กลับไปเรียบเรียงและตัดข้อมูลภายในออกก่อนเผยแพร่
+                    </span>
+                  </span>
+                </label>
+              )}
             </CardBody>
           </Card>
 

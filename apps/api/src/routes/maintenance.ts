@@ -36,7 +36,7 @@ export const pmTemplatesRoute = new Hono<AppEnv>();
 pmTemplatesRoute.use('*', requireAuth);
 
 const PLAN_SELECT =
-  'id, asset_id, plan_date, actual_date, status, recurrence, next_due_date, technician_id, checklist_json, ' +
+  'id, asset_id, plan_date, actual_date, status, work_type, recurrence, next_due_date, technician_id, checklist_json, ' +
   'result, notes, template_id, recurring_parent_id, vendor_id, contract_id, created_at, updated_at, ' +
   'asset:assets(id, asset_code, name), technician:employees(id, first_name_th, last_name_th, nickname), ' +
   'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
@@ -70,7 +70,7 @@ maintenancePlansRoute.get(
   async (c) => {
     const supabase = c.get('supabase');
     const reqId = c.get('requestId');
-    const { page, pageSize, status, assetId } = c.req.valid('query');
+    const { page, pageSize, status, assetId, workType } = c.req.valid('query');
 
     let query = supabase
       .from('maintenance_plans')
@@ -80,6 +80,7 @@ maintenancePlansRoute.get(
 
     if (status) query = query.eq('status', status);
     if (assetId) query = query.eq('asset_id', assetId);
+    if (workType) query = query.eq('work_type', workType);
 
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'MAINTENANCE_LIST_FAILED', 'ดึงแผน PM ไม่สำเร็จ'), 400);
@@ -149,6 +150,7 @@ maintenancePlansRoute.post(
       .insert({
         asset_id: body.assetId,
         plan_date: body.planDate,
+        work_type: body.workType ?? 'PM',
         recurrence: body.recurrence ?? 'ครั้งเดียว',
         technician_id: body.technicianId ?? null,
         vendor_id: body.vendorId ?? null,

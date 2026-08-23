@@ -30,7 +30,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
-import { LICENSE_STATUSES, type SoftwareLicense } from '../../types/assets';
+import { LICENSE_STATUSES, type LicenseCostSummary, type SoftwareLicense } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
 import { daysUntilLicenseExpiry, licenseHealth, remainingSeats, utilizationPercent, type LicenseHealth } from './licenseDisplay';
@@ -64,6 +64,7 @@ interface LicenseFormState {
   vendorId: string;
   contractId: string;
   assignedTo: string;
+  unitPrice: string;
   expiryNoticeDays: string;
   notes: string;
 }
@@ -79,6 +80,7 @@ function initialForm(license?: SoftwareLicense): LicenseFormState {
     vendorId: license?.vendor_id ?? '',
     contractId: license?.contract_id ?? '',
     assignedTo: license?.assigned_to ?? '',
+    unitPrice: license?.unit_price === null || license?.unit_price === undefined ? '' : String(license.unit_price),
     expiryNoticeDays: String(license?.expiry_notice_days ?? 30),
     notes: license?.notes ?? '',
   };
@@ -132,6 +134,8 @@ function LicenseForm({
           vendorId: form.vendorId,
           contractId: form.contractId,
           assignedTo: form.assignedTo,
+          // ช่องว่างส่ง '' ไป ฝั่ง validator แปลงเป็น null = ยังไม่ได้บันทึกราคา ไม่ใช่ราคา 0
+          unitPrice: form.unitPrice.trim(),
           expiryNoticeDays,
           notes: form.notes,
         }),
@@ -184,6 +188,11 @@ function LicenseForm({
           <label className="text-xs font-semibold">
             ใช้แล้ว
             <input required type="number" min="0" step="1" data-testid="lic-form-used" value={form.usedQty} onChange={(event) => set('usedQty', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            ราคาต่อสิทธิ์ (บาท)
+            <input type="number" min="0" step="0.01" data-testid="lic-form-unit-price" value={form.unitPrice} onChange={(event) => set('unitPrice', event.target.value)} className={fieldClass} />
+            <span className="mt-1 block text-[10.5px] font-normal text-slate-400 dark:text-slate-500">เว้นว่างได้ถ้ายังไม่รู้ราคา — การ์ดสรุปจะบอกว่ายังไม่รวมรายการนี้</span>
           </label>
           <label className="text-xs font-semibold">
             วันที่เริ่มต้น
@@ -329,6 +338,11 @@ export function LicensesPage() {
   const usedSeats = items.reduce((sum, item) => sum + Number(item.used_qty), 0);
   const overallUtilization = utilizationPercent(usedSeats, totalSeats);
   const overusedItems = items.filter((item) => Number(item.used_qty) > Number(item.total_qty));
+  const costQuery = useQuery({
+    queryKey: ['software-licenses', 'summary'],
+    queryFn: () => apiFetch<LicenseCostSummary>('/api/v1/software-licenses/summary'),
+  });
+
   const unusedSeats = items.reduce((sum, item) => sum + Math.max(0, Number(item.total_qty) - Number(item.used_qty)), 0);
   const underusedItems = items.filter((item) => Number(item.total_qty) > 0 && Number(item.used_qty) / Number(item.total_qty) <= 0.75);
   const resetForm = () => { setShowForm(false); setEditing(undefined); };
@@ -479,6 +493,28 @@ export function LicensesPage() {
           <p className="mt-3 text-sm font-bold">สิทธิ์ที่ยังไม่ถูกใช้งาน</p>
           <p className="mt-1 font-mono text-3xl font-bold text-blue-300">{unusedSeats.toLocaleString('th-TH')}</p>
           <p className="mt-1 text-xs leading-5 text-white/60">จาก {underusedItems.length} รายการที่ใช้งานไม่เกิน 75% ควรทบทวนก่อนรอบต่ออายุครั้งถัดไป</p>
+
+          {/* เงินที่เรียกคืนได้ (design handoff 3e) — ขึ้นเฉพาะเมื่อมีลิขสิทธิ์ที่บันทึกราคาไว้จริง
+              ถ้ายังไม่มีใครกรอกราคาเลย การแสดง "฿0" จะอ่านได้ว่าไม่มีอะไรให้ประหยัด ซึ่งไม่จริง */}
+          {costQuery.data && costQuery.data.pricedCount > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="text-sm font-bold">เรียกคืนได้ถ้าคืนสิทธิ์ที่ไม่ได้ใช้</p>
+              <p className="mt-1 font-mono text-3xl font-bold text-emerald-300">
+                ฿{costQuery.data.reclaimableAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/60">
+                คิดจาก {costQuery.data.reclaimableSeats.toLocaleString('th-TH')} สิทธิ์ใน {costQuery.data.pricedCount.toLocaleString('th-TH')} รายการที่บันทึกราคาไว้
+                {costQuery.data.unpricedCount > 0 && (
+                  <> · <span className="text-amber-300">ยังไม่รวมอีก {costQuery.data.unpricedCount.toLocaleString('th-TH')} รายการที่ยังไม่ได้ใส่ราคา</span></>
+                )}
+              </p>
+            </div>
+          )}
+          {costQuery.data && costQuery.data.pricedCount === 0 && (
+            <p className="mt-4 border-t border-white/10 pt-3 text-xs leading-5 text-white/50">
+              ยังคำนวณเงินที่เรียกคืนได้ไม่ได้ เพราะยังไม่มีลิขสิทธิ์รายการใดบันทึกราคาต่อสิทธิ์ไว้
+            </p>
+          )}
           <button type="button" onClick={() => { setStatusFilter('Active'); setTypeFilter(''); }} className="mt-4 w-full rounded-lg bg-primary-600 px-3 py-2 text-xs font-bold hover:bg-primary-700">ตรวจรายการที่ใช้งานอยู่</button>
         </div>
 

@@ -34,7 +34,7 @@ import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { AssetOption, ChecklistItem, MaintenancePlan, PmTemplate } from '../../types/assets';
-import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES } from '../../types/assets';
+import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES, PM_WORK_TYPES } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
@@ -125,6 +125,7 @@ function CreatePlanForm({
   const [assetId, setAssetId] = useState('');
   const [planDate, setPlanDate] = useState('');
   const [recurrence, setRecurrence] = useState<(typeof PM_RECURRENCES)[number]>('ครั้งเดียว');
+  const [workType, setWorkType] = useState<(typeof PM_WORK_TYPES)[number]>('PM');
   const [technicianId, setTechnicianId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [vendorId, setVendorId] = useState('');
@@ -140,6 +141,7 @@ function CreatePlanForm({
         body: JSON.stringify({
           assetId,
           planDate,
+          workType,
           recurrence,
           technicianId: technicianId || undefined,
           templateId: templateId || undefined,
@@ -179,6 +181,11 @@ function CreatePlanForm({
       </FormField>
       <FormField label="วันที่วางแผน" required>
         <input data-testid="pm-create-date" type="date" value={planDate} onChange={(event) => setPlanDate(event.target.value)} className={fieldClass} />
+      </FormField>
+      <FormField label="ชนิดงาน">
+        <select data-testid="pm-create-work-type" value={workType} onChange={(event) => setWorkType(event.target.value as (typeof PM_WORK_TYPES)[number])} className={fieldClass}>
+          {PM_WORK_TYPES.map((value) => <option key={value}>{value}</option>)}
+        </select>
       </FormField>
       <FormField label="รอบทำซ้ำ">
         <select data-testid="pm-create-recurrence" value={recurrence} onChange={(event) => setRecurrence(event.target.value as (typeof PM_RECURRENCES)[number])} className={fieldClass}>
@@ -450,17 +457,27 @@ function AnalyticsPanel({ plans }: { plans: MaintenancePlan[] }) {
  * จากปฏิทิน ทั้งที่คำนวณได้จริงจาก plan_date เทียบวันนี้
  */
 const PM_CHIP_LEGEND = [
-  { label: 'ตามแผน', dot: 'bg-primary-700' },
+  { label: 'PM ตามรอบ', dot: 'bg-primary-700' },
+  { label: 'ลงพื้นที่', dot: 'bg-teal-600' },
+  { label: 'Change window', dot: 'bg-purple-600' },
   { label: 'เลยกำหนด', dot: 'bg-danger-600' },
   { label: 'ดำเนินการแล้ว', dot: 'bg-success-600' },
   { label: 'ยกเลิก', dot: 'bg-slate-400' },
 ] as const;
 
+/** สีตามชนิดงาน ค่าตรงกับ 02-screens.md หัวข้อ 3c */
+const WORK_TYPE_CHIP: Record<string, string> = {
+  PM: 'bg-primary-50 text-primary-700 dark:bg-primary-900/30',
+  'ลงพื้นที่': 'bg-teal-50 text-teal-600 dark:bg-teal-700/30 dark:text-teal-100',
+  'Change window': 'bg-purple-50 text-purple-600 dark:bg-purple-700/30 dark:text-purple-100',
+};
+
 function planChipClass(plan: MaintenancePlan, today: string): string {
+  // สถานะชนะชนิดงาน เพราะ "เลยกำหนด" คือสิ่งที่ต้องเห็นก่อนเสมอเวลากวาดสายตาดูทั้งเดือน
   if (plan.status === 'ดำเนินการแล้ว') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30';
   if (plan.status === 'ยกเลิก') return 'bg-slate-100 text-slate-500 line-through dark:bg-slate-800 dark:text-slate-400';
   if (plan.plan_date < today) return 'bg-danger-50 text-danger-700 dark:bg-red-900/30 dark:text-red-200';
-  return 'bg-primary-50 text-primary-700 dark:bg-primary-900/30';
+  return WORK_TYPE_CHIP[plan.work_type] ?? WORK_TYPE_CHIP.PM;
 }
 
 function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: MaintenancePlan[]; month: Date; onMonthChange: (date: Date) => void; onSelect: (plan: MaintenancePlan) => void }) {

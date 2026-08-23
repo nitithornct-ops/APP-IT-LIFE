@@ -67,6 +67,8 @@ export const updateTicketSchema = z.object({
   resolution: z.string().trim().max(2000).optional(),
   /** สาเหตุที่แท้จริงของปัญหา — คนละอย่างกับ resolution ซึ่งเป็นสิ่งที่ทำไปเพื่อแก้ */
   rootCause: z.string().trim().max(500).optional(),
+  /** รหัสสาเหตุจากทะเบียนกลาง ใช้จัดกลุ่มสถิติ ส่วนรายละเอียดยังอยู่ใน rootCause เหมือนเดิม */
+  causeCodeId: z.string().uuid().nullable().optional(),
   outsourceName: z.string().trim().max(200).optional(),
   outsourceVendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
   outsourceIssueNo: z.string().trim().max(120).optional(),

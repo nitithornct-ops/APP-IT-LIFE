@@ -11,7 +11,7 @@ import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import {
-  createKnowledgeArticleSchema, listKnowledgeQuerySchema, publicKnowledgeQuerySchema,
+  createArticleFromTicketSchema, createKnowledgeArticleSchema, listKnowledgeQuerySchema, publicKnowledgeQuerySchema,
   publicKnowledgeViewSchema, setKnowledgeStatusSchema, updateKnowledgeArticleSchema,
 } from '../validators/knowledge';
 
@@ -87,6 +87,70 @@ knowledgeRoute.post('/articles', requirePermission('knowledge.manage'), zValidat
   }).select(ARTICLE_SELECT).single();
   if (error) return dbFailJson(c, 'KNOWLEDGE_CREATE_FAILED', error);
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'knowledge', targetTable: 'knowledge_articles', targetId: data.id, detail: { articleCode: data.article_code, status: body.status }, requestId: reqId });
+  return c.json(ok(reqId, data), 201);
+});
+
+/**
+ * สร้างบทความร่างจากใบงานที่แก้เสร็จแล้ว (design handoff 3j จอ 2 "ชิปสาเหตุ (สร้าง KB)")
+ *
+ * เนื้อหาคัดจากใบงานฝั่งนี้ทั้งหมด ผู้เรียกส่งมาได้แค่ ticketId — บทความที่อ้างว่ามาจากใบงานหนึ่ง
+ * ต้องมีเนื้อหาตรงกับใบงานนั้นจริง ไม่งั้นการตามกลับไปตรวจว่ายังถูกต้องอยู่ไหมก็ไร้ความหมาย
+ *
+ * สร้างเป็น "ร่าง" เสมอ ไม่เผยแพร่ทันที เพราะบันทึกการแก้งานหนึ่งครั้งยังไม่ใช่บทความที่คนอื่นอ่านรู้เรื่อง
+ * ต้องมีคนเรียบเรียงก่อน และใบงานมักมีชื่อผู้แจ้งหรือรายละเอียดภายในที่ไม่ควรเผยแพร่
+ */
+knowledgeRoute.post('/articles/from-ticket', requirePermission('knowledge.manage'), zValidator('json', createArticleFromTicketSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId'); const actorId = c.get('userId'); const { ticketId } = c.req.valid('json'); const admin = createAdminClient(c.env);
+
+  const { data: ticket, error: ticketError } = await admin
+    .from('tickets')
+    .select('id, ticket_no, title, description, resolution, root_cause, category_id, status, cause_code:ticket_cause_codes!tickets_cause_code_id_fkey(code, name)')
+    .eq('id', ticketId)
+    .maybeSingle();
+  if (ticketError) return dbFailJson(c, 'KNOWLEDGE_FROM_TICKET_FAILED', ticketError);
+  if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบใบงานที่ระบุ'), 404);
+
+  // ต้องมีวิธีแก้บันทึกไว้แล้ว ไม่งั้นบทความจะว่างเปล่าและไม่ช่วยใครเลย
+  const solution = String(ticket.resolution ?? '').trim();
+  if (!solution) {
+    return c.json(fail(reqId, 'TICKET_RESOLUTION_REQUIRED', 'ใบงานนี้ยังไม่มีบันทึกวิธีแก้ไข จึงยังสร้างบทความไม่ได้'), 409);
+  }
+
+  // กันสร้างซ้ำ และบอกรหัสบทความเดิมไปด้วย ผู้ใช้จะได้ไปแก้ของเดิมแทนที่จะงงว่าทำไมกดไม่ได้
+  const { data: existing } = await admin.from('knowledge_articles').select('article_code').eq('source_ticket_id', ticketId).maybeSingle();
+  if (existing) {
+    const code = (existing as unknown as { article_code: string }).article_code;
+    return c.json(fail(reqId, 'KNOWLEDGE_ALREADY_EXISTS', `ใบงานนี้ถูกใช้สร้างบทความ ${code} ไปแล้ว`), 409);
+  }
+
+  // PostgREST คืนความสัมพันธ์แบบ embed เป็น array เมื่ออนุมานทิศทางไม่ได้ จึงต้องรับทั้งสองรูป
+  const rawCause = (ticket as unknown as { cause_code: unknown }).cause_code;
+  const causeCode = (Array.isArray(rawCause) ? rawCause[0] : rawCause) as { code: string; name: string } | null | undefined;
+  const symptomParts = [String(ticket.description ?? '').trim(), ticket.root_cause ? `สาเหตุที่พบ: ${String(ticket.root_cause).trim()}` : ''];
+
+  const { data, error } = await admin.from('knowledge_articles').insert({
+    article_code: articleCode(),
+    title: String(ticket.title).slice(0, 200),
+    category_id: ticket.category_id ?? null,
+    symptom: symptomParts.filter(Boolean).join('\n\n').slice(0, 5000) || null,
+    solution: solution.slice(0, 10000),
+    // รหัสสาเหตุกลายเป็น tag เพื่อให้ค้นบทความที่แก้ปัญหาชนิดเดียวกันเจอพร้อมกันทั้งหมด
+    tags: causeCode ? [causeCode.code.toLocaleLowerCase('th')] : [],
+    status: 'ร่าง',
+    source_ticket_id: ticketId,
+    author_id: actorId,
+    published_at: null,
+    created_by: actorId,
+    updated_by: actorId,
+  }).select(ARTICLE_SELECT).single();
+  if (error) return dbFailJson(c, 'KNOWLEDGE_FROM_TICKET_FAILED', error);
+
+  await writeAuditLog(c.env, {
+    actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'knowledge',
+    targetTable: 'knowledge_articles', targetId: data.id,
+    detail: { articleCode: data.article_code, sourceTicketNo: ticket.ticket_no }, requestId: reqId,
+  });
+
   return c.json(ok(reqId, data), 201);
 });
 

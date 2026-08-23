@@ -16,6 +16,7 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, TicketCategory } from '../../types/admin';
 import type { AccessSystem } from '../../types/accessRequests';
+import { CauseCodesSection } from './CauseCodesSection';
 
 const TICKET_PRIORITIES = ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'] as const;
 
@@ -542,6 +543,7 @@ export function MasterDataPage() {
       <TicketCategoriesSection />
       <AssetCategoriesSection />
       <AccessSystemsSection />
+      <CauseCodesSection />
     </div>
   );
 }

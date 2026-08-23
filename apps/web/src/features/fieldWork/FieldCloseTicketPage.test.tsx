@@ -24,6 +24,9 @@ const TICKET: FieldCloseTicket = {
   ticket_no: 'TCK-001',
   title: 'จอไม่แสดงภาพ',
   status: 'กำลังดำเนินการ',
+  category_id: 'cat-1',
+  resolution: null,
+  cause_code_id: null,
   field_outcomes: [
     { status: 'เสร็จสิ้น', label: 'ซ่อมเสร็จ รอผู้ใช้ยืนยัน', description: 'ส่งให้ผู้แจ้งตรวจรับ', requiresResolution: true, tone: 'success' },
     { status: 'รออะไหล่', label: 'รออะไหล่', description: 'หยุดนับ SLA ไว้ก่อน', requiresResolution: false, tone: 'warning' },
@@ -34,6 +37,15 @@ beforeEach(() => {
   mocks.permissions = ['inventory.manage'];
   mocks.apiFetch.mockImplementation((path: string) => {
     if (path.startsWith('/api/v1/tickets/ticket-1') && !path.includes('inventory')) return Promise.resolve(TICKET);
+    if (path.startsWith('/api/v1/cause-codes')) {
+      return Promise.resolve([
+        { id: 'cause-1', code: 'NET_CABLE', name: 'สายสัญญาณหลุด', description: null, category_id: 'cat-1', is_active: true, sort_order: 10, created_at: '', updated_at: '', category: null },
+        { id: 'cause-2', code: 'USER_ERROR', name: 'ผู้ใช้ใช้งานไม่ถูกวิธี', description: null, category_id: null, is_active: true, sort_order: 20, created_at: '', updated_at: '', category: null },
+      ]);
+    }
+    if (path.startsWith('/api/v1/knowledge/articles/from-ticket')) {
+      return Promise.resolve({ id: 'kb-1', article_code: 'KB-20260823-AA11', title: 'จอไม่แสดงภาพ', status: 'ร่าง' });
+    }
     if (path.startsWith('/api/v1/inventory-items?')) {
       return Promise.resolve({ items: [{ id: 'item-1', item_name: 'สาย HDMI', unit: 'เส้น', stock_qty: 5 }], total: 1, page: 1, pageSize: 10 });
     }
@@ -110,7 +122,16 @@ describe('FieldCloseTicketPage', () => {
     mocks.apiFetch.mockImplementation((path: string, init?: { method?: string }) => {
       if (init?.method === 'PATCH') return Promise.reject(new Error('เปลี่ยนสถานะไม่สำเร็จ'));
       if (path.startsWith('/api/v1/tickets/ticket-1')) return Promise.resolve(TICKET);
-      if (path.startsWith('/api/v1/inventory-items?')) {
+      if (path.startsWith('/api/v1/cause-codes')) {
+      return Promise.resolve([
+        { id: 'cause-1', code: 'NET_CABLE', name: 'สายสัญญาณหลุด', description: null, category_id: 'cat-1', is_active: true, sort_order: 10, created_at: '', updated_at: '', category: null },
+        { id: 'cause-2', code: 'USER_ERROR', name: 'ผู้ใช้ใช้งานไม่ถูกวิธี', description: null, category_id: null, is_active: true, sort_order: 20, created_at: '', updated_at: '', category: null },
+      ]);
+    }
+    if (path.startsWith('/api/v1/knowledge/articles/from-ticket')) {
+      return Promise.resolve({ id: 'kb-1', article_code: 'KB-20260823-AA11', title: 'จอไม่แสดงภาพ', status: 'ร่าง' });
+    }
+    if (path.startsWith('/api/v1/inventory-items?')) {
         return Promise.resolve({ items: [{ id: 'item-1', item_name: 'สาย HDMI', unit: 'เส้น', stock_qty: 5 }], total: 1, page: 1, pageSize: 10 });
       }
       return Promise.resolve({});
@@ -140,5 +161,63 @@ describe('FieldCloseTicketPage', () => {
     mocks.apiFetch.mockResolvedValue({ ...TICKET, status: 'ปิดงาน', field_outcomes: [] });
     renderPage();
     await waitFor(() => expect(screen.getByText(/บันทึกผลหน้างานต่อไม่ได้แล้ว/)).toBeInTheDocument());
+  });
+
+  it('sends the chosen cause code so the closure can be grouped in reports', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'สายสัญญาณหลุด' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('radio', { name: /ซ่อมเสร็จ รอผู้ใช้ยืนยัน/ }));
+    fireEvent.change(screen.getByLabelText(/สิ่งที่ทำไป/), { target: { value: 'เปลี่ยนสาย HDMI' } });
+    fireEvent.click(screen.getByRole('button', { name: 'สายสัญญาณหลุด' }));
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึกและแจ้งผู้ใช้' }));
+
+    await waitFor(() => {
+      const patch = mocks.apiFetch.mock.calls.find(([path, init]) => path === '/api/v1/tickets/ticket-1' && init?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(patch![1].body).causeCodeId).toBe('cause-1');
+    });
+  });
+
+  it('lets the technician unpick a cause chip instead of trapping the first tap', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'สายสัญญาณหลุด' })).toBeInTheDocument());
+
+    const chip = screen.getByRole('button', { name: 'สายสัญญาณหลุด' });
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('offers the knowledge draft only to accounts allowed to write articles', async () => {
+    mocks.permissions = ['inventory.manage'];
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'สายสัญญาณหลุด' })).toBeInTheDocument());
+    expect(screen.queryByLabelText(/สร้างบทความฐานความรู้จากงานนี้/)).not.toBeInTheDocument();
+
+    cleanup();
+    mocks.permissions = ['inventory.manage', 'knowledge.manage'];
+    renderPage();
+    await waitFor(() => expect(screen.getByText('สร้างบทความฐานความรู้จากงานนี้')).toBeInTheDocument());
+  });
+
+  it('creates the knowledge draft after the ticket is already closed, not before', async () => {
+    mocks.permissions = ['inventory.manage', 'knowledge.manage'];
+    renderPage();
+    await waitFor(() => expect(screen.getByText('สร้างบทความฐานความรู้จากงานนี้')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('radio', { name: /ซ่อมเสร็จ รอผู้ใช้ยืนยัน/ }));
+    fireEvent.change(screen.getByLabelText(/สิ่งที่ทำไป/), { target: { value: 'เปลี่ยนสาย HDMI' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึกและแจ้งผู้ใช้' }));
+
+    await waitFor(() => {
+      const paths = mocks.apiFetch.mock.calls.map(([path]) => path as string);
+      const patchAt = paths.findIndex((path, index) => path === '/api/v1/tickets/ticket-1' && mocks.apiFetch.mock.calls[index][1]?.method === 'PATCH');
+      const articleAt = paths.indexOf('/api/v1/knowledge/articles/from-ticket');
+      expect(patchAt).toBeGreaterThanOrEqual(0);
+      expect(articleAt).toBeGreaterThan(patchAt);
+    });
   });
 });

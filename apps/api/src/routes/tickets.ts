@@ -204,7 +204,7 @@ ticketsRoute.get('/:id', async (c) => {
 
   const { data: ticket, error } = await supabase
     .from('tickets')
-    .select('*, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name, email), assignee:profiles!tickets_assignee_id_fkey(full_name, email)')
+    .select('*, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name, email), assignee:profiles!tickets_assignee_id_fkey(full_name, email), cause_code:ticket_cause_codes!tickets_cause_code_id_fkey(id, code, name)')
     .eq('id', id)
     .maybeSingle();
 
@@ -770,6 +770,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
   if (body.rootCause !== undefined) patch.root_cause = body.rootCause || null;
+  if (body.causeCodeId !== undefined) patch.cause_code_id = body.causeCodeId || null;
 
   const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();

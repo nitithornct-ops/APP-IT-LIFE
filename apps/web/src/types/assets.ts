@@ -113,6 +113,9 @@ export interface AssetBorrowMovement extends AssetMovement {
 }
 
 // ===== Maintenance / PM =====
+/** ชนิดงานในปฏิทินบำรุงรักษา (design handoff 3c) — ตรงกับ migration 20260919100000 */
+export const PM_WORK_TYPES = ['PM', 'ลงพื้นที่', 'Change window'] as const;
+
 export const PM_STATUSES = ['วางแผน', 'กำลังดำเนินการ', 'ดำเนินการแล้ว', 'ยกเลิก'] as const;
 export const PM_RECURRENCES = ['ครั้งเดียว', 'รายเดือน', 'รายไตรมาส', 'รายปี'] as const;
 export const PM_CHECK_RESULTS = ['ผ่าน', 'ไม่ผ่าน', 'N/A'] as const;
@@ -130,6 +133,7 @@ export interface MaintenancePlan {
   plan_date: string;
   actual_date: string | null;
   status: (typeof PM_STATUSES)[number];
+  work_type: (typeof PM_WORK_TYPES)[number];
   recurrence: (typeof PM_RECURRENCES)[number];
   next_due_date: string | null;
   technician_id: string | null;
@@ -226,6 +230,8 @@ export interface SoftwareLicense {
   license_type: string | null;
   total_qty: number;
   used_qty: number;
+  /** ราคาต่อสิทธิ์ (บาท) — null = ยังไม่ได้บันทึกราคา ไม่ใช่ของฟรี */
+  unit_price: number | null;
   start_date: string | null;
   expire_date: string | null;
   vendor_name: string | null;
@@ -283,4 +289,13 @@ export interface EmployeeAssignment {
   assigned_date: string | null;
   returned_date: string | null;
   notes: string | null;
+}
+
+/** ตรงกับ apps/api/src/services/licenseCostService.ts */
+export interface LicenseCostSummary {
+  reclaimableAmount: number;
+  reclaimableSeats: number;
+  pricedCount: number;
+  unpricedCount: number;
+  topOpportunities: Array<{ id: string; softwareName: string; unusedSeats: number; unitPrice: number; reclaimableAmount: number }>;
 }
