@@ -24,6 +24,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal, Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -408,7 +409,7 @@ export function EmployeesPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="employees-page">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">รายชื่อพนักงานและทรัพย์สินที่ครอบครอง</h1><p className="text-sm text-slate-500 dark:text-slate-400">ทะเบียนพนักงาน อุปกรณ์ Software และสิทธิ์ใช้งานที่อยู่กับแต่ละคน</p></div>
+        <PageTitle eyebrow="บุคลากรและสิทธิ์ / พนักงาน" title="รายชื่อพนักงานและทรัพย์สินที่ครอบครอง" description="ทะเบียนพนักงาน อุปกรณ์ Software และสิทธิ์ใช้งานที่อยู่กับแต่ละคน" />
         <RequirePermission permission="employee.manage"><Button size="sm" onClick={() => setShowCreate(true)} data-testid="employee-create-toggle"><Plus className="h-4 w-4" aria-hidden="true" />เพิ่มพนักงาน</Button></RequirePermission>
       </div>
 

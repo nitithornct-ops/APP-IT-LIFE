@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { QueryError } from '../../components/ui/QueryError';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
@@ -187,10 +188,7 @@ export function InventoryPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Inventory — อะไหล่/วัสดุสิ้นเปลือง</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">เบิก-รับ-ตรวจนับสต็อกอะไหล่และวัสดุสิ้นเปลือง</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Inventory" title="Inventory — อะไหล่/วัสดุสิ้นเปลือง" description="เบิก-รับ-ตรวจนับสต็อกอะไหล่และวัสดุสิ้นเปลือง" />
         <RequirePermission permission="inventory.manage">
           <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="inv-create-toggle">
             <Plus className="h-4 w-4" aria-hidden="true" />

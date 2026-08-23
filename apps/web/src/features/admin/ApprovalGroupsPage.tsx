@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { ApprovalGroup, ApprovalGroupMember, Department, PaginatedResult, UserListItem } from '../../types/admin';
 
@@ -325,10 +326,7 @@ export function ApprovalGroupsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">กลุ่มอนุมัติ</h1>
-      <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">
-        ใช้กำหนดเส้นทางการอนุมัติสำหรับโมดูล Workflow / Access Request / Change ที่จะตามมา
-      </p>
+      <PageTitle eyebrow="บุคลากรและสิทธิ์ / กลุ่มอนุมัติ" title="กลุ่มอนุมัติ" description="ใช้กำหนดเส้นทางการอนุมัติสำหรับโมดูล Workflow / Access Request / Change ที่จะตามมา" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<Users2 className="h-5 w-5" />} label="กลุ่มทั้งหมด" value={groupsQuery.data?.length ?? 0} tone="primary" />

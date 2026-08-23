@@ -29,6 +29,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { downloadCsv } from '../../utils/csv';
 import { useAuth } from '../../stores/authContext';
@@ -387,7 +388,7 @@ export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: W
   if (failed) return <EmptyState icon={<CircleSlash2 className="h-9 w-9" />} title="โหลด Service Catalog ไม่สำเร็จ" description="กรุณาลองใหม่อีกครั้ง" />;
 
   return <div className="space-y-6" data-testid="service-catalog-workspace">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-extrabold text-slate-900 dark:text-white"><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</h1><p className="mt-1 text-sm text-slate-500">เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว</p></div>{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / คำขอบริการ" title={<><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</>} description="เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว" />{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Grid3X3 className="h-6 w-6" />} value={activeCatalog.length} label="บริการที่เลือกได้" tone="blue" /><StatCard icon={<Users className="h-6 w-6" />} value={openMine} label="คำขอของฉันที่เปิดอยู่" tone="slate" /><StatCard icon={<ClipboardCheck className="h-6 w-6" />} value={approvalItems.length} label="รอฉันอนุมัติ" tone="slate" /><StatCard icon={<AlarmClock className="h-6 w-6" />} value={overdue} label="คิวเกิน SLA" tone="teal" /></div>
     <div className="flex gap-2 overflow-x-auto border-b border-slate-200 dark:border-slate-700">{tabs.filter((item) => item.show).map((item) => <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`whitespace-nowrap border-b-[3px] px-5 py-3 text-sm font-bold transition ${tab === item.key ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}>{item.label}{item.count !== undefined && ` (${item.count})`}</button>)}</div>
     {tab === 'catalog' && <CatalogCards items={activeCatalog} canRequest={canRequest} onRequest={setRequestItem} />}

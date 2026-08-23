@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { StatCard } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Role } from '../../types/admin';
 
@@ -133,7 +134,7 @@ export function RolesPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">บทบาทและสิทธิ์</h1>
+        <PageTitle eyebrow="บุคลากรและสิทธิ์ / บทบาท" title="บทบาทและสิทธิ์" description="สร้างบทบาทและกำหนดสิทธิ์ที่ผูกกับบทบาทนั้น ก่อนนำไปมอบให้ผู้ใช้รายคน" />
         <div className="flex items-center gap-2">
           <Link
             to="/admin/permission-matrix"

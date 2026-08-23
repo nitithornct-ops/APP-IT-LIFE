@@ -29,6 +29,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, EmployeeOption, PaginatedResult } from '../../types/admin';
@@ -437,7 +438,33 @@ function AnalyticsPanel({ plans }: { plans: MaintenancePlan[] }) {
   );
 }
 
+/**
+ * สีชิปงานในปฏิทิน PM (design handoff 3c)
+ *
+ * สเปกระบุสี 4 ประเภท (PM / ลงพื้นที่ / Change window / เลยกำหนด) แต่ตาราง maintenance_plans
+ * ไม่มีคอลัมน์ประเภทงาน มีแต่ `status` กับ `plan_date` — จึงทำได้จริงเฉพาะสามสถานะล่างนี้
+ * "ลงพื้นที่" กับ "Change window" เป็นงานคนละโมดูล (features/changes) ถ้าจะรวมมาปฏิทินเดียวกัน
+ * ต้องเพิ่มคอลัมน์ประเภทงานก่อน — ไม่เดาสีให้ เพราะช่างจะอ่านผิดว่าเป็นงานคนละชนิด
+ *
+ * ที่สำคัญกว่าคือ "เลยกำหนด" ซึ่งเดิมใช้สีน้ำเงินเหมือน PM ปกติ ทำให้งานที่เลยวันแล้วมองไม่ออก
+ * จากปฏิทิน ทั้งที่คำนวณได้จริงจาก plan_date เทียบวันนี้
+ */
+const PM_CHIP_LEGEND = [
+  { label: 'ตามแผน', dot: 'bg-primary-700' },
+  { label: 'เลยกำหนด', dot: 'bg-danger-600' },
+  { label: 'ดำเนินการแล้ว', dot: 'bg-success-600' },
+  { label: 'ยกเลิก', dot: 'bg-slate-400' },
+] as const;
+
+function planChipClass(plan: MaintenancePlan, today: string): string {
+  if (plan.status === 'ดำเนินการแล้ว') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30';
+  if (plan.status === 'ยกเลิก') return 'bg-slate-100 text-slate-500 line-through dark:bg-slate-800 dark:text-slate-400';
+  if (plan.plan_date < today) return 'bg-danger-50 text-danger-700 dark:bg-red-900/30 dark:text-red-200';
+  return 'bg-primary-50 text-primary-700 dark:bg-primary-900/30';
+}
+
 function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: MaintenancePlan[]; month: Date; onMonthChange: (date: Date) => void; onSelect: (plan: MaintenancePlan) => void }) {
+  const today = localDateKey();
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const firstDay = new Date(year, monthIndex, 1).getDay();
@@ -462,8 +489,14 @@ function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: Mainte
       <div className="grid min-w-[760px] grid-cols-7">{cells.map((day, index) => {
         const key = day ? `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : '';
         const dayPlans = key ? dateMap.get(key) ?? [] : [];
-        return <div key={`${day ?? 'blank'}-${index}`} className="min-h-28 border-b border-r border-slate-100 p-2 last:border-r-0 dark:border-slate-700">{day && <><span className={cn('grid h-7 w-7 place-items-center rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300', key === localDateKey() && 'bg-primary-700 text-white')}>{day}</span><div className="mt-1 space-y-1">{dayPlans.slice(0, 3).map((plan) => <button key={plan.id} type="button" onClick={() => onSelect(plan)} className={cn('block w-full truncate rounded px-1.5 py-1 text-left text-[10px] font-semibold', plan.status === 'ดำเนินการแล้ว' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30' : plan.status === 'ยกเลิก' ? 'bg-red-50 text-red-600 dark:bg-red-900/30' : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30')}>{plan.asset?.asset_code ?? 'PM'} · {plan.asset?.name}</button>)}{dayPlans.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayPlans.length - 3} รายการ</p>}</div></>}</div>;
+        // ช่องแรกของ grid คือวันอาทิตย์เสมอ (หัวตารางไล่ อา.–ส.) ตำแหน่งใน grid จึงบอกวันในสัปดาห์ได้ตรง ๆ
+        const weekday = index % 7;
+        const isToday = key !== '' && key === today;
+        return <div key={`${day ?? 'blank'}-${index}`} className={cn('min-h-28 border-b border-r border-slate-100 p-2 last:border-r-0 dark:border-slate-700', (weekday === 0 || weekday === 6) && 'bg-slate-50/80 dark:bg-slate-900/30', isToday && 'bg-primary-50 shadow-[inset_0_0_0_2px_#1D4ED8] dark:bg-primary-900/20')}>{day && <><span className={cn('grid h-7 w-7 place-items-center rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300', isToday && 'bg-primary-700 text-white')}>{day}</span><div className="mt-1 space-y-1">{dayPlans.slice(0, 3).map((plan) => <button key={plan.id} type="button" onClick={() => onSelect(plan)} className={cn('block w-full truncate rounded px-1.5 py-1 text-left text-[10px] font-semibold', planChipClass(plan, today))}>{plan.asset?.asset_code ?? 'PM'} · {plan.asset?.name}</button>)}{dayPlans.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayPlans.length - 3} รายการ</p>}</div></>}</div>;
       })}</div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 px-4 py-2.5 text-[10.5px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        {PM_CHIP_LEGEND.map((entry) => <span key={entry.label} className="inline-flex items-center gap-1.5"><span className={cn('h-2 w-2 rounded-full', entry.dot)} />{entry.label}</span>)}
+      </div>
     </div>
   );
 }
@@ -533,7 +566,7 @@ export function MaintenancePage() {
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">PM / บำรุงรักษา</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">วางแผน ติดตาม และบันทึกผลการบำรุงรักษาทรัพย์สิน IT</p></div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / PM บำรุงรักษา" title="PM / บำรุงรักษา" description="วางแผน ติดตาม และบันทึกผลการบำรุงรักษาทรัพย์สิน IT" />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => setShowAnalytics(true)} aria-haspopup="dialog"><BarChart3 className="h-4 w-4" /> วิเคราะห์ผล</Button>
           <RequirePermission permission="maintenance.manage"><Button size="sm" variant="outline" onClick={() => setShowTemplates(true)} aria-haspopup="dialog"><ListChecks className="h-4 w-4" /> เทมเพลต</Button></RequirePermission>

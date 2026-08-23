@@ -17,6 +17,7 @@ import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { QueryError } from '../../components/ui/QueryError';
 import { Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -350,10 +351,7 @@ export function AssetsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ทะเบียนทรัพย์สิน IT</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Asset Register — ยืม/คืน/โอนย้าย/ส่งซ่อม/ตรวจนับ</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / ทะเบียนทรัพย์สิน" title="ทะเบียนทรัพย์สิน IT" description="Asset Register — ยืม/คืน/โอนย้าย/ส่งซ่อม/ตรวจนับ" />
         <RequirePermission permission="asset.create">
           <Button size="sm" onClick={() => setShowCreate(true)} data-testid="asset-create-toggle" aria-haspopup="dialog">
             <Plus className="h-4 w-4" aria-hidden="true" />

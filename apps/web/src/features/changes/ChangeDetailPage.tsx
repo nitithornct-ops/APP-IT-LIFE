@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { ChangeDetail } from '../../types/changes';
@@ -57,7 +58,7 @@ export function ChangeDetailPage() {
 
   return <div className="flex flex-col gap-4" data-testid="change-detail-page">
     <button type="button" onClick={() => navigate('/changes')} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700"><ArrowLeft className="h-4 w-4" /> กลับไป Change Management</button>
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-mono text-sm text-slate-500">{change.change_number}</p><h1 className="text-xl font-bold">{change.title}</h1><p className="text-sm text-slate-500">{change.system_affected}</p></div><div className="flex gap-2"><Badge variant={changeRiskTone[change.risk_level]}>Risk {change.risk_level}</Badge><Badge variant={changeStatusTone[change.status]}>{change.status}</Badge></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><PageTitle eyebrow={`บริการและกระบวนการ IT / ${change.change_number}`} title={<>{change.title}</>} description={<>{change.system_affected}</>} /><div className="flex gap-2"><Badge variant={changeRiskTone[change.risk_level]}>Risk {change.risk_level}</Badge><Badge variant={changeStatusTone[change.status]}>{change.status}</Badge></div></div>
     {change.status === 'ปฏิเสธ' ? <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"><ShieldAlert className="h-5 w-5" /> คำขอนี้ถูกปฏิเสธ: {change.approval_comment}</div> : <Workflow status={change.status} />}
 
     <div className="grid gap-4 lg:grid-cols-3">

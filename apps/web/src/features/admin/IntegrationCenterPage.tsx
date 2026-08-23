@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { IntegrationCenterResponse, IntegrationChannel, IntegrationEvent, IntegrationStatus } from '../../types/integrations';
 import { formatThaiDateTime } from '../../utils/date';
@@ -138,7 +139,7 @@ export function IntegrationCenterPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-primary-600">Admin · Integrations</p><h1 className="mt-1 text-2xl font-extrabold text-ink-heading dark:text-white">การเชื่อมต่อและแจ้งเตือน</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">ดูสถานะช่องทาง กฎที่ระบบใช้งานจริง และคิวส่งซ้ำ โดยไม่เปิดเผย token หรือ secret</p></div><Button variant="outline" disabled={overviewQuery.isFetching} onClick={() => void overviewQuery.refetch()}>{overviewQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}รีเฟรช</Button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="ตั้งค่าและบัญชี / การเชื่อมต่อ" title="การเชื่อมต่อและแจ้งเตือน" description="ดูสถานะช่องทาง กฎที่ระบบใช้งานจริง และคิวส่งซ้ำ โดยไม่เปิดเผย token หรือ secret" /><Button variant="outline" disabled={overviewQuery.isFetching} onClick={() => void overviewQuery.refetch()}>{overviewQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}รีเฟรช</Button></div>
       {overviewQuery.isLoading && <div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></div>}
       {overviewQuery.isError && <EmptyState icon={<ExternalLink className="h-10 w-10" />} title="โหลด Integration Center ไม่สำเร็จ" message={errorText(overviewQuery.error)} action={<Button onClick={() => void overviewQuery.refetch()}>ลองอีกครั้ง</Button>} />}
       {actionMutation.isError && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700 dark:bg-danger-950/30 dark:text-danger-200" role="alert">{errorText(actionMutation.error)}</p>}

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ThemeProvider } from '../stores/themeContext';
 import type { DashboardSummary } from '../types/dashboard';
 import { WarRoomPage } from './WarRoomPage';
 
@@ -38,7 +39,7 @@ describe('WarRoomPage', () => {
 
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter><WarRoomPage /></MemoryRouter>
+        <ThemeProvider><MemoryRouter><WarRoomPage /></MemoryRouter></ThemeProvider>
       </QueryClientProvider>,
     );
 

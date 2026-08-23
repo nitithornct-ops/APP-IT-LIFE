@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Department, EmployeeOption, PaginatedResult } from '../../types/admin';
@@ -208,10 +209,7 @@ export function AssetBorrowPage() {
   return (
     <div className="flex flex-col gap-5" data-testid="asset-borrow-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ยืม / คืน / โอนย้าย Asset</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ติดตามผู้ถือครอง กำหนดคืน และประวัติการเคลื่อนไหวทรัพย์สิน</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / ยืม-คืน Asset" title="ยืม / คืน / โอนย้าย Asset" description="ติดตามผู้ถือครอง กำหนดคืน และประวัติการเคลื่อนไหวทรัพย์สิน" />
         <RequirePermission permission="asset.transfer">
           <Button size="sm" onClick={() => setShowMovement(true)} data-testid="asset-borrow-create" aria-haspopup="dialog"><Plus className="h-4 w-4" />บันทึกการเคลื่อนไหว</Button>
         </RequirePermission>

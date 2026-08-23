@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { AssignableStaff } from '../../types/tickets';
@@ -454,13 +455,12 @@ export function ServiceRequestDetailPage() {
       </Link>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{request.service_name}</h1>
-          <div className="mt-1 flex items-center gap-2">
-            <Badge variant={statusTone[request.status]}>{request.status}</Badge>
-            <Badge variant="secondary">{request.priority}</Badge>
-          </div>
-        </div>
+        <PageTitle
+          eyebrow="บริการและกระบวนการ IT / คำขอบริการ"
+          title={request.service_name}
+          description="รายละเอียดคำขอบริการ ขั้นอนุมัติ และความคืบหน้าของงานที่เกี่ยวข้อง"
+          meta={<><Badge variant={statusTone[request.status]}>{request.status}</Badge><Badge variant="secondary">{request.priority}</Badge></>}
+        />
         {canCancel && <CancelButton requestId={request.id} />}
       </div>
 

@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { RequirePermission } from '../../components/RequirePermission';
 import { StatCard } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type {
   Department,
@@ -543,7 +544,7 @@ export function UsersPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">จัดการผู้ใช้งาน</h1>
+        <PageTitle eyebrow="บุคลากรและสิทธิ์ / ผู้ใช้งาน" title="จัดการผู้ใช้งาน" description="เชิญผู้ใช้เข้าระบบ กำหนดบทบาท และระงับบัญชีที่ไม่ได้ใช้งานแล้ว" />
         <button
           type="button"
           onClick={() => setShowInvite((v) => !v)}

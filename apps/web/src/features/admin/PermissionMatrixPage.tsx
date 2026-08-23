@@ -5,6 +5,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Permission, Role, RolePermissionEntry } from '../../types/admin';
 import { StatCard } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 
 type Effect = 'allow' | 'deny' | 'none';
 
@@ -132,11 +133,7 @@ export function PermissionMatrixPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-800 dark:text-slate-100">Permission Matrix</h1>
-      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        คลิกที่ช่องเพื่อสลับ ไม่ได้กำหนด → อนุญาต → ปฏิเสธ → ไม่ได้กำหนด แล้วกดบันทึกในคอลัมน์ของบทบาทนั้น
-        (บทบาท super_admin มีสิทธิ์เต็มเสมอโดยออกแบบ แก้ไขไม่ได้)
-      </p>
+      <div className="mb-4"><PageTitle eyebrow="บุคลากรและสิทธิ์ / Permission Matrix" title="Permission Matrix" description="คลิกที่ช่องเพื่อสลับ ไม่ได้กำหนด → อนุญาต → ปฏิเสธ → ไม่ได้กำหนด แล้วกดบันทึกในคอลัมน์ของบทบาทนั้น (บทบาท super_admin มีสิทธิ์เต็มเสมอโดยออกแบบ แก้ไขไม่ได้)" /></div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="บทบาท" value={roles.length} tone="primary" />

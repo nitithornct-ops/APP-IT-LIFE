@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { ReportDataset, ReportKey, ReportOverview } from '../../types/reports';
@@ -95,10 +96,7 @@ export function ReportCenterPage() {
   return (
     <div className="space-y-5" data-testid="report-center-page">
       <div className="flex flex-wrap items-start justify-between gap-3" data-print-hide>
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Report Center</h1>
-          <p className="mt-1 text-sm text-slate-500">รายงานมาตรฐานรวมสำหรับบริการ สินทรัพย์ ความมั่นคง และธรรมาภิบาล</p>
-        </div>
+        <PageTitle eyebrow="ธรรมาภิบาลและรายงาน / Report Center" title="Report Center" description="รายงานมาตรฐานรวมสำหรับบริการ สินทรัพย์ ความมั่นคง และธรรมาภิบาล" />
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs font-semibold text-slate-500">
             ช่วงข้อมูล

@@ -9,6 +9,7 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -329,10 +330,7 @@ export function ProblemsPage() {
   return (
     <div className="flex flex-col gap-5" data-testid="problems-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Problem / Known Error</h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400">RCA · Workaround · Permanent fix · เชื่อม Ticket/Incident/KB</p>
-        </div>
+        <PageTitle eyebrow="บริการและกระบวนการ IT / Problem" title="Problem / Known Error" description="RCA · Workaround · Permanent fix · เชื่อม Ticket/Incident/KB" />
         <RequirePermission permission="problem.manage">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => { setKnownForm(false); setProblemForm(true); }} data-testid="problem-create-toggle"><Plus className="h-4 w-4" /> เพิ่ม Problem</Button>

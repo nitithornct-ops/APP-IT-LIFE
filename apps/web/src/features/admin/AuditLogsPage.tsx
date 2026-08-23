@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AuditLogItem, AuditOverview, LoginLogItem, PaginatedResult } from '../../types/admin';
 import { formatThaiDate } from '../../utils/date';
@@ -148,10 +149,7 @@ export function AuditLogsPage() {
 
   return (
     <div className="space-y-5" data-testid="audit-log-page">
-      <div>
-        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Audit Log</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">ตรวจสอบกิจกรรมระบบและประวัติการเข้าสู่ระบบ ข้อมูลส่วนนี้อ่านอย่างเดียวและแก้ไขไม่ได้</p>
-      </div>
+      <PageTitle eyebrow="ธรรมาภิบาลและรายงาน / Audit Log" title="Audit Log" description="ตรวจสอบกิจกรรมระบบและประวัติการเข้าสู่ระบบ ข้อมูลส่วนนี้อ่านอย่างเดียวและแก้ไขไม่ได้" />
 
       {overviewQuery.data && (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

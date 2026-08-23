@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { LoadingState } from '../components/ui/AsyncState';
 import { QueryError } from '../components/ui/QueryError';
 import { apiFetch } from '../services/apiClient';
+import { useForcedTheme } from '../stores/themeContext';
 import type { DashboardSummary, DashboardTone } from '../types/dashboard';
 import { formatThaiDateTime } from '../utils/date';
 
@@ -17,6 +18,9 @@ const toneClass: Record<DashboardTone, { text: string; border: string; surface: 
 };
 
 export function WarRoomPage() {
+  // 4a กำหนดให้จอนี้เป็นโหมดมืดเสมอ ไม่ขึ้นกับธีมที่ผู้ใช้เลือก — บังคับที่ระดับ root ไม่ใช่แค่กล่องของหน้า
+  // ไม่งั้น Topbar สูง 46px จะยังขาวอยู่ กลายเป็นแถบสว่างคาดอยู่เหนือจอดำ
+  useForcedTheme('dark');
   const [now, setNow] = useState(() => new Date());
   const dashboard = useQuery({
     queryKey: ['dashboard', 'war-room'],
@@ -30,7 +34,7 @@ export function WarRoomPage() {
   }, []);
 
   return (
-    <div className="dark -m-3 min-h-[calc(100vh-46px)] bg-[#060d1c] p-4 text-[#e8eef9] sm:-mx-[18px] sm:-my-4 sm:p-[18px]" data-testid="war-room-page">
+    <div className="-m-3 min-h-[calc(100vh-46px)] bg-[#060d1c] p-4 text-[#e8eef9] sm:-mx-[18px] sm:-my-4 sm:p-[18px]" data-testid="war-room-page">
       <header className="flex min-h-[60px] flex-wrap items-center gap-4 border-b border-white/[.07] pb-3">
         <span className="grid h-9 w-9 place-items-center rounded-[9px] bg-blue-600 text-sm font-extrabold text-white shadow-[0_4px_12px_rgba(29,78,216,.4)]">L</span>
         <div><p className="font-mono text-[10px] font-semibold uppercase tracking-[.14em] text-white/35">LIFE IT OPERATIONS</p><h1 className="text-lg font-extrabold">War Room</h1></div>

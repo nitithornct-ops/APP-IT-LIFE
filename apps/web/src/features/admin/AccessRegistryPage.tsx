@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult, UserListItem } from '../../types/admin';
 import type { AccessRegistryEntry } from '../../types/accessRequests';
@@ -248,8 +249,7 @@ export function AccessRegistryPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ทะเบียนสิทธิ์ RBAC</h1>
-      <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">ทบทวน/เพิกถอนสิทธิ์ที่ IT ให้ไว้ และระงับสิทธิ์เมื่อพนักงานพ้นสภาพ</p>
+      <PageTitle eyebrow="บุคลากรและสิทธิ์ / ทะเบียนสิทธิ์ RBAC" title="ทะเบียนสิทธิ์ RBAC" description="ทบทวน/เพิกถอนสิทธิ์ที่ IT ให้ไว้ และระงับสิทธิ์เมื่อพนักงานพ้นสภาพ" />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<ListChecks className="h-5 w-5" />} label="สิทธิ์ในทะเบียน" value={registry.length} tone="primary" />
         <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="สิทธิ์ที่ใช้งาน" value={registry.filter((entry) => entry.status === 'active').length} tone="teal" />

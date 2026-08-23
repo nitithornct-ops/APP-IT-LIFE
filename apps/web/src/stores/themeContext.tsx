@@ -9,8 +9,12 @@ const DEFAULT_FONT_SCALE = 1;
 
 interface ThemeContextValue {
   theme: ThemeMode;
+  /** ธีมที่ผู้ใช้เลือกไว้ — ไม่เปลี่ยนตามหน้าที่บังคับโหมด ปุ่มสลับธีมจึงยังแสดงค่าที่ผู้ใช้ตั้งเสมอ */
   resolvedTheme: 'light' | 'dark';
+  /** ธีมที่แสดงผลจริงบนหน้าจอตอนนี้ (นับรวมหน้าที่บังคับโหมดแล้ว) */
+  appliedTheme: 'light' | 'dark';
   setTheme: (theme: ThemeMode) => void;
+  forceTheme: (mode: 'light' | 'dark' | null) => void;
   fontScale: number;
   increaseFontScale: () => void;
   decreaseFontScale: () => void;
@@ -38,6 +42,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
   const [fontScale, setFontScale] = useState<number>(readStoredFontScale);
   const [systemIsDark, setSystemIsDark] = useState(systemPrefersDark);
+  const [forcedTheme, setForcedTheme] = useState<'light' | 'dark' | null>(null);
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -47,10 +52,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resolvedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
+  // หน้าที่บังคับโหมดของตัวเอง (War Room) ชนะค่าที่ผู้ใช้เลือกเฉพาะระหว่างที่เปิดอยู่ แต่ไม่เขียนทับ
+  // ค่าที่จำไว้ พอออกจากหน้า ธีมเดิมของผู้ใช้จึงกลับมาเองโดยไม่ต้องคืนค่าด้วยมือ
+  const appliedTheme = forcedTheme ?? resolvedTheme;
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
-  }, [resolvedTheme]);
+    document.documentElement.classList.toggle('dark', appliedTheme === 'dark');
+  }, [appliedTheme]);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--font-scale', String(fontScale));
@@ -80,13 +88,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     () => ({
       theme,
       resolvedTheme,
+      appliedTheme,
       setTheme: handleSetTheme,
+      forceTheme: setForcedTheme,
       fontScale,
       increaseFontScale: () => stepFontScale(1),
       decreaseFontScale: () => stepFontScale(-1),
       resetFontScale,
     }),
-    [theme, resolvedTheme, fontScale],
+    [theme, resolvedTheme, appliedTheme, fontScale],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -100,4 +110,19 @@ export function useTheme(): ThemeContextValue {
     throw new Error('useTheme ต้องถูกเรียกภายใน <ThemeProvider>');
   }
   return ctx;
+}
+
+/**
+ * บังคับธีมของทั้งหน้าจอตลอดเวลาที่ component ยังอยู่ แล้วคืนค่าที่ผู้ใช้เลือกไว้ให้เองตอน unmount
+ *
+ * ใช้กับ War Room ซึ่ง design handoff 4a กำหนดให้เป็นโหมดมืดเสมอ ถ้าหน้าไหนทาสีเข้มเฉพาะกล่องของ
+ * ตัวเอง Topbar กับพื้นรอบ ๆ จะยังสว่างอยู่ กลายเป็นแถบขาวคาดกลางจอ
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useForcedTheme(mode: 'light' | 'dark') {
+  const { forceTheme } = useTheme();
+  useEffect(() => {
+    forceTheme(mode);
+    return () => forceTheme(null);
+  }, [forceTheme, mode]);
 }

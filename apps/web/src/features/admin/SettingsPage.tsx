@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { BrandingSettings, SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
@@ -126,7 +127,7 @@ export function SettingsPage() {
   return (
     <div className="space-y-5" data-testid="settings-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">System Settings</h1><p className="mt-1 text-sm text-slate-500">ค่ากลางแบบ allowlist พร้อม validation และ Audit Trail ทุกครั้งที่แก้ไข</p></div>
+        <PageTitle eyebrow="ตั้งค่าและบัญชี / System Settings" title="System Settings" description="ค่ากลางแบบ allowlist พร้อม validation และ Audit Trail ทุกครั้งที่แก้ไข" />
         <div className="relative min-w-[260px]"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาคีย์หรือคำอธิบาย..." className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-800" /></div>
       </div>
 

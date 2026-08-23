@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, TicketCategory } from '../../types/admin';
 import type { AccessSystem } from '../../types/accessRequests';
@@ -531,10 +532,7 @@ export function MasterDataPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Master Data</h1>
-      <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">
-        หมวดหมู่กลางที่โมดูล Ticket, Asset และคำขอสิทธิ์ระบบ จะอ้างอิงต่อ
-      </p>
+      <PageTitle eyebrow="ตั้งค่าและบัญชี / Master Data" title="Master Data" description="หมวดหมู่กลางที่โมดูล Ticket, Asset และคำขอสิทธิ์ระบบ จะอ้างอิงต่อ" />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<Database className="h-5 w-5" />} label="Master Data ทั้งหมด" value={totalMasterData} tone="primary" />
         <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="รายการที่ใช้งาน" value={activeMasterData} tone="teal" />

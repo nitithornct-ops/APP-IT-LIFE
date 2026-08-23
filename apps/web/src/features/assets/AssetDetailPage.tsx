@@ -11,6 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, Department, EmployeeOption } from '../../types/admin';
 import type { AssetDetail } from '../../types/assets';
@@ -586,10 +587,7 @@ export function AssetDetailPage() {
       </button>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{asset.name}</h1>
-          <p className="font-mono text-sm text-slate-500 dark:text-slate-400">{asset.asset_code}</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / ทะเบียนทรัพย์สิน" title={<>{asset.name}</>} description={<>{asset.asset_code}</>} />
         <div className="flex items-center gap-2">
           <Badge variant={assetStatusTone[asset.status]}>{asset.status}</Badge>
           <RequirePermission permission="asset.update">

@@ -15,6 +15,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { QueryError } from '../../components/ui/QueryError';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
@@ -275,10 +276,7 @@ export function CmdbPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">CMDB — Configuration Items</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ทะเบียนโครงสร้าง IT เชิงบริการ (Server/Database/Application ฯลฯ)</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / CMDB" title="CMDB — Configuration Items" description="ทะเบียนโครงสร้าง IT เชิงบริการ (Server/Database/Application ฯลฯ)" />
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setShowDataQuality((v) => !v)}>
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />

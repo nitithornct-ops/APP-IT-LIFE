@@ -25,6 +25,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -335,10 +336,7 @@ export function LicensesPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="licenses-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Software License</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ควบคุมจำนวนสิทธิ์ ผู้ใช้งาน สัญญา และรอบการต่ออายุซอฟต์แวร์</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Software License" title="Software License" description="ควบคุมจำนวนสิทธิ์ ผู้ใช้งาน สัญญา และรอบการต่ออายุซอฟต์แวร์" />
         {canManage && (
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" isLoading={checkExpiryMutation.isPending} data-testid="lic-check-expiry" onClick={() => { setNotice(null); checkExpiryMutation.mutate(); }}>

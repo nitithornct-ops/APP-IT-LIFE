@@ -209,40 +209,31 @@ textarea:focus-visible,
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Give older module headers the same calm service-platform surface without
-   changing their page structure or workflow. */
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1),
-.module-page-content[data-module-themed='true'] > :first-child > h1:first-child {
-  position: relative;
+/* หน้าที่ยังมีแถบเครื่องมือของตัวเองอยู่ (ปุ่ม/tab/ตัวกรอง) ไม่ได้เข้าโครง PageHeader ทั้งก้อน
+   จึงให้กรอบการ์ดชุดเดียวกับ .life-page-header ผ่าน PageTitle ที่หน้าเหล่านั้นใช้ร่วมกัน
+
+   ของเดิมเลือกด้วย :has(h1) แล้วบังคับสีข้างในด้วย !important ซึ่งกลบสี eyebrow ของ PageTitle ทิ้ง
+   เมื่อ PageTitle กำหนดขนาดและสีที่ถูกต้องไว้เองแล้ว ตรงนี้จึงเหลือแค่กรอบอย่างเดียว */
+.module-page-content[data-module-themed='true'] > :first-child > :first-child:not(.life-page-header):has(.life-page-title),
+.module-page-content[data-module-themed='true'] > :first-child > .life-page-title:first-child {
   margin-bottom: 1rem;
-  padding: 1rem 1.25rem;
+  padding: 0.85rem 1rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card) !important;
-  background: var(--color-surface) !important;
-  box-shadow: var(--shadow-card) !important;
-  color: var(--color-heading) !important;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
 
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1)::before,
-.module-page-content[data-module-themed='true'] > :first-child > h1:first-child::before {
-  position: absolute;
-  top: 0.85rem;
-  bottom: 0.85rem;
-  left: 0;
-  width: 4px;
-  border-radius: 0 999px 999px 0;
-  background: var(--life-green-500);
-  content: '';
-}
-
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1) h1,
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1) h1 svg,
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1) p {
-  color: inherit !important;
-}
-
-.module-page-content[data-module-themed='true'] > :first-child > :first-child:has(h1) p {
-  color: var(--color-text-secondary) !important;
+/* ขนาดหัวข้อของ PageTitle ต้องระบุที่นี่ ไม่ใช่ปล่อยให้ utility class ทำงาน
+   เพราะกฎรวม `.life-app h1` ด้านล่างมี specificity 0-1-1 เท่ากับ class เดี่ยวของ Tailwind ไม่ได้
+   แต่สูงกว่า และ index.css ไม่ได้อยู่ใน @layer ตัว clamp() จึงกลบ text-[22px] ทิ้งทุกครั้ง
+   ผลคือหัวข้อโตได้ถึง 32px บนจอกว้าง ทั้งที่ 01-design-tokens.md กำหนดไว้ 18–22px / 800 */
+.life-app .life-page-title h1,
+.life-public .life-page-title h1 {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 /* Typography and neutral utility migration ------------------------------ */

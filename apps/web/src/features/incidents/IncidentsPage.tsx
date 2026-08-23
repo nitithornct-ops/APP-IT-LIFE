@@ -15,6 +15,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { QueryError } from '../../components/ui/QueryError';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
@@ -139,7 +140,7 @@ export function IncidentsPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="incidents-page">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Incident Management</h1><p className="text-sm text-slate-500">รับแจ้ง ประเมินความเสี่ยง ตอบสนอง และกำกับการแจ้งภายนอก</p></div>
+        <PageTitle eyebrow="บริการและกระบวนการ IT / Incident" title="Incident Management" description="รับแจ้ง ประเมินความเสี่ยง ตอบสนอง และกำกับการแจ้งภายนอก" />
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => setShowMatrix((value) => !value)}><Grid3X3 className="h-4 w-4" /> Risk Matrix</Button>
           <RequirePermission permission="incident.create"><Button size="sm" onClick={() => setShowCreate((value) => !value)} data-testid="incident-create-toggle"><Plus className="h-4 w-4" /> แจ้งเหตุ</Button></RequirePermission>
