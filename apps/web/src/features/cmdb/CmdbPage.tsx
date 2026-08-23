@@ -4,7 +4,7 @@ import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, GitBranch, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
@@ -202,6 +202,47 @@ function DataQualityPanel() {
   );
 }
 
+function ImpactMap({ items }: { items: ConfigurationItem[] }) {
+  const layers = [
+    { label: 'BUSINESS SERVICE', types: ['Business Service'] },
+    { label: 'APPLICATION', types: ['Application', 'Website', 'API'] },
+    { label: 'COMPUTE & DATA', types: ['Server', 'VM', 'Database', 'Cloud Service'] },
+    { label: 'DEVICE & NETWORK', types: ['Network Device', 'Firewall', 'Switch', 'Access Point'] },
+  ];
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-center gap-2"><GitBranch className="h-4 w-4 text-primary-600" />ผังผลกระทบแบบเป็นชั้น</span>
+        <Link to="/cmdb/relationships" className="text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300">จัดการความสัมพันธ์ CI</Link>
+      </CardHeader>
+      <CardBody className="bg-slate-50/80 dark:bg-slate-950/30">
+        <p className="mb-4 text-xs text-slate-500">สรุปจาก CI ในหน้าปัจจุบัน เรียงจากบริการธุรกิจลงสู่อุปกรณ์ เพื่อให้เห็นจุดที่ควรเริ่มวิเคราะห์ผลกระทบ</p>
+        <div className="grid gap-0 lg:grid-cols-4">
+          {layers.map((layer, layerIndex) => {
+            const nodes = items.filter((item) => layer.types.includes(item.ci_type)).slice(0, 4);
+            return (
+              <div key={layer.label} className="relative min-w-0 border-b border-slate-200 py-3 last:border-b-0 lg:border-b-0 lg:border-r lg:px-3 lg:first:pl-0 lg:last:border-r-0 lg:last:pr-0 dark:border-slate-700">
+                <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-wider text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-100 text-primary-700 dark:bg-primary-950 dark:text-primary-300">{layerIndex + 1}</span>{layer.label}</div>
+                <div className="space-y-2">
+                  {nodes.map((node) => (
+                    <Link key={node.id} to={`/cmdb/${node.id}`} className={`block rounded-lg border bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:bg-slate-900 ${node.status === 'Degraded' ? 'border-red-300 shadow-[inset_3px_0_0_#dc2626] dark:border-red-800' : node.criticality === 'Critical' ? 'border-amber-300 dark:border-amber-800' : 'border-slate-200 dark:border-slate-700'}`}>
+                      <div className="flex items-center justify-between gap-2"><span className="truncate font-mono text-[10px] text-primary-700 dark:text-primary-300">{node.ci_code}</span><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${node.status === 'Active' ? 'bg-green-600' : node.status === 'Degraded' ? 'bg-red-600' : 'bg-amber-500'}`} /></div>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{node.name}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-slate-500">{node.environment} · {node.status}</p>
+                    </Link>
+                  ))}
+                  {nodes.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 px-2 py-4 text-center text-[11px] text-slate-400 dark:border-slate-700">ไม่พบ CI ชั้นนี้</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 export function CmdbPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showDataQuality, setShowDataQuality] = useState(false);
@@ -260,6 +301,8 @@ export function CmdbPage() {
         <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Critical (หน้านี้)" value={kpi.critical} tone="amber" />
         <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Degraded (หน้านี้)" value={kpi.degraded} tone="gray" />
       </div>
+
+      <ImpactMap items={items} />
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">

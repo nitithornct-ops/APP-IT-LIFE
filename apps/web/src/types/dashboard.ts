@@ -41,12 +41,36 @@ export interface DashboardBreakdown {
   items: Array<{ label: string; value: number }>;
 }
 
+export interface ExecutiveServiceAnalytics {
+  periodDays: number;
+  sampled: boolean;
+  kpis: {
+    received: number;
+    slaClosedPercent: number | null;
+    averageResponseMinutes: number | null;
+    averageResolutionHours: number | null;
+    csatAverage: number | null;
+    csatResponses: number;
+  };
+  heatmap: {
+    hours: number[];
+    days: Array<{ key: string; label: string; total: number; values: number[] }>;
+    maximum: number;
+    peak: { dayLabel: string; hour: number; count: number } | null;
+  };
+  openByStatus: Array<{ label: string; value: number }>;
+  backlogAge: Array<{ key: 'under1' | 'days1to3' | 'days4to7' | 'over7'; label: string; value: number }>;
+  categories: Array<{ label: string; value: number }>;
+  technicians: Array<{ name: string; closed: number; slaPercent: number | null; averageRating: number | null }>;
+}
+
 export interface DashboardSummary {
   mode: DashboardMode;
   metrics: DashboardMetric[];
   cards: DashboardCard[];
   upcoming: DashboardDueItem[];
   breakdowns: DashboardBreakdown[];
+  executiveAnalytics: ExecutiveServiceAnalytics | null;
   alertCount: number;
   leadDays: number;
   generatedAt: string;

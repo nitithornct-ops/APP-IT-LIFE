@@ -18,7 +18,7 @@ export function HealthPage({ standalone = true }: { standalone?: boolean } = {})
     <Wrapper
       className={
         standalone
-          ? 'mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center'
+          ? 'life-public flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center'
           : 'mx-auto flex max-w-md flex-col items-center gap-4 py-10 text-center'
       }
     >
@@ -62,7 +62,7 @@ export function HealthPage({ standalone = true }: { standalone?: boolean } = {})
       )}
 
       {standalone && (
-        <Link to="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+        <Link to="/" className="public-link text-sm">
           กลับหน้าแรก
         </Link>
       )}

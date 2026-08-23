@@ -127,7 +127,7 @@ describe('DataTable', () => {
     expect(written[0]).not.toContain(`,"=cmd`);
   });
 
-  it('mode="server" ไม่ render ช่องค้นหา ตัวกรอง ส่งออก และการแบ่งหน้าในตัว', () => {
+  it('mode="server" แยก search/filter/pagination ไปให้หน้า แต่ยังเลือกคอลัมน์และส่งออกหน้าปัจจุบันได้', () => {
     render(
       <DataTable mode="server">
         <thead><tr><th>ชื่อ</th></tr></thead>
@@ -137,9 +137,21 @@ describe('DataTable', () => {
 
     expect(screen.queryByRole('searchbox', { name: 'ค้นหาในตาราง' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'เลือกคอลัมน์สำหรับกรอง' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'ส่งออกหน้านี้' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /คอลัมน์/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ส่งออกหน้านี้' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /คอลัมน์/ })).toBeVisible();
     expect(screen.queryByRole('navigation', { name: 'การแบ่งหน้าตาราง' })).not.toBeInTheDocument();
+  });
+
+  it('mode="server" ปิดการส่งออกหน้าปัจจุบันได้เมื่อหน้ามีตัวส่งออกผลที่กรองแล้ว', () => {
+    render(
+      <DataTable mode="server" currentPageExport={false}>
+        <thead><tr><th>ชื่อ</th></tr></thead>
+        <tbody><tr><td>แถว 1</td></tr></tbody>
+      </DataTable>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'ส่งออกหน้านี้' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /คอลัมน์/ })).toBeVisible();
   });
 
   it('mode="server" แสดงทุกแถวที่หน้าส่งมาโดยไม่ตัดหน้าเอง', () => {

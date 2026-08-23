@@ -2,6 +2,7 @@ import { TICKET_RATING_CRITERIA, type TicketRatingCriterion, type TicketRatingDe
 import { AlertTriangle, ArrowLeft, Loader2, LogOut, MessageCircleQuestion, Ticket } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { PublicBrand } from '../components/PublicBrand';
 import { TicketRatingFields } from '../components/tickets/TicketRatingFields';
 import { ApiError } from '../services/apiClient';
 import { clearLineSessionToken, lineApiFetch } from '../services/lineApiClient';
@@ -31,10 +32,11 @@ interface TicketCategory { id: string; name: string; }
 
 type View = 'menu' | 'submit' | 'list' | 'detail';
 
-const CARD = 'w-full max-w-md rounded-lg bg-white p-5 shadow-sm dark:bg-slate-800';
-const BUTTON_PRIMARY = 'flex w-full items-center justify-center gap-2 rounded-md bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60';
-const BUTTON_SECONDARY = 'flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700';
-const INPUT = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100';
+const CARD = 'public-sheet w-full max-w-md p-5';
+const BUTTON_PRIMARY = 'public-primary-button flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60';
+const BUTTON_LINE = 'public-line-button flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium disabled:opacity-60';
+const BUTTON_SECONDARY = 'public-secondary-button flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium';
+const INPUT = 'public-field w-full px-3 py-2 text-sm focus:outline-none';
 
 export function LinePortalPage() {
   const [params] = useSearchParams();
@@ -81,15 +83,18 @@ export function LinePortalPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <main className="life-public flex min-h-screen items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 p-6 dark:bg-slate-900">
-      <h1 className="text-center text-base font-semibold text-slate-800 dark:text-slate-100">แจ้งซ่อม LIFE IT ผ่าน LINE</h1>
+    <main className="life-public flex min-h-screen flex-col items-center justify-center gap-4 p-6">
+      <div className="w-full max-w-md border-b border-slate-200 pb-4">
+        <PublicBrand subtitle="LINE Service Portal" />
+        <h1 className="mt-3 text-base text-slate-800 dark:text-slate-100">แจ้งซ่อม LIFE IT ผ่าน LINE</h1>
+      </div>
 
       {error && (
         <div className="flex w-full max-w-md items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
@@ -109,7 +114,7 @@ export function LinePortalPage() {
           <p className="mb-4 text-center text-sm text-slate-600 dark:text-slate-300">
             เข้าสู่ระบบด้วยบัญชี LINE เพื่อแจ้งซ่อมและติดตามสถานะได้ทันที
           </p>
-          <button type="button" onClick={() => void startLogin()} className={BUTTON_PRIMARY}>
+          <button type="button" onClick={() => void startLogin()} className={BUTTON_LINE}>
             เข้าสู่ระบบด้วย LINE
           </button>
         </div>

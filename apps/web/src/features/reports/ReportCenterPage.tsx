@@ -10,6 +10,7 @@ import { useAuth } from '../../stores/authContext';
 import type { ReportDataset, ReportKey, ReportOverview } from '../../types/reports';
 import { formatThaiDateTime } from '../../utils/date';
 import { breakdownWidth, reportCell, reportSearchText } from './reportDisplay';
+import { CsatAnalyticsPanel } from './CsatAnalyticsPanel';
 
 const RANGE_OPTIONS = [
   { value: 7, label: '7 วัน' },
@@ -167,6 +168,8 @@ export function ReportCenterPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {reportQuery.data.metrics.map((metric) => <StatCard key={metric.label} icon={<BarChart3 className="h-5 w-5" />} {...metric} />)}
               </div>
+
+              {activeKey === 'service-desk' && reportQuery.data.csat && <CsatAnalyticsPanel data={reportQuery.data.csat} />}
 
               {reportQuery.data.alerts.length > 0 && (
                 <Card className="border-amber-200 dark:border-amber-900">

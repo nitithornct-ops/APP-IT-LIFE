@@ -156,6 +156,38 @@ export interface PmTemplate {
   notes: string | null;
 }
 
+export interface PmRosterPlan {
+  id: string;
+  planDate: string;
+  status: string;
+  recurrence: string;
+  assetCode: string;
+  assetName: string;
+  technicianId: string | null;
+  technicianName: string;
+  overdueDays: number;
+}
+
+export interface PmRosterResponse {
+  weekStart: string;
+  weekEnd: string;
+  days: Array<{ date: string; label: string; total: number; unassigned: number }>;
+  summary: { total: number; assigned: number; unassigned: number; completed: number; overdue: number };
+  technicians: Array<{
+    id: string;
+    name: string;
+    total: number;
+    completed: number;
+    inProgress: number;
+    overdue: number;
+    dayCounts: number[];
+    plans: PmRosterPlan[];
+  }>;
+  unassignedPlans: PmRosterPlan[];
+  overduePlans: PmRosterPlan[];
+  overdueSampled: boolean;
+}
+
 // ===== Inventory =====
 export interface InventoryItem {
   id: string;

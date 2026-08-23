@@ -2,7 +2,7 @@ import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, CalendarClock, ClipboardCheck, FileText, Loader2, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarClock, Check, ClipboardCheck, FileText, Loader2, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -169,7 +169,15 @@ export function VendorContractsPage() {
 
   const vendors = vendorsQuery.data?.items ?? [];
   const contracts = contractsQuery.data?.items ?? [];
-  const contractStats = { expiring: contracts.filter((item) => effectiveContractState(item) === 'expiring').length, expired: contracts.filter((item) => effectiveContractState(item) === 'expired').length };
+  const contractStats = {
+    active: contracts.filter((item) => item.status === 'Active' && effectiveContractState(item) === 'active').length,
+    expiring: contracts.filter((item) => { const days = daysUntilDate(item.end_date); return days !== null && days >= 0 && days <= 60; }).length,
+    expired: contracts.filter((item) => effectiveContractState(item) === 'expired').length,
+    value: contracts.reduce((sum, item) => sum + (item.contract_value ?? 0), 0),
+  };
+  const renewalContract = [...contracts].filter((item) => item.end_date).sort((a, b) => (daysUntilDate(a.end_date) ?? Number.MAX_SAFE_INTEGER) - (daysUntilDate(b.end_date) ?? Number.MAX_SAFE_INTEGER))[0];
+  const renewalDays = renewalContract ? daysUntilDate(renewalContract.end_date) : null;
+  const renewalVendor = renewalContract ? vendors.find((item) => item.id === renewalContract.vendor_id) : undefined;
   const activeItems = tab === 'vendors' ? vendors : contracts;
   const loading = tab === 'vendors' ? vendorsQuery.isLoading : contractsQuery.isLoading;
   const canManage = tab === 'vendors' ? canVendorManage : canContractManage;
@@ -178,16 +186,34 @@ export function VendorContractsPage() {
 
   return <div className="flex flex-col gap-4" data-testid="vendor-contracts-page">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><h1 className="text-xl font-bold">Vendor / Contract</h1><p className="text-sm text-slate-500">ทะเบียนผู้ให้บริการ การประเมิน และติดตามอายุสัญญา</p></div><div className="flex gap-2">{canContractManage && <Button size="sm" variant="outline" isLoading={expiryMutation.isPending} onClick={() => expiryMutation.mutate()} data-testid="contract-check-expiry"><RefreshCw className="h-4 w-4" />ตรวจสัญญาหมดอายุ</Button>}{canManage && <Button size="sm" onClick={() => { setShowForm(true); setEditingVendor(undefined); setEditingContract(undefined); }} data-testid="vendor-contract-create-toggle"><Plus className="h-4 w-4" />{tab === 'vendors' ? 'เพิ่มผู้ให้บริการ' : 'เพิ่มสัญญา'}</Button>}</div></div>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><StatCard icon={<Building2 className="h-5 w-5" />} label="ผู้ให้บริการ" value={vendorsQuery.data?.pagination.totalItems ?? 0} tone="primary" /><StatCard icon={<FileText className="h-5 w-5" />} label="สัญญาทั้งหมด" value={contractsQuery.data?.pagination.totalItems ?? 0} tone="gray" /><StatCard icon={<CalendarClock className="h-5 w-5" />} label="ใกล้หมดใน 30 วัน" value={contractStats.expiring} tone={contractStats.expiring ? 'amber' : 'gray'} /><StatCard icon={<CalendarClock className="h-5 w-5" />} label="หมดอายุแล้ว" value={contractStats.expired} tone={contractStats.expired ? 'danger' : 'gray'} /></div>
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-5"><StatCard icon={<FileText className="h-5 w-5" />} label="สัญญาที่ใช้งาน" value={contractStats.active} tone="primary" /><StatCard icon={<CalendarClock className="h-5 w-5" />} label="ครบอายุใน 60 วัน" value={contractStats.expiring} tone={contractStats.expiring ? 'amber' : 'gray'} /><StatCard icon={<AlertTriangle className="h-5 w-5" />} label="หมดอายุแล้ว" value={contractStats.expired} tone={contractStats.expired ? 'danger' : 'gray'} /><StatCard icon={<Building2 className="h-5 w-5" />} label="ผู้ให้บริการ" value={vendorsQuery.data?.pagination.totalItems ?? 0} tone="teal" /><StatCard icon={<FileText className="h-5 w-5" />} label="มูลค่าสัญญา" value={contractStats.value.toLocaleString('th-TH')} note="ตามรายการที่โหลด (บาท)" tone="gray" /></div>
     <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{canVendorView && <button type="button" onClick={() => switchTab('vendors')} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === 'vendors' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500'}`}>ผู้ให้บริการ</button>}{canContractView && <button type="button" onClick={() => switchTab('contracts')} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === 'contracts' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500'}`}>สัญญา</button>}</div>
     {showForm && tab === 'vendors' && <FormModal title={editingVendor ? 'แก้ไขผู้ให้บริการ' : 'เพิ่มผู้ให้บริการ'} description="จัดการข้อมูลผู้ติดต่อและการประเมิน Vendor" size="xl" onClose={resetForm}>{vendorRefs.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : vendorRefs.data && <VendorForm vendor={editingVendor} references={vendorRefs.data} onClose={resetForm} />}</FormModal>}
     {showForm && tab === 'contracts' && <FormModal title={editingContract ? 'แก้ไขสัญญา' : 'เพิ่มสัญญา'} description="จัดการคู่สัญญา ขอบเขต และวันหมดอายุ" size="xl" onClose={resetForm}>{contractRefs.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : contractRefs.data && <ContractForm contract={editingContract} references={contractRefs.data} onClose={resetForm} />}</FormModal>}
-    <Card><CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>{tab === 'vendors' ? 'ทะเบียนผู้ให้บริการ' : 'ทะเบียนสัญญา'}</span><select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs font-normal dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{(tab === 'vendors' ? ['Active', 'Inactive'] : CONTRACT_STATUSES).map((item) => <option key={item}>{item}</option>)}</select></CardHeader><CardBody>
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_352px]">
+    <Card className="min-w-0"><CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>{tab === 'vendors' ? 'ทะเบียนผู้ให้บริการ' : 'ทะเบียนสัญญา'}</span><select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs font-normal dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{(tab === 'vendors' ? ['Active', 'Inactive'] : CONTRACT_STATUSES).map((item) => <option key={item}>{item}</option>)}</select></CardHeader><CardBody>
       <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tab === 'vendors' ? 'ค้นหารหัส ชื่อ ผู้ติดต่อ หรืออีเมล...' : 'ค้นหาเลขที่ ชื่อ หรือขอบเขตสัญญา...'} className={`${fieldClass} mb-3 max-w-md`} />
       {loading && <Loader2 className="mx-auto my-8 h-5 w-5 animate-spin" />}
       {!loading && activeItems.length === 0 && <EmptyState icon={tab === 'vendors' ? <Building2 className="h-10 w-10" /> : <FileText className="h-10 w-10" />} title={tab === 'vendors' ? 'ยังไม่มีผู้ให้บริการ' : 'ยังไม่มีสัญญา'} />}
       {tab === 'vendors' && vendors.length > 0 && <VendorTable items={vendors} canManage={canVendorManage} onEdit={(item) => { setEditingVendor(item); setShowForm(true); }} />}
       {tab === 'contracts' && contracts.length > 0 && <ContractTable items={contracts} canManage={canContractManage} onEdit={(item) => { setEditingContract(item); setShowForm(true); }} />}
     </CardBody></Card>
+    <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปการต่ออายุสัญญา">
+      <div className="rounded-[10px] bg-[#0B1B36] p-4 text-white shadow-sm">
+        <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 font-mono text-xs font-bold">{(renewalVendor?.name ?? renewalContract?.vendor?.name ?? 'V').slice(0, 2).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-bold">{renewalVendor?.name ?? renewalContract?.vendor?.name ?? 'ยังไม่มีข้อมูลผู้ให้บริการ'}</p><p className="truncate font-mono text-[10px] text-white/50">{renewalContract ? `${renewalContract.contract_number} · ${renewalContract.contract_type}` : 'Vendor spotlight'}</p></div></div>
+        <div className="mt-4 grid grid-cols-3 gap-3"><div><p className="text-[10px] text-white/50">สัญญา</p><p className="mt-1 font-mono text-base font-bold">{renewalVendor?.contracts?.length ?? (renewalContract ? 1 : 0)}</p></div><div><p className="text-[10px] text-white/50">วันคงเหลือ</p><p className={`mt-1 font-mono text-base font-bold ${renewalDays !== null && renewalDays < 0 ? 'text-red-300' : renewalDays !== null && renewalDays <= 60 ? 'text-amber-300' : 'text-green-300'}`}>{renewalDays === null ? '—' : Math.max(0, renewalDays)}</p></div><div><p className="text-[10px] text-white/50">ประเมินล่าสุด</p><p className="mt-1 font-mono text-xs font-bold">{renewalVendor?.assessment_date ? formatThaiDate(renewalVendor.assessment_date, 'd MMM yy') : '—'}</p></div></div>
+        {renewalContract && <button type="button" onClick={() => { switchTab('contracts'); setSearch(renewalContract.contract_number); }} className="mt-4 w-full rounded-lg bg-primary-600 px-3 py-2 text-xs font-bold text-white hover:bg-primary-700">เปิดสัญญาที่ต้องติดตาม</button>}
+      </div>
+
+      <Card>
+        <CardHeader>ไทม์ไลน์การต่ออายุ</CardHeader>
+        <CardBody>
+          {renewalContract ? <div className="space-y-0">{['แจ้งเตือนผู้รับผิดชอบ', 'ทบทวนขอบเขตและราคา', 'อนุมัติการต่ออายุ', 'ลงนามสัญญาใหม่'].map((step, index) => { const current = renewalDays !== null && renewalDays < 0 ? 3 : renewalDays !== null && renewalDays <= 60 ? 1 : 0; const done = index < current; return <div key={step} className="flex gap-3"><div className="flex flex-col items-center"><span className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] ${done ? 'border-green-600 bg-green-600 text-white' : index === current ? 'border-primary-600 bg-primary-100 text-primary-700' : 'border-slate-300 bg-white text-slate-400'}`}>{done ? <Check className="h-3 w-3" /> : index + 1}</span>{index < 3 && <span className="h-8 w-px bg-slate-200 dark:bg-slate-700" />}</div><div><p className={`text-xs font-semibold ${index === current ? 'text-primary-700 dark:text-primary-300' : done ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}`}>{step}</p>{index === 0 && <p className="mt-0.5 font-mono text-[10px] text-slate-400">แจ้งล่วงหน้า {renewalContract.renewal_notice_days} วัน</p>}</div></div>; })}</div> : <p className="text-sm text-slate-500">ยังไม่มีสัญญาที่กำหนดวันสิ้นสุด</p>}
+        </CardBody>
+      </Card>
+
+      {contractStats.expired > 0 && <div className="rounded-[10px] border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/20"><p className="flex items-center gap-2 text-xs font-bold text-red-700 dark:text-red-300"><AlertTriangle className="h-4 w-4" />ต้องจัดการก่อน</p><p className="mt-2 text-xs leading-5 text-slate-700 dark:text-slate-300">มีสัญญาหมดอายุ {contractStats.expired} รายการ ควรยืนยันการต่ออายุหรือปิดสถานะก่อนส่งงานใหม่ให้ผู้ให้บริการ</p><button type="button" onClick={() => { switchTab('contracts'); setStatus('Expired'); }} className="mt-3 text-xs font-bold text-primary-700 hover:underline dark:text-primary-300">ดูสัญญาหมดอายุ</button></div>}
+    </aside>
+    </div>
   </div>;
 }

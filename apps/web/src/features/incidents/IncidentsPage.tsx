@@ -5,7 +5,7 @@ import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Grid3X3, Loader2, Plus, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, GitPullRequestArrow, Grid3X3, Lightbulb, Loader2, Plus, ShieldAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
@@ -18,8 +18,11 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { QueryError } from '../../components/ui/QueryError';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
+import type { ChangeRequest } from '../../types/changes';
 import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, INCIDENT_STATUSES, type Incident, type RiskMatrixCell } from '../../types/incidents';
+import type { Problem } from '../../types/problems';
 import { formatThaiDate } from '../../utils/date';
 import { incidentStatusTone, riskCellClass, riskTone } from './incidentDisplay';
 
@@ -110,6 +113,7 @@ function RiskMatrix() {
 }
 
 export function IncidentsPage() {
+  const { hasPermission } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
   const table = useTableParams<'search' | 'status' | 'severity' | 'personalData'>({ filters: ['search', 'status', 'severity', 'personalData'] });
@@ -124,7 +128,14 @@ export function IncidentsPage() {
     queryKey: ['incidents', incidentListParams],
     queryFn: () => apiFetch<PaginatedResult<Incident>>(`/api/v1/incidents?${incidentListParams}`),
   });
+  const problemsQuery = useQuery({ queryKey: ['itil-flow', 'problems'], enabled: hasPermission('problem.view'), queryFn: () => apiFetch<PaginatedResult<Problem>>('/api/v1/problems?page=1&pageSize=6') });
+  const changesQuery = useQuery({ queryKey: ['itil-flow', 'changes'], enabled: hasPermission('change.view'), queryFn: () => apiFetch<PaginatedResult<ChangeRequest>>('/api/v1/changes?page=1&pageSize=6') });
   const items = query.data?.items ?? [];
+  const flowColumns = [
+    { key: 'incident', label: 'INCIDENT', description: 'รับเหตุและควบคุมผลกระทบ', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 dark:bg-red-950/30', rows: items.slice(0, 4).map((item) => ({ id: item.id, code: item.incident_number, title: item.title, status: item.status, to: `/incidents/${item.id}` })) },
+    { key: 'problem', label: 'PROBLEM', description: 'วิเคราะห์สาเหตุและ Known Error', icon: Lightbulb, tone: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30', rows: (problemsQuery.data?.items ?? []).slice(0, 4).map((item) => ({ id: item.id, code: item.problem_number, title: item.title, status: item.status, to: `/problems/${item.id}` })) },
+    { key: 'change', label: 'CHANGE', description: 'ทดสอบ อนุมัติ และนำขึ้นใช้งาน', icon: GitPullRequestArrow, tone: 'text-purple-700 bg-purple-50 dark:bg-purple-950/30', rows: (changesQuery.data?.items ?? []).slice(0, 4).map((item) => ({ id: item.id, code: item.change_number, title: item.title, status: item.status, to: `/changes/${item.id}` })) },
+  ];
   return (
     <div className="flex flex-col gap-4" data-testid="incidents-page">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,6 +147,16 @@ export function IncidentsPage() {
       </div>
       {showCreate && <FormModal title="แจ้ง Incident" description="บันทึกเหตุการณ์ ประเมินความรุนแรง และข้อมูลที่เกี่ยวข้อง" size="lg" onClose={() => setShowCreate(false)}><CreateIncidentForm onClose={() => setShowCreate(false)} /></FormModal>}
       {showMatrix && <RiskMatrix />}
+      <Card className="overflow-hidden">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>ITIL Flow Board</span><span className="text-xs font-normal text-slate-500">Incident → Problem → Change</span></CardHeader>
+        <CardBody className="grid gap-3 lg:grid-cols-3">
+          {flowColumns.map((column, index) => <section key={column.key} className="relative min-w-0 rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-950/20">
+            {index < 2 && <ArrowRight className="absolute -right-5 top-6 z-10 hidden h-4 w-4 text-slate-400 lg:block" />}
+            <div className="flex items-center gap-2"><span className={`flex h-8 w-8 items-center justify-center rounded-lg ${column.tone}`}><column.icon className="h-4 w-4" /></span><div><p className="font-mono text-[10px] font-bold tracking-wider text-slate-600 dark:text-slate-300">{column.label}</p><p className="text-xs text-slate-500">{column.description}</p></div></div>
+            <div className="mt-3 space-y-2">{column.rows.map((row) => <Link key={row.id} to={row.to} className="block rounded-lg border border-slate-200 bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[10px] font-semibold text-primary-700 dark:text-primary-300">{row.code}</span><span className="truncate text-[10px] text-slate-400">{row.status}</span></div><p className="mt-1 truncate text-xs font-semibold">{row.title}</p></Link>)}{column.rows.length === 0 && <p className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400 dark:border-slate-700">ไม่มีรายการหรือไม่มีสิทธิ์เข้าถึง</p>}</div>
+          </section>)}
+        </CardBody>
+      </Card>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="ทั้งหมด" value={query.data?.pagination.totalItems ?? 0} tone="primary" />
         <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="เปิด (หน้านี้)" value={items.filter((item) => item.status === 'เปิด').length} tone="danger" />

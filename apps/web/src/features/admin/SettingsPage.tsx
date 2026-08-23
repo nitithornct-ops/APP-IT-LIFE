@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { BrandingSettings, SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
+import { SlaSettingsOverview } from './SlaSettingsOverview';
 import { TicketRatingCriteriaSetting } from './TicketRatingCriteriaSetting';
 import { TicketFormSignatureSetting } from './TicketFormSignatureSetting';
 
@@ -148,10 +149,15 @@ export function SettingsPage() {
           <StatCard icon={<ExternalLink className="h-5 w-5" />} label="จัดการจากภายนอก" value={settingsQuery.data.summary.externallyManaged} tone="gray" />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {['ทั้งหมด', ...settingsQuery.data.groups].map((group) => <button type="button" key={group} onClick={() => setActiveGroup(group)} className={`whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold ${activeGroup === group ? 'border-primary-700 bg-primary-700 text-white' : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{group}</button>)}
-        </div>
+        <SlaSettingsOverview settings={settingsQuery.data.settings} drafts={drafts} />
 
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[198px_minmax(0,1fr)]">
+          <nav className="h-fit rounded-[10px] border border-slate-200 bg-white p-2 shadow-card dark:border-slate-700 dark:bg-slate-800" aria-label="หมวดการตั้งค่า">
+            <p className="px-2 pb-2 pt-1 font-mono text-[10px] font-semibold tracking-wider text-slate-400">SETTING GROUPS</p>
+            {['ทั้งหมด', ...settingsQuery.data.groups].map((group) => <button type="button" key={group} onClick={() => setActiveGroup(group)} className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${activeGroup === group ? 'bg-primary-50 text-primary-700 shadow-[inset_3px_0_0_#1D4ED8] dark:bg-primary-950/40 dark:text-primary-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}><span className="truncate">{group}</span><span className="font-mono text-[10px] text-slate-400">{group === 'ทั้งหมด' ? settingsQuery.data.settings.length : settingsQuery.data.settings.filter((setting) => setting.group_key === group).length}</span></button>)}
+          </nav>
+
+          <div className="min-w-0 space-y-4">
         {notice && <p className="rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-700 dark:bg-teal-950/30 dark:text-teal-200" role="status">{notice}</p>}
         {mutation.isError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200" role="alert">{errorText(mutation.error)}</p>}
 
@@ -171,6 +177,8 @@ export function SettingsPage() {
             </CardBody>
           </Card>)}
         </div> : <EmptyState icon={<Search className="h-10 w-10" />} title="ไม่พบค่าตั้งค่า" message="ลองเปลี่ยนกลุ่มหรือคำค้นหา" />}
+          </div>
+        </div>
       </>}
     </div>
   );

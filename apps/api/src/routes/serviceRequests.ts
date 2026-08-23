@@ -55,6 +55,11 @@ const TRANSITIONS: Record<string, string[]> = {
   [STATUS.CANCELLED]: [],
 };
 
+/** A pending request may only leave approval through the dedicated approval endpoint or cancellation. */
+export function requiresServiceRequestApprovalAction(fromStatus: string, toStatus: string): boolean {
+  return fromStatus === STATUS.PENDING_APPROVAL && toStatus !== fromStatus && toStatus !== STATUS.CANCELLED;
+}
+
 function assertTransition(from: string, to: string) {
   if (!to || from === to) return;
   if (!(TRANSITIONS[from] ?? []).includes(to)) {
@@ -480,6 +485,13 @@ serviceRequestsRoute.patch('/:id', zValidator('json', updateServiceRequestSchema
     (toStatus === STATUS.CLOSED || toStatus === STATUS.IN_PROGRESS);
   const isCancel = toStatus === STATUS.CANCELLED && toStatus !== fromStatus;
   const isFinalizing = FINALIZING_STATUSES.includes(toStatus) && toStatus !== fromStatus && !isConfirmPath;
+
+  if (requiresServiceRequestApprovalAction(fromStatus, toStatus)) {
+    return c.json(
+      fail(reqId, 'SERVICE_REQUEST_APPROVAL_REQUIRED', 'คำขอนี้ต้องผ่านการอนุมัติก่อนเริ่มดำเนินการ'),
+      400,
+    );
+  }
 
   if (toStatus !== fromStatus && toStatus !== STATUS.CANCELLED
     && await isRequiredAttachmentMissing(createAdminClient(c.env), current)) {

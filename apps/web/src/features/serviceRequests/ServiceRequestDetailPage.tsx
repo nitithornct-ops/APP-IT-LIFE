@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Paperclip, Upload } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -18,7 +18,6 @@ const REQUEST_STATUSES: ServiceRequestStatus[] = [
   'รอผู้ให้บริการ',
   'รอยืนยันผล',
   'ปิดงาน',
-  'ยกเลิก',
 ];
 
 const TASK_STATUSES: ServiceRequestTaskStatus[] = ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น', 'ข้าม'];
@@ -75,7 +74,7 @@ function ApprovalPanel({ requestId }: { requestId: string }) {
           <Button size="sm" isLoading={mutation.isPending} onClick={() => mutation.mutate(true)}>
             อนุมัติ
           </Button>
-          <Button size="sm" variant="outline" isLoading={mutation.isPending} onClick={() => mutation.mutate(false)}>
+          <Button size="sm" variant="outline" disabled={!comment.trim()} isLoading={mutation.isPending} onClick={() => mutation.mutate(false)}>
             ปฏิเสธ
           </Button>
         </div>
@@ -84,12 +83,31 @@ function ApprovalPanel({ requestId }: { requestId: string }) {
   );
 }
 
+function availableWorkStatuses(request: Pick<ServiceRequestDetail, 'status' | 'close_mode'>): ServiceRequestStatus[] {
+  const completionStatus = request.close_mode === 'it_closes' ? 'ปิดงาน' : 'รอยืนยันผล';
+  const transitions: Partial<Record<ServiceRequestStatus, ServiceRequestStatus[]>> = {
+    รอมอบหมาย: ['กำลังดำเนินการ'],
+    กำลังดำเนินการ: ['รอผู้ใช้งาน', 'รอผู้ให้บริการ', completionStatus],
+    รอผู้ใช้งาน: ['กำลังดำเนินการ', 'รอผู้ให้บริการ', completionStatus],
+    รอผู้ให้บริการ: ['กำลังดำเนินการ', 'รอผู้ใช้งาน', completionStatus],
+  };
+  return [request.status, ...(transitions[request.status] ?? [])];
+}
+
 function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; staff: AssignableStaff[] }) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<ServiceRequestStatus>(request.status === 'รออนุมัติ' ? 'รอมอบหมาย' : request.status);
+  const [status, setStatus] = useState<ServiceRequestStatus>(request.status);
   const [assigneeId, setAssigneeId] = useState(request.assignee_id ?? '');
   const [note, setNote] = useState('');
   const [serverError, setServerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStatus(request.status);
+    setAssigneeId(request.assignee_id ?? '');
+    setNote('');
+  }, [request]);
+
+  const selectableStatuses = availableWorkStatuses(request);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -112,6 +130,14 @@ function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; st
 
   const finalizing = status === 'รอยืนยันผล' || status === 'ปิดงาน';
 
+  function submitWorkUpdate() {
+    if (finalizing && status !== request.status && !note.trim() && !request.fulfillment_notes?.trim()) {
+      setServerError('กรุณาระบุผลการดำเนินการก่อนส่งมอบ/ปิดงาน');
+      return;
+    }
+    mutation.mutate();
+  }
+
   return (
     <Card>
       <CardHeader>อัปเดตงาน</CardHeader>
@@ -127,7 +153,7 @@ function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; st
               onChange={(e) => setStatus(e.target.value as ServiceRequestStatus)}
               className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
             >
-              {REQUEST_STATUSES.map((s) => (
+              {REQUEST_STATUSES.filter((s) => selectableStatuses.includes(s)).map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -174,7 +200,7 @@ function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; st
           {serverError && <p className="text-xs text-red-600 sm:col-span-2">{serverError}</p>}
 
           <div className="sm:col-span-2">
-            <Button size="sm" isLoading={mutation.isPending} onClick={() => mutation.mutate()}>
+            <Button size="sm" isLoading={mutation.isPending} onClick={submitWorkUpdate}>
               บันทึก
             </Button>
           </div>
@@ -415,6 +441,7 @@ export function ServiceRequestDetailPage() {
   const canConfirm = request.status === 'รอยืนยันผล' && isRequester;
   const nonTerminal = !['ปิดงาน', 'ปฏิเสธ', 'ยกเลิก'].includes(request.status);
   const canCancel = nonTerminal && request.status !== 'รอยืนยันผล' && (isRequester || canManage);
+  const canManageWork = canManage && nonTerminal && !['รออนุมัติ', 'รอยืนยันผล'].includes(request.status);
 
   return (
     <div className="flex flex-col gap-4">
@@ -460,7 +487,7 @@ export function ServiceRequestDetailPage() {
           </Card>
 
           {canApprove && <ApprovalPanel requestId={request.id} />}
-          {canManage && <UpdateWorkPanel request={request} staff={staffQuery.data ?? []} />}
+          {canManageWork && <UpdateWorkPanel request={request} staff={staffQuery.data ?? []} />}
           {canConfirm && <ConfirmPanel requestId={request.id} />}
           <TasksPanel request={request} canManage={canManage} />
           <AttachmentsPanel request={request} canUpload={nonTerminal} />

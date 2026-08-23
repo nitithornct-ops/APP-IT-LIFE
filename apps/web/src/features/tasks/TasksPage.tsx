@@ -338,18 +338,18 @@ export function TasksPage() {
 
   return (
     <div className="w-full space-y-3">
-      <header className="relative overflow-hidden rounded-lg bg-gradient-to-r from-[#162b63] via-[#30339b] to-primary-600 px-5 py-5 text-white shadow-elevated sm:px-7">
+      <header className="relative overflow-hidden rounded-large bg-gradient-to-r from-primary-950 via-primary-900 to-primary-600 px-5 py-5 text-white shadow-elevated sm:px-7">
         <div className="absolute right-0 top-0 h-full w-40 skew-x-[-14deg] bg-white/10" aria-hidden="true" />
         <div className="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <p className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-100"><Sparkles className="h-3 w-3" /> My work command center</p>
+            <p className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-accent-300"><Sparkles className="h-3 w-3" /> My work command center</p>
             <h1 className="flex items-center gap-2 text-xl font-bold"><ListTodo className="h-5 w-5" /> งานของฉัน</h1>
-            <p className="mt-1 text-xs text-blue-100">เห็นงานสำคัญของคุณ จัดลำดับได้เร็ว และปิดงานได้จากหน้าเดียว</p>
+            <p className="mt-1 text-xs text-primary-100">เห็นงานสำคัญของคุณ จัดลำดับได้เร็ว และปิดงานได้จากหน้าเดียว</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={exportCsv} className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-slate-800 hover:bg-blue-50"><Download className="h-4 w-4" /> CSV</button>
-            <button type="button" onClick={() => quickInputRef.current?.focus()} className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-primary-700 hover:bg-blue-50"><Plus className="h-4 w-4" /> สร้างงานใหม่</button>
-            {me?.profile.email && <span className="hidden max-w-[210px] truncate rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[11px] text-blue-50 lg:block">{me.profile.email}</span>}
+            <button type="button" onClick={exportCsv} className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-slate-800 hover:bg-primary-50"><Download className="h-4 w-4" /> CSV</button>
+            <button type="button" onClick={() => quickInputRef.current?.focus()} className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-primary-700 hover:bg-primary-50"><Plus className="h-4 w-4" /> สร้างงานใหม่</button>
+            {me?.profile.email && <span className="hidden max-w-[210px] truncate rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[11px] text-primary-50 lg:block">{me.profile.email}</span>}
           </div>
         </div>
       </header>

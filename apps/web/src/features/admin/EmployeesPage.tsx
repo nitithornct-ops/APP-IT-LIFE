@@ -321,7 +321,7 @@ function BulkEmployeePanel({
               key={value}
               type="button"
               onClick={() => setAction(value)}
-              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-primary-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
             >
               {label}
             </button>

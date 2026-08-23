@@ -4,12 +4,14 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { buildSlaImpactSummary, type SlaImpactTicket } from '../services/slaImpactService';
+import { parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, Bindings } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
-import { updateSystemSettingSchema } from '../validators/settings';
+import { slaImpactQuerySchema, updateSystemSettingSchema } from '../validators/settings';
 
 const BRANDING_BUCKET = 'branding';
 const ORGANIZATION_LOGO_KEY = 'ORG_LOGO_URL';
@@ -223,6 +225,75 @@ settingsRoute.delete('/logo', requirePermission('setting.manage'), async (c) => 
     targetTable: 'system_settings', targetId: ORGANIZATION_LOGO_KEY, requestId,
   });
   return c.json(ok(requestId, await loadBranding(c.env)));
+});
+
+settingsRoute.get('/sla-impact', requirePermission('setting.view'), zValidator('query', slaImpactQuerySchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const requested = c.req.valid('query');
+  const keys = ['SLA_BUSINESS_START', 'SLA_BUSINESS_END', 'SLA_BUSINESS_DAYS', 'SLA_HOLIDAYS'] as const;
+  const admin = createAdminClient(c.env);
+  const [settingsResult, ticketsResult, policiesResult] = await Promise.all([
+    admin.from('system_settings').select('key,value').in('key', [...keys]),
+    admin.from('tickets')
+      .select('id,status,created_at,due_at,resolution_sla_hours,sla_paused_at,sla_paused_minutes,reopen_count')
+      .not('status', 'in', '(เสร็จสิ้น,ปิดงาน,ยกเลิก,ยกระดับเป็น Incident)'),
+    admin.from('ticket_categories')
+      .select('id,name,response_sla_hours,resolution_sla_hours,sla_hours,default_priority,status')
+      .eq('status', 'active')
+      .order('name'),
+  ]);
+  if (settingsResult.error) return dbFailJson(c, 'SLA_SETTINGS_LOAD_FAILED', settingsResult.error);
+  if (ticketsResult.error) return dbFailJson(c, 'SLA_IMPACT_TICKETS_LOAD_FAILED', ticketsResult.error);
+  if (policiesResult.error) return dbFailJson(c, 'SLA_POLICIES_LOAD_FAILED', policiesResult.error);
+
+  const currentValues = Object.fromEntries((settingsResult.data ?? []).map((row) => [String(row.key), String(row.value ?? '')]));
+  const proposedValues: Record<string, string> = { ...currentValues };
+  for (const key of keys) {
+    const input = requested[key];
+    if (input === undefined) continue;
+    const normalized = normalizeSettingValue(key, input);
+    if (normalized.error || normalized.value === undefined) {
+      return c.json(fail(requestId, 'SLA_PREVIEW_INVALID', normalized.error ?? 'ค่าปฏิทิน SLA ไม่ถูกต้อง'), 400);
+    }
+    proposedValues[key] = normalized.value;
+  }
+
+  const startMinute = (value: string | undefined, fallback: string) => {
+    const safeValue = value || fallback;
+    const [hour, minute] = safeValue.split(':').map(Number);
+    return hour * 60 + minute;
+  };
+  if (startMinute(proposedValues.SLA_BUSINESS_END, '17:30') <= startMinute(proposedValues.SLA_BUSINESS_START, '08:30')) {
+    return c.json(fail(requestId, 'SLA_PREVIEW_INVALID_RANGE', 'เวลาสิ้นสุดทำการต้องอยู่หลังเวลาเริ่มทำการ'), 400);
+  }
+
+  const currentCalendar = parseTicketBusinessCalendar(currentValues);
+  const proposedCalendar = parseTicketBusinessCalendar(proposedValues);
+  const summary = buildSlaImpactSummary({
+    tickets: (ticketsResult.data ?? []) as SlaImpactTicket[],
+    currentCalendar,
+    proposedCalendar,
+  });
+  const minuteLabel = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+
+  return c.json(ok(requestId, {
+    generatedAt: new Date().toISOString(),
+    calendar: {
+      start: minuteLabel(proposedCalendar.startMinute),
+      end: minuteLabel(proposedCalendar.endMinute),
+      businessDays: [...proposedCalendar.businessDays].sort((a, b) => a - b),
+      holidays: [...proposedCalendar.holidays].sort(),
+      minutesPerDay: proposedCalendar.endMinute - proposedCalendar.startMinute,
+    },
+    policies: (policiesResult.data ?? []).map((policy) => ({
+      id: String(policy.id),
+      name: String(policy.name),
+      priority: String(policy.default_priority ?? 'ไม่ระบุ'),
+      responseHours: Number(policy.response_sla_hours ?? 4),
+      resolutionHours: Number(policy.resolution_sla_hours ?? policy.sla_hours ?? 24),
+    })),
+    ...summary,
+  }));
 });
 
 settingsRoute.get('/', requirePermission('setting.view'), async (c) => {

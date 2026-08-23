@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { buildPmRoster } from '../services/pmRosterService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
@@ -13,6 +14,7 @@ import {
   createMaintenancePlanSchema,
   createPmTemplateSchema,
   listMaintenancePlansQuerySchema,
+  pmRosterQuerySchema,
   recordMaintenanceResultSchema,
   rescheduleMaintenanceSchema,
   setPmTemplateStatusSchema,
@@ -82,6 +84,36 @@ maintenancePlansRoute.get(
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'MAINTENANCE_LIST_FAILED', 'ดึงแผน PM ไม่สำเร็จ'), 400);
     return c.json(ok(reqId, toPaginatedData(data ?? [], count, page, pageSize)));
+  },
+);
+
+maintenancePlansRoute.get(
+  '/roster',
+  requirePermission('maintenance.view'),
+  zValidator('query', pmRosterQuerySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const { weekStart } = c.req.valid('query');
+    const start = new Date(`${weekStart}T00:00:00.000Z`);
+    start.setUTCDate(start.getUTCDate() + 6);
+    const weekEnd = start.toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+    const [weekResult, overdueResult] = await Promise.all([
+      supabase.from('maintenance_plans').select(PLAN_SELECT).gte('plan_date', weekStart).lte('plan_date', weekEnd).order('plan_date'),
+      supabase.from('maintenance_plans').select(PLAN_SELECT, { count: 'exact' }).lt('plan_date', today).in('status', ['วางแผน', 'กำลังดำเนินการ']).order('plan_date').limit(1000),
+    ]);
+    if (weekResult.error || overdueResult.error) {
+      return dbFailJson(c, 'PM_ROSTER_LOAD_FAILED', weekResult.error ?? overdueResult.error, 'โหลดตารางกำลังคน PM ไม่สำเร็จ');
+    }
+    return c.json(ok(reqId, buildPmRoster({
+      weekRows: (weekResult.data ?? []) as unknown as Array<Record<string, unknown>>,
+      overdueRows: (overdueResult.data ?? []) as unknown as Array<Record<string, unknown>>,
+      overdueTotal: overdueResult.count ?? undefined,
+      weekStart,
+      today,
+    })));
   },
 );
 

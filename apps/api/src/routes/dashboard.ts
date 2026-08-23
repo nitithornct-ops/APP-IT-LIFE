@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
+import { buildExecutiveServiceAnalytics } from '../services/dashboardAnalyticsService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { ok } from '../utils/response';
@@ -51,7 +52,7 @@ function daysUntil(value: string | null): number | null {
 }
 
 const SOURCES: SourceDefinition[] = [
-  { key: 'tickets', label: 'Ticket', permission: 'ticket.view', table: 'tickets', select: 'id,title,status,priority,due_at,requester_id,assignee_id,created_at', path: '/tickets', title: (r) => text(r, 'title'), status: (r) => text(r, 'status'), due: (r) => date(r, 'due_at'), terminal: (r) => TERMINAL_TICKET.has(text(r, 'status')) },
+  { key: 'tickets', label: 'Ticket', permission: 'ticket.view', table: 'tickets', select: 'id,ticket_no,title,status,priority,due_at,requester_id,assignee_id,assignee_name_snapshot,created_at,acknowledged_at,resolved_at,closed_at,rating,feedback_at,ticket_categories(name)', path: '/tickets', title: (r) => text(r, 'title'), status: (r) => text(r, 'status'), due: (r) => date(r, 'due_at'), terminal: (r) => TERMINAL_TICKET.has(text(r, 'status')) },
   { key: 'service-requests', label: 'คำขอบริการ', permission: 'service_request.view', table: 'service_requests', select: 'id,service_code,service_name,summary,status,priority,approval_status,due_at,requester_id,assignee_id,created_at', path: '/service-requests', title: (r) => text(r, 'summary') || text(r, 'service_name'), status: (r) => text(r, 'status'), due: (r) => date(r, 'due_at'), terminal: (r) => TERMINAL_REQUEST.has(text(r, 'status')) },
   { key: 'tasks', label: 'งานของฉัน', permission: 'task.view', table: 'personal_tasks', select: 'id,title,status,priority,due_date,created_at', path: '/tasks', title: (r) => text(r, 'title'), status: (r) => text(r, 'status'), due: (r) => date(r, 'due_date'), terminal: (r) => TERMINAL_TASK.has(text(r, 'status')) },
   { key: 'assets', label: 'ประกันทรัพย์สิน', permission: 'asset.view', table: 'assets', select: 'id,asset_code,name,status,warranty_expire,created_at', path: '/assets', title: (r) => `${text(r, 'asset_code')} ${text(r, 'name')}`.trim(), status: (r) => text(r, 'status'), due: (r) => date(r, 'warranty_expire'), terminal: (r) => text(r, 'status') === 'จำหน่าย/เลิกใช้' },
@@ -318,6 +319,10 @@ dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, 
     ],
   };
 
+  const ticketSource = loaded.find((item) => item.source.key === 'tickets');
+  const executiveAnalytics = ticketSource && ['executive', 'operations'].includes(mode)
+    ? buildExecutiveServiceAnalytics({ tickets: ticketSource.rows, periodDays: leadDays, sampled: ticketSource.truncated })
+    : null;
   const countValues = (rows: Row[], field: string) => [...rows.reduce((map, row) => { const label = text(row, field) || 'ไม่ระบุ'; map.set(label, (map.get(label) ?? 0) + 1); return map; }, new Map<string, number>())].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   return c.json(ok(requestId, {
     mode,
@@ -328,6 +333,7 @@ dashboardRoute.get('/summary', zValidator('query', dashboardSummaryQuerySchema, 
       { key: 'ticket-priority', label: 'Ticket ตามความสำคัญ', items: countValues(byKey.get('tickets') ?? [], 'priority') },
       { key: 'incident-severity', label: 'Incident ตามความรุนแรง', items: countValues(byKey.get('incidents') ?? [], 'severity') },
     ],
+    executiveAnalytics,
     alertCount: totalOverdue + criticalIncidents.length,
     leadDays,
     generatedAt: new Date().toISOString(),

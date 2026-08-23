@@ -112,7 +112,7 @@ function CreateRoleForm({ onClose }: { onClose: () => void }) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
           สร้างบทบาท
@@ -145,7 +145,7 @@ export function RolesPage() {
             <button
               type="button"
               onClick={() => setShowCreate((v) => !v)}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              className="flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               สร้างบทบาทใหม่

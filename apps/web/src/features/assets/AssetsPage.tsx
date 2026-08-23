@@ -3,7 +3,7 @@ import { useTableParams } from '../../hooks/useTableParams';
 import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Boxes, Loader2, Plus } from 'lucide-react';
+import { Boxes, CalendarClock, ClipboardCheck, Loader2, Plus, Repeat2, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
@@ -114,7 +114,7 @@ function BulkAssetPanel({
               key={value}
               type="button"
               onClick={() => setAction(value)}
-              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-primary-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
             >
               {label}
             </button>
@@ -339,7 +339,13 @@ export function AssetsPage() {
     available: items.filter((a) => a.status === 'พร้อมใช้งาน').length,
     inUse: items.filter((a) => a.status === 'ใช้งานอยู่').length,
     maintenance: items.filter((a) => a.status === 'ซ่อมบำรุง').length,
+    retired: items.filter((a) => a.status === 'จำหน่าย/เลิกใช้').length,
   };
+  const warrantyExpiring = items.filter((a) => a.warrantyDaysLeft !== null && a.warrantyDaysLeft >= 0 && a.warrantyDaysLeft <= 60);
+  const warrantyExpired = items.filter((a) => a.warrantyDaysLeft !== null && a.warrantyDaysLeft < 0);
+  const activeLoans = items.filter((a) => Boolean(a.loan_date));
+  const overdueLoans = activeLoans.filter((a) => a.loan_due_date && Date.parse(`${a.loan_due_date}T23:59:59`) < Date.now());
+  const lifecycleTotal = Math.max(1, kpi.available + kpi.inUse + kpi.maintenance + kpi.retired);
 
   return (
     <div className="flex flex-col gap-4">
@@ -356,14 +362,16 @@ export function AssetsPage() {
         </RequirePermission>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <StatCard icon={<Boxes className="h-5 w-5" aria-hidden="true" />} label="ทั้งหมด" value={kpi.total} tone="primary" />
         <StatCard icon={<Boxes className="h-5 w-5" aria-hidden="true" />} label="พร้อมใช้งาน (หน้านี้)" value={kpi.available} tone="teal" />
         <StatCard icon={<Boxes className="h-5 w-5" aria-hidden="true" />} label="ใช้งานอยู่ (หน้านี้)" value={kpi.inUse} tone="gray" />
         <StatCard icon={<Boxes className="h-5 w-5" aria-hidden="true" />} label="ซ่อมบำรุง (หน้านี้)" value={kpi.maintenance} tone="amber" />
+        <StatCard icon={<Boxes className="h-5 w-5" aria-hidden="true" />} label="ตัดจำหน่าย (หน้านี้)" value={kpi.retired} tone="gray" />
       </div>
 
-      <Card>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <Card className="min-w-0">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <span>รายการทรัพย์สิน</span>
           <div className="flex flex-wrap items-center gap-2 text-xs font-normal">
@@ -481,6 +489,45 @@ export function AssetsPage() {
           {assetsQuery.data && <TablePagination page={assetsQuery.data.pagination.page} pageSize={pageSize} totalItems={assetsQuery.data.pagination.totalItems} totalPages={assetsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>
       </Card>
+
+      <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปวงจรชีวิตทรัพย์สิน">
+        <Card>
+          <CardHeader className="flex items-center gap-2"><Repeat2 className="h-4 w-4 text-primary-600" /><span>วงจรชีวิตทรัพย์สิน</span></CardHeader>
+          <CardBody className="space-y-3">
+            {[
+              ['ใช้งานอยู่', kpi.inUse, 'bg-primary-600'],
+              ['พร้อมใช้งาน', kpi.available, 'bg-teal-600'],
+              ['ซ่อมบำรุง', kpi.maintenance, 'bg-amber-500'],
+              ['ตัดจำหน่าย', kpi.retired, 'bg-slate-300'],
+            ].map(([label, value, color]) => (
+              <div key={String(label)}>
+                <div className="mb-1 flex items-center justify-between text-xs"><span className="text-slate-600 dark:text-slate-300">{label}</span><span className="font-mono font-semibold">{value}</span></div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(3, (Number(value) / lifecycleTotal) * 100)}%` }} /></div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-amber-600" /><span>ประกันและแผน PM</span></CardHeader>
+          <CardBody className="space-y-3 text-sm">
+            <div className="flex items-center justify-between"><span className="text-slate-500">ประกันหมดใน 60 วัน</span><span className="font-mono font-bold text-amber-700">{warrantyExpiring.length}</span></div>
+            <div className="flex items-center justify-between"><span className="text-slate-500">ประกันหมดแล้ว</span><span className="font-mono font-bold text-red-700">{warrantyExpired.length}</span></div>
+            <div className="flex items-center justify-between"><span className="text-slate-500">กำลังซ่อม/รอ PM</span><span className="font-mono font-bold">{kpi.maintenance}</span></div>
+            <Link to="/maintenance" className="inline-flex items-center gap-1 text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300"><ClipboardCheck className="h-3.5 w-3.5" />เปิดแผนบำรุงรักษา</Link>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary-600" /><span>ยืม / คืน</span></CardHeader>
+          <CardBody className="space-y-3 text-sm">
+            <div className="flex items-center justify-between"><span className="text-slate-500">กำลังยืม</span><span className="font-mono font-bold">{activeLoans.length}</span></div>
+            <div className="flex items-center justify-between"><span className="text-slate-500">เกินกำหนด</span><span className="font-mono font-bold text-red-700">{overdueLoans.length}</span></div>
+            <Link to="/asset-borrow" className="inline-flex items-center gap-1 text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300"><Repeat2 className="h-3.5 w-3.5" />จัดการยืมและรับคืน</Link>
+          </CardBody>
+        </Card>
+      </aside>
+      </div>
 
       {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="รายการ" onDismiss={() => setBulkResult(null)} />}
 

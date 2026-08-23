@@ -28,3 +28,39 @@ export interface BrandingSettings {
   organizationName: string;
   logoUrl: string;
 }
+
+export interface SlaImpactCounts {
+  total: number;
+  overdue: number;
+  critical: number;
+  atRisk: number;
+  safe: number;
+  paused: number;
+  unconfigured: number;
+}
+
+export interface SlaImpactResponse {
+  generatedAt: string;
+  calendar: {
+    start: string;
+    end: string;
+    businessDays: number[];
+    holidays: string[];
+    minutesPerDay: number;
+  };
+  policies: Array<{
+    id: string;
+    name: string;
+    priority: string;
+    responseHours: number;
+    resolutionHours: number;
+  }>;
+  current: SlaImpactCounts;
+  proposed: SlaImpactCounts;
+  changes: {
+    newlyOverdue: number;
+    newlyAtRisk: number;
+    deadlineChanged: number;
+    preservedReopened: number;
+  };
+}

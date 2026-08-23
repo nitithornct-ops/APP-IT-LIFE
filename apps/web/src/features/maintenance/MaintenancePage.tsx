@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Repeat2,
   Search,
+  UsersRound,
   Wrench,
 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -37,6 +38,7 @@ import type { ContractOption, ContractVendorRef } from '../../types/vendorsContr
 import { downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
 import { formatThaiDate } from '../../utils/date';
+import { PmRosterView } from './PmRosterView';
 
 const fieldClass =
   'h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/50';
@@ -490,7 +492,7 @@ export function MaintenancePage() {
   const table = useTableParams<'status' | 'recurrence' | 'search' | 'view'>({ filters: ['status', 'recurrence', 'search', 'view'] });
   const { page, pageSize } = table;
   const { status, recurrence, search } = table.filters;
-  const view: 'list' | 'calendar' = table.filters.view === 'calendar' ? 'calendar' : 'list';
+  const view: 'list' | 'calendar' | 'roster' = table.filters.view === 'calendar' ? 'calendar' : table.filters.view === 'roster' ? 'roster' : 'list';
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -550,6 +552,7 @@ export function MaintenancePage() {
         <div className="flex border-b border-slate-200 dark:border-slate-700">
           <button type="button" onClick={() => table.setFilter('view', '')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'list' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><ListChecks className="h-4 w-4" /> รายการ</button>
           <button type="button" onClick={() => table.setFilter('view', 'calendar')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'calendar' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><CalendarDays className="h-4 w-4" /> ปฏิทิน</button>
+          <button type="button" onClick={() => table.setFilter('view', 'roster')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'roster' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><UsersRound className="h-4 w-4" /> ตารางช่าง</button>
         </div>
       </section>
 
@@ -578,9 +581,9 @@ export function MaintenancePage() {
             )}
             <div className="px-4 pb-4"><TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredItems.length} totalPages={pageCount} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>
           </>
-        ) : (
+        ) : view === 'calendar' ? (
           <div className="overflow-x-auto"><CalendarView plans={items} month={calendarMonth} onMonthChange={setCalendarMonth} onSelect={setSelectedPlan} /></div>
-        )}
+        ) : <PmRosterView />}
       </section>
 
       {showCreate && <Modal title="เพิ่มแผน PM" size="lg" onClose={() => setShowCreate(false)} testId="pm-create-dialog">{isFormReady ? <CreatePlanForm assets={assetsQuery.data ?? []} technicians={technicians} templates={templatesQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={() => setShowCreate(false)} onSaved={() => setToast({ tone: 'success', message: 'เพิ่มแผน PM สำเร็จ' })} /> : <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" /> กำลังเตรียมแบบฟอร์ม...</div>}</Modal>}

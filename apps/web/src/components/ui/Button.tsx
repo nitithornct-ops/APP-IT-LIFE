@@ -2,22 +2,23 @@ import { Loader2 } from 'lucide-react';
 import type { ButtonHTMLAttributes } from 'react';
 import { cn } from '../../utils/cn';
 
-type Variant = 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'outline' | 'success' | 'danger' | 'ghost';
 type Size = 'sm' | 'md';
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-primary-700 text-white border border-primary-700 hover:bg-primary-800 shadow-sm',
-  secondary: 'bg-slate-700 text-white border border-slate-700 hover:bg-slate-800',
+  primary: 'border border-primary-700 bg-primary-700 text-white shadow-action hover:border-primary-900 hover:bg-primary-900',
+  secondary: 'border border-primary-950 bg-primary-950 text-white hover:bg-primary-900',
   outline:
-    'bg-white text-primary-700 border border-slate-300 hover:bg-primary-50 dark:bg-slate-800 dark:text-primary-300 dark:border-slate-600 dark:hover:bg-slate-700',
-  danger: 'bg-red-600 text-white border border-red-600 hover:bg-red-700',
+    'bg-white text-slate-700 border border-slate-300 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700',
+  success: 'border border-success-600 bg-success-600 text-white hover:bg-success-700 dark:border-emerald-500 dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400',
+  danger: 'border border-danger-700 bg-danger-700 text-white hover:bg-danger-600 dark:border-red-400 dark:bg-red-400 dark:text-slate-950 dark:hover:bg-red-300',
   ghost:
     'bg-transparent text-slate-600 border border-transparent hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700',
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'min-h-[34px] px-3 text-sm rounded-lg',
-  md: 'min-h-[40px] px-4 text-sm rounded-lg',
+  sm: 'min-h-9 rounded-[7px] px-3 text-xs',
+  md: 'min-h-10 rounded-[7px] px-4 text-[13.5px]',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -38,9 +39,10 @@ export function Button({
   return (
     <button
       type="button"
+      data-ui="button"
       disabled={disabled || isLoading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2 font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60',
         variantClasses[variant],
         sizeClasses[size],
         className,

@@ -1,6 +1,5 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { ApiError } from '../../services/apiClient';
-import { Button } from './Button';
+import { ErrorState } from './AsyncState';
 
 /**
  * สถานะ "โหลดข้อมูลไม่สำเร็จ" แบบเดียวกันทุกหน้า
@@ -25,20 +24,5 @@ export function QueryError({
       ? error.message
       : 'ไม่ทราบสาเหตุ กรุณาตรวจสอบการเชื่อมต่อเครือข่าย';
 
-  return (
-    <div
-      role="alert"
-      className="flex flex-col items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-6 py-8 text-center dark:border-red-900 dark:bg-red-950"
-    >
-      <AlertTriangle className="h-8 w-8 text-red-500 dark:text-red-400" aria-hidden="true" />
-      <p className="font-bold text-red-800 dark:text-red-200">{title}</p>
-      <p className="max-w-md text-sm text-red-700 dark:text-red-300">{detail}</p>
-      {onRetry && (
-        <Button variant="outline" onClick={onRetry} isLoading={isRetrying} className="mt-2">
-          <RefreshCw className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          ลองใหม่
-        </Button>
-      )}
-    </div>
-  );
+  return <ErrorState title={title} message={detail} onRetry={onRetry} isRetrying={isRetrying} />;
 }

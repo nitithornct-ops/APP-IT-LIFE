@@ -35,7 +35,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           <p className="mt-3 text-sm text-slate-600">ลองโหลดหน้าใหม่ หากยังพบปัญหาให้แจ้งผู้ดูแลระบบพร้อมเวลาที่เกิดเหตุ</p>
           <button
             type="button"
-            className="mt-6 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            className="mt-6 rounded-life bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
             onClick={() => window.location.reload()}
           >
             โหลดหน้าใหม่

@@ -37,6 +37,8 @@ export const listMaintenancePlansQuerySchema = paginationQuerySchema.extend({
 });
 export type ListMaintenancePlansQuery = z.infer<typeof listMaintenancePlansQuerySchema>;
 
+export const pmRosterQuerySchema = z.object({ weekStart: isoDateString });
+
 export const startMaintenanceSchema = z.object({
   technicianId: z.string().uuid().optional(),
 });

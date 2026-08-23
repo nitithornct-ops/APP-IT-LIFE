@@ -63,4 +63,15 @@ export interface ReportDataset {
   totalRows: number;
   rangeDays: number;
   generatedAt: string;
+  csat?: {
+    average: number | null;
+    responseCount: number;
+    distribution: Array<{ score: number; count: number; percentage: number }>;
+    weeklyTrend: Array<{ label: string; average: number | null; responses: number }>;
+    categories: Array<{ label: string; average: number; responses: number }>;
+    technicians: Array<{ label: string; average: number; responses: number }>;
+    followUpCount: number;
+    followUps: Array<{ id: string; code: string; title: string; rating: number; feedback: string; submittedAt: string; owner: string }>;
+    mentions: Array<{ label: string; count: number }>;
+  };
 }

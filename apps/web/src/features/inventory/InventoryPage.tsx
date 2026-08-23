@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormModal } from '../../components/ui/Modal';
-import { Loader2, PackageSearch, Plus, X } from 'lucide-react';
+import { AlertTriangle, KeyRound, Loader2, PackageSearch, Plus, ShoppingCart, X } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { QueryError } from '../../components/ui/QueryError';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
 import type { InventoryItem, InventoryTransaction } from '../../types/assets';
@@ -179,6 +181,8 @@ export function InventoryPage() {
   const items = itemsQuery.data?.items ?? [];
   const lowCount = items.filter((i) => i.low).length;
   const totalValue = items.reduce((sum, i) => sum + i.value, 0);
+  const outOfStockCount = items.filter((i) => i.stock_qty <= 0).length;
+  const reorderTotal = items.filter((i) => i.low).reduce((sum, i) => sum + (i.reorder_qty ?? Math.max(0, i.min_qty - i.stock_qty)), 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -201,7 +205,8 @@ export function InventoryPage() {
         <StatCard icon={<PackageSearch className="h-5 w-5" aria-hidden="true" />} label="มูลค่าสต็อก (หน้านี้)" value={totalValue.toLocaleString('th-TH')} tone="teal" />
       </div>
 
-      <Card>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <Card className="min-w-0">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <span>รายการ Inventory</span>
           <button
@@ -228,11 +233,12 @@ export function InventoryPage() {
               <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
             </div>
           )}
+          {itemsQuery.isError && <QueryError title="โหลดรายการคลังไม่สำเร็จ" error={itemsQuery.error} onRetry={() => void itemsQuery.refetch()} isRetrying={itemsQuery.isFetching} />}
           {itemsQuery.data && items.length === 0 && <EmptyState icon={<PackageSearch className="h-10 w-10" aria-hidden="true" />} title="ไม่พบรายการ" />}
 
           <div className="flex flex-col gap-2">
             {items.map((item) => (
-              <div key={item.id} data-testid={`inv-row-${item.id}`} className="rounded-lg border border-slate-100 p-3 dark:border-slate-700">
+              <div key={item.id} data-testid={`inv-row-${item.id}`} className={`rounded-lg border p-3 ${item.stock_qty <= 0 ? 'border-red-200 bg-red-50/40 shadow-[inset_3px_0_0_#dc2626] dark:border-red-900 dark:bg-red-950/10' : item.low ? 'border-amber-200 bg-amber-50/30 shadow-[inset_3px_0_0_#d97706] dark:border-amber-900 dark:bg-amber-950/10' : 'border-slate-100 dark:border-slate-700'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium text-slate-800 dark:text-slate-200">
@@ -254,6 +260,21 @@ export function InventoryPage() {
           </div>
         </CardBody>
       </Card>
+
+      <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปการจัดซื้อคลัง">
+        <Card>
+          <CardHeader className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-primary-600" /><span>แผนเติมสต็อก</span></CardHeader>
+          <CardBody className="space-y-3">
+            <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/20"><p className="text-[10px] font-semibold text-red-700 dark:text-red-300">หมดสต็อก</p><p className="mt-1 font-mono text-xl font-bold text-red-700 dark:text-red-300">{outOfStockCount}</p></div><div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/20"><p className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">ต่ำกว่าขั้นต่ำ</p><p className="mt-1 font-mono text-xl font-bold text-amber-700 dark:text-amber-300">{lowCount}</p></div></div>
+            <div><p className="text-xs font-semibold text-slate-700 dark:text-slate-200">รายการที่ควรเติมก่อน</p><div className="mt-2 space-y-2">{items.filter((item) => item.low).slice(0, 4).map((item) => <div key={item.id} className="flex items-start justify-between gap-3 text-xs"><div className="min-w-0"><p className="truncate font-semibold">{item.item_name}</p><p className="text-[10px] text-slate-500">คงเหลือ {item.stock_qty} / ขั้นต่ำ {item.min_qty}</p></div><span className="shrink-0 font-mono text-amber-700">+{item.reorder_qty ?? Math.max(0, item.min_qty - item.stock_qty)}</span></div>)}{lowCount === 0 && <p className="text-xs text-slate-500">สต็อกทุกรายการอยู่เหนือจุดสั่งซื้อ</p>}</div></div>
+          </CardBody>
+        </Card>
+
+        {lowCount > 0 && <div className="rounded-[10px] border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />รวมเป็นใบขอซื้อเดียว</p><p className="mt-2 text-xs leading-5 text-slate-700 dark:text-slate-300">มี {lowCount} รายการที่ควรเติม รวมจำนวนแนะนำ {reorderTotal.toLocaleString('th-TH')} หน่วย ตรวจสอบหน่วยนับก่อนจัดทำใบขอซื้อ</p><button type="button" onClick={() => setLowStockOnly(true)} className="mt-3 text-xs font-bold text-primary-700 hover:underline dark:text-primary-300">ตรวจรายการใกล้หมด</button></div>}
+
+        <Link to="/software-licenses" className="rounded-[10px] border border-slate-200 bg-white p-4 transition hover:border-primary-300 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100"><KeyRound className="h-4 w-4 text-primary-600" />ลิขสิทธิ์ซอฟต์แวร์</p><p className="mt-2 text-xs text-slate-500">ตรวจสิทธิ์คงเหลือ การใช้เกิน และรอบต่ออายุ</p></Link>
+      </aside>
+      </div>
     </div>
   );
 }

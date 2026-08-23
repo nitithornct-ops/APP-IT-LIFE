@@ -18,7 +18,7 @@ export function LineCallbackPage() {
   }, [params, navigate]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+    <main className="life-public flex min-h-screen items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
     </main>
   );

@@ -164,7 +164,7 @@ export function PermissionMatrixPage() {
                         type="button"
                         disabled={!isDirty || savingRoleId === role.id}
                         onClick={() => saveMutation.mutate(role.id)}
-                        className="mt-1 rounded bg-blue-600 px-2 py-0.5 text-[11px] font-normal text-white disabled:opacity-30"
+                        className="mt-1 rounded bg-primary-600 px-2 py-0.5 text-[11px] font-normal text-white disabled:opacity-30"
                       >
                         {savingRoleId === role.id ? 'กำลังบันทึก...' : 'บันทึก'}
                       </button>

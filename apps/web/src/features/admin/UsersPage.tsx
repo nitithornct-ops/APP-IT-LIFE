@@ -411,7 +411,7 @@ function InviteUserForm({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
           ส่งคำเชิญ
@@ -452,13 +452,13 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
         {(rolesQuery.data ?? []).map((r) => (
           <span
             key={r.id}
-            className="flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+            className="flex items-center gap-1 rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-900 dark:text-primary-200"
           >
             {r.roles?.name_th}
             <button
               type="button"
               onClick={() => { setRemoveError(null); setPendingRemoval(r); }}
-              className="text-blue-500 hover:text-red-600"
+              className="text-primary-600 hover:text-red-600"
               aria-label={`ลบบทบาท ${r.roles?.name_th}`}
             >
               <X className="h-3 w-3" aria-hidden="true" />
@@ -474,7 +474,7 @@ function UserRolesPanel({ userId, allRoles }: { userId: string; allRoles: Role[]
               key={role.id}
               type="button"
               onClick={() => assignMutation.mutate(role.id)}
-              className="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 dark:border-slate-600 dark:text-slate-400"
+              className="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-xs text-slate-500 hover:border-primary-400 hover:text-primary-600 dark:border-slate-600 dark:text-slate-400"
             >
               <Plus className="h-3 w-3" aria-hidden="true" />
               {role.name_th}
@@ -547,7 +547,7 @@ export function UsersPage() {
         <button
           type="button"
           onClick={() => setShowInvite((v) => !v)}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          className="flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
         >
           <UserPlus className="h-4 w-4" aria-hidden="true" />
           เชิญผู้ใช้ใหม่

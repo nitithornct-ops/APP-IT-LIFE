@@ -36,6 +36,20 @@ interface ReportEntry {
   critical: boolean;
   amount?: number;
   rating?: number;
+  feedback?: string;
+  feedbackAt?: string;
+}
+
+export interface CsatEntryInput {
+  id: string;
+  code: string;
+  title: string;
+  category: string;
+  owner: string;
+  rating?: number;
+  feedback?: string;
+  feedbackAt?: string;
+  createdAt: string;
 }
 
 interface SourceConfig {
@@ -57,6 +71,11 @@ const TERMINAL = /ปิด|เสร็จ|สำเร็จ|อนุมั�
 function value(row: Row, key: string): string { return row[key] === null || row[key] === undefined ? '' : String(row[key]); }
 function numeric(row: Row, key: string): number { const result = Number(row[key]); return Number.isFinite(result) ? result : 0; }
 function shortId(row: Row, prefix: string): string { return `${prefix}-${value(row, 'id').slice(0, 8).toUpperCase()}`; }
+function relatedValue(row: Row, key: string, field = 'name'): string {
+  const relation = row[key];
+  const record = Array.isArray(relation) ? relation[0] : relation;
+  return record && typeof record === 'object' && field in record ? String((record as Row)[field] ?? '') : '';
+}
 function dateLabel(input: unknown): string {
   if (!input) return '—';
   const date = new Date(String(input));
@@ -71,14 +90,16 @@ function isOverdue(due: unknown, terminal: boolean): boolean {
 function standardEntry(args: {
   row: Row; source: string; code: string; title: string; status: string; category?: string;
   owner?: string; due?: unknown; created?: unknown; completed?: unknown; warning?: boolean;
-  critical?: boolean; amount?: number; rating?: number;
+  critical?: boolean; amount?: number; rating?: number; feedback?: string; feedbackAt?: string;
+  extraRow?: Record<string, string | number | boolean | null>;
 }): ReportEntry {
   const terminal = TERMINAL.test(args.status);
   const createdAt = args.created ? String(args.created) : new Date(0).toISOString();
   return {
     row: {
-      source: args.source, code: args.code, title: args.title, status: args.status || '—',
+      id: value(args.row, 'id'), source: args.source, code: args.code, title: args.title, status: args.status || '—',
       category: args.category || '—', owner: args.owner || '—', dueDate: dateLabel(args.due), recordDate: dateLabel(args.created),
+      ...args.extraRow,
     },
     createdAt,
     completedAt: args.completed ? String(args.completed) : undefined,
@@ -88,6 +109,8 @@ function standardEntry(args: {
     critical: Boolean(args.critical),
     amount: args.amount,
     rating: args.rating,
+    feedback: args.feedback,
+    feedbackAt: args.feedbackAt,
   };
 }
 
@@ -98,8 +121,29 @@ const REPORTS: Record<ReportKey, ReportConfig> = {
     sourcePermissions: ['ticket.view'],
     sources: [{
       permission: 'ticket.view', table: 'tickets', dateColumn: 'created_at', sourceLabel: 'Ticket',
-      select: 'id,title,priority,status,due_at,response_due_at,acknowledged_at,resolved_at,closed_at,rating,created_at,assignee_id',
-      map: (row) => standardEntry({ row, source: 'Ticket', code: shortId(row, 'TKT'), title: value(row, 'title'), status: value(row, 'status'), category: value(row, 'priority'), owner: value(row, 'assignee_id'), due: row.due_at, created: row.created_at, completed: row.closed_at ?? row.resolved_at, critical: value(row, 'priority') === 'วิกฤต', rating: row.rating === null ? undefined : numeric(row, 'rating') }),
+      select: 'id,ticket_no,title,priority,status,due_at,response_due_at,acknowledged_at,resolved_at,closed_at,rating,feedback,feedback_at,created_at,assignee_id,assignee_name_snapshot,ticket_categories(name)',
+      map: (row) => standardEntry({
+        row,
+        source: 'Ticket',
+        code: value(row, 'ticket_no') || shortId(row, 'TKT'),
+        title: value(row, 'title'),
+        status: value(row, 'status'),
+        category: relatedValue(row, 'ticket_categories') || value(row, 'priority'),
+        owner: value(row, 'assignee_name_snapshot') || value(row, 'assignee_id'),
+        due: row.due_at,
+        created: row.created_at,
+        completed: row.closed_at ?? row.resolved_at,
+        critical: value(row, 'priority') === 'วิกฤต',
+        rating: row.rating === null ? undefined : numeric(row, 'rating'),
+        feedback: value(row, 'feedback') || undefined,
+        feedbackAt: value(row, 'feedback_at') || undefined,
+        extraRow: {
+          priority: value(row, 'priority') || '—',
+          rating: row.rating === null ? null : numeric(row, 'rating'),
+          feedback: value(row, 'feedback') || '—',
+          feedbackDate: dateLabel(row.feedback_at),
+        },
+      }),
     }],
   },
   'requests-workflows': {
@@ -213,6 +257,79 @@ function trend(entries: ReportEntry[]) {
 
 function metric(label: string, value: string | number, tone: Tone, note?: string) { return { label, value, tone, note }; }
 
+const CSAT_STOP_WORDS = new Set(['การ', 'และ', 'ที่', 'ได้', 'ให้', 'ของ', 'มาก', 'ครับ', 'ค่ะ', 'แต่', 'จาก', 'กับ', 'เป็น', 'ไม่', 'มี', 'แล้ว']);
+
+export function buildCsatAnalytics(entries: CsatEntryInput[], now = new Date()) {
+  const rated = entries.filter((entry) => entry.rating !== undefined && entry.rating >= 1 && entry.rating <= 5);
+  const responseCount = rated.length;
+  const average = responseCount ? Number((rated.reduce((sum, entry) => sum + (entry.rating ?? 0), 0) / responseCount).toFixed(2)) : null;
+  const distribution = [5, 4, 3, 2, 1].map((score) => {
+    const count = rated.filter((entry) => entry.rating === score).length;
+    return { score, count, percentage: responseCount ? Number(((count / responseCount) * 100).toFixed(1)) : 0 };
+  });
+
+  const currentWeek = new Date(now);
+  currentWeek.setUTCHours(0, 0, 0, 0);
+  const weekday = currentWeek.getUTCDay() || 7;
+  currentWeek.setUTCDate(currentWeek.getUTCDate() - weekday + 1);
+  const weeks = Array.from({ length: 12 }, (_, index) => {
+    const start = new Date(currentWeek);
+    start.setUTCDate(start.getUTCDate() - (11 - index) * 7);
+    return { key: start.toISOString().slice(0, 10), start, label: new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(start), total: 0, responses: 0 };
+  });
+  const weekMap = new Map(weeks.map((week) => [week.key, week]));
+  for (const entry of rated) {
+    const submitted = new Date(entry.feedbackAt ?? entry.createdAt);
+    if (Number.isNaN(submitted.getTime())) continue;
+    submitted.setUTCHours(0, 0, 0, 0);
+    const submittedWeekday = submitted.getUTCDay() || 7;
+    submitted.setUTCDate(submitted.getUTCDate() - submittedWeekday + 1);
+    const week = weekMap.get(submitted.toISOString().slice(0, 10));
+    if (week) { week.total += entry.rating ?? 0; week.responses += 1; }
+  }
+  const weeklyTrend = weeks.map((week) => ({ label: week.label, average: week.responses ? Number((week.total / week.responses).toFixed(2)) : null, responses: week.responses }));
+
+  function groupedScores(key: 'category' | 'owner') {
+    const groups = new Map<string, { total: number; responses: number }>();
+    for (const entry of rated) {
+      const label = entry[key]?.trim();
+      if (!label || label === '—') continue;
+      const current = groups.get(label) ?? { total: 0, responses: 0 };
+      current.total += entry.rating ?? 0;
+      current.responses += 1;
+      groups.set(label, current);
+    }
+    return [...groups.entries()]
+      .map(([label, score]) => ({ label, average: Number((score.total / score.responses).toFixed(2)), responses: score.responses }))
+      .sort((a, b) => b.average - a.average || b.responses - a.responses);
+  }
+
+  const mentionCounts = new Map<string, number>();
+  for (const entry of rated) {
+    for (const word of (entry.feedback ?? '').toLocaleLowerCase('th').replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ').split(/\s+/)) {
+      if (word.length < 3 || CSAT_STOP_WORDS.has(word)) continue;
+      mentionCounts.set(word, (mentionCounts.get(word) ?? 0) + 1);
+    }
+  }
+  const mentions = [...mentionCounts.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th')).slice(0, 10);
+  const followUps = rated
+    .filter((entry) => (entry.rating ?? 5) <= 3)
+    .sort((a, b) => new Date(b.feedbackAt ?? b.createdAt).getTime() - new Date(a.feedbackAt ?? a.createdAt).getTime())
+    .map((entry) => ({ id: entry.id, code: entry.code, title: entry.title, rating: entry.rating ?? 0, feedback: entry.feedback ?? '', submittedAt: entry.feedbackAt ?? entry.createdAt, owner: entry.owner }));
+
+  return {
+    average,
+    responseCount,
+    distribution,
+    weeklyTrend,
+    categories: groupedScores('category'),
+    technicians: groupedScores('owner').slice(0, 5),
+    followUpCount: followUps.length,
+    followUps: followUps.slice(0, 20),
+    mentions,
+  };
+}
+
 function buildDataset(config: ReportConfig, definition: ReportDefinition, entries: ReportEntry[], rangeDays: number) {
   const open = entries.filter((entry) => !entry.terminal).length;
   const completed = entries.filter((entry) => entry.terminal).length;
@@ -230,16 +347,24 @@ function buildDataset(config: ReportConfig, definition: ReportDefinition, entrie
   if (overdue) alerts.push(`มี ${overdue} รายการเกินกำหนดและยังไม่ปิด`);
   if (critical) alerts.push(`มี ${critical} รายการระดับสูงหรือวิกฤตที่ยังเปิดอยู่`);
   if (warning) alerts.push(`มี ${warning} รายการที่ถึงเกณฑ์เตือน ต้องตรวจสอบรายละเอียด`);
+  const columns = [
+    { key: 'source', label: 'แหล่งข้อมูล' }, { key: 'code', label: 'รหัส' }, { key: 'title', label: 'รายการ' },
+    { key: 'status', label: 'สถานะ' }, { key: 'category', label: 'ประเภท/ระดับ' }, { key: 'owner', label: 'ผู้รับผิดชอบ' },
+    { key: 'dueDate', label: 'ครบกำหนด' }, { key: 'recordDate', label: 'วันที่บันทึก' },
+  ];
+  if (config.key === 'service-desk') columns.push({ key: 'rating', label: 'CSAT' }, { key: 'feedback', label: 'ความคิดเห็น' });
+  const csatEntries: CsatEntryInput[] = entries.map((entry) => ({
+    id: String(entry.row.id ?? ''), code: String(entry.row.code ?? ''), title: String(entry.row.title ?? ''),
+    category: String(entry.row.category ?? '—'), owner: String(entry.row.owner ?? '—'), rating: entry.rating,
+    feedback: entry.feedback, feedbackAt: entry.feedbackAt, createdAt: entry.createdAt,
+  }));
   return {
     definition, metrics, alerts,
     breakdowns: [{ label: 'แยกตามแหล่งข้อมูล', items: countBy(entries, 'source') }, { label: 'แยกตามสถานะ', items: countBy(entries, 'status') }],
     trend: trend(entries), trendLabels: { primary: 'สร้าง', secondary: 'เสร็จสิ้น' },
-    columns: [
-      { key: 'source', label: 'แหล่งข้อมูล' }, { key: 'code', label: 'รหัส' }, { key: 'title', label: 'รายการ' },
-      { key: 'status', label: 'สถานะ' }, { key: 'category', label: 'ประเภท/ระดับ' }, { key: 'owner', label: 'ผู้รับผิดชอบ' },
-      { key: 'dueDate', label: 'ครบกำหนด' }, { key: 'recordDate', label: 'วันที่บันทึก' },
-    ],
+    columns,
     rows: entries.map((entry) => entry.row), totalRows: entries.length, rangeDays, generatedAt: new Date().toISOString(),
+    csat: config.key === 'service-desk' ? buildCsatAnalytics(csatEntries) : undefined,
   };
 }
 
