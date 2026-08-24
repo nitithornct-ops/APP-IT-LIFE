@@ -14,7 +14,7 @@ function parseEnv(path: string): Record<string, string> {
 }
 
 async function expectImageLoaded(image: Locator) {
-  await expect(image).toHaveAttribute('src', /^https:\/\//);
+  await expect(image).toHaveAttribute('src', /^https:\/\//, { timeout: 20_000 });
   await expect.poll(
     () => image.evaluate((node) => {
       const element = node as HTMLImageElement;
