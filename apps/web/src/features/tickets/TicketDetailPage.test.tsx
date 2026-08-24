@@ -52,7 +52,6 @@ function makeTicket(overrides: Partial<TicketDetail> = {}): TicketDetail {
     feedback_at: null,
     signature_storage_path: null,
     signature_url: null,
-    signature_source: null,
     signature_uploaded_by: null,
     signature_uploaded_at: null,
     outsource_vendor_id: null,

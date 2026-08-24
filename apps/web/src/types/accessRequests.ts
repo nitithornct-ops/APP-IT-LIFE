@@ -8,6 +8,7 @@ export interface AccessSystem {
   name: string;
   status: 'active' | 'inactive';
   notes: string | null;
+  created_at: string;
 }
 
 export interface AccessRequestListItem {

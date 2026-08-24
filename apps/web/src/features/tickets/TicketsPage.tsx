@@ -507,7 +507,8 @@ export function TicketsPage() {
     filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
   });
   const { page, pageSize, sort } = table;
-  const effectiveSort = sort ?? { key: 'due_at', order: 'asc' as const };
+  // ค่าเริ่มต้นคือใบงานล่าสุดขึ้นก่อน เหมือนตารางทุกโมดูล — เรียงตามกำหนด SLA ได้จากหัวคอลัมน์
+  const effectiveSort = sort ?? { key: 'created_at', order: 'desc' as const };
   const { status, categoryId, priority, search: searchInput } = table.filters;
   const mineOnly = table.filters.mine === 'true';
   const search = useDebouncedValue(searchInput.trim(), 350);
@@ -791,6 +792,7 @@ export function TicketsPage() {
                 tableId="tickets"
                 sort={effectiveSort}
                 onSortChange={table.setSort}
+                rowNumberStart={(page - 1) * pageSize + 1}
                 stickyHeader
                 cardOnMobile
                 itemLabel="ใบงาน"

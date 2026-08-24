@@ -594,6 +594,7 @@ export function UsersPage() {
             mode="server"
             sort={sort}
             onSortChange={table.setSort}
+            rowNumberStart={(page - 1) * pageSize + 1}
             className="w-full text-left text-sm"
           >
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">

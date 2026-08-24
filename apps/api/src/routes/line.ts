@@ -358,19 +358,14 @@ lineRoute.get(
       .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
       admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status').eq('status', 'active').order('sort_order').order('created_at'),
     ]);
-    let signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
-    let signatureSource: 'ticket' | 'default' | null = signaturePath ? 'ticket' : null;
-    if (!signaturePath) {
-      const { data: setting } = await admin.from('system_settings').select('value').eq('key', 'TICKET_FORM_SIGNATURE_PATH').maybeSingle();
-      signaturePath = String(setting?.value ?? '');
-      if (signaturePath) signatureSource = 'default';
-    }
+    // ไม่มีลายเซ็นกลางให้ตกทอดแล้ว — ผู้ร้องเห็นลายเซ็นเฉพาะที่มีคนเซ็นให้ใบนี้จริง
+    const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
     let signatureUrl: string | null = null;
     if (signaturePath) {
       const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(signaturePath, 3600);
       signatureUrl = data?.signedUrl ?? null;
     }
-    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl, signature_source: signatureSource }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [] }));
+    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [] }));
   },
 );
 

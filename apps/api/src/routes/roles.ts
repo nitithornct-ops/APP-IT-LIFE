@@ -18,7 +18,7 @@ const viewOrManage = requireAnyPermission(['role.view', 'role.manage']);
 rolesRoute.get('/', viewOrManage, async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
-  const { data, error } = await supabase.from('roles').select('*').order('created_at', { ascending: true });
+  const { data, error } = await supabase.from('roles').select('*').order('created_at', { ascending: false });
 
   if (error) {
     return c.json(fail(reqId, 'ROLES_LIST_FAILED', 'ดึงรายการบทบาทไม่สำเร็จ'), 400);

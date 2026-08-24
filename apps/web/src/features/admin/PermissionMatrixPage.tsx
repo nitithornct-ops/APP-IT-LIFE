@@ -145,7 +145,7 @@ export function PermissionMatrixPage() {
       {saveError && <p className="mb-3 text-sm text-red-600">{saveError}</p>}
 
       <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
-        <DataTable className="w-full border-collapse text-sm">
+        <DataTable rowNumber={false} className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800">
               <th className="sticky left-0 bg-slate-50 px-4 py-2 text-left text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">

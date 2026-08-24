@@ -120,7 +120,7 @@ employeesRoute.get('/', requirePermission('employee.manage'), zValidator('query'
   let query = supabase
     .from('employees')
     .select('*', { count: 'exact' })
-    .order('first_name_th', { ascending: true })
+    .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
 
   query = applyEmployeeListFilters(query, { search, status, departmentId, ownership }, assignedEmployeeIds);

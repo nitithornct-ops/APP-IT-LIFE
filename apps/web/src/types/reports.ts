@@ -2,6 +2,7 @@ export type ReportKey =
   | 'service-desk'
   | 'requests-workflows'
   | 'assets-operations'
+  | 'asset-custody'
   | 'security-resilience'
   | 'governance-compliance';
 

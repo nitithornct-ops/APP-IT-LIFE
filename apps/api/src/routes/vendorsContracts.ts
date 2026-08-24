@@ -62,7 +62,7 @@ vendorsRoute.get('/references', requirePermission('vendor.manage'), async (c) =>
 vendorsRoute.get('/', zValidator('query', listVendorsQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const { page, pageSize, search, status, serviceType } = c.req.valid('query');
-  let query = c.get('supabase').from('vendors').select(VENDOR_SELECT, { count: 'exact' }).order('name').range(...paginationRange(page, pageSize));
+  let query = c.get('supabase').from('vendors').select(VENDOR_SELECT, { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));
   if (status) query = query.eq('status', status);
   if (serviceType) query = query.eq('service_type', serviceType);
   if (search) {
@@ -206,7 +206,7 @@ contractsRoute.post('/check-expiry', requirePermission('contract.manage'), async
 contractsRoute.get('/', zValidator('query', listContractsQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const { page, pageSize, search, status, contractType, vendorId, expiringWithinDays } = c.req.valid('query');
-  let query = c.get('supabase').from('contracts').select(CONTRACT_SELECT, { count: 'exact' }).order('end_date', { ascending: true, nullsFirst: false }).range(...paginationRange(page, pageSize));
+  let query = c.get('supabase').from('contracts').select(CONTRACT_SELECT, { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));
   if (status) query = query.eq('status', status);
   if (contractType) query = query.eq('contract_type', contractType);
   if (vendorId) query = query.eq('vendor_id', vendorId);

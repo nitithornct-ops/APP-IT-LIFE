@@ -13,7 +13,7 @@ function parseEnv(path: string): Record<string, string> {
   }));
 }
 
-test('configures one signature and shows the automatic form from the Ticket list', async ({ page, request }) => {
+test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
   const vars = parseEnv(resolve(process.cwd(), '../api/.dev.vars'));
   const email = process.env.UAT_ADMIN_EMAIL;
   const password = process.env.UAT_ADMIN_PASSWORD;
@@ -36,10 +36,11 @@ test('configures one signature and shows the automatic form from the Ticket list
   const formTicketNo = formTicketBody.data.ticket_no;
   if (!formTicketNo) throw new Error('Form Ticket has no ticket number');
 
+  // ยืม PNG จริงจาก Ticket ที่มีลายเซ็นอยู่แล้ว มาเซ็นให้ใบที่จะพิมพ์ — ไม่มีลายเซ็นกลางให้ตั้งอีกแล้ว
   const signatureResponse = await request.get(sourceBody.data.signature_url);
-  const upload = await request.post('http://127.0.0.1:8787/api/v1/settings/ticket-form-signature', {
+  const upload = await request.post(`http://127.0.0.1:8787/api/v1/tickets/${formTicketId}/signature`, {
     headers: auth,
-    multipart: { file: { name: 'default-signature.png', mimeType: 'image/png', buffer: await signatureResponse.body() } },
+    multipart: { file: { name: 'ticket-signature.png', mimeType: 'image/png', buffer: await signatureResponse.body() } },
   });
   expect(upload.ok(), await upload.text()).toBeTruthy();
 
@@ -49,10 +50,9 @@ test('configures one signature and shows the automatic form from the Ticket list
   await page.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
-  await page.goto('/admin/settings');
-  await expect(page.getByTestId('ticket-form-signature-setting')).toBeVisible();
-  await expect(page.getByTestId('ticket-form-signature-setting').locator('img')).toBeVisible();
-  await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-default-signature-setting.png'), fullPage: true });
+  await page.goto(`/tickets/${formTicketId}`);
+  await expect(page.getByTestId('ticket-signature-panel').locator('img')).toBeVisible();
+  await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-per-ticket-signature.png'), fullPage: true });
 
   await page.goto('/tickets');
   const row = page.locator('tr', { hasText: formTicketNo });
@@ -63,6 +63,5 @@ test('configures one signature and shows the automatic form from the Ticket list
   await page.goto(`/tickets/${formTicketId}/form`);
   await expect(page.getByTestId('ticket-form-page')).toContainText(formTicketNo);
   await expect(page.getByAltText('ลายเซ็นรับรอง Ticket')).toBeVisible();
-  await expect(page.getByText('ลายเซ็นกลางของระบบ')).toBeVisible();
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-automatic-preview.png'), fullPage: true });
 });

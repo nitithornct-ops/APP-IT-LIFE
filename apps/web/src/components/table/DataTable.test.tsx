@@ -9,6 +9,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** เนื้อหาเฉพาะเซลล์ข้อมูล โดยตัดคอลัมน์ "ลำดับ" ที่ตารางเติมให้ทุกโมดูลออก */
+function dataCellTexts(): (string | null)[] {
+  return screen.getAllByRole('cell')
+    .filter((cell) => cell.getAttribute('data-label') !== 'ลำดับ')
+    .map((cell) => cell.textContent);
+}
+
 describe('DataTable', () => {
   it('uses the global 10-row pagination and changes only table rows', () => {
     render(
@@ -178,7 +185,7 @@ describe('DataTable', () => {
     );
 
     const header = screen.getByRole('button', { name: 'ชื่อ' });
-    const names = () => screen.getAllByRole('cell').map((cell) => cell.textContent);
+    const names = dataCellTexts;
 
     expect(names()).toEqual(['บี', 'เอ', 'ซี']);
 
@@ -225,8 +232,7 @@ describe('DataTable', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'ครบกำหนด' }));
-    expect(screen.getAllByRole('cell').map((cell) => cell.textContent))
-      .toEqual(['15 ม.ค. 2569', '20 ก.พ. 2569', '1 มี.ค. 2569']);
+    expect(dataCellTexts()).toEqual(['15 ม.ค. 2569', '20 ก.พ. 2569', '1 มี.ค. 2569']);
   });
 
   it('ดันแถวที่ไม่มีค่าไปท้ายเสมอ ไม่ว่าจะเรียงขึ้นหรือลง', () => {
@@ -242,7 +248,7 @@ describe('DataTable', () => {
     );
 
     const header = screen.getByRole('button', { name: 'คะแนน' });
-    const scores = () => screen.getAllByRole('cell').map((cell) => cell.textContent);
+    const scores = dataCellTexts;
 
     fireEvent.click(header);
     expect(scores()).toEqual(['1', '3', '']);
@@ -265,7 +271,7 @@ describe('DataTable', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ครบกำหนด SLA' }));
     expect(onSortChange).toHaveBeenCalledWith({ key: 'due_at', order: 'asc' });
     // ลำดับแถวต้องไม่ถูกแตะ เพราะ API เป็นคนเรียง
-    expect(screen.getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['บี', 'เอ']);
+    expect(dataCellTexts()).toEqual(['บี', 'เอ']);
   });
 
   it('mode="server" หมุน asc → desc → ล้างค่า ตามสถานะที่หน้าส่งมา', () => {
@@ -425,6 +431,68 @@ describe('DataTable', () => {
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
     const expandedRow = screen.getByText('แถวขยาย').closest('tr');
     expect(expandedRow?.querySelectorAll('td')).toHaveLength(2);
+  });
+
+  it('ใส่เลขลำดับให้ทุกแถวและนับต่อจากหน้าก่อนหน้า', () => {
+    render(
+      <DataTable>
+        <thead><tr><th>รายการ</th></tr></thead>
+        <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>แถว {index + 1}</td></tr>)}</tbody>
+      </DataTable>,
+    );
+
+    const numbers = () => screen.getAllByRole('cell')
+      .filter((cell) => cell.getAttribute('data-label') === 'ลำดับ')
+      .map((cell) => cell.textContent);
+
+    expect(screen.getByRole('columnheader', { name: 'ลำดับ' })).toBeVisible();
+    expect(numbers()).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'หน้าถัดไป' }));
+    expect(numbers()).toEqual(['11', '12']);
+  });
+
+  it('mode="server" เริ่มนับจาก rowNumberStart ที่หน้าส่งมา เพราะตารางไม่รู้ว่าอยู่หน้าไหน', () => {
+    render(
+      <DataTable mode="server" rowNumberStart={21}>
+        <thead><tr><th>รายการ</th></tr></thead>
+        <tbody><tr><td>แถว A</td></tr><tr><td>แถว B</td></tr></tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getAllByRole('cell')
+      .filter((cell) => cell.getAttribute('data-label') === 'ลำดับ')
+      .map((cell) => cell.textContent)).toEqual(['21', '22']);
+  });
+
+  it('แถวขยายที่เป็น colSpan เดียวกินคอลัมน์ลำดับเพิ่ม แทนการรับเลขของตัวเอง', () => {
+    render(
+      <DataTable pagination={false} toolbar={false}>
+        <thead><tr><th>เรื่อง</th><th>สถานะ</th></tr></thead>
+        <tbody>
+          <tr><td>ใบที่ 1</td><td>ใช้งาน</td></tr>
+          <tr><td colSpan={2}>รายละเอียดเพิ่มเติม</td></tr>
+          <tr><td>ใบที่ 2</td><td>ใช้งาน</td></tr>
+        </tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getAllByRole('cell')
+      .filter((cell) => cell.getAttribute('data-label') === 'ลำดับ')
+      .map((cell) => cell.textContent)).toEqual(['1', '2']);
+    expect(screen.getByText('รายละเอียดเพิ่มเติม')).toHaveAttribute('colspan', '3');
+  });
+
+  it('ปิดคอลัมน์ลำดับได้สำหรับตารางที่แถวไม่ใช่ "รายการที่ N"', () => {
+    render(
+      <DataTable rowNumber={false}>
+        <thead><tr><th>สิทธิ์</th></tr></thead>
+        <tbody><tr><td>ticket.view</td></tr></tbody>
+      </DataTable>,
+    );
+
+    expect(screen.queryByRole('columnheader', { name: 'ลำดับ' })).not.toBeInTheDocument();
+    expect(dataCellTexts()).toEqual(['ticket.view']);
   });
 
   it('ไม่มีช่องเลือกเลยเมื่อไม่ได้เปิด selectable', () => {

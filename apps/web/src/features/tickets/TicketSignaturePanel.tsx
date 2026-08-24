@@ -15,17 +15,14 @@ function errorText(error: unknown): string {
 export function TicketSignaturePanel({
   ticketId,
   signatureUrl,
-  signatureSource,
   uploadedAt,
   canManage,
 }: {
   ticketId: string;
   signatureUrl: string | null;
-  signatureSource?: 'ticket' | 'default' | null;
   uploadedAt: string | null;
   canManage: boolean;
 }) {
-  const effectiveSignatureSource = signatureSource ?? (signatureUrl ? 'ticket' : null);
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -80,16 +77,15 @@ export function TicketSignaturePanel({
             ? <img src={previewUrl} alt="ลายเซ็นรับรอง Ticket" className="max-h-28 max-w-full object-contain" />
             : <div className="text-center text-slate-400"><ImageIcon className="mx-auto h-9 w-9" /><p className="mt-2 text-xs">ยังไม่มีลายเซ็น</p></div>}
         </div>
-        {effectiveSignatureSource === 'default' && !file && <p className="mt-2 text-xs font-semibold text-primary-700 dark:text-primary-300">กำลังใช้ลายเซ็นกลางของแบบฟอร์ม Ticket</p>}
         {uploadedAt && !file && <p className="mt-1 text-xs text-slate-400">อัปโหลดเมื่อ {formatThaiDate(uploadedAt, 'd MMM yyyy HH:mm')}</p>}
         {(validationError || mutationError) && <p role="alert" className="mt-2 text-xs font-semibold text-red-600">{validationError || errorText(mutationError)}</p>}
         {canManage && <div className="mt-3 flex flex-wrap gap-2">
           <input ref={fileInputRef} aria-label="ไฟล์ลายเซ็น PNG" type="file" accept="image/png" className="sr-only" onChange={(event) => selectFile(event.target.files?.[0])} />
           <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><ImageIcon className="h-4 w-4" />เลือก PNG</Button>
           {file && <Button size="sm" isLoading={uploadMutation.isPending} onClick={() => uploadMutation.mutate(file)}><Upload className="h-4 w-4" />บันทึกลายเซ็น</Button>}
-          {effectiveSignatureSource === 'ticket' && signatureUrl && !file && <Button size="sm" variant="danger" isLoading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}><Trash2 className="h-4 w-4" />ลบลายเซ็นเฉพาะใบ</Button>}
+          {signatureUrl && !file && <Button size="sm" variant="danger" isLoading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}><Trash2 className="h-4 w-4" />ลบลายเซ็น</Button>}
         </div>}
-        {canManage && <p className="mt-2 text-xs text-slate-500">สำหรับแอดมินเท่านั้น · PNG ไม่เกิน 2 MB · ไฟล์ที่อัปโหลดตรงนี้จะแทนลายเซ็นกลางเฉพาะ Ticket ใบนี้</p>}
+        {canManage && <p className="mt-2 text-xs text-slate-500">PNG ไม่เกิน 2 MB · ลายเซ็นผูกกับ Ticket ใบนี้ใบเดียว ไม่ตกทอดไปใบอื่น</p>}
       </CardBody>
     </Card>
   );

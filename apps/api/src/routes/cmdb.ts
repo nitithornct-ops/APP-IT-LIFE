@@ -291,7 +291,7 @@ configurationItemsRoute.get(
     const reqId = c.get('requestId');
     const { page, pageSize, search, ciType, environment, criticality, status } = c.req.valid('query');
 
-    let query = supabase.from('configuration_items').select(CI_SELECT, { count: 'exact' }).order('ci_code', { ascending: true }).range(...paginationRange(page, pageSize));
+    let query = supabase.from('configuration_items').select(CI_SELECT, { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));
     if (ciType) query = query.eq('ci_type', ciType);
     if (environment) query = query.eq('environment', environment);
     if (criticality) query = query.eq('criticality', criticality);

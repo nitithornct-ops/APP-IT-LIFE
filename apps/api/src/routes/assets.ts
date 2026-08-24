@@ -306,7 +306,8 @@ assetsRoute.get(
         { count: 'exact' },
       )
       .eq('status', 'ใช้งานอยู่')
-      .order('loan_due_date', { ascending: true, nullsFirst: false })
+      // "ล่าสุดไปเก่าสุด" ของรายการยืมคือวันที่ยืม ไม่ใช่วันที่สร้างทะเบียนทรัพย์สิน
+      .order('loan_date', { ascending: false, nullsFirst: false })
       .range(...paginationRange(page, pageSize));
     if (departmentId) activeQuery = activeQuery.eq('department_id', departmentId);
     const safeActiveSearch = search ? cleanSearch(search) : '';
@@ -358,7 +359,7 @@ assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAs
     .from('assets')
     .select(ASSET_SELECT, { count: 'exact' })
     .range(...paginationRange(page, pageSize));
-  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'asset_code', ascending: true });
+  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
   query = applyAssetListFilters(query, { status, categoryId, search });
 
@@ -535,7 +536,7 @@ assetsRoute.get('/export', requirePermission('asset.view'), zValidator('query', 
       'category:asset_categories(name), department:departments(name_th), owner:employees(first_name_th, last_name_th)',
     )
     .range(0, LIST_EXPORT_MAX_ROWS - 1);
-  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'asset_code', ascending: true });
+  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'created_at', ascending: false });
   query = applyAssetListFilters(query, filters);
 
   const { data, error } = await query;

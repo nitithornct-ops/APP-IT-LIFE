@@ -466,7 +466,7 @@ export function TicketDetailPage() {
   const canUpdateWork = canManage && !LOCKED_TICKET_STATUSES.includes(ticket.status);
   const canComment = hasPermission('ticket.comment');
   const canInternalNote = hasPermission('ticket.internal_note') && hasPermission('ticket.update');
-  const canManageSignature = hasPermission('setting.manage');
+  const canManageSignature = hasPermission('ticket.update');
   const canReopen = hasPermission('ticket.close') && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน');
   const canRate = canSubmitTicketFeedback(ticket, me?.profile.id);
   const canEscalate =
@@ -568,7 +568,6 @@ export function TicketDetailPage() {
           <TicketSignaturePanel
             ticketId={ticket.id}
             signatureUrl={ticket.signature_url}
-            signatureSource={ticket.signature_source}
             uploadedAt={ticket.signature_uploaded_at}
             canManage={canManageSignature}
           />

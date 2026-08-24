@@ -47,7 +47,7 @@ licensesRoute.get('/', requirePermission('license.view'), zValidator('query', li
   let query = supabase
     .from('software_licenses')
     .select(LICENSE_SELECT, { count: 'exact' })
-    .order('software_name', { ascending: true })
+    .order('created_at', { ascending: false })
     .range(...paginationRange(page, pageSize));
 
   if (status) query = query.eq('status', status);

@@ -15,7 +15,7 @@ import { zodValidationHook } from '../utils/validation';
 import { reportExportSchema, reportRangeQuerySchema } from '../validators/reports';
 
 type Row = Record<string, unknown>;
-type ReportKey = 'service-desk' | 'requests-workflows' | 'assets-operations' | 'security-resilience' | 'governance-compliance';
+type ReportKey = 'service-desk' | 'requests-workflows' | 'assets-operations' | 'asset-custody' | 'security-resilience' | 'governance-compliance';
 type Tone = 'primary' | 'teal' | 'amber' | 'danger' | 'gray';
 
 interface ReportDefinition {
@@ -52,19 +52,46 @@ export interface CsatEntryInput {
   createdAt: string;
 }
 
+interface ReportColumn {
+  key: string;
+  label: string;
+}
+
+/** ชื่อ/รหัส/หน่วยงานของพนักงานหนึ่งคน เท่าที่รายงานต้องใช้ — ไม่มี PII อย่าง email หรือบัญชี AD */
+interface DirectoryEntry {
+  name: string;
+  code: string;
+  department: string;
+}
+
+export type Directory = Map<string, DirectoryEntry>;
+
 interface SourceConfig {
-  permission: string;
+  /** สิทธิ์ที่เปิดให้เห็นแหล่งข้อมูลนี้ — ใส่เป็น array ได้เมื่อ RLS ของตารางยอมรับหลายสาย (any-of) */
+  permission: string | string[];
   table: string;
   select: string;
   dateColumn: string;
   sourceLabel: string;
-  map: (row: Row) => ReportEntry;
+  map: (row: Row, directory: Directory) => ReportEntry;
   currentState?: boolean;
+  /** แหล่งนี้เก็บพนักงานเป็น uuid จึงต้องใช้ทะเบียนชื่อมาแปลงก่อนแสดง — ดู loadDirectory */
+  directory?: boolean;
 }
 
 interface ReportConfig extends ReportDefinition {
   sources: SourceConfig[];
+  /** ทับชุดคอลัมน์มาตรฐาน สำหรับรายงานที่มีรูปแบบเฉพาะของตัวเอง */
+  columns?: ReportColumn[];
 }
+
+/**
+ * สถานะที่ถือว่า "ของยังอยู่กับพนักงานคนนี้" — ต้องตรงกับ CURRENT_STATUSES ของ
+ * routes/employeeAssignments.ts และตัวนับใน routes/employees.ts เป๊ะ ๆ ไม่งั้นตัวเลข
+ * "พนักงานที่ถือครอง" ในรายงานจะไม่ตรงกับ "มีทรัพย์สินครอบครอง" ในหน้าพนักงาน
+ * (ของที่แจ้งสูญหายไม่นับว่าถือครอง — มันมีตัวนับของตัวเองอยู่แล้ว)
+ */
+const CUSTODY_HOLDING_STATUSES = ['ครอบครอง', 'ส่งซ่อม'];
 
 const TERMINAL = /ปิด|เสร็จ|สำเร็จ|อนุมัติแล้ว|ยกเลิก|ปฏิเสธ|ผ่าน|inactive|expired|closed|completed|cancelled/i;
 
@@ -75,6 +102,9 @@ function relatedValue(row: Row, key: string, field = 'name'): string {
   const relation = row[key];
   const record = Array.isArray(relation) ? relation[0] : relation;
   return record && typeof record === 'object' && field in record ? String((record as Row)[field] ?? '') : '';
+}
+function person(directory: Directory, id: unknown): DirectoryEntry {
+  return directory.get(String(id ?? '')) ?? { name: '', code: '', department: '' };
 }
 function dateLabel(input: unknown): string {
   if (!input) return '—';
@@ -91,9 +121,10 @@ function standardEntry(args: {
   row: Row; source: string; code: string; title: string; status: string; category?: string;
   owner?: string; due?: unknown; created?: unknown; completed?: unknown; warning?: boolean;
   critical?: boolean; amount?: number; rating?: number; feedback?: string; feedbackAt?: string;
-  extraRow?: Record<string, string | number | boolean | null>;
+  extraRow?: Record<string, string | number | boolean | null>; terminal?: boolean;
 }): ReportEntry {
-  const terminal = TERMINAL.test(args.status);
+  // บางชุดสถานะไม่เข้ากับ TERMINAL (เช่น 'คืนแล้ว' ของทะเบียนคุม) จึงให้แหล่งข้อมูลระบุเองได้
+  const terminal = args.terminal ?? TERMINAL.test(args.status);
   const createdAt = args.created ? String(args.created) : new Date(0).toISOString();
   return {
     row: {
@@ -114,7 +145,7 @@ function standardEntry(args: {
   };
 }
 
-const REPORTS: Record<ReportKey, ReportConfig> = {
+export const REPORTS: Record<ReportKey, ReportConfig> = {
   'service-desk': {
     key: 'service-desk', label: 'Service Desk', sortOrder: 10,
     description: 'ปริมาณงาน สถานะ SLA ความเร่งด่วน และความพึงพอใจของ Ticket',
@@ -161,10 +192,53 @@ const REPORTS: Record<ReportKey, ReportConfig> = {
     description: 'สินทรัพย์ แผนบำรุงรักษา สต็อก และ License ที่ต้องดูแล',
     sourcePermissions: ['asset.view', 'maintenance.view', 'inventory.view', 'license.view'],
     sources: [
-      { permission: 'asset.view', table: 'assets', dateColumn: 'created_at', sourceLabel: 'Asset', currentState: true, select: 'id,asset_code,name,asset_type,status,warranty_expire,price,created_at,owner_employee_id', map: (row) => standardEntry({ row, source: 'Asset', code: value(row, 'asset_code'), title: value(row, 'name'), status: value(row, 'status'), category: value(row, 'asset_type'), owner: value(row, 'owner_employee_id'), due: row.warranty_expire, created: row.created_at, warning: isOverdue(row.warranty_expire, false), amount: numeric(row, 'price') }) },
-      { permission: 'maintenance.view', table: 'maintenance_plans', dateColumn: 'created_at', sourceLabel: 'Maintenance', currentState: true, select: 'id,status,recurrence,plan_date,actual_date,next_due_date,created_at,technician_id,asset_id', map: (row) => standardEntry({ row, source: 'Maintenance', code: shortId(row, 'PM'), title: `แผนบำรุงรักษา ${value(row, 'asset_id').slice(0, 8)}`, status: value(row, 'status'), category: value(row, 'recurrence'), owner: value(row, 'technician_id'), due: row.next_due_date ?? row.plan_date, created: row.created_at, completed: row.actual_date }) },
+      { permission: 'asset.view', table: 'assets', dateColumn: 'created_at', sourceLabel: 'Asset', currentState: true, directory: true, select: 'id,asset_code,name,asset_type,status,warranty_expire,price,created_at,owner_employee_id', map: (row, directory) => standardEntry({ row, source: 'Asset', code: value(row, 'asset_code'), title: value(row, 'name'), status: value(row, 'status'), category: value(row, 'asset_type'), owner: person(directory, row.owner_employee_id).name, due: row.warranty_expire, created: row.created_at, warning: isOverdue(row.warranty_expire, false), amount: numeric(row, 'price') }) },
+      { permission: 'maintenance.view', table: 'maintenance_plans', dateColumn: 'created_at', sourceLabel: 'Maintenance', currentState: true, directory: true, select: 'id,status,recurrence,plan_date,actual_date,next_due_date,created_at,technician_id,asset_id', map: (row, directory) => standardEntry({ row, source: 'Maintenance', code: shortId(row, 'PM'), title: `แผนบำรุงรักษา ${value(row, 'asset_id').slice(0, 8)}`, status: value(row, 'status'), category: value(row, 'recurrence'), owner: person(directory, row.technician_id).name, due: row.next_due_date ?? row.plan_date, created: row.created_at, completed: row.actual_date }) },
       { permission: 'inventory.view', table: 'inventory_items', dateColumn: 'created_at', sourceLabel: 'Inventory', currentState: true, select: 'id,item_name,category,unit,stock_qty,min_qty,location,status,unit_price,created_at', map: (row) => standardEntry({ row, source: 'Inventory', code: shortId(row, 'INV'), title: value(row, 'item_name'), status: value(row, 'status'), category: value(row, 'category'), owner: value(row, 'location'), created: row.created_at, warning: numeric(row, 'stock_qty') <= numeric(row, 'min_qty'), amount: numeric(row, 'stock_qty') * numeric(row, 'unit_price') }) },
       { permission: 'license.view', table: 'software_licenses', dateColumn: 'created_at', sourceLabel: 'License', currentState: true, select: 'id,software_name,license_type,total_qty,used_qty,expire_date,vendor_name,status,created_at', map: (row) => standardEntry({ row, source: 'License', code: shortId(row, 'LIC'), title: value(row, 'software_name'), status: value(row, 'status'), category: value(row, 'license_type'), owner: value(row, 'vendor_name'), due: row.expire_date, created: row.created_at, warning: isOverdue(row.expire_date, false) || numeric(row, 'used_qty') >= numeric(row, 'total_qty') }) },
+    ],
+  },
+  /**
+   * ทะเบียนคุมทรัพย์สินรายพนักงาน — ตอบคำถามคนละข้อกับ Assets & Operations
+   * ข้างบนตอบว่า "ของชิ้นนี้อยู่ในสภาพไหน" ส่วนหน้านี้ตอบว่า "ใครถืออะไรอยู่" จึงยึด
+   * employee_assignments เป็นแกน (หนึ่งแถวต่อหนึ่งรายการที่ถือครอง) ไม่ใช่ตาราง assets
+   * เพราะของที่พนักงานถือมีทั้งที่ขึ้นทะเบียนกลางและรายการอิสระอย่าง License
+   */
+  'asset-custody': {
+    key: 'asset-custody', label: 'ทะเบียนคุมทรัพย์สินรายพนักงาน', sortOrder: 35,
+    description: 'พนักงานแต่ละคนถือครองอุปกรณ์และสิทธิ์ใช้งานอะไรอยู่บ้าง สำหรับตรวจนับและใช้เป็นใบทะเบียนคุม',
+    sourcePermissions: ['employee.manage', 'asset.view'],
+    columns: [
+      { key: 'employeeCode', label: 'รหัสพนักงาน' }, { key: 'owner', label: 'ผู้ถือครอง' }, { key: 'department', label: 'หน่วยงาน' },
+      { key: 'category', label: 'ประเภท' }, { key: 'title', label: 'รายการ' }, { key: 'code', label: 'รหัสทรัพย์สิน' },
+      { key: 'serialNumber', label: 'Serial / หมายเลขเครื่อง' }, { key: 'status', label: 'สถานะ' },
+      { key: 'assignedDate', label: 'วันที่รับมอบ' }, { key: 'returnedDate', label: 'วันที่คืน' },
+    ],
+    sources: [
+      {
+        // RLS ของตารางนี้เปิดให้ทั้งสายทะเบียนพนักงานและสายงาน IT Asset จึงตรวจแบบ any-of ให้ตรงกัน
+        permission: ['employee.manage', 'asset.view'], table: 'employee_assignments', dateColumn: 'created_at',
+        sourceLabel: 'Assignment', currentState: true, directory: true,
+        select: 'id,employee_id,category,item_name,asset_code,asset_number,serial_number,mac_address,status,assigned_date,returned_date,created_at,asset:assets(asset_code)',
+        map: (row, directory) => {
+          const holder = person(directory, row.employee_id);
+          const status = value(row, 'status');
+          return standardEntry({
+            row, source: 'ทะเบียนคุม',
+            // ของที่ขึ้นทะเบียนกลางให้ยึดรหัสจริงจาก assets ส่วนรายการอิสระใช้รหัสที่กรอกไว้เอง
+            code: relatedValue(row, 'asset', 'asset_code') || value(row, 'asset_code') || value(row, 'asset_number'),
+            title: value(row, 'item_name'), status, category: value(row, 'category'), owner: holder.name,
+            created: row.assigned_date ?? row.created_at, completed: row.returned_date,
+            terminal: status === 'คืนแล้ว', warning: status === 'ส่งซ่อม', critical: status === 'สูญหาย',
+            extraRow: {
+              employeeId: value(row, 'employee_id'), employeeCode: holder.code, department: holder.department,
+              serialNumber: value(row, 'serial_number') || value(row, 'mac_address'),
+              // วันที่รับมอบต้องมาจาก assigned_date เท่านั้น — created_at คือวันที่คีย์เข้าระบบ ไม่ใช่วันที่ส่งมอบจริง
+              assignedDate: dateLabel(row.assigned_date), returnedDate: dateLabel(row.returned_date),
+            },
+          });
+        },
+      },
     ],
   },
   'security-resilience': {
@@ -202,7 +276,36 @@ async function permissionSet(c: Context<AppEnv>): Promise<{ permissions: Set<str
 }
 
 function allowedSources(permissions: Set<string>, config: ReportConfig): SourceConfig[] {
-  return config.sources.filter((source) => permissions.has(source.permission));
+  return config.sources.filter((source) => (Array.isArray(source.permission) ? source.permission : [source.permission]).some((key) => permissions.has(key)));
+}
+
+/** ทะเบียนพนักงานเต็มองค์กรมีไม่กี่พันแถว ดึงทีเดียวถูกกว่าไล่ .in() ทีละชุดจนความยาว URL แตก */
+const DIRECTORY_MAX_ROWS = 5000;
+
+/**
+ * ทะเบียนชื่อพนักงานสำหรับคอลัมน์ "ผู้รับผิดชอบ" และ "ผู้ถือครอง"
+ *
+ * ตาราง employees ถูกล็อก select ไว้ที่ employee.manage เพราะมี PII (email, upn, username_ad)
+ * ถ้า embed ตรง ๆ ในรายงาน คนที่มีแค่ asset.view จะได้ค่าว่างทั้งคอลัมน์ ส่วนการยัด uuid ลงไปแทน
+ * ก็อ่านไม่รู้เรื่องอยู่ดี จึงอ่านผ่าน admin client แล้วคืนเฉพาะฟิลด์ทะเบียน เหมือนที่
+ * GET /api/v1/employees/options ทำ — สิทธิ์ถูกตรวจไปแล้วที่ allowedSources ของแหล่งข้อมูลนั้น
+ *
+ * ไม่กรอง status active ต่างจาก /options เพราะทะเบียนคุมต้องยังชี้ชื่อคนที่ลาออกไปแล้ว
+ * แต่ยังไม่ได้คืนของได้
+ */
+async function loadDirectory(c: Context<AppEnv>): Promise<{ directory: Directory; error?: string }> {
+  const { data, error } = await createAdminClient(c.env)
+    .from('employees')
+    .select('id,employee_code,prefix_th,first_name_th,last_name_th,department:departments(name_th)')
+    .limit(DIRECTORY_MAX_ROWS);
+  if (error) return { directory: new Map(), error: error.message };
+  return {
+    directory: new Map(((data ?? []) as unknown as Row[]).map((row) => [value(row, 'id'), {
+      name: `${value(row, 'prefix_th')}${value(row, 'first_name_th')} ${value(row, 'last_name_th')}`.trim(),
+      code: value(row, 'employee_code'),
+      department: relatedValue(row, 'department', 'name_th'),
+    }])),
+  };
 }
 
 async function availableDefinitions(c: Context<AppEnv>, permissions: Set<string>): Promise<{ definitions: ReportDefinition[]; error?: string }> {
@@ -222,6 +325,9 @@ async function loadEntries(c: Context<AppEnv>, permissions: Set<string>, config:
   const sources = allowedSources(permissions, config);
   if (!sources.length) return { entries: [], error: 'ไม่มีสิทธิ์เข้าถึงแหล่งข้อมูลของรายงานนี้' };
   const since = new Date(Date.now() - rangeDays * 86_400_000).toISOString();
+  const directoryPromise: Promise<{ directory: Directory; error?: string }> = sources.some((source) => source.directory)
+    ? loadDirectory(c)
+    : Promise.resolve({ directory: new Map() });
   const results = await Promise.all(sources.map(async (source) => {
     let query = c.get('supabase').from(source.table).select(source.select).order(source.dateColumn, { ascending: false }).limit(2000);
     if (rangeDays > 0 && !source.currentState) query = query.gte(source.dateColumn, since);
@@ -230,10 +336,12 @@ async function loadEntries(c: Context<AppEnv>, permissions: Set<string>, config:
   }));
   const error = results.find((result) => result.error)?.error;
   if (error) return { entries: [], error: error.message };
-  return { entries: results.flatMap((result) => result.data.map(result.source.map)) };
+  const { directory, error: directoryError } = await directoryPromise;
+  if (directoryError) return { entries: [], error: directoryError };
+  return { entries: results.flatMap((result) => result.data.map((row) => result.source.map(row, directory))) };
 }
 
-function countBy(entries: ReportEntry[], key: 'source' | 'status'): { label: string; value: number }[] {
+function countBy(entries: ReportEntry[], key: string): { label: string; value: number }[] {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     const label = String(entry.row[key] ?? '—');
@@ -330,7 +438,13 @@ export function buildCsatAnalytics(entries: CsatEntryInput[], now = new Date()) 
   };
 }
 
-function buildDataset(config: ReportConfig, definition: ReportDefinition, entries: ReportEntry[], rangeDays: number) {
+export function buildDataset(config: ReportConfig, definition: ReportDefinition, loaded: ReportEntry[], rangeDays: number) {
+  // ทะเบียนคุมต้องอ่านเป็นราย "คน" ของทุกชิ้นที่คนเดียวกันถืออยู่ต้องเรียงติดกัน ไม่ใช่ไล่ตามวันที่บันทึก
+  const entries = config.key === 'asset-custody'
+    ? [...loaded].sort((a, b) => String(a.row.owner).localeCompare(String(b.row.owner), 'th')
+      || String(a.row.employeeId).localeCompare(String(b.row.employeeId))
+      || String(a.row.category).localeCompare(String(b.row.category), 'th'))
+    : loaded;
   const open = entries.filter((entry) => !entry.terminal).length;
   const completed = entries.filter((entry) => entry.terminal).length;
   const overdue = entries.filter((entry) => entry.overdue).length;
@@ -341,13 +455,24 @@ function buildDataset(config: ReportConfig, definition: ReportDefinition, entrie
   let metrics = [metric('รายการทั้งหมด', entries.length, 'primary'), metric('กำลังดำเนินการ', open, open ? 'amber' : 'gray'), metric('เกินกำหนด', overdue, overdue ? 'danger' : 'teal'), metric('เสร็จสิ้น', completed, 'teal')];
   if (config.key === 'service-desk') metrics = [metric('Ticket ทั้งหมด', entries.length, 'primary'), metric('งานเปิด', open, open ? 'amber' : 'gray'), metric('เกิน SLA / กำหนด', overdue, overdue ? 'danger' : 'teal'), metric('CSAT เฉลี่ย', ratings.length ? `${(ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)}/5` : '—', 'teal', `${ratings.length} คำตอบ`)];
   if (config.key === 'assets-operations') metrics = [metric('รายการที่ดูแล', entries.length, 'primary'), metric('มูลค่าที่บันทึก', amount.toLocaleString('th-TH', { maximumFractionDigits: 2 }), 'teal', 'บาท'), metric('ต้องติดตาม', warning + overdue, warning + overdue ? 'amber' : 'teal'), metric('เสร็จ/ไม่ใช้งาน', completed, 'gray')];
+  if (config.key === 'asset-custody') {
+    const held = entries.filter((entry) => entry.row.status === 'ครอบครอง').length;
+    const holders = new Set(entries.filter((entry) => CUSTODY_HOLDING_STATUSES.includes(String(entry.row.status))).map((entry) => entry.row.employeeId)).size;
+    metrics = [metric('รายการที่ถือครองอยู่', held, 'primary'), metric('พนักงานที่ถือครอง', holders, 'teal', 'คน'), metric('อยู่ระหว่างส่งซ่อม', warning, warning ? 'amber' : 'gray'), metric('แจ้งสูญหาย', critical, critical ? 'danger' : 'teal')];
+  }
   if (config.key === 'security-resilience') metrics = [metric('เหตุการณ์/การตรวจ', entries.length, 'primary'), metric('ยังเปิดอยู่', open, open ? 'amber' : 'teal'), metric('ระดับสูง/วิกฤต', critical, critical ? 'danger' : 'teal'), metric('เกินกำหนด', overdue, overdue ? 'danger' : 'teal')];
   if (config.key === 'governance-compliance') metrics = [metric('รายการกำกับดูแล', entries.length, 'primary'), metric('ยังเปิดอยู่', open, open ? 'amber' : 'teal'), metric('ความเสี่ยง/ข้อค้นพบสูง', critical, critical ? 'danger' : 'teal'), metric('เกินกำหนด/หมดอายุ', overdue + warning, overdue + warning ? 'danger' : 'teal')];
   const alerts: string[] = [];
-  if (overdue) alerts.push(`มี ${overdue} รายการเกินกำหนดและยังไม่ปิด`);
-  if (critical) alerts.push(`มี ${critical} รายการระดับสูงหรือวิกฤตที่ยังเปิดอยู่`);
-  if (warning) alerts.push(`มี ${warning} รายการที่ถึงเกณฑ์เตือน ต้องตรวจสอบรายละเอียด`);
-  const columns = [
+  if (config.key === 'asset-custody') {
+    // ทะเบียนคุมไม่มีวันครบกำหนด คำเตือนกลางเรื่อง "เกินกำหนด/ระดับวิกฤต" จึงไม่ตรงกับสิ่งที่ต้องตามจริง
+    if (critical) alerts.push(`มี ${critical} รายการที่แจ้งสูญหายและยังไม่ได้ปิดเรื่อง`);
+    if (warning) alerts.push(`มี ${warning} รายการอยู่ระหว่างส่งซ่อม ยังไม่กลับไปถึงผู้ถือครอง`);
+  } else {
+    if (overdue) alerts.push(`มี ${overdue} รายการเกินกำหนดและยังไม่ปิด`);
+    if (critical) alerts.push(`มี ${critical} รายการระดับสูงหรือวิกฤตที่ยังเปิดอยู่`);
+    if (warning) alerts.push(`มี ${warning} รายการที่ถึงเกณฑ์เตือน ต้องตรวจสอบรายละเอียด`);
+  }
+  const columns = config.columns ? [...config.columns] : [
     { key: 'source', label: 'แหล่งข้อมูล' }, { key: 'code', label: 'รหัส' }, { key: 'title', label: 'รายการ' },
     { key: 'status', label: 'สถานะ' }, { key: 'category', label: 'ประเภท/ระดับ' }, { key: 'owner', label: 'ผู้รับผิดชอบ' },
     { key: 'dueDate', label: 'ครบกำหนด' }, { key: 'recordDate', label: 'วันที่บันทึก' },
@@ -360,8 +485,11 @@ function buildDataset(config: ReportConfig, definition: ReportDefinition, entrie
   }));
   return {
     definition, metrics, alerts,
-    breakdowns: [{ label: 'แยกตามแหล่งข้อมูล', items: countBy(entries, 'source') }, { label: 'แยกตามสถานะ', items: countBy(entries, 'status') }],
-    trend: trend(entries), trendLabels: { primary: 'สร้าง', secondary: 'เสร็จสิ้น' },
+    breakdowns: config.key === 'asset-custody'
+      ? [{ label: 'แยกตามหน่วยงาน', items: countBy(entries, 'department') }, { label: 'แยกตามประเภททรัพย์สิน', items: countBy(entries, 'category') }]
+      : [{ label: 'แยกตามแหล่งข้อมูล', items: countBy(entries, 'source') }, { label: 'แยกตามสถานะ', items: countBy(entries, 'status') }],
+    trend: trend(entries),
+    trendLabels: config.key === 'asset-custody' ? { primary: 'รับมอบ', secondary: 'คืน' } : { primary: 'สร้าง', secondary: 'เสร็จสิ้น' },
     columns,
     rows: entries.map((entry) => entry.row), totalRows: entries.length, rangeDays, generatedAt: new Date().toISOString(),
     csat: config.key === 'service-desk' ? buildCsatAnalytics(csatEntries) : undefined,

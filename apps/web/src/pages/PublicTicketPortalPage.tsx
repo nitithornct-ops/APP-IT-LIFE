@@ -239,7 +239,7 @@ function LineBanner() {
   return (
     <div className="public-sheet flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="public-line-button flex h-9 w-9 shrink-0 items-center justify-center">
+        <span className="public-line-button flex h-[42px] w-[42px] shrink-0 items-center justify-center">
           <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
         </span>
         <div className="min-w-0">
@@ -720,7 +720,7 @@ function StatusTab() {
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#06c755]" aria-hidden="true" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--line-brand)]" aria-hidden="true" />
               <h2 id="line-ticket-list-title" className="font-bold text-slate-900">รายการแจ้งซ่อมของฉัน</h2>
             </div>
             <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {lineBootstrap.profile.fullName}</p>

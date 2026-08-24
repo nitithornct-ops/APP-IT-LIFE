@@ -29,11 +29,11 @@ beforeAll(async () => {
 afterAll(async () => { await db.close(); });
 
 describe('Module 20 Report Center controls', () => {
-  it('seeds five governed standard reports', async () => {
+  it('seeds six governed standard reports', async () => {
     const result = await db.query('select key,status from public.report_definitions order by sort_order');
-    expect(result.rows).toHaveLength(5);
+    expect(result.rows).toHaveLength(6);
     expect(result.rows.map((row) => (row as { key: string }).key)).toEqual([
-      'service-desk', 'requests-workflows', 'assets-operations', 'security-resilience', 'governance-compliance',
+      'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'security-resilience', 'governance-compliance',
     ]);
     expect(result.rows.every((row) => (row as { status: string }).status === 'active')).toBe(true);
   });
@@ -54,7 +54,7 @@ describe('Module 20 Report Center controls', () => {
 
   it('protects definitions with report.view RLS', async () => {
     const visible = await asUser(db, TECHNICIAN_ID, async () => db.query('select key from public.report_definitions'));
-    expect(visible.rows).toHaveLength(5);
+    expect(visible.rows).toHaveLength(6);
     const hidden = await asUser(db, USER_ID, async () => db.query('select key from public.report_definitions'));
     expect(hidden.rows).toHaveLength(0);
   });

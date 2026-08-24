@@ -435,6 +435,7 @@ export function AssetsPage() {
                 mode="server"
                 sort={sort}
                 onSortChange={table.setSort}
+                rowNumberStart={(page - 1) * pageSize + 1}
                 freezeFirstColumn
                 cardOnMobile
                 itemLabel="รายการ"

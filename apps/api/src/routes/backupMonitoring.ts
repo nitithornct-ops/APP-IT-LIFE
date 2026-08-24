@@ -79,8 +79,8 @@ backupMonitoringRoute.get('/', requireAnyPermission(['backup.view', 'monitoring.
   const [backups, recoveries, bcpPlans, loggingSystems, logReviews] = await Promise.all([
     client.from('backup_logs').select(BACKUP_SELECT).order('backup_date', { ascending: false }).limit(500),
     client.from('recovery_tests').select(RECOVERY_SELECT).order('test_date', { ascending: false }).limit(500),
-    client.from('bcp_plans').select(BCP_SELECT).order('next_review_due', { ascending: true }).limit(500),
-    client.from('logging_systems').select(LOG_SYSTEM_SELECT).order('next_review_due', { ascending: true }).limit(500),
+    client.from('bcp_plans').select(BCP_SELECT).order('created_at', { ascending: false }).limit(500),
+    client.from('logging_systems').select(LOG_SYSTEM_SELECT).order('created_at', { ascending: false }).limit(500),
     client.from('log_reviews').select(LOG_REVIEW_SELECT).order('review_date', { ascending: false }).limit(500),
   ]);
   const error = backups.error ?? recoveries.error ?? bcpPlans.error ?? loggingSystems.error ?? logReviews.error;

@@ -405,7 +405,7 @@ pmTemplatesRoute.get('/', requirePermission('maintenance.view'), async (c) => {
   const reqId = c.get('requestId');
   const includeInactive = c.req.query('includeInactive') === 'true';
 
-  let query = supabase.from('pm_checklist_templates').select('*').order('name', { ascending: true });
+  let query = supabase.from('pm_checklist_templates').select('*').order('created_at', { ascending: false });
   if (!includeInactive) query = query.eq('status', 'active');
 
   const { data, error } = await query;

@@ -14,6 +14,7 @@ import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { sortNewestFirst } from '../../utils/recordOrder';
 import type { AssetCategory, TicketCategory } from '../../types/admin';
 import type { AccessSystem } from '../../types/accessRequests';
 import { CauseCodesSection } from './CauseCodesSection';
@@ -196,7 +197,7 @@ function TicketCategoriesSection() {
                 </tr>
               </thead>
               <tbody>
-                {query.data.map((cat) => (
+                {sortNewestFirst(query.data).map((cat) => (
                   <tr key={cat.id} className="border-t border-slate-100 dark:border-slate-700">
                     <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{cat.name}</td>
                     <td className="px-2 py-2">
@@ -360,7 +361,7 @@ function AssetCategoriesSection() {
                 </tr>
               </thead>
               <tbody>
-                {query.data.map((cat) => (
+                {sortNewestFirst(query.data).map((cat) => (
                   <tr key={cat.id} className="border-t border-slate-100 dark:border-slate-700">
                     <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{cat.name}</td>
                     <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{cat.code_prefix}</td>
@@ -494,7 +495,7 @@ function AccessSystemsSection() {
                 </tr>
               </thead>
               <tbody>
-                {query.data.map((system) => (
+                {sortNewestFirst(query.data).map((system) => (
                   <tr key={system.id} className="border-t border-slate-100 dark:border-slate-700">
                     <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{system.name}</td>
                     <td className="px-2 py-2">

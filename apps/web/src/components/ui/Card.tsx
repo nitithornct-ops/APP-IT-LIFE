@@ -58,16 +58,16 @@ export function StatCard({
   tone?: 'primary' | 'teal' | 'amber' | 'danger' | 'gray';
 }) {
   const toneClasses: Record<string, { icon: string; border: string; surface: string }> = {
-    primary: { icon: 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300', border: 'border-t-primary-500', surface: 'bg-white dark:bg-slate-800' },
-    teal: { icon: 'bg-success-50 text-success-700 dark:bg-success-700/20 dark:text-success-100', border: 'border-t-success-600', surface: 'bg-white dark:bg-slate-800' },
-    amber: { icon: 'bg-warning-50 text-warning-700 dark:bg-warning-700/20 dark:text-warning-100', border: 'border-t-warning-600', surface: 'bg-white dark:bg-slate-800' },
-    danger: { icon: 'bg-danger-50 text-danger-700 dark:bg-danger-700/20 dark:text-danger-100', border: 'border-t-danger-600', surface: 'bg-white dark:bg-slate-800' },
-    gray: { icon: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200', border: 'border-t-slate-400', surface: 'bg-white dark:bg-slate-800' },
+    primary: { icon: 'bg-primary-600 text-white', border: 'border-b-primary-500', surface: 'bg-white dark:bg-slate-800' },
+    teal: { icon: 'bg-teal-700 text-white', border: 'border-b-teal-600', surface: 'bg-white dark:bg-slate-800' },
+    amber: { icon: 'bg-amber-600 text-white', border: 'border-b-amber-500', surface: 'bg-white dark:bg-slate-800' },
+    danger: { icon: 'bg-red-600 text-white', border: 'border-b-red-500', surface: 'bg-white dark:bg-slate-800' },
+    gray: { icon: 'bg-slate-500 text-white', border: 'border-b-slate-400', surface: 'bg-white dark:bg-slate-800' },
   };
 
   return (
-    <Card data-ui="stat" className={cn('flex min-h-[116px] items-center gap-3 border-t-2 p-4', toneClasses[tone].border, toneClasses[tone].surface)}>
-      <div className={cn('flex h-10 w-10 min-w-10 items-center justify-center rounded-xl', toneClasses[tone].icon)}>
+    <Card data-ui="stat" className={cn('flex min-h-[104px] items-center gap-3 border-b-2 p-4', toneClasses[tone].border, toneClasses[tone].surface)}>
+      <div className={cn('flex h-11 w-11 min-w-11 items-center justify-center rounded-xl', toneClasses[tone].icon)}>
         {icon}
       </div>
       <div className="min-w-0">

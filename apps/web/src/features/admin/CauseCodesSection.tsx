@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { QueryError } from '../../components/ui/QueryError';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { sortNewestFirst } from '../../utils/recordOrder';
 import type { CauseCode } from '../../types/causeCodes';
 import type { TicketCategory } from '../../types/admin';
 
@@ -184,7 +185,7 @@ export function CauseCodesSection() {
                 </tr>
               </thead>
               <tbody>
-                {query.data.map((cause) => (
+                {sortNewestFirst(query.data).map((cause) => (
                   <tr key={cause.id} className="border-t border-slate-100 dark:border-slate-700">
                     <td className="px-2 py-2 font-mono text-[12px] text-slate-600 dark:text-slate-300">{cause.code}</td>
                     <td className="px-2 py-2">

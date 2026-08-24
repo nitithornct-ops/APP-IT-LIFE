@@ -13,7 +13,16 @@ export interface KpiStripItem {
   active?: boolean;
   ariaLabel?: string;
   visual?: ReactNode;
+  tone?: 'primary' | 'teal' | 'amber' | 'danger' | 'gray';
 }
+
+const KPI_TONES: Record<NonNullable<KpiStripItem['tone']>, { icon: string; border: string }> = {
+  primary: { icon: 'bg-primary-600 text-white', border: 'border-b-primary-500' },
+  teal: { icon: 'bg-teal-700 text-white', border: 'border-b-teal-600' },
+  amber: { icon: 'bg-amber-600 text-white', border: 'border-b-amber-500' },
+  danger: { icon: 'bg-red-600 text-white', border: 'border-b-red-500' },
+  gray: { icon: 'bg-slate-500 text-white', border: 'border-b-slate-400' },
+};
 
 function KpiContent({ item, variant }: { item: KpiStripItem; variant: 'default' | 'executive' }) {
   if (variant === 'executive') {
@@ -29,9 +38,10 @@ function KpiContent({ item, variant }: { item: KpiStripItem; variant: 'default' 
       </>
     );
   }
+  const tone = KPI_TONES[item.tone ?? 'primary'];
   return (
     <>
-      {item.icon && <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300" aria-hidden="true">{item.icon}</span>}
+      {item.icon && <span className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl', tone.icon)} aria-hidden="true">{item.icon}</span>}
       <span className="min-w-0">
         <span className="block font-mono text-[22px] font-bold leading-none text-ink-heading dark:text-[#e8eef9]">{item.value}</span>
         <span className="mt-1 block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">{item.label}</span>
@@ -57,10 +67,12 @@ export function KpiStrip({
       aria-label={label}
     >
       {items.map((item) => {
+        const tone = KPI_TONES[item.tone ?? 'primary'];
         const className = cn(
           variant === 'executive'
             ? 'flex min-h-[124px] w-full flex-col rounded-card border border-hairline bg-white px-4 py-4 text-left shadow-card transition-[border-color,box-shadow,transform] dark:border-white/[.08] dark:bg-white/[.035]'
-            : 'flex min-h-[76px] w-full items-center gap-3 rounded-card border border-hairline bg-white px-3 py-2.5 text-left shadow-card transition-[border-color,box-shadow,transform] dark:border-white/[.08] dark:bg-white/[.035]',
+            : 'flex min-h-[104px] w-full items-center gap-3 rounded-card border border-b-2 border-hairline bg-white px-4 py-3 text-left shadow-card transition-[border-color,box-shadow,transform] dark:border-white/[.08] dark:bg-white/[.035]',
+          variant === 'default' && tone.border,
           (item.href || item.onClick) && 'hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-slate-700',
           item.active && 'border-primary-300 bg-primary-50 dark:bg-slate-700',
         );

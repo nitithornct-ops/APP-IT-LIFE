@@ -440,6 +440,7 @@ export function EmployeesPage() {
           {rows.length > 0 && <DataTable
             toolbar={false}
             pagination={false}
+            rowNumberStart={(page - 1) * pageSize + 1}
             itemLabel="คน"
             selectable={canManageEmployee}
             selectedIds={selectedIds}
@@ -448,12 +449,12 @@ export function EmployeesPage() {
             className="min-w-[1180px] text-xs"
             containerClassName="rounded-lg"
           >
-            <thead><tr><th>ลำดับ</th><th>รหัสพนักงาน</th><th>ชื่อพนักงาน</th><th>ตำแหน่ง</th><th>Department</th><th>บัญชีผู้ใช้งาน</th><th>ทรัพย์สินที่ครอบครอง</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
-            <tbody>{rows.map((employee, index) => {
+            <thead><tr><th>รหัสพนักงาน</th><th>ชื่อพนักงาน</th><th>ตำแหน่ง</th><th>Department</th><th>บัญชีผู้ใช้งาน</th><th>ทรัพย์สินที่ครอบครอง</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+            <tbody>{rows.map((employee) => {
               const count = overview?.assignmentCounts[employee.id] ?? 0;
               const department = departments.find((item) => item.id === employee.department_id)?.name_th ?? '—';
               const position = positions.find((item) => item.id === employee.position_id)?.name_th ?? '—';
-              return <tr key={employee.id} data-row-id={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
+              return <tr key={employee.id} data-row-id={employee.id}><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
                     recordLabel={employeeName(employee)}
                     actions={[
                       { kind: 'view', onClick: () => setViewingEmployee(employee) },

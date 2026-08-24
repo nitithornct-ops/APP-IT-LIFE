@@ -86,6 +86,16 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   cardOnMobile?: boolean;
   /** จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้ใน localStorage ด้วยคีย์นี้ */
   tableId?: string;
+  /**
+   * เติมคอลัมน์ "ลำดับ" ไว้หน้าสุด — เปิดไว้เป็นค่าเริ่มต้นให้ทุกโมดูลนับแถวได้ตรงกัน
+   * ปิดเฉพาะตารางที่ไม่ใช่รายการเรียงลำดับ (เช่น matrix สิทธิ์ที่แถวคือ "สิทธิ์" ไม่ใช่ "รายการที่ N")
+   */
+  rowNumber?: boolean;
+  /**
+   * เลขของแถวแรกที่กำลังแสดง (นับจาก 1) สำหรับตารางที่แบ่งหน้าจาก API
+   * ไม่ส่งมาก็ได้ถ้าตารางแบ่งหน้าเอง เพราะคำนวณจากหน้าที่เปิดอยู่ให้อยู่แล้ว
+   */
+  rowNumberStart?: number;
   /** เพิ่มคอลัมน์ช่องเลือก — <tr> ต้องมี data-row-id เพื่อบอกว่าแถวนั้นคือรายการไหน */
   selectable?: boolean;
   /** รายการที่เลือกอยู่ ส่งมาคู่กับ onSelectionChange เพื่อให้หน้าเป็นเจ้าของ state */
@@ -132,13 +142,17 @@ function rowCells(row: ReactNode): ReactNode[] {
   return Children.toArray(row.props.children);
 }
 
-function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[], fileName: string) {
+function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[], fileName: string, rowNumber: boolean) {
   downloadCsv(
     [
-      visibleColumns.map((index) => headers[index] || `คอลัมน์ ${index + 1}`),
-      ...rows.map((row) => {
+      [...(rowNumber ? [ROW_NUMBER_HEADER] : []), ...visibleColumns.map((index) => headers[index] || `คอลัมน์ ${index + 1}`)],
+      ...rows.map((row, index) => {
         const cells = rowCells(row);
-        return visibleColumns.map((index) => nodeText(cells[index]).replace(/\s+/g, ' ').trim());
+        // ไฟล์ที่ส่งออกต้องอ่านคู่กับหน้าจอได้ จึงติดเลขลำดับเดียวกับที่ตารางแสดงไปด้วย
+        return [
+          ...(rowNumber ? [String(index + 1)] : []),
+          ...visibleColumns.map((column) => nodeText(cells[column]).replace(/\s+/g, ' ').trim()),
+        ];
       }),
     ],
     fileName,
@@ -231,6 +245,72 @@ function withSortableHeaders(
 
 const SELECT_CELL_CLASS = 'w-9 px-2 py-2 align-middle';
 
+const ROW_NUMBER_HEADER = 'ลำดับ';
+/** ความกว้างตายตัว เพราะ freezeFirstColumn ต้องรู้ระยะ left ของคอลัมน์ถัดไปเป็นตัวเลขจริง */
+const ROW_NUMBER_CELL_CLASS = 'w-[52px] whitespace-nowrap px-2 py-2 text-right align-top font-mono text-[11px] tabular-nums text-ink-muted dark:text-white/45';
+
+/**
+ * คลาสทำให้คอลัมน์ที่ถูกตรึงทึบและเปลี่ยนสีตามแถว แยกตามตำแหน่งคอลัมน์ที่ 1–3
+ * (ไกลสุดเท่าที่เป็นไปได้ คือ ช่องเลือก + ลำดับ + คอลัมน์แรกของข้อมูลจริง)
+ */
+const FROZEN_COLUMN_SURFACE = [
+  '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800 [&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40 [&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
+  '[&_tbody_td:nth-child(2)]:z-10 [&_tbody_td:nth-child(2)]:bg-white dark:[&_tbody_td:nth-child(2)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(2)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(2)]:bg-slate-700/40 [&_thead_th:nth-child(2)]:z-30 [&_thead_th:nth-child(2)]:bg-slate-50 dark:[&_thead_th:nth-child(2)]:bg-slate-900',
+  '[&_tbody_td:nth-child(3)]:z-10 [&_tbody_td:nth-child(3)]:bg-white dark:[&_tbody_td:nth-child(3)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(3)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(3)]:bg-slate-700/40 [&_thead_th:nth-child(3)]:z-30 [&_thead_th:nth-child(3)]:bg-slate-50 dark:[&_thead_th:nth-child(3)]:bg-slate-900',
+];
+
+/**
+ * ระยะ left ของคอลัมน์ที่ถูกตรึง — คีย์คือความกว้างของคอลัมน์ที่ตารางเติมไว้หน้าสุดเรียงจากซ้าย
+ * ('' = ไม่มีคอลัมน์นำหน้า จึงตรึงคอลัมน์แรกของข้อมูลจริงอย่างเดียว)
+ * ต้องเขียนเป็นสตริงคงที่ทีละกรณี เพราะ Tailwind อ่านคลาสจากซอร์สตรง ๆ ต่อสตริงตอน runtime ไม่ได้
+ */
+const FROZEN_COLUMN_OFFSET: Record<string, string> = {
+  '': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0',
+  '36': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-9',
+  '52': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-[52px]',
+  '36-52': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-9 [&_tr>*:nth-child(3)]:sticky [&_tr>*:nth-child(3)]:left-[88px]',
+};
+
+/** ตรึงคอลัมน์แรกของข้อมูลจริงไว้พร้อมกับคอลัมน์นำหน้า (ช่องเลือก/ลำดับ) ที่ตารางเติมให้ */
+function freezeColumnClass(leadingWidths: string): string {
+  const leadingCount = leadingWidths ? leadingWidths.split('-').length : 0;
+  return [FROZEN_COLUMN_OFFSET[leadingWidths], ...FROZEN_COLUMN_SURFACE.slice(0, leadingCount + 1)].join(' ');
+}
+
+/**
+ * แถวขยาย/แถวหัวข้อกลุ่มที่เป็น <td colSpan> เดียวโดด ๆ ไม่ใช่ "รายการที่ N"
+ * จึงต้องกินความกว้างของคอลัมน์ลำดับเพิ่มแทนการรับเลข ไม่งั้นคอลัมน์จะเหลื่อมกันทั้งตาราง
+ */
+function spanningRowCell(cells: ReactNode[]): ReactElement<{ colSpan?: number }> | null {
+  const dataCells = cells.filter((cell) => isValidElement(cell) && (cell.type === 'td' || cell.type === 'th'));
+  if (dataCells.length !== 1) return null;
+  const [cell] = dataCells as ReactElement<{ colSpan?: number }>[];
+  return cell.props.colSpan ? cell : null;
+}
+
+/**
+ * เติมเลขลำดับให้แถวข้อมูล โดยเดินเข้าไปใน Fragment ที่หน้าใช้ห่อแถวหลักกับแถวขยายไว้ด้วยกัน
+ * ตัวนับถูกส่งเข้ามาเป็นฟังก์ชัน เพราะจำนวนแถวที่ "นับ" ไม่เท่ากับจำนวน node ที่ render
+ */
+function withRowNumbers(node: ReactNode, next: () => number): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(node)) return node;
+  const cells = Children.toArray(node.props.children);
+  if (!cells.length) return node;
+  const isTableRow = cells.some((cell) => isValidElement(cell) && (cell.type === 'td' || cell.type === 'th'));
+  if (!isTableRow) return cloneElement(node, {}, cells.map((child) => withRowNumbers(child, next)));
+
+  const spanning = spanningRowCell(cells);
+  if (spanning) {
+    return cloneElement(node, {}, cells.map((cell) => (cell === spanning
+      ? cloneElement(spanning, { colSpan: Number(spanning.props.colSpan) + 1 })
+      : cell)));
+  }
+  return cloneElement(node, {}, [
+    <td key="row-number" data-label={ROW_NUMBER_HEADER} className={ROW_NUMBER_CELL_CLASS}>{next().toLocaleString('th-TH')}</td>,
+    ...cells,
+  ]);
+}
+
 function rowId(row: ReactNode): string | null {
   if (!isValidElement<{ 'data-row-id'?: string }>(row)) return null;
   return row.props['data-row-id'] ?? null;
@@ -241,8 +321,8 @@ function selectableRowIds(rows: ReactNode[]): string[] {
   return rows.map(rowId).filter((id): id is string => Boolean(id));
 }
 
-/** เติมช่องเลือกไว้หน้าแถว — ทำเป็นขั้นตอนสุดท้ายเสมอ เพราะการซ่อนคอลัมน์อ้างอิงตำแหน่งเดิม */
-function withSelectionCell(row: ReactNode, cell: ReactNode): ReactNode {
+/** เติมเซลล์ไว้หน้าแถว — ทำเป็นขั้นตอนสุดท้ายเสมอ เพราะการซ่อนคอลัมน์อ้างอิงตำแหน่งเดิม */
+function withLeadingCell(row: ReactNode, cell: ReactNode): ReactNode {
   if (!isValidElement<{ children?: ReactNode }>(row)) return row;
   return cloneElement(row, {}, [cell, ...Children.toArray(row.props.children)]);
 }
@@ -304,6 +384,8 @@ export function DataTable({
   freezeFirstColumn = false,
   cardOnMobile = true,
   tableId,
+  rowNumber = true,
+  rowNumberStart,
   selectable = false,
   selectedIds,
   onSelectionChange,
@@ -387,12 +469,30 @@ export function DataTable({
       : [...selection, ...pageRowIds.filter((id) => !selection.includes(id))]);
   };
 
+  /**
+   * เลขลำดับนับต่อจากหน้าก่อนหน้าเสมอ ไม่ใช่เริ่มที่ 1 ใหม่ทุกหน้า
+   * หน้าที่แบ่งหน้าจาก API ส่ง rowNumberStart มาเอง เพราะตารางไม่รู้ว่าตอนนี้อยู่หน้าที่เท่าไร
+   */
+  const rowNumberOffset = isServerMode || !pagination
+    ? Math.max(0, (rowNumberStart ?? 1) - 1)
+    : (safePage - 1) * pageSize;
+  let rowNumberCursor = rowNumberOffset;
+  const nextRowNumber = () => (rowNumberCursor += 1);
+  // ความกว้างของคอลัมน์ที่ตารางเติมไว้หน้าสุด เรียงจากซ้าย — ใช้เลือกชุดคลาสของ freezeFirstColumn
+  const leadingColumnWidths = [selectable && '36', rowNumber && '52'].filter(Boolean).join('-');
+
   const renderedChildren = childArray.map((child, index) => {
     if (index === headIndex && head) {
       let headRows = Children.map(head.props.children, (row) => withSortableHeaders(row, activeSort, handleSort));
       headRows = Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns));
+      if (rowNumber) {
+        headRows = Children.map(headRows, (row) => withLeadingCell(
+          row,
+          <th key="row-number" scope="col" className={ROW_NUMBER_CELL_CLASS}>{ROW_NUMBER_HEADER}</th>,
+        ));
+      }
       if (selectable) {
-        headRows = Children.map(headRows, (row) => withSelectionCell(
+        headRows = Children.map(headRows, (row) => withLeadingCell(
           row,
           <th key="select" scope="col" className={SELECT_CELL_CLASS}>
             <input
@@ -409,18 +509,15 @@ export function DataTable({
       return cloneElement(head, {}, headRows);
     }
     if (index === bodyIndex && body) {
-      if (isServerMode && !selectable) {
-        return cloneElement(body, {}, visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column]))));
-      }
-      let bodyRows = isServerMode
-        ? visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column])))
-        : visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column])));
+      let bodyRows = visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column])));
+      // เติมเลขลำดับก่อนช่องเลือกเสมอ ลำดับคอลัมน์ที่ได้จึงเป็น [เลือก][ลำดับ][ข้อมูล]
+      if (rowNumber) bodyRows = bodyRows.map((row) => withRowNumbers(row, nextRowNumber));
       if (selectable) {
         bodyRows = bodyRows.map((row, rowIndex) => {
           const id = rowId(visibleRows[rowIndex]);
           // แถวขยาย/แถวสรุปที่ไม่มี data-row-id ยังต้องได้ช่องว่าง ไม่งั้นคอลัมน์จะเหลื่อมกัน
-          if (!id) return withSelectionCell(row, <td key="select" className={SELECT_CELL_CLASS} />);
-          return withSelectionCell(
+          if (!id) return withLeadingCell(row, <td key="select" className={SELECT_CELL_CLASS} />);
+          return withLeadingCell(
             row,
             <td key="select" className={SELECT_CELL_CLASS}>
               <input
@@ -553,7 +650,7 @@ export function DataTable({
               </div>
             )}
             {currentPageExport && (
-              <Button type="button" variant="outline" size="sm" disabled={filteredRows.length === 0} onClick={() => saveCsv(headers, filteredRows, visibleColumns, exportFileName)}>
+              <Button type="button" variant="outline" size="sm" disabled={filteredRows.length === 0} onClick={() => saveCsv(headers, filteredRows, visibleColumns, exportFileName, rowNumber)}>
                 <Download className="h-4 w-4" aria-hidden="true" />ส่งออกหน้านี้
               </Button>
             )}
@@ -577,12 +674,7 @@ export function DataTable({
             // thead โปร่งแสงอยู่ ถ้าตรึงไว้เฉย ๆ แถวจะเลื่อนทะลุขึ้นมาเห็นข้างหลัง จึงต้องทึบ
             stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-surface-header dark:[&_thead_th]:bg-[#0a1224]',
             // คอลัมน์ที่ตรึงไว้ต้องทึบและเปลี่ยนสีตามแถวด้วย ไม่งั้น hover จะดูเหมือนตารางแตกเป็นสองส่วน
-            freezeFirstColumn && [
-              '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0',
-              '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800',
-              '[&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40',
-              '[&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
-            ].join(' '),
+            freezeFirstColumn && freezeColumnClass(leadingColumnWidths),
             cardOnMobile && 'data-table-cards',
             className,
           )}

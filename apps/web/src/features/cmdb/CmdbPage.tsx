@@ -361,7 +361,7 @@ export function CmdbPage() {
 
           {itemsQuery.data && items.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable mode="server" className="w-full text-left text-sm">
+              <DataTable mode="server" rowNumberStart={(page - 1) * pageSize + 1} className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">รหัส</th>

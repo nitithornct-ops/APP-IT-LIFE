@@ -376,7 +376,7 @@ accessRegistryRoute.get('/', requireAnyPermission(['access_request.view', 'acces
   const { data, error } = await supabase
     .from('user_access_registry')
     .select('*, access_systems(name), user:profiles!user_access_registry_user_id_fkey(full_name, email)')
-    .order('next_review_due', { ascending: true, nullsFirst: false });
+    .order('created_at', { ascending: false, nullsFirst: false });
 
   if (error) {
     return c.json(fail(reqId, 'ACCESS_REGISTRY_LIST_FAILED', 'ดึงทะเบียนสิทธิ์ไม่สำเร็จ'), 400);

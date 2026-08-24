@@ -33,9 +33,9 @@ export function AppShell() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Dashboard and My Tasks already own purpose-built hero sections. Every other
-  // authenticated route receives the shared module treatment from the shell.
-  const hasNativeHero = location.pathname === '/' || location.pathname === '/tasks';
+  // Dashboard owns a purpose-built hero. Other authenticated routes receive
+  // the shared module treatment from the shell.
+  const hasNativeHero = location.pathname === '/';
 
   return (
     <div className="life-app min-h-screen bg-surface-page dark:bg-[#060d1c]">

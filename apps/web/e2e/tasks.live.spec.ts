@@ -68,6 +68,12 @@ test('task command center renders on desktop and switches to calendar', async ({
   await expect(page.getByText('งานที่เปิดอยู่', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/tasks-command-center-desktop.png', fullPage: true });
 
+  await page.getByRole('button', { name: 'สร้างงานใหม่', exact: true }).click();
+  await expect(page.getByTestId('task-create-modal')).toBeVisible();
+  await expect(page.getByLabel('ชื่องาน', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/tasks-create-modal-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+
   await page.getByRole('button', { name: 'ปฏิทิน', exact: true }).click();
   await expect(page.getByText('เลือกชื่องานเพื่อดูรายละเอียด', { exact: false })).toBeVisible();
   await page.screenshot({ path: 'test-results/tasks-calendar-desktop.png', fullPage: true });
@@ -77,8 +83,10 @@ test('primary task actions call the API and update the interface', async ({ page
   await page.setViewportSize({ width: 1440, height: 1000 });
   await login(page);
 
-  await page.getByLabel('ชื่องานใหม่').fill('งานทดสอบ Action');
-  await page.getByLabel('เพิ่มงาน', { exact: true }).click();
+  await page.getByRole('button', { name: 'สร้างงานใหม่', exact: true }).click();
+  await page.getByLabel('ชื่องาน', { exact: true }).fill('งานทดสอบ Action');
+  await page.getByTestId('task-create-draft').click();
+  await expect(page.getByTestId('task-create-modal')).toHaveCount(0);
   await expect(page.getByText('งานทดสอบ Action', { exact: true })).toBeVisible();
 
   await page.getByLabel('เริ่มงาน จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
@@ -116,6 +124,9 @@ test('task command center remains contained on mobile', async ({ page }) => {
       .slice(0, 10),
   }));
   expect(dimensions.scrollWidth, JSON.stringify(dimensions.offenders, null, 2)).toBeLessThanOrEqual(dimensions.clientWidth + 1);
-  await expect(page.getByLabel('ชื่องานใหม่')).toBeVisible();
+  await expect(page.getByText('จดงานใหม่ที่นี่...', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'สร้างงานใหม่', exact: true }).click();
+  await expect(page.getByTestId('task-create-modal')).toBeVisible();
+  await expect(page.getByLabel('ชื่องาน', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/tasks-command-center-mobile.png', fullPage: true });
 });

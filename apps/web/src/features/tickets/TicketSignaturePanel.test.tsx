@@ -39,14 +39,14 @@ describe('TicketSignaturePanel', () => {
     expect(init.body).toBeInstanceOf(FormData);
   });
 
-  it('hides an empty signature panel from users without administrator permission', () => {
+  it('hides an empty signature panel from users who cannot edit the Ticket', () => {
     const { container } = renderPanel({ canManage: false });
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('shows inherited default signature without offering to delete it from the Ticket', () => {
-    renderPanel({ signatureUrl: 'https://signed.test/default.png', signatureSource: 'default' });
-    expect(screen.getByText('กำลังใช้ลายเซ็นกลางของแบบฟอร์ม Ticket')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'ลบลายเซ็นเฉพาะใบ' })).not.toBeInTheDocument();
+  it('ให้ลบลายเซ็นของใบนี้ได้เสมอ เพราะไม่มีลายเซ็นกลางให้ตกทอดมาแล้ว', () => {
+    renderPanel({ signatureUrl: 'https://signed.test/ticket.png' });
+    expect(screen.getByRole('button', { name: 'ลบลายเซ็น' })).toBeInTheDocument();
+    expect(screen.queryByText('กำลังใช้ลายเซ็นกลางของแบบฟอร์ม Ticket')).not.toBeInTheDocument();
   });
 });

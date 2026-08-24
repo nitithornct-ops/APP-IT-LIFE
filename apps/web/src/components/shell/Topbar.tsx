@@ -67,28 +67,30 @@ export function Topbar({ onOpenMobileMenu, onOpenCommandPalette }: TopbarProps) 
         <Search className="h-5 w-5" aria-hidden="true" />
       </button>
 
-      <FontSizeControl />
-      <ThemeToggle />
-      <NotificationBell />
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <FontSizeControl />
+        <ThemeToggle />
+        <NotificationBell />
 
-      <div className="ml-0.5 flex items-center gap-2 border-l border-slate-200 pl-2.5 dark:border-slate-700">
-        <div className="relative flex h-7 w-7 items-center justify-center rounded-full border border-primary-200 bg-[#dbe4f7] text-[9px] font-bold text-primary-700 dark:border-primary-900 dark:bg-[#1e3a6e] dark:text-[#93b4f5]">
-          {initialsFrom(me?.profile.full_name)}
-          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-primary-500 dark:border-slate-800" aria-label="ออนไลน์" />
-        </div>
-        <div className="hidden leading-tight sm:block">
-          <p className="max-w-32 truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{me?.profile.full_name}</p>
-          <p className="max-w-32 truncate text-[10px] text-slate-400">{me?.roles[0]?.role_name_th}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void signOut()}
+        <div className="ml-0.5 flex items-center gap-2 border-l border-slate-200 pl-2.5 dark:border-slate-700">
+          <div className="relative flex h-7 w-7 items-center justify-center rounded-full border border-primary-200 bg-[#dbe4f7] text-[9px] font-bold text-primary-700 dark:border-primary-900 dark:bg-[#1e3a6e] dark:text-[#93b4f5]">
+            {initialsFrom(me?.profile.full_name)}
+            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-primary-500 dark:border-slate-800" aria-label="ออนไลน์" />
+          </div>
+          <div className="hidden leading-tight sm:block">
+            <p className="max-w-32 truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{me?.profile.full_name}</p>
+            <p className="max-w-32 truncate text-[10px] text-slate-400">{me?.roles[0]?.role_name_th}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void signOut()}
             className="flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-500 hover:bg-red-50 hover:text-red-700 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-          aria-label="ออกจากระบบ"
-          title="ออกจากระบบ"
-        >
-          <LogOut className="h-5 w-5" aria-hidden="true" />
-        </button>
+            aria-label="ออกจากระบบ"
+            title="ออกจากระบบ"
+          >
+            <LogOut className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </header>
   );
