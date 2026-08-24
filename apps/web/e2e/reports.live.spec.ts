@@ -116,5 +116,5 @@ test('regular employee is denied the Report Center route', async ({ page }) => {
   await login(page, emails.user);
   await page.goto('/reports');
   await expect(page.getByTestId('report-center-page')).toHaveCount(0);
-  await expect(page.getByText('ท่านไม่มีสิทธิ์เข้าถึงหน้านี้', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('ไม่มีสิทธิ์เข้าถึงส่วนนี้', { exact: true })).toBeVisible({ timeout: 20_000 });
 });
