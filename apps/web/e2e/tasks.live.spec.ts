@@ -98,7 +98,7 @@ test('primary task actions call the API and update the interface', async ({ page
   const reportCard = page.getByRole('article').filter({ hasText: 'จัดทำรายงานความพร้อมประจำเดือน' });
   await expect(reportCard.getByText('กำลังทำ', { exact: true })).toBeVisible({ timeout: 20_000 });
 
-  await page.getByLabel('ดูรายละเอียด จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
+  await page.getByLabel('แก้ไข จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
   await expect(page.getByTestId('task-detail-panel')).toBeVisible();
   await page.getByLabel('ชื่องาน', { exact: true }).fill('จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)');
   await page.getByTestId('td-save').click();
