@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -11,6 +11,18 @@ function parseEnv(path: string): Record<string, string> {
     const index = line.indexOf('=');
     return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
   }));
+}
+
+async function expectImageLoaded(image: Locator) {
+  await expect(image).toHaveAttribute('src', /^https:\/\//);
+  await expect.poll(
+    () => image.evaluate((node) => {
+      const element = node as HTMLImageElement;
+      return element.complete && element.naturalWidth > 0;
+    }),
+    { timeout: 20_000, message: 'signature image should finish loading' },
+  ).toBe(true);
+  await expect(image).toBeVisible();
 }
 
 test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
@@ -51,7 +63,7 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto(`/tickets/${formTicketId}`);
-  await expect(page.getByTestId('ticket-signature-panel').locator('img')).toBeVisible();
+  await expectImageLoaded(page.getByTestId('ticket-signature-panel').locator('img'));
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-per-ticket-signature.png'), fullPage: true });
 
   await page.goto('/tickets');
@@ -62,6 +74,6 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
 
   await page.goto(`/tickets/${formTicketId}/form`);
   await expect(page.getByTestId('ticket-form-page')).toContainText(formTicketNo);
-  await expect(page.getByAltText('ลายเซ็นรับรอง Ticket')).toBeVisible();
+  await expectImageLoaded(page.getByAltText('ลายเซ็นรับรอง Ticket'));
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-automatic-preview.png'), fullPage: true });
 });
