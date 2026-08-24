@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { BrandingSettings, SettingsResponse, SettingSupportStatus, SystemSetting } from '../../types/settings';
+import { SlaSettingsOverview } from './SlaSettingsOverview';
 import { TicketRatingCriteriaSetting } from './TicketRatingCriteriaSetting';
-import { TicketFormSignatureSetting } from './TicketFormSignatureSetting';
 
 const STATUS_COPY: Record<SettingSupportStatus, { label: string; className: string }> = {
   active: { label: 'ใช้งานในระบบ', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200' },
@@ -116,7 +117,7 @@ export function SettingsPage() {
   const visible = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('th');
     return (settingsQuery.data?.settings ?? []).filter((setting) => {
-      if (setting.key === 'ORG_LOGO_URL' || setting.key === 'TICKET_FORM_SIGNATURE_PATH') return false;
+      if (setting.key === 'ORG_LOGO_URL') return false;
       if (activeGroup !== 'ทั้งหมด' && setting.group_key !== activeGroup) return false;
       return !keyword || `${setting.key} ${setting.description} ${setting.group_key}`.toLocaleLowerCase('th').includes(keyword);
     });
@@ -125,7 +126,7 @@ export function SettingsPage() {
   return (
     <div className="space-y-5" data-testid="settings-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">System Settings</h1><p className="mt-1 text-sm text-slate-500">ค่ากลางแบบ allowlist พร้อม validation และ Audit Trail ทุกครั้งที่แก้ไข</p></div>
+        <PageTitle eyebrow="ตั้งค่าและบัญชี / System Settings" title="System Settings" description="ค่ากลางแบบ allowlist พร้อม validation และ Audit Trail ทุกครั้งที่แก้ไข" />
         <div className="relative min-w-[260px]"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาคีย์หรือคำอธิบาย..." className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-800" /></div>
       </div>
 
@@ -138,7 +139,6 @@ export function SettingsPage() {
 
       {settingsQuery.data && <>
         <OrganizationLogoSetting currentUrl={settingsQuery.data.settings.find((setting) => setting.key === 'ORG_LOGO_URL')?.value ?? ''} canManage={hasPermission('setting.manage')} />
-        <TicketFormSignatureSetting canManage={hasPermission('setting.manage')} />
         <TicketRatingCriteriaSetting canManage={hasPermission('setting.manage')} />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -148,10 +148,15 @@ export function SettingsPage() {
           <StatCard icon={<ExternalLink className="h-5 w-5" />} label="จัดการจากภายนอก" value={settingsQuery.data.summary.externallyManaged} tone="gray" />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {['ทั้งหมด', ...settingsQuery.data.groups].map((group) => <button type="button" key={group} onClick={() => setActiveGroup(group)} className={`whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold ${activeGroup === group ? 'border-primary-700 bg-primary-700 text-white' : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{group}</button>)}
-        </div>
+        <SlaSettingsOverview settings={settingsQuery.data.settings} drafts={drafts} />
 
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[198px_minmax(0,1fr)]">
+          <nav className="h-fit rounded-[10px] border border-slate-200 bg-white p-2 shadow-card dark:border-slate-700 dark:bg-slate-800" aria-label="หมวดการตั้งค่า">
+            <p className="px-2 pb-2 pt-1 font-mono text-[10px] font-semibold tracking-wider text-slate-400">SETTING GROUPS</p>
+            {['ทั้งหมด', ...settingsQuery.data.groups].map((group) => <button type="button" key={group} onClick={() => setActiveGroup(group)} className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${activeGroup === group ? 'bg-primary-50 text-primary-700 shadow-[inset_3px_0_0_#1D4ED8] dark:bg-primary-950/40 dark:text-primary-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}><span className="truncate">{group}</span><span className="font-mono text-[10px] text-slate-400">{group === 'ทั้งหมด' ? settingsQuery.data.settings.length : settingsQuery.data.settings.filter((setting) => setting.group_key === group).length}</span></button>)}
+          </nav>
+
+          <div className="min-w-0 space-y-4">
         {notice && <p className="rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-700 dark:bg-teal-950/30 dark:text-teal-200" role="status">{notice}</p>}
         {mutation.isError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200" role="alert">{errorText(mutation.error)}</p>}
 
@@ -171,6 +176,8 @@ export function SettingsPage() {
             </CardBody>
           </Card>)}
         </div> : <EmptyState icon={<Search className="h-10 w-10" />} title="ไม่พบค่าตั้งค่า" message="ลองเปลี่ยนกลุ่มหรือคำค้นหา" />}
+          </div>
+        </div>
       </>}
     </div>
   );

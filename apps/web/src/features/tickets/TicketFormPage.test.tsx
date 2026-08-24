@@ -18,7 +18,7 @@ function renderPage() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); apiFetchMock.mockReset(); });
 
 describe('TicketFormPage', () => {
-  it('builds a printable form automatically from the Ticket and inherited signature', async () => {
+  it('builds a printable form automatically from the Ticket and its own signature', async () => {
     apiFetchMock.mockImplementation((path: string) => path.includes('/branding')
       ? Promise.resolve({ organizationName: 'LIFE IT', logoUrl: '' })
       : Promise.resolve({
@@ -27,7 +27,7 @@ describe('TicketFormPage', () => {
         requester: { full_name: 'สมชาย ใจดี', email: 'user@example.com' }, assignee: { full_name: 'เจ้าหน้าที่ IT', email: 'it@example.com' }, assignee_name_snapshot: 'เจ้าหน้าที่ IT',
         ticket_categories: { name: 'Hardware' }, priority: 'ปานกลาง', status: 'ปิดงาน', source_channel: 'web', created_at: '2026-08-19T02:00:00.000Z', due_at: null,
         rating_criteria_snapshot: [{ key: 'speed', label: 'ความรวดเร็ว', score: 5 }], rating_details: { speed: 5 }, feedback: 'ดีมาก',
-        signature_url: 'https://signed.test/default.png', signature_source: 'default', worklogs: [],
+        signature_url: 'https://signed.test/ticket-1.png', worklogs: [],
       }));
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderPage();
@@ -35,7 +35,7 @@ describe('TicketFormPage', () => {
     expect(screen.getByText('สมชาย ใจดี')).toBeInTheDocument();
     expect(screen.getByText('ติดตั้งไดรเวอร์แล้ว')).toBeInTheDocument();
     expect(screen.getByText('ความรวดเร็ว')).toBeInTheDocument();
-    expect(screen.getByAltText('ลายเซ็นรับรอง Ticket')).toHaveAttribute('src', 'https://signed.test/default.png');
+    expect(screen.getByAltText('ลายเซ็นรับรอง Ticket')).toHaveAttribute('src', 'https://signed.test/ticket-1.png');
     fireEvent.click(screen.getByRole('button', { name: 'พิมพ์ / บันทึก PDF' }));
     await waitFor(() => expect(print).toHaveBeenCalledOnce());
   });

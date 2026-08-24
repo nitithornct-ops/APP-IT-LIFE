@@ -94,7 +94,6 @@ export function TicketFormPage() {
         <div className="text-center">
           <div className="mx-auto flex h-24 max-w-56 items-end justify-center border-b border-slate-400 pb-1">{ticket.signature_url && <img src={ticket.signature_url} alt="ลายเซ็นรับรอง Ticket" className="max-h-20 max-w-full object-contain" />}</div>
           <p className="mt-2 text-sm">ผู้รับรองการให้บริการ</p>
-          {ticket.signature_source === 'default' && <p className="mt-1 text-[10px] text-slate-400">ลายเซ็นกลางของระบบ</p>}
         </div>
       </footer>
       <p className="mt-8 text-center text-[10px] text-slate-400">เอกสารสร้างอัตโนมัติจากข้อมูล Ticket ณ {formatThaiDate(new Date().toISOString(), 'd MMM yyyy HH:mm')}</p>

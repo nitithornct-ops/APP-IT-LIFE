@@ -77,12 +77,12 @@ test.afterAll(async () => {
   for (const id of userIds.reverse()) await service.auth.admin.deleteUser(id);
 });
 
-test('live API returns all five reports, enforces RBAC and records exports', async () => {
+test('live API returns every standard report, enforces RBAC and records exports', async () => {
   const adminToken = await token(emails.admin);
   const userToken = await token(emails.user);
   const overview = await api<{ definitions: Array<{ key: string }> }>(adminToken, '/reports?rangeDays=30');
   expect(overview.definitions.map((item) => item.key)).toEqual([
-    'service-desk', 'requests-workflows', 'assets-operations', 'security-resilience', 'governance-compliance',
+    'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'security-resilience', 'governance-compliance',
   ]);
   for (const definition of overview.definitions) {
     const report = await api<{ definition: { key: string }; rows: unknown[] }>(adminToken, `/reports/${definition.key}?rangeDays=30`);
@@ -101,7 +101,7 @@ test('admin UI renders report controls, data and all report tabs', async ({ page
   await login(page, emails.admin);
   await page.goto('/reports');
   await expect(page.getByRole('heading', { name: 'Report Center', exact: true })).toBeVisible({ timeout: 20_000 });
-  for (const tab of ['Service Desk', 'Requests & Workflows', 'Assets & Operations', 'Security & Resilience', 'Governance & Compliance']) {
+  for (const tab of ['Service Desk', 'Requests & Workflows', 'Assets & Operations', 'ทะเบียนคุมทรัพย์สินรายพนักงาน', 'Security & Resilience', 'Governance & Compliance']) {
     await expect(page.getByRole('button', { name: tab, exact: true })).toBeVisible();
   }
   await expect(page.getByText(`LIVE20 Report Ticket ${runId}`, { exact: true })).toBeVisible();

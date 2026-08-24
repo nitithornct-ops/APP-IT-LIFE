@@ -104,9 +104,11 @@ test('live API enforces Settings and Audit role boundaries', async () => {
   expect(settings.status).toBe(200);
   const settingsData = settings.body.data as { settings: Array<{ key: string }>; notices: { secretsStoredHere: boolean } };
   const settingKeys = settingsData.settings.map((setting) => setting.key);
-  expect(settingKeys).toEqual(expect.arrayContaining(['ORG_NAME', 'ORG_LOGO_URL', 'TICKET_FORM_SIGNATURE_PATH']));
+  expect(settingKeys).toEqual(expect.arrayContaining(['ORG_NAME', 'ORG_LOGO_URL']));
+  // ลายเซ็นกลางถูกยกเลิกแล้ว ลายเซ็นผูกกับ Ticket รายใบ จึงต้องไม่มีคีย์นี้เหลืออยู่
+  expect(settingKeys).not.toContain('TICKET_FORM_SIGNATURE_PATH');
   expect(new Set(settingKeys).size).toBe(settingKeys.length);
-  expect(settingsData.settings.length).toBeGreaterThanOrEqual(52);
+  expect(settingsData.settings.length).toBeGreaterThanOrEqual(51);
   expect(settingsData.notices.secretsStoredHere).toBe(false);
 
   const update = await request(adminToken, '/settings/ORG_NAME', { method: 'PATCH', body: JSON.stringify({ value: `LIFE Module 22 API ${runId}` }) });

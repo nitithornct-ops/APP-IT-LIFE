@@ -13,7 +13,13 @@ vi.mock('react-router-dom', async () => {
 
 vi.mock('../../hooks/useNavItems', () => ({
   useNavItems: () => [
-    { label: 'หลัก', items: [{ label: 'ใบงาน', path: '/tickets', icon: () => null }] },
+    {
+      label: 'หลัก',
+      items: [
+        { label: 'ใบงาน', path: '/tickets', icon: () => null },
+        { label: 'CMDB', path: '/cmdb', icon: () => null },
+      ],
+    },
   ],
 }));
 
@@ -41,6 +47,28 @@ function searchResponse() {
   );
 }
 
+function cmdbResponse() {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'ci-1',
+            ci_code: 'CI-APP-001',
+            name: 'LIFE Portal',
+            ci_type: 'Application',
+            environment: 'Production',
+            status: 'Active',
+          },
+        ],
+        pagination: { page: 1, pageSize: 5, totalItems: 1, totalPages: 1 },
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
 function renderPalette() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -61,6 +89,19 @@ describe('CommandPalette', () => {
 
     expect(await screen.findByText('TCK-1042 · เครื่องพิมพ์เสีย')).toBeTruthy();
     expect(screen.getByText('กำลังดำเนินการ')).toBeTruthy();
+  });
+
+  it('ค้น CI ผ่าน endpoint เดิมของ CMDB และเปิดหน้ารายละเอียดได้', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => (
+      String(input).includes('/api/v1/cmdb/items') ? cmdbResponse() : searchResponse()
+    )));
+    renderPalette();
+
+    const input = screen.getByLabelText('คำค้นหา');
+    fireEvent.change(input, { target: { value: 'CI-APP-001' } });
+    fireEvent.click(await screen.findByRole('button', { name: /CI-APP-001 · LIFE Portal/ }));
+
+    expect(navigate).toHaveBeenCalledWith('/cmdb/ci-1');
   });
 
   it('ไม่ยิงคำค้นที่สั้นกว่าเพดานของ api ออกไปให้ถูกปฏิเสธเปล่า ๆ', async () => {

@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { StatCard } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Role } from '../../types/admin';
 
@@ -112,7 +113,7 @@ function CreateRoleForm({ onClose }: { onClose: () => void }) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
           สร้างบทบาท
@@ -133,7 +134,7 @@ export function RolesPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">บทบาทและสิทธิ์</h1>
+        <PageTitle eyebrow="บุคลากรและสิทธิ์ / บทบาท" title="บทบาทและสิทธิ์" description="สร้างบทบาทและกำหนดสิทธิ์ที่ผูกกับบทบาทนั้น ก่อนนำไปมอบให้ผู้ใช้รายคน" />
         <div className="flex items-center gap-2">
           <Link
             to="/admin/permission-matrix"
@@ -145,7 +146,7 @@ export function RolesPage() {
             <button
               type="button"
               onClick={() => setShowCreate((v) => !v)}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              className="flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               สร้างบทบาทใหม่

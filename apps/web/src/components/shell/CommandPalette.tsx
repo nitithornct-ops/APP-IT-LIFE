@@ -23,6 +23,17 @@ interface SearchResultGroup {
   items: SearchResultItem[];
 }
 
+interface CmdbSearchResult {
+  items: Array<{
+    id: string;
+    ci_code: string;
+    name: string;
+    ci_type: string;
+    environment: string;
+    status: string;
+  }>;
+}
+
 /** หนึ่งบรรทัดที่กดได้ ไม่ว่าจะมาจากเมนูหรือจากข้อมูลจริง — ปุ่มลูกศรเลื่อนข้ามกลุ่มได้เป็นเส้นเดียว */
 interface PaletteRow {
   key: string;
@@ -41,6 +52,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const groups = useNavItems();
+  const canSearchCmdb = groups.some((group) => group.items.some((item) => item.path === '/cmdb'));
 
   const trimmed = query.trim();
   // หน่วงก่อนยิง เพราะทุกตัวอักษรที่พิมพ์คือการค้นข้ามหลายตารางพร้อมกัน
@@ -54,19 +66,29 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     staleTime: 30_000,
   });
 
-  const menuRows = useMemo<PaletteRow[]>(() => {
-    const all = groups.flatMap((group) => group.items);
+  // ใช้ list endpoint เดิมของ CMDB เพื่อเติมผล CI โดยไม่ขยาย API contract และยิงเฉพาะผู้ใช้ที่เห็นเมนู CMDB
+  const cmdbQuery = useQuery({
+    queryKey: ['global-search', 'cmdb', debouncedQuery],
+    queryFn: () => apiFetch<CmdbSearchResult>(`/api/v1/cmdb/items?page=1&pageSize=5&search=${encodeURIComponent(debouncedQuery)}`),
+    enabled: open && canSearchRecords && canSearchCmdb,
+    staleTime: 30_000,
+  });
+
+  const menuSections = useMemo(() => {
     const needle = trimmed.toLowerCase();
-    const matched = needle ? all.filter((item) => item.label.toLowerCase().includes(needle)) : all;
-    return matched.map((item) => ({ key: `menu:${item.path}`, label: item.label, path: item.path, icon: item.icon }));
+    return groups.map((group) => ({
+      label: group.title,
+      rows: group.items
+        .filter((item) => !needle || item.label.toLowerCase().includes(needle))
+        .map((item) => ({ key: `menu:${item.path}`, label: item.label, path: item.path, icon: item.icon })),
+    })).filter((section) => section.rows.length > 0);
   }, [groups, trimmed]);
 
 
   // เมนูมาก่อนเสมอ เพราะตอบสนองทันทีจากข้อมูลในเครื่อง ส่วนผลจากฐานข้อมูลมาทีหลัง
   // ถ้าสลับกัน รายการที่ผู้ใช้เล็งไว้จะขยับหนีตอนผลค้นหามาถึง แล้วกด Enter โดนผิดอัน
   const sections = useMemo(() => {
-    const list: { label: string; rows: PaletteRow[] }[] = [];
-    if (menuRows.length > 0) list.push({ label: 'เมนู', rows: menuRows });
+    const list: { label: string; rows: PaletteRow[] }[] = [...menuSections];
     for (const group of recordsQuery.data?.groups ?? []) {
       list.push({
         label: group.label,
@@ -78,8 +100,20 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         })),
       });
     }
+    const configurationItems = cmdbQuery.data?.items ?? [];
+    if (configurationItems.length > 0) {
+      list.push({
+        label: 'Configuration Item (CI)',
+        rows: configurationItems.map((item) => ({
+          key: `ci:${item.id}`,
+          label: `${item.ci_code} · ${item.name}`,
+          hint: [item.ci_type, item.environment, item.status].filter(Boolean).join(' · '),
+          path: `/cmdb/${item.id}`,
+        })),
+      });
+    }
     return list;
-  }, [menuRows, recordsQuery.data]);
+  }, [cmdbQuery.data, menuSections, recordsQuery.data]);
 
   const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
 
@@ -130,7 +164,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         aria-modal="true"
         aria-label="ค้นหาด่วน"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-elevated dark:bg-slate-800"
+        className="w-full max-w-xl overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800"
       >
         <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-700">
           <Search className="h-5 w-5 text-primary-600" aria-hidden="true" />
@@ -143,11 +177,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             aria-label="คำค้นหา"
             className="flex-1 border-none bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
           />
-          {recordsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
+          {(recordsQuery.isFetching || cmdbQuery.isFetching) && <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto p-2">
-          {rows.length === 0 && !recordsQuery.isFetching && (
+        <div className="max-h-[58vh] overflow-y-auto p-2">
+          {rows.length === 0 && !recordsQuery.isFetching && !cmdbQuery.isFetching && (
             <p className="px-4 py-8 text-center text-sm text-slate-400">
               {trimmed.length > 0 && trimmed.length < MIN_QUERY_LENGTH
                 ? `พิมพ์อย่างน้อย ${MIN_QUERY_LENGTH} ตัวอักษรเพื่อค้นหาข้อมูล`
@@ -155,12 +189,16 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             </p>
           )}
 
+          {menuSections.length > 0 && (
+            <p className="px-3 pb-1 pt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">เมนู</p>
+          )}
+
           {sections.map((section) => {
             const offset = rowOffset;
             rowOffset += section.rows.length;
             return (
-              <div key={section.label} className="mb-1">
-                <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{section.label}</p>
+              <div key={section.label} className="mb-1.5">
+                <p className="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-primary-600 dark:text-primary-300"><span className="h-1.5 w-1.5 rounded-full bg-primary-500" />{section.label}</p>
                 {section.rows.map((row, index) => {
                   const position = offset + index;
                   return (
@@ -170,7 +208,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                       onClick={() => goTo(row)}
                       onMouseEnter={() => setActiveIndex(position)}
                       className={cn(
-                        'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm',
+                        'flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors',
                         position === activeIndex ? 'bg-primary-50 text-primary-800 dark:bg-slate-700 dark:text-white' : 'text-slate-700 dark:text-slate-200',
                       )}
                     >

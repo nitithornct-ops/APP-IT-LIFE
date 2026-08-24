@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { buildPmRoster } from '../services/pmRosterService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
@@ -13,6 +14,7 @@ import {
   createMaintenancePlanSchema,
   createPmTemplateSchema,
   listMaintenancePlansQuerySchema,
+  pmRosterQuerySchema,
   recordMaintenanceResultSchema,
   rescheduleMaintenanceSchema,
   setPmTemplateStatusSchema,
@@ -34,7 +36,7 @@ export const pmTemplatesRoute = new Hono<AppEnv>();
 pmTemplatesRoute.use('*', requireAuth);
 
 const PLAN_SELECT =
-  'id, asset_id, plan_date, actual_date, status, recurrence, next_due_date, technician_id, checklist_json, ' +
+  'id, asset_id, plan_date, actual_date, status, work_type, recurrence, next_due_date, technician_id, checklist_json, ' +
   'result, notes, template_id, recurring_parent_id, vendor_id, contract_id, created_at, updated_at, ' +
   'asset:assets(id, asset_code, name), technician:employees(id, first_name_th, last_name_th, nickname), ' +
   'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
@@ -68,7 +70,7 @@ maintenancePlansRoute.get(
   async (c) => {
     const supabase = c.get('supabase');
     const reqId = c.get('requestId');
-    const { page, pageSize, status, assetId } = c.req.valid('query');
+    const { page, pageSize, status, assetId, workType } = c.req.valid('query');
 
     let query = supabase
       .from('maintenance_plans')
@@ -78,10 +80,41 @@ maintenancePlansRoute.get(
 
     if (status) query = query.eq('status', status);
     if (assetId) query = query.eq('asset_id', assetId);
+    if (workType) query = query.eq('work_type', workType);
 
     const { data, count, error } = await query;
     if (error) return c.json(fail(reqId, 'MAINTENANCE_LIST_FAILED', 'ดึงแผน PM ไม่สำเร็จ'), 400);
     return c.json(ok(reqId, toPaginatedData(data ?? [], count, page, pageSize)));
+  },
+);
+
+maintenancePlansRoute.get(
+  '/roster',
+  requirePermission('maintenance.view'),
+  zValidator('query', pmRosterQuerySchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const { weekStart } = c.req.valid('query');
+    const start = new Date(`${weekStart}T00:00:00.000Z`);
+    start.setUTCDate(start.getUTCDate() + 6);
+    const weekEnd = start.toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+    const [weekResult, overdueResult] = await Promise.all([
+      supabase.from('maintenance_plans').select(PLAN_SELECT).gte('plan_date', weekStart).lte('plan_date', weekEnd).order('plan_date'),
+      supabase.from('maintenance_plans').select(PLAN_SELECT, { count: 'exact' }).lt('plan_date', today).in('status', ['วางแผน', 'กำลังดำเนินการ']).order('plan_date').limit(1000),
+    ]);
+    if (weekResult.error || overdueResult.error) {
+      return dbFailJson(c, 'PM_ROSTER_LOAD_FAILED', weekResult.error ?? overdueResult.error, 'โหลดตารางกำลังคน PM ไม่สำเร็จ');
+    }
+    return c.json(ok(reqId, buildPmRoster({
+      weekRows: (weekResult.data ?? []) as unknown as Array<Record<string, unknown>>,
+      overdueRows: (overdueResult.data ?? []) as unknown as Array<Record<string, unknown>>,
+      overdueTotal: overdueResult.count ?? undefined,
+      weekStart,
+      today,
+    })));
   },
 );
 
@@ -117,6 +150,7 @@ maintenancePlansRoute.post(
       .insert({
         asset_id: body.assetId,
         plan_date: body.planDate,
+        work_type: body.workType ?? 'PM',
         recurrence: body.recurrence ?? 'ครั้งเดียว',
         technician_id: body.technicianId ?? null,
         vendor_id: body.vendorId ?? null,
@@ -371,7 +405,7 @@ pmTemplatesRoute.get('/', requirePermission('maintenance.view'), async (c) => {
   const reqId = c.get('requestId');
   const includeInactive = c.req.query('includeInactive') === 'true';
 
-  let query = supabase.from('pm_checklist_templates').select('*').order('name', { ascending: true });
+  let query = supabase.from('pm_checklist_templates').select('*').order('created_at', { ascending: false });
   if (!includeInactive) query = query.eq('status', 'active');
 
   const { data, error } = await query;

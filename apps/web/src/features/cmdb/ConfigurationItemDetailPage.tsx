@@ -10,6 +10,7 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { EmployeeOption } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
@@ -383,10 +384,7 @@ export function ConfigurationItemDetailPage() {
       </button>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{ci.name}</h1>
-          <p className="font-mono text-sm text-slate-500 dark:text-slate-400">{ci.ci_code}</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / CMDB" title={<>{ci.name}</>} description={<>{ci.ci_code}</>} />
         <div className="flex items-center gap-2">
           <Badge variant={criticalityTone[ci.criticality]}>{ci.criticality}</Badge>
           <Badge variant={ciStatusTone[ci.status]}>{ci.status}</Badge>

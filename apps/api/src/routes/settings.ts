@@ -4,19 +4,17 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { buildSlaImpactSummary, type SlaImpactTicket } from '../services/slaImpactService';
+import { parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, Bindings } from '../types';
 import { dbFailJson } from '../utils/dbError';
-import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
-import { updateSystemSettingSchema } from '../validators/settings';
+import { slaImpactQuerySchema, updateSystemSettingSchema } from '../validators/settings';
 
 const BRANDING_BUCKET = 'branding';
 const ORGANIZATION_LOGO_KEY = 'ORG_LOGO_URL';
-const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
-const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
-const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
 const LOGO_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -111,65 +109,6 @@ settingsRoute.get('/branding', async (c) => {
   return c.json(ok(c.get('requestId'), await loadBranding(c.env)));
 });
 
-async function loadTicketFormSignature(env: Bindings) {
-  const admin = createAdminClient(env);
-  const { data: setting } = await admin.from('system_settings')
-    .select('value, updated_at')
-    .eq('key', TICKET_FORM_SIGNATURE_KEY)
-    .maybeSingle();
-  const storagePath = String(setting?.value ?? '');
-  let signatureUrl: string | null = null;
-  if (storagePath) {
-    const { data } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).createSignedUrl(storagePath, 3600);
-    signatureUrl = data?.signedUrl ?? null;
-  }
-  return { signatureUrl, uploadedAt: storagePath ? setting?.updated_at ?? null : null };
-}
-
-settingsRoute.get('/ticket-form-signature', requirePermission('setting.view'), async (c) => {
-  return c.json(ok(c.get('requestId'), await loadTicketFormSignature(c.env)));
-});
-
-settingsRoute.post('/ticket-form-signature', requirePermission('setting.manage'), async (c) => {
-  const requestId = c.get('requestId');
-  const body = await c.req.parseBody();
-  const file = body.file;
-  if (!(file instanceof File)) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_REQUIRED', 'กรุณาเลือกไฟล์ลายเซ็น PNG'), 400);
-  if (file.type !== 'image/png') return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_TYPE_NOT_ALLOWED', 'ลายเซ็นต้องเป็นไฟล์ PNG เท่านั้น'), 400);
-  if (file.size > MAX_TICKET_SIGNATURE_BYTES) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_TOO_LARGE', 'ไฟล์ลายเซ็นต้องมีขนาดไม่เกิน 2 MB'), 400);
-  const signature = await verifyFileSignature(file, 'image/png');
-  if (!signature.ok) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ใช่ PNG'), 400);
-
-  const admin = createAdminClient(c.env);
-  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
-  if (loadError || !current) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าลายเซ็นกลาง กรุณาอัปเดตฐานข้อมูลก่อน'), 409);
-  const path = `default/${crypto.randomUUID()}.png`;
-  const { error: uploadError } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).upload(path, file, { contentType: 'image/png', cacheControl: '3600', upsert: false });
-  if (uploadError) return dbFailJson(c, 'TICKET_FORM_SIGNATURE_UPLOAD_FAILED', uploadError);
-  const { error: updateError } = await admin.from('system_settings').update({ value: path, updated_by: c.get('userId'), updated_at: new Date().toISOString() }).eq('key', TICKET_FORM_SIGNATURE_KEY);
-  if (updateError) {
-    await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([path]);
-    return dbFailJson(c, 'TICKET_FORM_SIGNATURE_SAVE_FAILED', updateError);
-  }
-  const previousPath = String(current.value ?? '');
-  if (previousPath && previousPath !== path) await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([previousPath]);
-  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE_TICKET_FORM_SIGNATURE', module: 'settings', targetTable: 'system_settings', targetId: TICKET_FORM_SIGNATURE_KEY, detail: { sizeBytes: file.size, replaced: Boolean(previousPath) }, requestId });
-  return c.json(ok(requestId, await loadTicketFormSignature(c.env)));
-});
-
-settingsRoute.delete('/ticket-form-signature', requirePermission('setting.manage'), async (c) => {
-  const requestId = c.get('requestId');
-  const admin = createAdminClient(c.env);
-  const { data: current, error: loadError } = await admin.from('system_settings').select('value').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
-  if (loadError || !current) return c.json(fail(requestId, 'TICKET_FORM_SIGNATURE_SETTING_NOT_FOUND', 'ไม่พบค่าตั้งค่าลายเซ็นกลาง'), 404);
-  const previousPath = String(current.value ?? '');
-  const { error: updateError } = await admin.from('system_settings').update({ value: '', updated_by: c.get('userId'), updated_at: new Date().toISOString() }).eq('key', TICKET_FORM_SIGNATURE_KEY);
-  if (updateError) return dbFailJson(c, 'TICKET_FORM_SIGNATURE_DELETE_FAILED', updateError);
-  if (previousPath) await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([previousPath]);
-  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'DELETE_TICKET_FORM_SIGNATURE', module: 'settings', targetTable: 'system_settings', targetId: TICKET_FORM_SIGNATURE_KEY, requestId });
-  return c.json(ok(requestId, await loadTicketFormSignature(c.env)));
-});
-
 settingsRoute.post('/logo', requirePermission('setting.manage'), async (c) => {
   const requestId = c.get('requestId');
   const body = await c.req.parseBody();
@@ -223,6 +162,75 @@ settingsRoute.delete('/logo', requirePermission('setting.manage'), async (c) => 
     targetTable: 'system_settings', targetId: ORGANIZATION_LOGO_KEY, requestId,
   });
   return c.json(ok(requestId, await loadBranding(c.env)));
+});
+
+settingsRoute.get('/sla-impact', requirePermission('setting.view'), zValidator('query', slaImpactQuerySchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const requested = c.req.valid('query');
+  const keys = ['SLA_BUSINESS_START', 'SLA_BUSINESS_END', 'SLA_BUSINESS_DAYS', 'SLA_HOLIDAYS'] as const;
+  const admin = createAdminClient(c.env);
+  const [settingsResult, ticketsResult, policiesResult] = await Promise.all([
+    admin.from('system_settings').select('key,value').in('key', [...keys]),
+    admin.from('tickets')
+      .select('id,status,created_at,due_at,resolution_sla_hours,sla_paused_at,sla_paused_minutes,reopen_count')
+      .not('status', 'in', '(เสร็จสิ้น,ปิดงาน,ยกเลิก,ยกระดับเป็น Incident)'),
+    admin.from('ticket_categories')
+      .select('id,name,response_sla_hours,resolution_sla_hours,sla_hours,default_priority,status')
+      .eq('status', 'active')
+      .order('name'),
+  ]);
+  if (settingsResult.error) return dbFailJson(c, 'SLA_SETTINGS_LOAD_FAILED', settingsResult.error);
+  if (ticketsResult.error) return dbFailJson(c, 'SLA_IMPACT_TICKETS_LOAD_FAILED', ticketsResult.error);
+  if (policiesResult.error) return dbFailJson(c, 'SLA_POLICIES_LOAD_FAILED', policiesResult.error);
+
+  const currentValues = Object.fromEntries((settingsResult.data ?? []).map((row) => [String(row.key), String(row.value ?? '')]));
+  const proposedValues: Record<string, string> = { ...currentValues };
+  for (const key of keys) {
+    const input = requested[key];
+    if (input === undefined) continue;
+    const normalized = normalizeSettingValue(key, input);
+    if (normalized.error || normalized.value === undefined) {
+      return c.json(fail(requestId, 'SLA_PREVIEW_INVALID', normalized.error ?? 'ค่าปฏิทิน SLA ไม่ถูกต้อง'), 400);
+    }
+    proposedValues[key] = normalized.value;
+  }
+
+  const startMinute = (value: string | undefined, fallback: string) => {
+    const safeValue = value || fallback;
+    const [hour, minute] = safeValue.split(':').map(Number);
+    return hour * 60 + minute;
+  };
+  if (startMinute(proposedValues.SLA_BUSINESS_END, '17:30') <= startMinute(proposedValues.SLA_BUSINESS_START, '08:30')) {
+    return c.json(fail(requestId, 'SLA_PREVIEW_INVALID_RANGE', 'เวลาสิ้นสุดทำการต้องอยู่หลังเวลาเริ่มทำการ'), 400);
+  }
+
+  const currentCalendar = parseTicketBusinessCalendar(currentValues);
+  const proposedCalendar = parseTicketBusinessCalendar(proposedValues);
+  const summary = buildSlaImpactSummary({
+    tickets: (ticketsResult.data ?? []) as SlaImpactTicket[],
+    currentCalendar,
+    proposedCalendar,
+  });
+  const minuteLabel = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+
+  return c.json(ok(requestId, {
+    generatedAt: new Date().toISOString(),
+    calendar: {
+      start: minuteLabel(proposedCalendar.startMinute),
+      end: minuteLabel(proposedCalendar.endMinute),
+      businessDays: [...proposedCalendar.businessDays].sort((a, b) => a - b),
+      holidays: [...proposedCalendar.holidays].sort(),
+      minutesPerDay: proposedCalendar.endMinute - proposedCalendar.startMinute,
+    },
+    policies: (policiesResult.data ?? []).map((policy) => ({
+      id: String(policy.id),
+      name: String(policy.name),
+      priority: String(policy.default_priority ?? 'ไม่ระบุ'),
+      responseHours: Number(policy.response_sla_hours ?? 4),
+      resolutionHours: Number(policy.resolution_sla_hours ?? policy.sla_hours ?? 24),
+    })),
+    ...summary,
+  }));
 });
 
 settingsRoute.get('/', requirePermission('setting.view'), async (c) => {

@@ -351,10 +351,10 @@ describe('Help Desk Phase 2 foundation', () => {
     expect(technicianView.rows).toHaveLength(1);
   });
 
-  it('provides one global signature setting inherited by Ticket forms', async () => {
+  it('keeps no global signature setting — Ticket forms are signed one by one', async () => {
     const result = await asServiceRole(db, async () => db.query(
-      `select key, is_editable, support_status from public.system_settings where key = 'TICKET_FORM_SIGNATURE_PATH'`,
+      `select key from public.system_settings where key = 'TICKET_FORM_SIGNATURE_PATH'`,
     ));
-    expect(result.rows).toEqual([expect.objectContaining({ key: 'TICKET_FORM_SIGNATURE_PATH', is_editable: false, support_status: 'active' })]);
+    expect(result.rows).toEqual([]);
   });
 });

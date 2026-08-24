@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { requiresServiceRequestApprovalAction } from '../src/routes/serviceRequests';
 import { requiredWorkflowApprovals, workflowDecisionStatus } from '../src/services/workflowEngine';
 
 describe('workflow engine rules', () => {
@@ -13,5 +14,13 @@ describe('workflow engine rules', () => {
     expect(workflowDecisionStatus('APPROVE')).toBe('อนุมัติ');
     expect(workflowDecisionStatus('REJECT')).toBe('ปฏิเสธ');
     expect(workflowDecisionStatus('RETURN')).toBe('ส่งกลับแก้ไข');
+  });
+
+  it('does not let a generic update bypass a pending service-request approval', () => {
+    expect(requiresServiceRequestApprovalAction('รออนุมัติ', 'รอมอบหมาย')).toBe(true);
+    expect(requiresServiceRequestApprovalAction('รออนุมัติ', 'ปฏิเสธ')).toBe(true);
+    expect(requiresServiceRequestApprovalAction('รออนุมัติ', 'ยกเลิก')).toBe(false);
+    expect(requiresServiceRequestApprovalAction('รออนุมัติ', 'รออนุมัติ')).toBe(false);
+    expect(requiresServiceRequestApprovalAction('รอมอบหมาย', 'กำลังดำเนินการ')).toBe(false);
   });
 });

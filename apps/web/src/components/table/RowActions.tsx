@@ -49,6 +49,21 @@ interface RowActionsProps {
   className?: string;
 }
 
+/**
+ * ลำดับมาตรฐานของ action ในทุกโมดูล
+ *
+ * custom/node อยู่กลางชุดเพราะเป็นงานเสริมของโมดูล ส่วน action ที่มีผลกับสถานะ
+ * หรือข้อมูลวางท้ายสุดเสมอ เพื่อลดโอกาสกดพลาดและทำให้ผู้ใช้หา "ลบ" ได้ตำแหน่งเดิมทุกหน้า
+ */
+const ACTION_ORDER: Record<RowAction['kind'], number> = {
+  view: 0,
+  edit: 1,
+  custom: 2,
+  node: 2,
+  cancel: 3,
+  delete: 4,
+};
+
 const PRESETS: Record<RowAction['kind'], { label: string; icon: LucideIcon; tone: string; needsConfirm: boolean }> = {
   view: { label: 'ดู', icon: Eye, tone: 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700', needsConfirm: false },
   edit: { label: 'แก้ไข', icon: Pencil, tone: 'text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/40', needsConfirm: false },
@@ -58,19 +73,29 @@ const PRESETS: Record<RowAction['kind'], { label: string; icon: LucideIcon; tone
   node: { label: '', icon: Eye, tone: '', needsConfirm: false },
 };
 
-const BUTTON_CLASS = 'inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40';
+const BUTTON_CLASS = 'inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-lg border border-transparent px-2.5 py-1 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-not-allowed disabled:opacity-40';
 
 export function RowActions({ recordLabel, actions, className }: RowActionsProps) {
   const [pending, setPending] = useState<RowAction | null>(null);
   const [reason, setReason] = useState('');
-  const visible = actions.filter((action) => !action.hidden);
+  // Array.sort ใน JavaScript เป็น stable sort: custom actions ที่มี rank เดียวกันจึงยังเรียงตามที่โมดูลส่งมา
+  // แต่ action หลักจะอยู่ ดู -> แก้ไข -> ยกเลิก -> ลบ เหมือนกันทุกตาราง แม้ caller จะส่งสลับลำดับ
+  const visible = actions
+    .filter((action) => !action.hidden)
+    .map((action, originalIndex) => ({ action, originalIndex }))
+    .sort((left, right) => ACTION_ORDER[left.action.kind] - ACTION_ORDER[right.action.kind] || left.originalIndex - right.originalIndex)
+    .map(({ action }) => action);
   if (visible.length === 0) return <span className="text-xs text-slate-400">—</span>;
 
   const preset = pending ? PRESETS[pending.kind] : null;
 
   return (
     <>
-      <div className={cn('flex flex-wrap items-center justify-end gap-1', className)}>
+      <div
+        className={cn('flex flex-wrap items-center justify-end gap-1', className)}
+        role="group"
+        aria-label={`การดำเนินการสำหรับ ${recordLabel}`}
+      >
         {visible.map((action, index) => {
           if (action.kind === 'node') return <span key={index} className="contents">{action.node}</span>;
           const base = PRESETS[action.kind];

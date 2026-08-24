@@ -35,6 +35,8 @@ export const recordInventoryTransactionSchema = z.object({
   transactionType: z.enum(['IN', 'OUT']),
   qty: z.coerce.number().positive('จำนวนต้องมากกว่า 0'),
   notes: z.string().trim().max(500).optional(),
+  /** Ticket ที่เบิกอะไหล่ไปใช้ — ใส่เมื่อเบิกจากหน้างาน เพื่อให้ยอดที่หายจากคลังตรวจย้อนได้ */
+  ticketId: z.string().uuid().optional(),
 });
 export type RecordInventoryTransactionInput = z.infer<typeof recordInventoryTransactionSchema>;
 

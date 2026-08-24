@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import {
@@ -178,7 +179,7 @@ export function BackupMonitoringPage() {
   const tableEmpty = (title: string) => <EmptyState icon={<CloudCog className="h-10 w-10" />} title={title} message="ยังไม่มีข้อมูลในทะเบียนนี้" />;
 
   return <div className="flex flex-col gap-4" data-testid="backup-monitoring-page">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Backup / Recovery / Monitoring</h1><p className="text-sm text-slate-500">ติดตามการสำรอง กู้คืน BCP/DR รอบตรวจ Log และ Anomaly จากศูนย์เดียว</p></div>{canManage && <Button size="sm" data-testid="operations-create-toggle" onClick={openCreate}><Plus className="h-4 w-4" />เพิ่มรายการ</Button>}</div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Backup & Monitoring" title="Backup / Recovery / Monitoring" description="ติดตามการสำรอง กู้คืน BCP/DR รอบตรวจ Log และ Anomaly จากศูนย์เดียว" />{canManage && <Button size="sm" data-testid="operations-create-toggle" onClick={openCreate}><Plus className="h-4 w-4" />เพิ่มรายการ</Button>}</div>
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-5"><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Backup สำเร็จ" value={`${metrics.success}%`} tone={metrics.failed ? 'amber' : 'teal'} /><StatCard icon={<AlertTriangle className="h-5 w-5" />} label="Backup มีปัญหา" value={metrics.failed} tone={metrics.failed ? 'danger' : 'gray'} /><StatCard icon={<FileClock className="h-5 w-5" />} label="Recovery เกินกำหนด" value={metrics.recoveryDue} tone={metrics.recoveryDue ? 'danger' : 'gray'} /><StatCard icon={<CalendarClock className="h-5 w-5" />} label="BCP ถึงรอบ 30 วัน" value={metrics.bcpDue} tone={metrics.bcpDue ? 'amber' : 'gray'} /><StatCard icon={<Siren className="h-5 w-5" />} label="Anomaly ค้าง" value={metrics.anomalies} tone={metrics.anomalies ? 'danger' : 'teal'} /></div>
     <div className="flex flex-wrap gap-2">{tabs.map((item) => <Button key={item.key} size="sm" variant={tab === item.key ? 'primary' : 'outline'} onClick={() => { setTab(item.key); closeForm(); }}><item.icon className="h-4 w-4" />{item.label}</Button>)}</div>
     {showForm && <FormModal title={editing ? 'แก้ไขรายการ' : 'เพิ่มรายการ'} description={tabs.find((item) => item.key === tab)?.label} size="xl" onClose={closeForm}>{optionsQuery.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : optionsQuery.data ? <RegistryForm key={`${tab}-${editing?.id ?? 'new'}`} tab={tab} record={editing} options={optionsQuery.data} overview={data} userId={me?.profile.id} onClose={closeForm} /> : <div className="p-5 text-red-700">โหลดตัวเลือกแบบฟอร์มไม่สำเร็จ</div>}</FormModal>}

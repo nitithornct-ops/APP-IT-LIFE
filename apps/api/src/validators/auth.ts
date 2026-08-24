@@ -21,3 +21,13 @@ export const updateOwnProfileSchema = z.object({
 });
 
 export type UpdateOwnProfileInput = z.infer<typeof updateOwnProfileSchema>;
+
+/**
+ * ปิดคำแนะนำเริ่มต้น — dismissed = true คือกด "ข้ามไปใช้ค่าเริ่มต้น",
+ * false คือดูครบแล้ว ทั้งสองอย่างทำให้การ์ดไม่แสดงอีก แต่แยกเก็บคนละคอลัมน์เพื่อให้ย้อนดูได้
+ */
+export const setOnboardingStateSchema = z.object({
+  dismissed: z.boolean(),
+});
+
+export type SetOnboardingStateInput = z.infer<typeof setOnboardingStateSchema>;

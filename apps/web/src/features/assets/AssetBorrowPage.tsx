@@ -3,15 +3,18 @@ import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeftRight, CalendarClock, CheckCircle2, History, Loader2, Plus, Search } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, CalendarClock, CheckCircle2, History, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Card, CardBody, StatCard } from '../../components/ui/Card';
+import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { FilterBar, filterControlClass } from '../../components/ui/FilterBar';
+import { KpiStrip } from '../../components/ui/KpiStrip';
 import { Modal } from '../../components/ui/Modal';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Department, EmployeeOption, PaginatedResult } from '../../types/admin';
@@ -204,44 +207,41 @@ export function AssetBorrowPage() {
   const records = overviewQuery.data?.records;
   const activeRecords = records?.items.filter((item): item is ActiveAssetLoan => !isHistoryRecord(item)) ?? [];
   const historyRecords = records?.items.filter(isHistoryRecord) ?? [];
+  const activeFilterCount = [search, departmentId].filter(Boolean).length;
 
   return (
     <div className="flex flex-col gap-5" data-testid="asset-borrow-page">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">ยืม / คืน / โอนย้าย Asset</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ติดตามผู้ถือครอง กำหนดคืน และประวัติการเคลื่อนไหวทรัพย์สิน</p>
-        </div>
-        <RequirePermission permission="asset.transfer">
-          <Button size="sm" onClick={() => setShowMovement(true)} data-testid="asset-borrow-create" aria-haspopup="dialog"><Plus className="h-4 w-4" />บันทึกการเคลื่อนไหว</Button>
-        </RequirePermission>
+      <PageHeader
+        eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / ยืม-คืน Asset"
+        title="ยืม / คืน / โอนย้าย Asset"
+        description="ติดตามผู้ถือครอง กำหนดคืน และประวัติการเคลื่อนไหวทรัพย์สิน"
+        primaryAction={<RequirePermission permission="asset.transfer"><Button size="sm" onClick={() => setShowMovement(true)} data-testid="asset-borrow-create" aria-haspopup="dialog"><Plus className="h-4 w-4" />บันทึกการเคลื่อนไหว</Button></RequirePermission>}
+      />
+
+      <KpiStrip items={[
+        { key: 'available', label: 'พร้อมให้ยืม', value: summary.available, tone: 'teal', icon: <CheckCircle2 className="h-5 w-5" /> },
+        { key: 'active', label: 'กำลังถือครอง', value: summary.active, tone: 'gray', icon: <ArrowLeftRight className="h-5 w-5" />, active: view === 'active', onClick: () => table.setFilter('view', '') },
+        { key: 'due-soon', label: 'ใกล้ครบกำหนดคืน', value: summary.dueSoon, tone: 'amber', icon: <CalendarClock className="h-5 w-5" /> },
+        { key: 'overdue', label: 'ค้างคืน (เกินกำหนด)', value: summary.overdue, tone: 'danger', icon: <AlertTriangle className="h-5 w-5" /> },
+      ]} />
+
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
+        <button type="button" onClick={() => table.setFilter('view', '')} className={`flex h-12 items-center gap-2 border-b-2 px-4 text-sm font-semibold ${view === 'active' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}><ArrowLeftRight className="h-4 w-4" />กำลังถือครอง / ค้างคืน ({summary.active})</button>
+        <button type="button" onClick={() => table.setFilter('view', 'history')} className={`flex h-12 items-center gap-2 border-b-2 px-4 text-sm font-semibold ${view === 'history' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}><History className="h-4 w-4" />ประวัติเคลื่อนไหว</button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="พร้อมให้ยืม" value={summary.available} tone="teal" />
-        <StatCard icon={<ArrowLeftRight className="h-5 w-5" />} label="กำลังถือครอง" value={summary.active} tone="gray" />
-        <StatCard icon={<CalendarClock className="h-5 w-5" />} label="ใกล้ครบกำหนดคืน" value={summary.dueSoon} tone="amber" />
-        <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="ค้างคืน (เกินกำหนด)" value={summary.overdue} tone="danger" />
-      </div>
-
-      <div className="flex gap-2 border-b border-slate-200 px-2 dark:border-slate-700">
-        <button type="button" onClick={() => table.setFilter('view', '')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'active' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>กำลังถือครอง / ค้างคืน ({summary.active})</button>
-        <button type="button" onClick={() => table.setFilter('view', 'history')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${view === 'history' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500'}`}>ประวัติเคลื่อนไหว</button>
-      </div>
-
-      <Card>
-        <CardBody>
-          <div className="mb-4 flex flex-wrap gap-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-900/40">
-            <label className="relative min-w-64 flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input type="search" value={search} onChange={(event) => table.setFilter('search', event.target.value, { replace: true })} placeholder="ค้นหาในรายการ..." className={`${fieldClass} pl-9`} />
-            </label>
-            <select value={departmentId} onChange={(event) => table.setFilter('departmentId', event.target.value)} className={`${fieldClass} w-auto min-w-48`}>
-              <option value="">แผนก: ทั้งหมด</option>
-              {(departmentsQuery.data ?? []).map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}
-            </select>
-            {records && <span className="self-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800">{records.pagination.totalItems} รายการ</span>}
-            <ExportCsvButton
+      <Card className="overflow-hidden">
+          <div className="p-3">
+            <FilterBar
+              className="border-0 bg-surface-header shadow-none dark:bg-white/[.028]"
+              searchValue={search}
+              onSearchChange={(value) => table.setFilter('search', value, { replace: true })}
+              searchPlaceholder="ค้นหา Asset ผู้ถือครอง หรือรหัสพนักงาน..."
+              filters={<select aria-label="กรองแผนก" value={departmentId} onChange={(event) => table.setFilter('departmentId', event.target.value)} className={filterControlClass}><option value="">แผนก: ทั้งหมด</option>{(departmentsQuery.data ?? []).map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}</select>}
+              onClear={() => table.setFilters({ search: '', departmentId: '' })}
+              activeFilterCount={activeFilterCount}
+              resultCount={records?.pagination.totalItems}
+              actions={<ExportCsvButton
               className="self-center"
               disabled={view === 'active' ? !activeRecords.length : !historyRecords.length}
               fileName={`asset-${view === 'active' ? 'loans' : 'movements'}-page-${page}.csv`}
@@ -272,6 +272,7 @@ export function AssetBorrowPage() {
                     item.notes ?? item.condition ?? '',
                   ]),
                 ])}
+              />}
             />
           </div>
 
@@ -280,14 +281,13 @@ export function AssetBorrowPage() {
           {records && records.items.length === 0 && <EmptyState icon={view === 'active' ? <ArrowLeftRight className="h-10 w-10" /> : <History className="h-10 w-10" />} title={view === 'active' ? 'ไม่มีทรัพย์สินที่ถูกยืมหรือถือครองอยู่' : 'ยังไม่มีประวัติการเคลื่อนไหว'} />}
 
           {view === 'active' && activeRecords.length > 0 && (
-            <div className="overflow-x-auto"><DataTable mode="server" className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable></div>
+            <DataTable mode="server" toolbar={false} pagination={false} currentPageExport={false} tableId="asset-borrow-active" rowNumberStart={(page - 1) * pageSize + 1} containerClassName="rounded-none border-x-0 shadow-none" className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">จัดการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable>
           )}
 
           {view === 'history' && historyRecords.length > 0 && (
-            <div className="overflow-x-auto"><DataTable mode="server" className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">วันเวลา</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">รายการ</th><th className="px-3 py-3">จาก</th><th className="px-3 py-3">ไปยัง / แผนก</th><th className="px-3 py-3">หมายเหตุ</th></tr></thead><tbody>{historyRecords.map((item) => <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatThaiDate(item.action_date, 'd MMM yyyy HH:mm')}</td><td className="px-3 py-3">{item.asset ? <Link to={`/assets/${item.asset.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.asset.name}<span className="block font-mono text-xs font-normal text-slate-400">{item.asset.asset_code}</span></Link> : '—'}</td><td className="px-3 py-3"><Badge variant={item.action_type === 'Return' ? 'success' : item.action_type === 'Transfer' ? 'warning' : 'info'}>{item.status_label ?? item.action_type}</Badge></td><td className="px-3 py-3 text-slate-500">{fullName(item.from_employee)}</td><td className="px-3 py-3">{fullName(item.to_employee)}<p className="text-xs text-slate-400">{item.department?.name_th ?? item.location ?? ''}</p></td><td className="max-w-xs px-3 py-3 text-slate-500">{item.notes ?? item.condition ?? '—'}</td></tr>)}</tbody></DataTable></div>
+            <DataTable mode="server" toolbar={false} pagination={false} currentPageExport={false} tableId="asset-borrow-history" rowNumberStart={(page - 1) * pageSize + 1} containerClassName="rounded-none border-x-0 shadow-none" className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">วันเวลา</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">รายการ</th><th className="px-3 py-3">จาก</th><th className="px-3 py-3">ไปยัง / แผนก</th><th className="px-3 py-3">หมายเหตุ</th></tr></thead><tbody>{historyRecords.map((item) => <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatThaiDate(item.action_date, 'd MMM yyyy HH:mm')}</td><td className="px-3 py-3">{item.asset ? <Link to={`/assets/${item.asset.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.asset.name}<span className="block font-mono text-xs font-normal text-slate-400">{item.asset.asset_code}</span></Link> : '—'}</td><td className="px-3 py-3"><Badge variant={item.action_type === 'Return' ? 'success' : item.action_type === 'Transfer' ? 'warning' : 'info'}>{item.status_label ?? item.action_type}</Badge></td><td className="px-3 py-3 text-slate-500">{fullName(item.from_employee)}</td><td className="px-3 py-3">{fullName(item.to_employee)}<p className="text-xs text-slate-400">{item.department?.name_th ?? item.location ?? ''}</p></td><td className="max-w-xs px-3 py-3 text-slate-500">{item.notes ?? item.condition ?? '—'}</td></tr>)}</tbody></DataTable>
           )}
-          {records && <TablePagination page={records.pagination.page} pageSize={pageSize} totalItems={records.pagination.totalItems} totalPages={records.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
-        </CardBody>
+          {records && <div className="px-4 pb-4"><TablePagination page={records.pagination.page} pageSize={pageSize} totalItems={records.pagination.totalItems} totalPages={records.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>}
       </Card>
 
       {showMovement && (

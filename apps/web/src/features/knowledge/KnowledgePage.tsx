@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import {
@@ -103,7 +104,7 @@ const data = await apiFetch<KnowledgeArticle>(`/api/v1/knowledge/articles/${arti
   if (query.isLoading) return <div className="flex justify-center py-24"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>;
   if (query.isError || !query.data) return <EmptyState icon={<BookOpenCheck className="h-10 w-10" />} title="โหลดฐานความรู้ไม่สำเร็จ" message={errorText(query.error, 'กรุณาลองใหม่')} />;
   return <div className="space-y-5" data-testid="knowledge-page">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">ฐานความรู้ (Knowledge Base)</h1><p className="mt-1 text-sm text-slate-500">ค้นหาวิธีแก้ปัญหา คู่มือ และคำตอบมาตรฐานก่อนเปิด Ticket ใหม่</p></div>{canManage && <Button data-testid="knowledge-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มบทความ</Button>}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / ฐานความรู้" title="ฐานความรู้ (Knowledge Base)" description="ค้นหาวิธีแก้ปัญหา คู่มือ และคำตอบมาตรฐานก่อนเปิด Ticket ใหม่" />{canManage && <Button data-testid="knowledge-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มบทความ</Button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="บทความเผยแพร่" value={published} tone="teal" /><StatCard icon={<FilePenLine className="h-5 w-5" />} label="ฉบับร่าง" value={drafts} tone={drafts ? 'amber' : 'gray'} /><StatCard icon={<Eye className="h-5 w-5" />} label="การเข้าอ่านรวม" value={views} tone="primary" /><StatCard icon={<ThumbsUp className="h-5 w-5" />} label="มีประโยชน์" value={helpful} tone="primary" /></div>
     {showForm && <FormModal title={editing ? 'แก้ไขบทความ' : 'เพิ่มบทความ'} description="จัดการเนื้อหาฐานความรู้และสถานะการเผยแพร่" size="xl" onClose={() => { setShowForm(false); setEditing(undefined); }}><ArticleForm article={editing} overview={query.data} onClose={() => { setShowForm(false); setEditing(undefined); }} /></FormModal>}
     {selected && <DetailModal title={selected.title} description="รายละเอียดบทความฐานความรู้" onClose={() => setSelected(undefined)}><ArticleDetail key={selected.id} article={selected} canFeedback={canFeedback && selected.status === 'เผยแพร่'} onClose={() => setSelected(undefined)} /></DetailModal>}

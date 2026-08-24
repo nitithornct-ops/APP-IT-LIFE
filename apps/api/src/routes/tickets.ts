@@ -15,6 +15,7 @@ import {
   applyStatusChange,
   assertTransition,
   changesSlaPause,
+  fieldOutcomesFor,
 } from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -38,7 +39,6 @@ export const ticketsRoute = new Hono<AppEnv>();
 ticketsRoute.use('*', requireAuth);
 
 const TICKET_SIGNATURE_BUCKET = 'ticket-signatures';
-const TICKET_FORM_SIGNATURE_KEY = 'TICKET_FORM_SIGNATURE_PATH';
 const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
 export function ratingsMatchCriteria(ratings: TicketRatingDetails, criterionKeys: string[]): boolean {
@@ -203,7 +203,7 @@ ticketsRoute.get('/:id', async (c) => {
 
   const { data: ticket, error } = await supabase
     .from('tickets')
-    .select('*, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name, email), assignee:profiles!tickets_assignee_id_fkey(full_name, email)')
+    .select('*, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name, email), assignee:profiles!tickets_assignee_id_fkey(full_name, email), cause_code:ticket_cause_codes!tickets_cause_code_id_fkey(id, code, name)')
     .eq('id', id)
     .maybeSingle();
 
@@ -240,17 +240,9 @@ ticketsRoute.get('/:id', async (c) => {
     return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
   }));
 
-  let signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
-  let signatureSource: 'ticket' | 'default' | null = signaturePath ? 'ticket' : null;
-  let signatureUploadedAt = ticket.signature_uploaded_at ?? null;
-  if (!signaturePath) {
-    const { data: setting } = await admin.from('system_settings').select('value, updated_at').eq('key', TICKET_FORM_SIGNATURE_KEY).maybeSingle();
-    signaturePath = String(setting?.value ?? '');
-    if (signaturePath) {
-      signatureSource = 'default';
-      signatureUploadedAt = setting?.updated_at ?? null;
-    }
-  }
+  // ลายเซ็นผูกกับ Ticket ใบนี้เท่านั้น ไม่มีลายเซ็นกลางให้ตกทอด — ใบที่ยังไม่มีคนเซ็นต้องว่างไว้ตามจริง
+  const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
+  const signatureUploadedAt = ticket.signature_uploaded_at ?? null;
   let signatureUrl: string | null = null;
   if (signaturePath) {
     const { data } = await admin.storage
@@ -259,7 +251,8 @@ ticketsRoute.get('/:id', async (c) => {
     signatureUrl = data?.signedUrl ?? null;
   }
 
-  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_source: signatureSource, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [] }));
+  // field_outcomes มาจาก state machine ตัวเดียวกับที่ PATCH บังคับ จอหน้างานจึงเสนอเฉพาะสิ่งที่ทำได้จริง
+  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [], field_outcomes: fieldOutcomesFor(String(ticket.status)) }));
 });
 
 ticketsRoute.post(
@@ -767,6 +760,8 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     applyStatusChange(patch, current, toStatus, now, businessCalendar!);
   }
   if (body.resolution !== undefined) patch.resolution = body.resolution;
+  if (body.rootCause !== undefined) patch.root_cause = body.rootCause || null;
+  if (body.causeCodeId !== undefined) patch.cause_code_id = body.causeCodeId || null;
 
   const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
   const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
@@ -836,9 +831,14 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
   return c.json(ok(reqId, updated));
 });
 
+/**
+ * ลายเซ็นรับรองของ Ticket ใบเดียว — ไม่มีลายเซ็นกลางให้ตกทอดแล้ว ต้องเซ็นทีละใบ
+ * จึงใช้สิทธิ์ ticket.update ไม่ใช่ setting.manage เพราะคนที่เซ็นคือคนที่ปิดงานหน้างาน
+ * ไม่ใช่แอดมินที่ตั้งค่าระบบ
+ */
 ticketsRoute.post(
   '/:id/signature',
-  requirePermission('setting.manage'),
+  requirePermission('ticket.update'),
   async (c) => {
     const requestId = c.get('requestId');
     const actorId = c.get('userId');
@@ -903,7 +903,7 @@ ticketsRoute.post(
   },
 );
 
-ticketsRoute.delete('/:id/signature', requirePermission('setting.manage'), async (c) => {
+ticketsRoute.delete('/:id/signature', requirePermission('ticket.update'), async (c) => {
   const requestId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id');

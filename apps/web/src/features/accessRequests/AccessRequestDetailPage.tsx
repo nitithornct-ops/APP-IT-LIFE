@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { AccessRequestDetail, AccessRequestStatus } from '../../types/accessRequests';
@@ -141,15 +142,12 @@ export function AccessRequestDetailPage() {
       </Link>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-            {request.access_systems?.name} — {request.access_level}
-          </h1>
-          <div className="mt-1 flex items-center gap-2">
-            <Badge variant={statusTone[request.status]}>{request.status}</Badge>
-            <Badge variant="secondary">{request.request_type}</Badge>
-          </div>
-        </div>
+        <PageTitle
+          eyebrow="บริการและกระบวนการ IT / คำขอสิทธิ์"
+          title={<>{request.access_systems?.name} — {request.access_level}</>}
+          description="รายละเอียดคำขอ ผู้อนุมัติ และประวัติการดำเนินการของคำขอสิทธิ์ใบนี้"
+          meta={<><Badge variant={statusTone[request.status]}>{request.status}</Badge><Badge variant="secondary">{request.request_type}</Badge></>}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

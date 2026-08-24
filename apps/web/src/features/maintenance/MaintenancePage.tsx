@@ -17,9 +17,8 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
-  RefreshCw,
   Repeat2,
-  Search,
+  UsersRound,
   Wrench,
 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -27,16 +26,20 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { FilterBar, filterControlClass } from '../../components/ui/FilterBar';
+import { KpiStrip } from '../../components/ui/KpiStrip';
 import { Modal } from '../../components/ui/Modal';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { AssetOption, ChecklistItem, MaintenancePlan, PmTemplate } from '../../types/assets';
-import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES } from '../../types/assets';
+import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES, PM_WORK_TYPES } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
 import { formatThaiDate } from '../../utils/date';
+import { PmRosterView } from './PmRosterView';
 
 const fieldClass =
   'h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/50';
@@ -89,18 +92,6 @@ function ModalFooter({ children }: { children: ReactNode }) {
   );
 }
 
-function SummaryCard({ icon, label, value, tone, border }: { icon: ReactNode; label: string; value: number; tone: string; border: string }) {
-  return (
-    <div className={cn('flex min-h-[104px] items-center gap-3 rounded-2xl border border-b-2 border-slate-200 bg-white p-4 shadow-card dark:border-slate-700 dark:bg-slate-800', border)}>
-      <div className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white', tone)}>{icon}</div>
-      <div className="min-w-0">
-        <p className="text-2xl font-extrabold leading-none text-slate-900 dark:text-white">{value}</p>
-        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
-      </div>
-    </div>
-  );
-}
-
 function CreatePlanForm({
   assets,
   technicians,
@@ -122,6 +113,7 @@ function CreatePlanForm({
   const [assetId, setAssetId] = useState('');
   const [planDate, setPlanDate] = useState('');
   const [recurrence, setRecurrence] = useState<(typeof PM_RECURRENCES)[number]>('ครั้งเดียว');
+  const [workType, setWorkType] = useState<(typeof PM_WORK_TYPES)[number]>('PM');
   const [technicianId, setTechnicianId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [vendorId, setVendorId] = useState('');
@@ -137,6 +129,7 @@ function CreatePlanForm({
         body: JSON.stringify({
           assetId,
           planDate,
+          workType,
           recurrence,
           technicianId: technicianId || undefined,
           templateId: templateId || undefined,
@@ -176,6 +169,11 @@ function CreatePlanForm({
       </FormField>
       <FormField label="วันที่วางแผน" required>
         <input data-testid="pm-create-date" type="date" value={planDate} onChange={(event) => setPlanDate(event.target.value)} className={fieldClass} />
+      </FormField>
+      <FormField label="ชนิดงาน">
+        <select data-testid="pm-create-work-type" value={workType} onChange={(event) => setWorkType(event.target.value as (typeof PM_WORK_TYPES)[number])} className={fieldClass}>
+          {PM_WORK_TYPES.map((value) => <option key={value}>{value}</option>)}
+        </select>
       </FormField>
       <FormField label="รอบทำซ้ำ">
         <select data-testid="pm-create-recurrence" value={recurrence} onChange={(event) => setRecurrence(event.target.value as (typeof PM_RECURRENCES)[number])} className={fieldClass}>
@@ -435,7 +433,43 @@ function AnalyticsPanel({ plans }: { plans: MaintenancePlan[] }) {
   );
 }
 
+/**
+ * สีชิปงานในปฏิทิน PM (design handoff 3c)
+ *
+ * สเปกระบุสี 4 ประเภท (PM / ลงพื้นที่ / Change window / เลยกำหนด) แต่ตาราง maintenance_plans
+ * ไม่มีคอลัมน์ประเภทงาน มีแต่ `status` กับ `plan_date` — จึงทำได้จริงเฉพาะสามสถานะล่างนี้
+ * "ลงพื้นที่" กับ "Change window" เป็นงานคนละโมดูล (features/changes) ถ้าจะรวมมาปฏิทินเดียวกัน
+ * ต้องเพิ่มคอลัมน์ประเภทงานก่อน — ไม่เดาสีให้ เพราะช่างจะอ่านผิดว่าเป็นงานคนละชนิด
+ *
+ * ที่สำคัญกว่าคือ "เลยกำหนด" ซึ่งเดิมใช้สีน้ำเงินเหมือน PM ปกติ ทำให้งานที่เลยวันแล้วมองไม่ออก
+ * จากปฏิทิน ทั้งที่คำนวณได้จริงจาก plan_date เทียบวันนี้
+ */
+const PM_CHIP_LEGEND = [
+  { label: 'PM ตามรอบ', dot: 'bg-primary-700' },
+  { label: 'ลงพื้นที่', dot: 'bg-teal-600' },
+  { label: 'Change window', dot: 'bg-purple-600' },
+  { label: 'เลยกำหนด', dot: 'bg-danger-600' },
+  { label: 'ดำเนินการแล้ว', dot: 'bg-success-600' },
+  { label: 'ยกเลิก', dot: 'bg-slate-400' },
+] as const;
+
+/** สีตามชนิดงาน ค่าตรงกับ 02-screens.md หัวข้อ 3c */
+const WORK_TYPE_CHIP: Record<string, string> = {
+  PM: 'bg-primary-50 text-primary-700 dark:bg-primary-900/30',
+  'ลงพื้นที่': 'bg-teal-50 text-teal-600 dark:bg-teal-700/30 dark:text-teal-100',
+  'Change window': 'bg-purple-50 text-purple-600 dark:bg-purple-700/30 dark:text-purple-100',
+};
+
+function planChipClass(plan: MaintenancePlan, today: string): string {
+  // สถานะชนะชนิดงาน เพราะ "เลยกำหนด" คือสิ่งที่ต้องเห็นก่อนเสมอเวลากวาดสายตาดูทั้งเดือน
+  if (plan.status === 'ดำเนินการแล้ว') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30';
+  if (plan.status === 'ยกเลิก') return 'bg-slate-100 text-slate-500 line-through dark:bg-slate-800 dark:text-slate-400';
+  if (plan.plan_date < today) return 'bg-danger-50 text-danger-700 dark:bg-red-900/30 dark:text-red-200';
+  return WORK_TYPE_CHIP[plan.work_type] ?? WORK_TYPE_CHIP.PM;
+}
+
 function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: MaintenancePlan[]; month: Date; onMonthChange: (date: Date) => void; onSelect: (plan: MaintenancePlan) => void }) {
+  const today = localDateKey();
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const firstDay = new Date(year, monthIndex, 1).getDay();
@@ -460,8 +494,14 @@ function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: Mainte
       <div className="grid min-w-[760px] grid-cols-7">{cells.map((day, index) => {
         const key = day ? `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : '';
         const dayPlans = key ? dateMap.get(key) ?? [] : [];
-        return <div key={`${day ?? 'blank'}-${index}`} className="min-h-28 border-b border-r border-slate-100 p-2 last:border-r-0 dark:border-slate-700">{day && <><span className={cn('grid h-7 w-7 place-items-center rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300', key === localDateKey() && 'bg-primary-700 text-white')}>{day}</span><div className="mt-1 space-y-1">{dayPlans.slice(0, 3).map((plan) => <button key={plan.id} type="button" onClick={() => onSelect(plan)} className={cn('block w-full truncate rounded px-1.5 py-1 text-left text-[10px] font-semibold', plan.status === 'ดำเนินการแล้ว' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30' : plan.status === 'ยกเลิก' ? 'bg-red-50 text-red-600 dark:bg-red-900/30' : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30')}>{plan.asset?.asset_code ?? 'PM'} · {plan.asset?.name}</button>)}{dayPlans.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayPlans.length - 3} รายการ</p>}</div></>}</div>;
+        // ช่องแรกของ grid คือวันอาทิตย์เสมอ (หัวตารางไล่ อา.–ส.) ตำแหน่งใน grid จึงบอกวันในสัปดาห์ได้ตรง ๆ
+        const weekday = index % 7;
+        const isToday = key !== '' && key === today;
+        return <div key={`${day ?? 'blank'}-${index}`} className={cn('min-h-28 border-b border-r border-slate-100 p-2 last:border-r-0 dark:border-slate-700', (weekday === 0 || weekday === 6) && 'bg-slate-50/80 dark:bg-slate-900/30', isToday && 'bg-primary-50 shadow-[inset_0_0_0_2px_#1D4ED8] dark:bg-primary-900/20')}>{day && <><span className={cn('grid h-7 w-7 place-items-center rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300', isToday && 'bg-primary-700 text-white')}>{day}</span><div className="mt-1 space-y-1">{dayPlans.slice(0, 3).map((plan) => <button key={plan.id} type="button" onClick={() => onSelect(plan)} className={cn('block w-full truncate rounded px-1.5 py-1 text-left text-[10px] font-semibold', planChipClass(plan, today))}>{plan.asset?.asset_code ?? 'PM'} · {plan.asset?.name}</button>)}{dayPlans.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayPlans.length - 3} รายการ</p>}</div></>}</div>;
       })}</div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 px-4 py-2.5 text-[10.5px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        {PM_CHIP_LEGEND.map((entry) => <span key={entry.label} className="inline-flex items-center gap-1.5"><span className={cn('h-2 w-2 rounded-full', entry.dot)} />{entry.label}</span>)}
+      </div>
     </div>
   );
 }
@@ -490,7 +530,7 @@ export function MaintenancePage() {
   const table = useTableParams<'status' | 'recurrence' | 'search' | 'view'>({ filters: ['status', 'recurrence', 'search', 'view'] });
   const { page, pageSize } = table;
   const { status, recurrence, search } = table.filters;
-  const view: 'list' | 'calendar' = table.filters.view === 'calendar' ? 'calendar' : 'list';
+  const view: 'list' | 'calendar' | 'roster' = table.filters.view === 'calendar' ? 'calendar' : table.filters.view === 'roster' ? 'roster' : 'list';
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -526,43 +566,50 @@ export function MaintenancePage() {
   const currentPage = Math.min(page, pageCount);
   const pagedItems = filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const clearFilters = () => table.setFilters({ search: '', status: '', recurrence: '' });
+  const activeFilterCount = [search, status, recurrence].filter(Boolean).length;
   const isFormReady = Boolean(assetsQuery.data && templatesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data);
 
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">PM / บำรุงรักษา</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">วางแผน ติดตาม และบันทึกผลการบำรุงรักษาทรัพย์สิน IT</p></div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => setShowAnalytics(true)} aria-haspopup="dialog"><BarChart3 className="h-4 w-4" /> วิเคราะห์ผล</Button>
-          <RequirePermission permission="maintenance.manage"><Button size="sm" variant="outline" onClick={() => setShowTemplates(true)} aria-haspopup="dialog"><ListChecks className="h-4 w-4" /> เทมเพลต</Button></RequirePermission>
-          <RequirePermission permission="maintenance.manage"><Button size="sm" onClick={() => setShowCreate(true)} data-testid="pm-create-toggle" aria-haspopup="dialog"><Plus className="h-4 w-4" /> เพิ่มแผน PM</Button></RequirePermission>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / PM บำรุงรักษา"
+        title="PM / บำรุงรักษา"
+        description="วางแผน ติดตาม และบันทึกผลการบำรุงรักษาทรัพย์สิน IT"
+        secondaryActions={<><Button size="sm" variant="outline" onClick={() => setShowAnalytics(true)} aria-haspopup="dialog"><BarChart3 className="h-4 w-4" /> วิเคราะห์ผล</Button><RequirePermission permission="maintenance.manage"><Button size="sm" variant="outline" onClick={() => setShowTemplates(true)} aria-haspopup="dialog"><ListChecks className="h-4 w-4" /> เทมเพลต</Button></RequirePermission></>}
+        primaryAction={<RequirePermission permission="maintenance.manage"><Button size="sm" onClick={() => setShowCreate(true)} data-testid="pm-create-toggle" aria-haspopup="dialog"><Plus className="h-4 w-4" /> เพิ่มแผน PM</Button></RequirePermission>}
+      />
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <SummaryCard icon={<Wrench className="h-5 w-5" />} label="แผนทั้งหมด" value={stats.total} tone="bg-primary-600" border="border-b-primary-500" />
-        <SummaryCard icon={<CalendarClock className="h-5 w-5" />} label="ใกล้ถึงกำหนด (7 วัน)" value={stats.upcoming} tone="bg-slate-500" border="border-b-slate-400" />
-        <SummaryCard icon={<CircleAlert className="h-5 w-5" />} label="เกินกำหนด" value={stats.overdue} tone="bg-amber-600" border="border-b-amber-500" />
-        <SummaryCard icon={<CheckCircle2 className="h-5 w-5" />} label="ดำเนินการแล้ว" value={stats.completed} tone="bg-teal-700" border="border-b-teal-600" />
-      </section>
+      <KpiStrip items={[
+        { key: 'all', label: 'แผนทั้งหมด', value: stats.total, tone: 'primary', icon: <Wrench className="h-5 w-5" /> },
+        { key: 'upcoming', label: 'ใกล้ถึงกำหนด (7 วัน)', value: stats.upcoming, tone: 'gray', icon: <CalendarClock className="h-5 w-5" /> },
+        { key: 'overdue', label: 'เกินกำหนด', value: stats.overdue, tone: 'amber', icon: <CircleAlert className="h-5 w-5" /> },
+        { key: 'completed', label: 'ดำเนินการแล้ว', value: stats.completed, tone: 'teal', icon: <CheckCircle2 className="h-5 w-5" /> },
+      ]} />
 
       <section>
         <div className="flex border-b border-slate-200 dark:border-slate-700">
           <button type="button" onClick={() => table.setFilter('view', '')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'list' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><ListChecks className="h-4 w-4" /> รายการ</button>
           <button type="button" onClick={() => table.setFilter('view', 'calendar')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'calendar' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><CalendarDays className="h-4 w-4" /> ปฏิทิน</button>
+          <button type="button" onClick={() => table.setFilter('view', 'roster')} className={cn('flex h-12 min-w-24 items-center justify-center gap-2 border-b-2 px-4 text-sm font-semibold transition', view === 'roster' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-700')}><UsersRound className="h-4 w-4" /> ตารางช่าง</button>
         </div>
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
         {view === 'list' ? (
           <>
-            <div className="m-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40 lg:flex-row lg:items-center">
-              <label className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900"><Search className="mx-3 h-4 w-4 shrink-0 text-slate-400" /><input type="search" aria-label="ค้นหาแผน PM" value={search} onChange={(event) => table.setFilter('search', event.target.value, { replace: true })} placeholder="ค้นหา Asset หรือผู้รับผิดชอบ..." className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none" /></label>
-              <select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select>
-              <select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => table.setFilter('recurrence', event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 lg:w-44"><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select>
-              <Button size="sm" variant="outline" onClick={clearFilters}><RefreshCw className="h-4 w-4" /> ล้างตัวกรอง</Button>
-              <Button size="sm" variant="outline" onClick={() => setShowExport(true)} aria-haspopup="dialog"><Download className="h-4 w-4" /> ส่งออก</Button>
-              <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-800">{filteredItems.length} รายการ</span>
+            <div className="p-3">
+              <FilterBar
+                className="border-0 bg-surface-header shadow-none dark:bg-white/[.028]"
+                searchValue={search}
+                onSearchChange={(value) => table.setFilter('search', value, { replace: true })}
+                searchLabel="ค้นหาแผน PM"
+                searchPlaceholder="ค้นหา Asset หรือผู้รับผิดชอบ..."
+                filters={<><select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className={filterControlClass}><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => table.setFilter('recurrence', event.target.value)} className={filterControlClass}><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select></>}
+                onClear={clearFilters}
+                activeFilterCount={activeFilterCount}
+                resultCount={filteredItems.length}
+                actions={<Button size="sm" variant="outline" onClick={() => setShowExport(true)} aria-haspopup="dialog"><Download className="h-4 w-4" /> ส่งออก</Button>}
+              />
             </div>
 
             {plansQuery.isLoading && <div className="grid min-h-64 place-items-center" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div>}
@@ -570,17 +617,17 @@ export function MaintenancePage() {
             {plansQuery.data && filteredItems.length === 0 && <EmptyState icon={<Wrench className="h-10 w-10" />} title="ยังไม่มีแผน PM" message="ลองเปลี่ยนตัวกรอง หรือเพิ่มแผน PM ใหม่" />}
             {plansQuery.data && filteredItems.length > 0 && (
               <div className="overflow-x-auto border-y border-slate-200 dark:border-slate-700">
-                <DataTable mode="server" className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="w-16 px-4 py-3 text-center">ลำดับ</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3">แผนวันที่</th><th className="px-4 py-3">รอบ</th><th className="px-4 py-3">ผู้รับผิดชอบ</th><th className="px-4 py-3">สถานะ</th><th className="w-20 px-4 py-3 text-center">Action</th></tr></thead>
-                  <tbody>{pagedItems.map((plan, index) => <tr key={plan.id} data-testid={`pm-row-${plan.id}`} className="border-t border-slate-100 transition hover:bg-primary-50/40 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="px-4 py-3 text-center text-xs text-slate-400">{(currentPage - 1) * pageSize + index + 1}</td><td className="px-4 py-3"><p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.name ?? 'ไม่พบข้อมูล Asset'}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{plan.asset?.asset_code ?? '—'}</p></td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatThaiDate(plan.plan_date, 'd MMM yyyy')}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><Repeat2 className="h-3.5 w-3.5 text-slate-400" />{plan.recurrence}</span></td><td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{employeeName(plan.technician)}</td><td className="px-4 py-3"><Badge variant={statusTone[plan.status]}>{plan.status}</Badge></td><td className="px-4 py-3 text-center"><RowActions recordLabel={plan.asset?.name ?? plan.asset?.asset_code ?? plan.id} actions={[{ kind: 'custom', icon: MoreHorizontal, label: 'จัดการแผน', permission: 'maintenance.manage', onClick: () => setSelectedPlan(plan) }]} /></td></tr>)}</tbody>
+                <DataTable mode="server" rowNumberStart={(currentPage - 1) * pageSize + 1} className="w-full min-w-[860px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">Asset</th><th className="px-4 py-3">แผนวันที่</th><th className="px-4 py-3">รอบ</th><th className="px-4 py-3">ผู้รับผิดชอบ</th><th className="px-4 py-3">สถานะ</th><th className="w-20 px-4 py-3 text-center">Action</th></tr></thead>
+                  <tbody>{pagedItems.map((plan) => <tr key={plan.id} data-testid={`pm-row-${plan.id}`} className="border-t border-slate-100 transition hover:bg-primary-50/40 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="px-4 py-3"><p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.name ?? 'ไม่พบข้อมูล Asset'}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{plan.asset?.asset_code ?? '—'}</p></td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatThaiDate(plan.plan_date, 'd MMM yyyy')}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><Repeat2 className="h-3.5 w-3.5 text-slate-400" />{plan.recurrence}</span></td><td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{employeeName(plan.technician)}</td><td className="px-4 py-3"><Badge variant={statusTone[plan.status]}>{plan.status}</Badge></td><td className="px-4 py-3 text-center"><RowActions recordLabel={plan.asset?.name ?? plan.asset?.asset_code ?? plan.id} actions={[{ kind: 'custom', icon: MoreHorizontal, label: 'จัดการแผน', permission: 'maintenance.manage', onClick: () => setSelectedPlan(plan) }]} /></td></tr>)}</tbody>
                 </DataTable>
               </div>
             )}
             <div className="px-4 pb-4"><TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredItems.length} totalPages={pageCount} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>
           </>
-        ) : (
+        ) : view === 'calendar' ? (
           <div className="overflow-x-auto"><CalendarView plans={items} month={calendarMonth} onMonthChange={setCalendarMonth} onSelect={setSelectedPlan} /></div>
-        )}
+        ) : <PmRosterView />}
       </section>
 
       {showCreate && <Modal title="เพิ่มแผน PM" size="lg" onClose={() => setShowCreate(false)} testId="pm-create-dialog">{isFormReady ? <CreatePlanForm assets={assetsQuery.data ?? []} technicians={technicians} templates={templatesQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={() => setShowCreate(false)} onSaved={() => setToast({ tone: 'success', message: 'เพิ่มแผน PM สำเร็จ' })} /> : <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" /> กำลังเตรียมแบบฟอร์ม...</div>}</Modal>}

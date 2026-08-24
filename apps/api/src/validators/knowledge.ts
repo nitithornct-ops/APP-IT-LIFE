@@ -23,6 +23,12 @@ const articleFields = z.object({
 
 export const createKnowledgeArticleSchema = articleFields;
 export const updateKnowledgeArticleSchema = articleFields;
+/**
+ * สร้างบทความจากใบงานที่ปิดไปแล้ว — รับแค่ ticketId เพราะเนื้อหาทั้งหมดคัดมาจากใบงานฝั่งเซิร์ฟเวอร์
+ * ไม่ให้ผู้เรียกส่งเนื้อหามาเอง มิฉะนั้นจะอ้างว่า "มาจากใบงานนี้" โดยเขียนอะไรก็ได้ลงไป
+ */
+export const createArticleFromTicketSchema = z.object({ ticketId: z.string().uuid() });
+
 export const setKnowledgeStatusSchema = z.object({ status: z.enum(['เผยแพร่', 'ร่าง']) });
 export const publicKnowledgeQuerySchema = z.object({ search: optionalText(120), categoryId: optionalUuid });
 export const publicKnowledgeViewSchema = z.object({ clientId: z.string().trim().min(12).max(120).regex(/^[A-Za-z0-9._:-]+$/) });

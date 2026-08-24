@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const PM_STATUSES = ['วางแผน', 'กำลังดำเนินการ', 'ดำเนินการแล้ว', 'ยกเลิก'] as const;
 export const PM_RECURRENCES = ['ครั้งเดียว', 'รายเดือน', 'รายไตรมาส', 'รายปี'] as const;
 export const PM_CHECK_RESULTS = ['ผ่าน', 'ไม่ผ่าน', 'N/A'] as const;
+/** ชนิดงานสำหรับแยกสีในปฏิทิน (design handoff 3c) — ตรงกับ check constraint ใน migration 20260919100000 */
+export const PM_WORK_TYPES = ['PM', 'ลงพื้นที่', 'Change window'] as const;
 
 const isoDateString = z
   .string()
@@ -21,6 +23,7 @@ const checklistResultSchema = z.object({
 export const createMaintenancePlanSchema = z.object({
   assetId: z.string().uuid('กรุณาเลือกทรัพย์สิน'),
   planDate: isoDateString,
+  workType: z.enum(PM_WORK_TYPES).optional(),
   recurrence: z.enum(PM_RECURRENCES).optional(),
   technicianId: z.string().uuid().optional(),
   vendorId: z.string().uuid().optional(),
@@ -33,9 +36,12 @@ export type CreateMaintenancePlanInput = z.infer<typeof createMaintenancePlanSch
 
 export const listMaintenancePlansQuerySchema = paginationQuerySchema.extend({
   status: z.enum(PM_STATUSES).optional(),
+  workType: z.enum(PM_WORK_TYPES).optional(),
   assetId: z.string().uuid().optional(),
 });
 export type ListMaintenancePlansQuery = z.infer<typeof listMaintenancePlansQuerySchema>;
+
+export const pmRosterQuerySchema = z.object({ weekStart: isoDateString });
 
 export const startMaintenanceSchema = z.object({
   technicianId: z.string().uuid().optional(),

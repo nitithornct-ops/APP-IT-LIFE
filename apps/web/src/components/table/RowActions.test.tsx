@@ -51,6 +51,29 @@ describe('RowActions', () => {
     expect(screen.getByRole('button', { name: 'แก้ไข AST-001' })).toBeVisible();
   });
 
+  it('keeps view, edit, cancel and delete in the same order in every module', () => {
+    renderActions(
+      <RowActions
+        recordLabel="ROW-1"
+        actions={[
+          { kind: 'delete', onConfirm: () => undefined },
+          { kind: 'edit', onClick: () => undefined },
+          { kind: 'cancel', onConfirm: () => undefined },
+          { kind: 'view', to: '/rows/1' },
+        ]}
+      />,
+    );
+
+    const group = screen.getByRole('group', { name: 'การดำเนินการสำหรับ ROW-1' });
+    expect(group.querySelectorAll('a, button')).toHaveLength(4);
+    expect(Array.from(group.querySelectorAll('a, button')).map((element) => element.textContent)).toEqual([
+      'ดู',
+      'แก้ไข',
+      'ยกเลิก',
+      'ลบ',
+    ]);
+  });
+
   /** จุดสำคัญของทั้งคอมโพเนนต์ — ปุ่มที่ทำลายข้อมูลต้องผ่านกล่องยืนยันเสมอ ไม่มีทางลัด */
   it('never destroys anything on the first click — delete waits for the confirmation box', () => {
     const onConfirm = vi.fn();

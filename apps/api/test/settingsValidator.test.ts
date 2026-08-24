@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { brandingStoragePath, normalizeSettingValue } from '../src/routes/settings';
-import { updateSystemSettingSchema } from '../src/validators/settings';
+import { slaImpactQuerySchema, updateSystemSettingSchema } from '../src/validators/settings';
 
 describe('System Settings validation', () => {
   it('normalizes supported boolean and enum values', () => {
@@ -24,6 +24,11 @@ describe('System Settings validation', () => {
     expect(updateSystemSettingSchema.safeParse({ value: '30' }).success).toBe(true);
     expect(updateSystemSettingSchema.safeParse({ value: '30', secret: 'no' }).success).toBe(false);
     expect(updateSystemSettingSchema.safeParse({ value: 'x'.repeat(4001) }).success).toBe(false);
+  });
+
+  it('accepts only supported SLA preview query keys', () => {
+    expect(slaImpactQuerySchema.safeParse({ SLA_BUSINESS_START: '08:30', SLA_HOLIDAYS: '' }).success).toBe(true);
+    expect(slaImpactQuerySchema.safeParse({ UNKNOWN_KEY: 'value' }).success).toBe(false);
   });
 
   it('only extracts organization logo paths from the branding bucket', () => {

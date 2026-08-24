@@ -25,6 +25,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -267,7 +268,7 @@ export function VulnerabilitiesPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="vulnerabilities-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Vulnerability / Patch</h1><p className="text-sm text-slate-500">ติดตาม CVE/CVSS แผนแก้ไข ข้อยกเว้น Patch และการตรวจยืนยันแบบแยกหน้าที่</p></div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Vulnerability & Patch" title="Vulnerability / Patch" description="ติดตาม CVE/CVSS แผนแก้ไข ข้อยกเว้น Patch และการตรวจยืนยันแบบแยกหน้าที่" />
         {canManage && <Button size="sm" data-testid="vuln-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มช่องโหว่</Button>}
       </div>
 

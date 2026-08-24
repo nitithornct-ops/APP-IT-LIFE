@@ -6,9 +6,10 @@ import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { writeLoginLog } from '../services/loginLogService';
 import type { AppEnv } from '../types';
+import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
-import { loginLogSchema, updateOwnProfileSchema } from '../validators/auth';
+import { loginLogSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
 
 export const authRoute = new Hono<AppEnv>();
 
@@ -47,6 +48,24 @@ authRoute.get('/me', requireAuth, async (c) => {
       permissions: (permissionsResult.data ?? []).map((row: { permission_key: string }) => row.permission_key),
     }),
   );
+});
+
+/**
+ * ปิดคำแนะนำเริ่มต้นของตนเอง (design handoff 3k การ์ด "เริ่มใช้ครั้งแรก")
+ *
+ * เขียนผ่าน RPC เพราะ authenticated ไม่มีสิทธิ์ UPDATE ตาราง profiles ตรง ๆ แล้ว และ RPC ล็อกไว้ที่
+ * auth.uid() จึงไม่ต้องรับ user id จาก client ให้มีทางปิด onboarding ให้คนอื่น
+ */
+authRoute.post('/onboarding', requireAuth, zValidator('json', setOnboardingStateSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { dismissed } = c.req.valid('json');
+
+  const { data, error } = await supabase.rpc('set_my_onboarding_state', { dismissed_input: dismissed });
+  if (error) return dbFailJson(c, 'ONBOARDING_STATE_FAILED', error, 'บันทึกสถานะคำแนะนำเริ่มต้นไม่สำเร็จ');
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return c.json(ok(reqId, row ?? { onboarding_completed_at: null, onboarding_dismissed_at: null }));
 });
 
 /** แก้ไขข้อมูลของตนเอง — จำกัดเฉพาะ full_name/phone เท่านั้น (ห้ามแก้ department/status ของตนเอง) */

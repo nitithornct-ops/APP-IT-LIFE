@@ -9,7 +9,6 @@ import {
   LifeBuoy,
   Loader2,
   MessageCircle,
-  MonitorCog,
   Search,
   Send,
   ShieldCheck,
@@ -19,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { PublicBrand } from '../components/PublicBrand';
+import { Badge } from '../components/ui/Badge';
 import { ApiError } from '../services/apiClient';
 import { getLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 import { publicTicketApiFetch } from '../services/publicTicketApiClient';
@@ -111,10 +112,10 @@ interface KnowledgeData {
 type PortalTab = 'report' | 'knowledge' | 'status';
 
 const SAVED_KEY = 'public_ticket_saved';
-const INPUT = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50';
+const INPUT = 'public-field w-full px-3 py-2.5 text-sm placeholder:text-slate-400 transition focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50';
 const LABEL = 'mb-1.5 block text-sm font-medium text-slate-700';
-const PRIMARY_BUTTON = 'inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60';
-const CARD = 'rounded-xl border border-slate-200 bg-white shadow-sm';
+const PRIMARY_BUTTON = 'public-primary-button inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60';
+const CARD = 'public-sheet';
 const DEFAULT_PRIVACY = {
   version: '2026-08-31',
   summary: 'ระบบใช้ข้อมูลผู้แจ้งเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket เท่านั้น',
@@ -147,22 +148,22 @@ export function PublicTicketPortalPage() {
   const [tab, setTab] = useState<PortalTab>('report');
 
   return (
-    <main className="min-h-screen bg-[#f4f7fb] text-slate-800">
+    <main className="life-public min-h-screen text-slate-800">
       <div className="mx-auto grid min-h-screen w-full max-w-[1440px] gap-4 p-3 sm:p-4 lg:grid-cols-[250px_minmax(0,1fr)] lg:p-5">
         <PortalSidebar tab={tab} onChange={setTab} />
 
         <div className="min-w-0">
           <LineBanner />
-          <header className="mb-4 mt-5 flex items-start gap-3 px-1">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+          <header className="public-portal-hero mb-5 mt-5 flex items-start gap-3 rounded-large p-5 sm:p-6">
+            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
               {tab === 'report' ? <Wrench className="h-5 w-5" aria-hidden="true" /> : tab === 'knowledge' ? <CircleHelp className="h-5 w-5" aria-hidden="true" /> : <TicketCheck className="h-5 w-5" aria-hidden="true" />}
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">IT Helpdesk</p>
-              <h1 className="text-xl font-bold text-slate-900">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-accent-300">LIFE IT Support</p>
+              <h1 className="text-xl font-bold text-white">
                 {tab === 'report' ? 'แจ้งซ่อม' : tab === 'knowledge' ? 'วิธีแก้เบื้องต้น' : 'ติดตามสถานะ'}
               </h1>
-              <p className="mt-0.5 text-sm text-slate-500">
+              <p className="mt-1 max-w-3xl text-sm text-primary-100">
                 {tab === 'report' ? 'แจ้งอาการหรือปัญหากับทีม IT เราจะรับเรื่องและติดตามจนจบงาน' : tab === 'knowledge' ? 'ค้นหาวิธีแก้ปัญหาที่พบบ่อยก่อนส่งแจ้งซ่อม' : 'ตรวจสอบความคืบหน้าของรายการที่เคยแจ้งไว้'}
               </p>
             </div>
@@ -185,15 +186,9 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
   ];
 
   return (
-    <aside className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+    <aside className="public-sheet flex flex-col p-4 lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
       <div className="flex items-center gap-3 border-b border-slate-100 pb-4 lg:border-0 lg:pb-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-700 to-indigo-900 text-white shadow-sm">
-          <MonitorCog className="h-6 w-6" aria-hidden="true" />
-        </div>
-        <div>
-          <p className="text-sm font-bold leading-tight text-slate-900">LIFE IT</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">IT Helpdesk</p>
-        </div>
+        <PublicBrand subtitle="IT Helpdesk" />
       </div>
 
       <p className="mt-4 hidden px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 lg:block">เมนูหลัก</p>
@@ -207,7 +202,7 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
               type="button"
               onClick={() => onChange(item.key)}
               aria-current={selected ? 'page' : undefined}
-              className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs font-medium transition lg:justify-start lg:px-3 lg:text-sm ${selected ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-medium transition lg:justify-start lg:px-3 lg:text-sm ${selected ? 'bg-primary-100 font-semibold text-primary-800' : 'text-slate-600 hover:bg-primary-50 hover:text-primary-800'}`}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{item.label}</span>
@@ -216,7 +211,7 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
         })}
       </nav>
 
-      <section className="mt-6 hidden rounded-xl border border-blue-100 bg-blue-50/60 p-4 lg:block" aria-labelledby="steps-title">
+      <section className="mt-6 hidden rounded-xl border border-primary-100 bg-primary-50/60 p-4 lg:block" aria-labelledby="steps-title">
         <h2 id="steps-title" className="text-sm font-bold text-slate-800">แจ้งปัญหาได้ใน 3 ขั้นตอน</h2>
         <ol className="mt-3 space-y-3">
           {[
@@ -225,7 +220,7 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
             'ติดตามความคืบหน้าได้ทุกเวลา',
           ].map((step, index) => (
             <li key={step} className="flex gap-2 text-xs leading-5 text-slate-600">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white text-[10px] font-bold text-blue-700">{index + 1}</span>
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-primary-200 bg-white text-[10px] font-bold text-primary-700">{index + 1}</span>
               <span>{step}</span>
             </li>
           ))}
@@ -242,9 +237,9 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
 
 function LineBanner() {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className="public-sheet flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#06c755] text-white">
+        <span className="public-line-button flex h-[42px] w-[42px] shrink-0 items-center justify-center">
           <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
         </span>
         <div className="min-w-0">
@@ -252,7 +247,7 @@ function LineBanner() {
           <p className="text-xs text-slate-500">แจ้งซ่อมและติดตามสถานะได้สะดวก พร้อมรับการแจ้งเตือน</p>
         </div>
       </div>
-      <Link to="/line" className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#06c755] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#05b84e]">
+      <Link to="/line" className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
         <MessageCircle className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> LINE Login
       </Link>
     </div>
@@ -389,14 +384,14 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
           <h2 className="text-lg font-bold text-slate-900">แจ้งปัญหา IT</h2>
           <p className="mt-1 text-xs text-slate-500">แจ้งให้ทีม IT ทราบได้ทันที ระบบจะสร้าง Ticket และแจ้งรหัสติดตามให้</p>
         </div>
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1.5 text-[11px] font-semibold text-primary-700">
           <Clock3 className="h-3.5 w-3.5" aria-hidden="true" /> ใช้เวลาประมาณ 2 นาที
         </span>
       </div>
 
       <div className="space-y-4 p-4 sm:p-6">
         {(loading || loadError) && (
-          <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs ${loadError ? 'border border-amber-200 bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-500'}`}>
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs ${loadError ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200' : 'bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4" aria-hidden="true" />}
             <span>{loading ? 'กำลังโหลดประเภทปัญหา…' : `${loadError} — แบบฟอร์มยังแสดงไว้เพื่อให้ตรวจสอบข้อมูลได้`}</span>
           </div>
@@ -404,7 +399,7 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
 
         <FormSection icon={CircleHelp} title="ปัญหาที่พบ" subtitle="บอกอาการหรือปัญหา IT เข้าใจง่ายและแก้ได้เร็วขึ้น">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-sm font-bold text-slate-700">
-            <UserRound className="h-4 w-4 text-blue-600" aria-hidden="true" /> ข้อมูลผู้แจ้งและติดต่อกลับ
+            <UserRound className="h-4 w-4 text-primary-600" aria-hidden="true" /> ข้อมูลผู้แจ้งและติดต่อกลับ
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -422,7 +417,7 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
             <input id="department" className={INPUT} value={guestDepartment} onChange={(event) => setGuestDepartment(event.target.value)} maxLength={160} />
           </div>
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2 pt-1 text-sm font-bold text-slate-700">
-            <CircleHelp className="h-4 w-4 text-blue-600" aria-hidden="true" /> รายละเอียดปัญหา
+            <CircleHelp className="h-4 w-4 text-primary-600" aria-hidden="true" /> รายละเอียดปัญหา
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -460,13 +455,13 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
               <input id="assetCode" className={INPUT} value={assetCode} onChange={(event) => setAssetCode(event.target.value)} maxLength={80} placeholder="เช่น NB-0231" />
             </div>
           </div>
-          <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/40 p-4">
+          <div className="rounded-xl border border-dashed border-primary-300 bg-primary-50/40 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="flex items-center gap-2 text-sm font-bold text-slate-700"><FileImage className="h-4 w-4 text-blue-600" aria-hidden="true" />แนบรูปภาพหรือไฟล์ประกอบ</p>
+                <p className="flex items-center gap-2 text-sm font-bold text-slate-700"><FileImage className="h-4 w-4 text-primary-600" aria-hidden="true" />แนบรูปภาพหรือไฟล์ประกอบ</p>
                 <p className="mt-1 text-xs text-slate-500">JPG, PNG, GIF, WebP หรือ PDF · สูงสุด 5 ไฟล์ · ไฟล์ละไม่เกิน 10 MB</p>
               </div>
-              <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-blue-300 bg-white px-4 py-2 text-xs font-bold text-blue-700 shadow-sm hover:bg-blue-50">
+              <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-primary-300 bg-white px-4 py-2 text-xs font-bold text-primary-700 shadow-sm hover:bg-primary-50 dark:bg-slate-900 dark:hover:bg-primary-950/40">
                 เลือกไฟล์
                 <input type="file" className="sr-only" multiple accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" onChange={selectAttachments} />
               </label>
@@ -474,7 +469,7 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
             {attachments.length > 0 && (
               <ul className="mt-3 space-y-2" aria-label="ไฟล์ที่เลือก">
                 {attachments.map((file, index) => (
-                  <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs">
+                  <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-primary-100 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
                     <span className="min-w-0 truncate text-slate-700">{file.name} <span className="text-slate-400">({(file.size / (1024 * 1024)).toFixed(1)} MB)</span></span>
                     <button type="button" onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="shrink-0 font-semibold text-red-600 hover:underline">นำออก</button>
                   </li>
@@ -485,13 +480,13 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
         </FormSection>
 
         <FormSection icon={ShieldCheck} title="ตรวจสอบก่อนส่ง" subtitle="อ่านและยอมรับเงื่อนไขก่อนส่งข้อมูล">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900">
+          <div className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-xs leading-5 text-primary-900">
             <p className="font-bold">ประกาศการใช้ข้อมูลส่วนบุคคล</p>
             <p className="mt-1">{formData.privacy.summary}</p>
-            <p className="mt-1 text-blue-700">เวอร์ชัน {formData.privacy.version} · ติดต่อ {formData.privacy.dpoContact}</p>
+            <p className="mt-1 text-primary-700">เวอร์ชัน {formData.privacy.version} · ติดต่อ {formData.privacy.dpoContact}</p>
           </div>
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 text-xs leading-5 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50/30">
-            <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500" />
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 text-xs leading-5 text-slate-600 transition hover:border-primary-200 hover:bg-primary-50/30">
+            <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-700 focus:ring-primary-500" />
             <span>ข้าพเจ้าอ่านและยอมรับการใช้ข้อมูลเพื่อรับเรื่อง แจ้งสถานะ ดำเนินการแจ้งซ่อม และเก็บหลักฐานตามนโยบายขององค์กร</span>
           </label>
         </FormSection>
@@ -505,9 +500,9 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
           </div>
         )}
 
-        <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl border border-primary-100 bg-primary-50/50 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-blue-700 shadow-sm"><Check className="h-5 w-5" aria-hidden="true" /></span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-primary-700 shadow-sm"><Check className="h-5 w-5" aria-hidden="true" /></span>
             <div>
               <p className="text-xs font-bold text-slate-800">พร้อมส่งให้ทีม IT</p>
               <p className="text-[11px] text-slate-500">ช่องที่มี <span className="text-red-500">*</span> จำเป็นต้องกรอก</p>
@@ -525,9 +520,9 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
 
 function FormSection({ icon: Icon, title, subtitle, children }: { icon: typeof Wrench; title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+    <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/50 sm:p-5">
       <div className="mb-4 flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Icon className="h-4 w-4" aria-hidden="true" /></span>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700"><Icon className="h-4 w-4" aria-hidden="true" /></span>
         <div>
           <h3 className="text-sm font-bold text-slate-900">{title}</h3>
           <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
@@ -579,7 +574,7 @@ function KnowledgeTab() {
           <div className="space-y-3">
             {data.articles.map((article) => (
               <details key={article.id} className="group rounded-lg border border-slate-200 p-4">
-                <summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-slate-800">{article.title}</p><p className="mt-1 text-xs text-slate-500">{article.article_code} · {article.category ?? 'ไม่ระบุประเภท'}</p></div><span className="text-xs text-blue-600 group-open:hidden">ดูวิธีแก้</span></div>{article.symptom && <p className="mt-2 text-sm text-slate-600">อาการ: {article.symptom}</p>}</summary>
+                <summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-slate-800">{article.title}</p><p className="mt-1 text-xs text-slate-500">{article.article_code} · {article.category ?? 'ไม่ระบุประเภท'}</p></div><span className="text-xs text-primary-600 group-open:hidden">ดูวิธีแก้</span></div>{article.symptom && <p className="mt-2 text-sm text-slate-600">อาการ: {article.symptom}</p>}</summary>
                 <div className="mt-3 whitespace-pre-wrap border-t border-slate-100 pt-3 text-sm text-slate-700"><p className="mb-1 font-medium">วิธีแก้</p>{article.solution}</div>
               </details>
             ))}
@@ -605,15 +600,15 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
   return (
     <div className={`${CARD} mx-auto max-w-2xl p-6`}>
       <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง</p></div>
-      <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <div className="mt-5 rounded-lg border border-primary-200 bg-primary-50 p-4">
         <p className="text-xs text-slate-500">เลข Ticket</p>
         <p className="break-all font-mono text-sm text-slate-800">{result.ticketNo ?? result.id}</p>
-        <p className="mt-4 text-xs font-semibold text-blue-800">รหัสติดตามของคุณ</p>
-        <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-white px-4 py-3">
-          <p className="font-mono text-lg font-extrabold tracking-wider text-blue-900" data-testid="public-tracking-code">{result.trackingToken}</p>
-          <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-blue-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
+        <p className="mt-4 text-xs font-semibold text-primary-800">รหัสติดตามของคุณ</p>
+        <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-primary-200 bg-white px-4 py-3">
+          <p className="font-mono text-lg font-extrabold tracking-wider text-primary-900" data-testid="public-tracking-code">{result.trackingToken}</p>
+          <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-700 px-3 py-2 text-xs font-bold text-white hover:bg-primary-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
         </div>
-        <p className="mt-2 text-xs text-blue-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
+        <p className="mt-2 text-xs text-primary-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
         {copied && <p className="mt-1 text-xs font-semibold text-emerald-600">คัดลอกรหัสแล้ว</p>}
       </div>
       {result.attachmentCount !== undefined && result.attachmentCount > 0 && (
@@ -688,7 +683,7 @@ function StatusTab() {
   if (detail) {
     return (
       <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
-        <button type="button" onClick={() => setDetail(null)} className="mb-4 text-sm text-slate-500 hover:text-blue-700">← กลับ</button>
+        <button type="button" onClick={() => setDetail(null)} className="mb-4 text-sm text-slate-500 hover:text-primary-700">← กลับ</button>
         <p className="font-mono text-xs text-slate-500">{detail.ticket.ticket_no}</p><h2 className="mt-1 font-bold text-slate-900">{detail.ticket.title}</h2><p className="mt-1 text-xs text-slate-500">สถานะ: {ticketStatusLabel(detail.ticket.status)} · {detail.ticket.category?.name ?? '-'} · ความเร่งด่วน {detail.ticket.priority}</p><p className="mt-4 text-sm text-slate-600">{detail.ticket.description}</p>
         {detail.ticket.resolution && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">ผลดำเนินการ: {detail.ticket.resolution}</p>}
         {(detail.attachments ?? []).length > 0 && (
@@ -696,7 +691,7 @@ function StatusTab() {
             <p className="mb-2 text-xs font-bold text-slate-700">ไฟล์แนบ ({detail.attachments.length})</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {detail.attachments.map((attachment) => (
-                <a key={attachment.id} href={attachment.signed_url ?? undefined} target="_blank" rel="noreferrer" className={`rounded-lg border border-slate-200 p-2 text-xs text-blue-700 hover:bg-blue-50 ${attachment.signed_url ? '' : 'pointer-events-none opacity-60'}`}>
+                <a key={attachment.id} href={attachment.signed_url ?? undefined} target="_blank" rel="noreferrer" className={`rounded-lg border border-slate-200 p-2 text-xs text-primary-700 hover:bg-primary-50 ${attachment.signed_url ? '' : 'pointer-events-none opacity-60'}`}>
                   {attachment.mime_type.startsWith('image/') && attachment.signed_url && <img src={attachment.signed_url} alt={attachment.original_filename} className="mb-2 h-28 w-full rounded object-cover" />}
                   <span className="block truncate font-semibold">{attachment.original_filename}</span>
                   <span className="text-slate-400">{(attachment.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
@@ -725,12 +720,12 @@ function StatusTab() {
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#06c755]" aria-hidden="true" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--line-brand)]" aria-hidden="true" />
               <h2 id="line-ticket-list-title" className="font-bold text-slate-900">รายการแจ้งซ่อมของฉัน</h2>
             </div>
             <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {lineBootstrap.profile.fullName}</p>
           </div>
-          <Link to="/line" className="inline-flex items-center justify-center rounded-lg bg-[#06c755] px-4 py-2 text-xs font-bold text-white hover:bg-[#05b84e]">
+          <Link to="/line" className="public-line-button inline-flex items-center justify-center px-4 py-2 text-xs font-bold">
             แจ้งซ่อมผ่าน LINE
           </Link>
         </div>
@@ -756,14 +751,14 @@ function StatusTab() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {lineTickets.map((ticket) => (
-                  <tr key={ticket.id} className="transition hover:bg-blue-50/40">
-                    <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-blue-700">{ticket.ticket_no}</td>
+                  <tr key={ticket.id} className="transition hover:bg-primary-50/40">
+                    <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-primary-700">{ticket.ticket_no}</td>
                     <td className="max-w-xs px-4 py-4"><p className="truncate font-medium text-slate-800" title={ticket.title}>{ticket.title}</p></td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.category?.name ?? '-'}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.priority}</td>
-                    <td className="whitespace-nowrap px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ticketStatusClass(ticket.status)}`}>{ticketStatusLabel(ticket.status)}</span></td>
+                    <td className="whitespace-nowrap px-4 py-4"><Badge variant={ticketStatusTone(ticket.status)}>{ticketStatusLabel(ticket.status)}</Badge></td>
                     <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">{formatTicketDate(ticket.created_at)}</td>
-                    <td className="px-5 py-4 text-right"><button type="button" disabled={loading} onClick={() => void openLineDetail(ticket.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">รายละเอียด</button></td>
+                    <td className="px-5 py-4 text-right"><button type="button" disabled={loading} onClick={() => void openLineDetail(ticket.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 disabled:opacity-50">รายละเอียด</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -779,12 +774,12 @@ function StatusTab() {
       {lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Active' && (
         <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           บัญชี LINE เข้าสู่ระบบแล้ว แต่ยังไม่ได้ผูกหรืออนุมัติบัญชีพนักงาน จึงยังแสดงรายการอัตโนมัติไม่ได้
-          <Link to="/line" className="ml-1 font-semibold text-blue-700 hover:underline">ดำเนินการต่อ</Link>
+          <Link to="/line" className="ml-1 font-semibold text-primary-700 hover:underline">ดำเนินการต่อ</Link>
         </div>
       )}
       {lineError && <div className="mb-5 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
       {saved.length > 0 && <div className="mb-5"><p className="mb-2 text-xs font-bold text-slate-500">Ticket ที่เคยแจ้งจากเครื่องนี้</p><ul className="space-y-2">{saved.map((row) => <li key={row.id}><button type="button" onClick={() => void lookup(row.ticketNo ?? row.id, row.trackingToken)} className="w-full truncate rounded-lg border border-slate-200 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50">{row.ticketNo ?? row.id}</button></li>)}</ul></div>}
-      <div className="mb-5 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">เพื่อปกป้องรายละเอียดและไฟล์แนบ ต้องใช้เลข Ticket คู่กับรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE</div>
+      <div className="mb-5 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-800">เพื่อปกป้องรายละเอียดและไฟล์แนบ ต้องใช้เลข Ticket คู่กับรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE</div>
       <form onSubmit={(event) => { event.preventDefault(); void lookup(ticketId, token); }} className="space-y-4" data-testid="public-ticket-code-search">
         <div><label className={LABEL} htmlFor="ticketId">เลข Ticket</label><input id="ticketId" className={INPUT} value={ticketId} onChange={(event) => setTicketId(event.target.value)} required placeholder="เช่น TCK-2026-0001" /></div>
         <div><label className={LABEL} htmlFor="token">รหัสติดตาม</label><input id="token" className={INPUT} value={token} onChange={(event) => setToken(event.target.value)} required maxLength={64} placeholder="เช่น ABCD-EFGH-JKLM" autoComplete="off" /><p className="mt-1 text-[11px] text-slate-500">รหัสนี้แสดงหลังส่งแจ้งซ่อมสำเร็จ และระบบบันทึกไว้ในเครื่องที่ใช้แจ้งให้อัตโนมัติ</p></div>
@@ -799,11 +794,11 @@ function formatTicketDate(value: string) {
   return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
-function ticketStatusClass(status: string) {
-  if (['เสร็จสิ้น', 'ปิดงาน'].includes(status)) return 'bg-emerald-50 text-emerald-700';
-  if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'bg-red-50 text-red-700';
-  if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'bg-amber-50 text-amber-700';
-  return 'bg-blue-50 text-blue-700';
+function ticketStatusTone(status: string): 'success' | 'danger' | 'warning' | 'primary' {
+  if (['เสร็จสิ้น', 'ปิดงาน'].includes(status)) return 'success';
+  if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'danger';
+  if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'warning';
+  return 'primary';
 }
 
 function ticketStatusLabel(status: string) {

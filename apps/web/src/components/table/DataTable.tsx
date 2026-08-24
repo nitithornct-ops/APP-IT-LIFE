@@ -64,6 +64,8 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   pagination?: boolean;
   /** แสดงแถบค้นหา กรอง เลือกคอลัมน์ และส่งออกข้อมูล */
   toolbar?: boolean;
+  /** ปิดได้เมื่อหน้ามี server-side export ที่ส่งออกผลลัพธ์ตามตัวกรองครบชุดอยู่แล้ว */
+  currentPageExport?: boolean;
   initialPageSize?: number;
   itemLabel?: string;
   exportFileName?: string;
@@ -84,6 +86,16 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   cardOnMobile?: boolean;
   /** จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้ใน localStorage ด้วยคีย์นี้ */
   tableId?: string;
+  /**
+   * เติมคอลัมน์ "ลำดับ" ไว้หน้าสุด — เปิดไว้เป็นค่าเริ่มต้นให้ทุกโมดูลนับแถวได้ตรงกัน
+   * ปิดเฉพาะตารางที่ไม่ใช่รายการเรียงลำดับ (เช่น matrix สิทธิ์ที่แถวคือ "สิทธิ์" ไม่ใช่ "รายการที่ N")
+   */
+  rowNumber?: boolean;
+  /**
+   * เลขของแถวแรกที่กำลังแสดง (นับจาก 1) สำหรับตารางที่แบ่งหน้าจาก API
+   * ไม่ส่งมาก็ได้ถ้าตารางแบ่งหน้าเอง เพราะคำนวณจากหน้าที่เปิดอยู่ให้อยู่แล้ว
+   */
+  rowNumberStart?: number;
   /** เพิ่มคอลัมน์ช่องเลือก — <tr> ต้องมี data-row-id เพื่อบอกว่าแถวนั้นคือรายการไหน */
   selectable?: boolean;
   /** รายการที่เลือกอยู่ ส่งมาคู่กับ onSelectionChange เพื่อให้หน้าเป็นเจ้าของ state */
@@ -130,13 +142,17 @@ function rowCells(row: ReactNode): ReactNode[] {
   return Children.toArray(row.props.children);
 }
 
-function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[], fileName: string) {
+function saveCsv(headers: string[], rows: ReactNode[], visibleColumns: number[], fileName: string, rowNumber: boolean) {
   downloadCsv(
     [
-      visibleColumns.map((index) => headers[index] || `คอลัมน์ ${index + 1}`),
-      ...rows.map((row) => {
+      [...(rowNumber ? [ROW_NUMBER_HEADER] : []), ...visibleColumns.map((index) => headers[index] || `คอลัมน์ ${index + 1}`)],
+      ...rows.map((row, index) => {
         const cells = rowCells(row);
-        return visibleColumns.map((index) => nodeText(cells[index]).replace(/\s+/g, ' ').trim());
+        // ไฟล์ที่ส่งออกต้องอ่านคู่กับหน้าจอได้ จึงติดเลขลำดับเดียวกับที่ตารางแสดงไปด้วย
+        return [
+          ...(rowNumber ? [String(index + 1)] : []),
+          ...visibleColumns.map((column) => nodeText(cells[column]).replace(/\s+/g, ' ').trim()),
+        ];
       }),
     ],
     fileName,
@@ -227,7 +243,73 @@ function withSortableHeaders(
   );
 }
 
-const SELECT_CELL_CLASS = 'w-10 px-3 py-3 align-middle';
+const SELECT_CELL_CLASS = 'w-9 px-2 py-2 align-middle';
+
+const ROW_NUMBER_HEADER = 'ลำดับ';
+/** ความกว้างตายตัว เพราะ freezeFirstColumn ต้องรู้ระยะ left ของคอลัมน์ถัดไปเป็นตัวเลขจริง */
+const ROW_NUMBER_CELL_CLASS = 'w-[52px] whitespace-nowrap px-2 py-2 text-right align-top font-mono text-[11px] tabular-nums text-ink-muted dark:text-white/45';
+
+/**
+ * คลาสทำให้คอลัมน์ที่ถูกตรึงทึบและเปลี่ยนสีตามแถว แยกตามตำแหน่งคอลัมน์ที่ 1–3
+ * (ไกลสุดเท่าที่เป็นไปได้ คือ ช่องเลือก + ลำดับ + คอลัมน์แรกของข้อมูลจริง)
+ */
+const FROZEN_COLUMN_SURFACE = [
+  '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800 [&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40 [&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
+  '[&_tbody_td:nth-child(2)]:z-10 [&_tbody_td:nth-child(2)]:bg-white dark:[&_tbody_td:nth-child(2)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(2)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(2)]:bg-slate-700/40 [&_thead_th:nth-child(2)]:z-30 [&_thead_th:nth-child(2)]:bg-slate-50 dark:[&_thead_th:nth-child(2)]:bg-slate-900',
+  '[&_tbody_td:nth-child(3)]:z-10 [&_tbody_td:nth-child(3)]:bg-white dark:[&_tbody_td:nth-child(3)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(3)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(3)]:bg-slate-700/40 [&_thead_th:nth-child(3)]:z-30 [&_thead_th:nth-child(3)]:bg-slate-50 dark:[&_thead_th:nth-child(3)]:bg-slate-900',
+];
+
+/**
+ * ระยะ left ของคอลัมน์ที่ถูกตรึง — คีย์คือความกว้างของคอลัมน์ที่ตารางเติมไว้หน้าสุดเรียงจากซ้าย
+ * ('' = ไม่มีคอลัมน์นำหน้า จึงตรึงคอลัมน์แรกของข้อมูลจริงอย่างเดียว)
+ * ต้องเขียนเป็นสตริงคงที่ทีละกรณี เพราะ Tailwind อ่านคลาสจากซอร์สตรง ๆ ต่อสตริงตอน runtime ไม่ได้
+ */
+const FROZEN_COLUMN_OFFSET: Record<string, string> = {
+  '': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0',
+  '36': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-9',
+  '52': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-[52px]',
+  '36-52': '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0 [&_tr>*:nth-child(2)]:sticky [&_tr>*:nth-child(2)]:left-9 [&_tr>*:nth-child(3)]:sticky [&_tr>*:nth-child(3)]:left-[88px]',
+};
+
+/** ตรึงคอลัมน์แรกของข้อมูลจริงไว้พร้อมกับคอลัมน์นำหน้า (ช่องเลือก/ลำดับ) ที่ตารางเติมให้ */
+function freezeColumnClass(leadingWidths: string): string {
+  const leadingCount = leadingWidths ? leadingWidths.split('-').length : 0;
+  return [FROZEN_COLUMN_OFFSET[leadingWidths], ...FROZEN_COLUMN_SURFACE.slice(0, leadingCount + 1)].join(' ');
+}
+
+/**
+ * แถวขยาย/แถวหัวข้อกลุ่มที่เป็น <td colSpan> เดียวโดด ๆ ไม่ใช่ "รายการที่ N"
+ * จึงต้องกินความกว้างของคอลัมน์ลำดับเพิ่มแทนการรับเลข ไม่งั้นคอลัมน์จะเหลื่อมกันทั้งตาราง
+ */
+function spanningRowCell(cells: ReactNode[]): ReactElement<{ colSpan?: number }> | null {
+  const dataCells = cells.filter((cell) => isValidElement(cell) && (cell.type === 'td' || cell.type === 'th'));
+  if (dataCells.length !== 1) return null;
+  const [cell] = dataCells as ReactElement<{ colSpan?: number }>[];
+  return cell.props.colSpan ? cell : null;
+}
+
+/**
+ * เติมเลขลำดับให้แถวข้อมูล โดยเดินเข้าไปใน Fragment ที่หน้าใช้ห่อแถวหลักกับแถวขยายไว้ด้วยกัน
+ * ตัวนับถูกส่งเข้ามาเป็นฟังก์ชัน เพราะจำนวนแถวที่ "นับ" ไม่เท่ากับจำนวน node ที่ render
+ */
+function withRowNumbers(node: ReactNode, next: () => number): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(node)) return node;
+  const cells = Children.toArray(node.props.children);
+  if (!cells.length) return node;
+  const isTableRow = cells.some((cell) => isValidElement(cell) && (cell.type === 'td' || cell.type === 'th'));
+  if (!isTableRow) return cloneElement(node, {}, cells.map((child) => withRowNumbers(child, next)));
+
+  const spanning = spanningRowCell(cells);
+  if (spanning) {
+    return cloneElement(node, {}, cells.map((cell) => (cell === spanning
+      ? cloneElement(spanning, { colSpan: Number(spanning.props.colSpan) + 1 })
+      : cell)));
+  }
+  return cloneElement(node, {}, [
+    <td key="row-number" data-label={ROW_NUMBER_HEADER} className={ROW_NUMBER_CELL_CLASS}>{next().toLocaleString('th-TH')}</td>,
+    ...cells,
+  ]);
+}
 
 function rowId(row: ReactNode): string | null {
   if (!isValidElement<{ 'data-row-id'?: string }>(row)) return null;
@@ -239,8 +321,8 @@ function selectableRowIds(rows: ReactNode[]): string[] {
   return rows.map(rowId).filter((id): id is string => Boolean(id));
 }
 
-/** เติมช่องเลือกไว้หน้าแถว — ทำเป็นขั้นตอนสุดท้ายเสมอ เพราะการซ่อนคอลัมน์อ้างอิงตำแหน่งเดิม */
-function withSelectionCell(row: ReactNode, cell: ReactNode): ReactNode {
+/** เติมเซลล์ไว้หน้าแถว — ทำเป็นขั้นตอนสุดท้ายเสมอ เพราะการซ่อนคอลัมน์อ้างอิงตำแหน่งเดิม */
+function withLeadingCell(row: ReactNode, cell: ReactNode): ReactNode {
   if (!isValidElement<{ children?: ReactNode }>(row)) return row;
   return cloneElement(row, {}, [cell, ...Children.toArray(row.props.children)]);
 }
@@ -263,6 +345,22 @@ function withVisibleColumns(node: ReactNode, hiddenColumns: Set<number>): ReactN
   );
 }
 
+function withMobileLabels(node: ReactNode, headers: string[]): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(node)) return node;
+  const cells = rowCells(node);
+  const isTableRow = cells.some((cell) => isValidElement(cell) && cell.type === 'td');
+  if (!isTableRow) return node;
+
+  return cloneElement(
+    node,
+    {},
+    cells.map((cell, index) => {
+      if (!isValidElement<Record<string, unknown>>(cell) || cell.type !== 'td') return cell;
+      return cloneElement(cell, { 'data-label': cell.props['data-label'] ?? headers[index] ?? '' });
+    }),
+  );
+}
+
 /**
  * ตารางกลางของระบบ ทุก module ใช้ component นี้เพื่อให้ search, filter,
  * export, column visibility, pagination, responsive layout และ dark mode
@@ -277,14 +375,17 @@ export function DataTable({
   onSortChange,
   pagination = true,
   toolbar = true,
+  currentPageExport = true,
   initialPageSize = 10,
   itemLabel = 'รายการ',
   exportFileName = `export-${new Date().toISOString().slice(0, 10)}.csv`,
   stickyHeader = false,
   maxBodyHeight = '70vh',
   freezeFirstColumn = false,
-  cardOnMobile = false,
+  cardOnMobile = true,
   tableId,
+  rowNumber = true,
+  rowNumberStart,
   selectable = false,
   selectedIds,
   onSelectionChange,
@@ -335,7 +436,9 @@ export function DataTable({
   const filteredRows = !isServerMode && activeSort && sortColumnIndex >= 0
     ? sortRows(matchedRows, sortColumnIndex, activeSort.order)
     : matchedRows;
-  const showToolbar = toolbar && !isServerMode && rows.length > 0;
+  // server mode ไม่ทำ search/filter/pagination ซ้ำใน client แต่ยังต้องมี column chooser
+  // และ export เฉพาะแถวผลลัพธ์ที่หน้าได้รับมา
+  const showToolbar = toolbar && rows.length > 0;
   const showPagination = pagination && !isServerMode && filteredRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -366,12 +469,30 @@ export function DataTable({
       : [...selection, ...pageRowIds.filter((id) => !selection.includes(id))]);
   };
 
+  /**
+   * เลขลำดับนับต่อจากหน้าก่อนหน้าเสมอ ไม่ใช่เริ่มที่ 1 ใหม่ทุกหน้า
+   * หน้าที่แบ่งหน้าจาก API ส่ง rowNumberStart มาเอง เพราะตารางไม่รู้ว่าตอนนี้อยู่หน้าที่เท่าไร
+   */
+  const rowNumberOffset = isServerMode || !pagination
+    ? Math.max(0, (rowNumberStart ?? 1) - 1)
+    : (safePage - 1) * pageSize;
+  let rowNumberCursor = rowNumberOffset;
+  const nextRowNumber = () => (rowNumberCursor += 1);
+  // ความกว้างของคอลัมน์ที่ตารางเติมไว้หน้าสุด เรียงจากซ้าย — ใช้เลือกชุดคลาสของ freezeFirstColumn
+  const leadingColumnWidths = [selectable && '36', rowNumber && '52'].filter(Boolean).join('-');
+
   const renderedChildren = childArray.map((child, index) => {
     if (index === headIndex && head) {
       let headRows = Children.map(head.props.children, (row) => withSortableHeaders(row, activeSort, handleSort));
-      if (!isServerMode) headRows = Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns));
+      headRows = Children.map(headRows, (row) => withVisibleColumns(row, hiddenColumns));
+      if (rowNumber) {
+        headRows = Children.map(headRows, (row) => withLeadingCell(
+          row,
+          <th key="row-number" scope="col" className={ROW_NUMBER_CELL_CLASS}>{ROW_NUMBER_HEADER}</th>,
+        ));
+      }
       if (selectable) {
-        headRows = Children.map(headRows, (row) => withSelectionCell(
+        headRows = Children.map(headRows, (row) => withLeadingCell(
           row,
           <th key="select" scope="col" className={SELECT_CELL_CLASS}>
             <input
@@ -388,14 +509,15 @@ export function DataTable({
       return cloneElement(head, {}, headRows);
     }
     if (index === bodyIndex && body) {
-      if (isServerMode && !selectable) return child;
-      let bodyRows = isServerMode ? visibleRows : visibleRows.map((row) => withVisibleColumns(row, hiddenColumns));
+      let bodyRows = visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column])));
+      // เติมเลขลำดับก่อนช่องเลือกเสมอ ลำดับคอลัมน์ที่ได้จึงเป็น [เลือก][ลำดับ][ข้อมูล]
+      if (rowNumber) bodyRows = bodyRows.map((row) => withRowNumbers(row, nextRowNumber));
       if (selectable) {
         bodyRows = bodyRows.map((row, rowIndex) => {
           const id = rowId(visibleRows[rowIndex]);
           // แถวขยาย/แถวสรุปที่ไม่มี data-row-id ยังต้องได้ช่องว่าง ไม่งั้นคอลัมน์จะเหลื่อมกัน
-          if (!id) return withSelectionCell(row, <td key="select" className={SELECT_CELL_CLASS} />);
-          return withSelectionCell(
+          if (!id) return withLeadingCell(row, <td key="select" className={SELECT_CELL_CLASS} />);
+          return withLeadingCell(
             row,
             <td key="select" className={SELECT_CELL_CLASS}>
               <input
@@ -413,7 +535,7 @@ export function DataTable({
     }
     return child;
   });
-  const hasActiveControls = Boolean(search || filterValue || hiddenColumnNames.length || activeSort);
+  const hasActiveControls = !isServerMode && Boolean(search || filterValue || hiddenColumnNames.length || activeSort);
 
   useEffect(() => {
     setPage(1);
@@ -444,14 +566,15 @@ export function DataTable({
 
   return (
     <div
+      data-ui="data-table"
       className={cn(
-        'w-full rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800',
+        'w-full overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
         containerClassName,
       )}
     >
       {showToolbar && (
-        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/60 p-3 lg:flex-row lg:items-center lg:justify-between dark:border-slate-700 dark:bg-slate-900/30">
-          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 border-b border-hairline bg-surface-header p-3 lg:flex-row lg:items-center lg:justify-between dark:border-white/[.07] dark:bg-white/[.028]">
+          {!isServerMode && <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
             <label className="relative block min-w-0 flex-1 sm:max-w-xs">
               <span className="sr-only">ค้นหาในตาราง</span>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -460,7 +583,7 @@ export function DataTable({
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="ค้นหาในรายการ..."
-                className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40"
+                className="h-10 w-full rounded-[10px] border border-slate-300 bg-white pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40"
               />
             </label>
             {headers.length > 0 && (
@@ -472,7 +595,7 @@ export function DataTable({
                     aria-label="เลือกคอลัมน์สำหรับกรอง"
                     value={filterColumn}
                     onChange={(event) => { setFilterColumn(event.target.value); setFilterValue(''); }}
-                    className="h-10 w-full appearance-none rounded-lg border border-slate-300 bg-white pl-9 pr-7 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                    className="h-10 w-full appearance-none rounded-[10px] border border-slate-300 bg-white pl-9 pr-7 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                   >
                     <option value="">กรองข้อมูล</option>
                     {headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header}</option>)}
@@ -485,12 +608,12 @@ export function DataTable({
                     value={filterValue}
                     onChange={(event) => setFilterValue(event.target.value)}
                     placeholder={`กรอง ${headers[Number(filterColumn)]}...`}
-                    className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="h-10 min-w-0 flex-1 rounded-[10px] border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 )}
               </div>
             )}
-          </div>
+          </div>}
           <div className="flex flex-wrap items-center gap-2">
             {hasActiveControls && (
               <Button type="button" variant="ghost" size="sm" onClick={resetControls}>
@@ -526,10 +649,12 @@ export function DataTable({
                 )}
               </div>
             )}
-            <Button type="button" variant="outline" size="sm" disabled={filteredRows.length === 0} onClick={() => saveCsv(headers, filteredRows, visibleColumns, exportFileName)}>
-              <Download className="h-4 w-4" aria-hidden="true" />ส่งออกหน้านี้
-            </Button>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {currentPageExport && (
+              <Button type="button" variant="outline" size="sm" disabled={filteredRows.length === 0} onClick={() => saveCsv(headers, filteredRows, visibleColumns, exportFileName, rowNumber)}>
+                <Download className="h-4 w-4" aria-hidden="true" />ส่งออกหน้านี้
+              </Button>
+            )}
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {filteredRows.length.toLocaleString('th-TH')} {itemLabel}
             </span>
           </div>
@@ -541,20 +666,15 @@ export function DataTable({
       >
         <table
           className={cn(
-            'w-full min-w-[720px] border-separate border-spacing-0 text-left text-sm',
-            '[&_thead]:bg-slate-50/90 [&_thead]:text-xs [&_thead]:font-semibold [&_thead]:text-slate-600 dark:[&_thead]:bg-slate-900/60 dark:[&_thead]:text-slate-300',
-            '[&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-slate-200 [&_th]:px-4 [&_th]:py-3 dark:[&_th]:border-slate-700',
+            'w-full min-w-[720px] border-separate border-spacing-0 text-left text-[13.5px]',
+            '[&_thead]:h-8 [&_thead]:bg-surface-header [&_thead]:font-mono [&_thead]:text-[10px] [&_thead]:font-semibold [&_thead]:uppercase [&_thead]:tracking-[.08em] [&_thead]:text-ink-muted dark:[&_thead]:bg-white/[.028] dark:[&_thead]:text-white/45',
+            '[&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-hairline [&_th]:px-[13px] [&_th]:py-1.5 dark:[&_th]:border-white/[.07]',
             '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-primary-50/50 dark:[&_tbody_tr:hover]:bg-slate-700/40',
-            '[&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-slate-700/80',
+            '[&_td]:min-h-11 [&_td]:border-b [&_td]:border-hairline-row [&_td]:px-[13px] [&_td]:py-2 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-white/[.07]',
             // thead โปร่งแสงอยู่ ถ้าตรึงไว้เฉย ๆ แถวจะเลื่อนทะลุขึ้นมาเห็นข้างหลัง จึงต้องทึบ
-            stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-slate-50 dark:[&_thead_th]:bg-slate-900',
+            stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-surface-header dark:[&_thead_th]:bg-[#0a1224]',
             // คอลัมน์ที่ตรึงไว้ต้องทึบและเปลี่ยนสีตามแถวด้วย ไม่งั้น hover จะดูเหมือนตารางแตกเป็นสองส่วน
-            freezeFirstColumn && [
-              '[&_tr>*:first-child]:sticky [&_tr>*:first-child]:left-0',
-              '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800',
-              '[&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40',
-              '[&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
-            ].join(' '),
+            freezeFirstColumn && freezeColumnClass(leadingColumnWidths),
             cardOnMobile && 'data-table-cards',
             className,
           )}
@@ -569,14 +689,14 @@ export function DataTable({
         </div>
       )}
       {showPagination && (
-        <div className="px-4 pb-4">
+        <div className="px-3 pb-3">
           <TablePagination page={safePage} pageSize={pageSize} totalItems={filteredRows.length} totalPages={totalPages} itemLabel={itemLabel} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </div>
       )}
       {selectable && selection.length > 0 && (
         <div
           // ลอยเหนือเนื้อหาเสมอ เพราะรายการที่เลือกไว้ข้ามหน้าได้ ผู้ใช้จึงต้องเห็นยอดรวมตลอด
-          className="fixed inset-x-0 bottom-6 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-elevated dark:border-slate-600 dark:bg-slate-800"
+          className="fixed inset-x-0 bottom-20 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-card border border-slate-200 bg-white px-4 py-3 shadow-elevated dark:border-slate-600 dark:bg-slate-800 sm:bottom-6"
           role="status"
         >
           <span className="text-sm font-bold text-slate-700 dark:text-slate-100">
@@ -631,7 +751,7 @@ interface TablePaginationProps {
   itemLabel?: string;
 }
 
-export function TablePagination({ page, pageSize, totalItems, totalPages: suppliedTotalPages, onPageChange, onPageSizeChange, pageSizeOptions = [10, 25, 50, 100], itemLabel = 'รายการ' }: TablePaginationProps) {
+export function TablePagination({ page, pageSize, totalItems, totalPages: suppliedTotalPages, onPageChange, onPageSizeChange, pageSizeOptions = [10, 25, 50], itemLabel = 'รายการ' }: TablePaginationProps) {
   const pageSizeId = useId();
   const totalPages = Math.max(1, suppliedTotalPages ?? Math.ceil(totalItems / pageSize));
   const safePage = Math.min(Math.max(page, 1), totalPages);

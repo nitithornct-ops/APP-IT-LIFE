@@ -90,7 +90,6 @@ export interface TicketDetail extends TicketListItem {
   feedback_at: string | null;
   signature_storage_path: string | null;
   signature_url: string | null;
-  signature_source: 'ticket' | 'default' | null;
   signature_uploaded_by: string | null;
   signature_uploaded_at: string | null;
   outsource_name: string | null;

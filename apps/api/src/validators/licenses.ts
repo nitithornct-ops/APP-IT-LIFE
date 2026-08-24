@@ -9,6 +9,15 @@ const isoDateString = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ไม่ถูกต้อง (yyyy-MM-dd)');
 const dateOrEmpty = z.union([isoDateString, z.literal('')]).optional();
 
+/**
+ * ราคาต่อสิทธิ์ — ห้ามใช้ z.coerce.number() ตรง ๆ เพราะ Number('') = 0 ช่องว่างในฟอร์มจะกลายเป็น
+ * "ของฟรี" ทันที แล้วการ์ดสรุปเงินจะนับรายการนั้นเข้าไปเป็นศูนย์บาทโดยไม่มีใครรู้ว่าแค่ยังไม่ได้กรอก
+ * ช่องว่างจึงต้องแปลงเป็น null ซึ่งแปลว่า "ยังไม่ได้บันทึกราคา"
+ */
+const unitPriceOrEmpty = z
+  .union([z.coerce.number().min(0).max(99_999_999), z.literal('').transform(() => null), z.null()])
+  .optional();
+
 const licenseBaseSchema = z.object({
   softwareName: z.string().trim().min(1, 'กรุณากรอกชื่อซอฟต์แวร์').max(150),
   licenseType: z.string().trim().max(80).optional(),
@@ -20,6 +29,7 @@ const licenseBaseSchema = z.object({
   vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
   contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
   assignedTo: z.string().trim().max(200).optional(),
+  unitPrice: unitPriceOrEmpty,
   expiryNoticeDays: z.coerce.number().int().min(0).max(3650).default(30),
   notes: z.string().trim().max(500).optional(),
 });

@@ -1,6 +1,7 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
+import { Badge } from '../../components/ui/Badge';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -8,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AuditLogItem, AuditOverview, LoginLogItem, PaginatedResult } from '../../types/admin';
 import { formatThaiDate } from '../../utils/date';
@@ -15,10 +17,10 @@ import { auditChanges, auditChangesText, auditContext, auditFieldLabel, auditSum
 
 type LogTab = 'audit' | 'login';
 
-const resultStyles: Record<AuditLogItem['result'], string> = {
-  success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200',
-  fail: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
-  denied: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200',
+const resultTone: Record<AuditLogItem['result'], 'success' | 'warning' | 'danger'> = {
+  success: 'success',
+  fail: 'warning',
+  denied: 'danger',
 };
 
 function errorText(reason: unknown): string {
@@ -148,10 +150,7 @@ export function AuditLogsPage() {
 
   return (
     <div className="space-y-5" data-testid="audit-log-page">
-      <div>
-        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Audit Log</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">ตรวจสอบกิจกรรมระบบและประวัติการเข้าสู่ระบบ ข้อมูลส่วนนี้อ่านอย่างเดียวและแก้ไขไม่ได้</p>
-      </div>
+      <PageTitle eyebrow="ธรรมาภิบาลและรายงาน / Audit Log" title="Audit Log" description="ตรวจสอบกิจกรรมระบบและประวัติการเข้าสู่ระบบ ข้อมูลส่วนนี้อ่านอย่างเดียวและแก้ไขไม่ได้" />
 
       {overviewQuery.data && (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -216,8 +215,8 @@ export function AuditLogsPage() {
       {logsQuery.isError && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="โหลดประวัติไม่สำเร็จ" message={errorText(logsQuery.error)} />}
       {logsQuery.data && logsQuery.data.items.length === 0 && <EmptyState icon={<Search className="h-10 w-10" />} title="ไม่พบประวัติ" message="ลองเปลี่ยนช่วงวันที่หรือเงื่อนไขการค้นหา" />}
       {logsQuery.data && logsQuery.data.items.length > 0 && (tab === 'audit'
-        ? <AuditTable items={logsQuery.data.items as AuditLogItem[]} />
-        : <LoginTable items={logsQuery.data.items as LoginLogItem[]} />)}
+        ? <AuditTable items={logsQuery.data.items as AuditLogItem[]} rowNumberStart={(page - 1) * pageSize + 1} />
+        : <LoginTable items={logsQuery.data.items as LoginLogItem[]} rowNumberStart={(page - 1) * pageSize + 1} />)}
 
       {logsQuery.data && <TablePagination page={logsQuery.data.pagination.page} pageSize={pageSize} totalItems={logsQuery.data.pagination.totalItems} totalPages={logsQuery.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
     </div>
@@ -225,13 +224,13 @@ export function AuditLogsPage() {
 }
 
 /** export ไว้ให้เทสต์เรียกตรง ๆ ได้ โดยไม่ต้องประกอบทั้งหน้าซึ่งต้องใช้ auth และ query client */
-export function AuditTable({ items }: { items: AuditLogItem[] }) {
+export function AuditTable({ items, rowNumberStart = 1 }: { items: AuditLogItem[]; rowNumberStart?: number }) {
   const [openLog, setOpenLog] = useState<AuditLogItem | null>(null);
 
   return (
     <>
       <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-        <DataTable mode="server" className="w-full text-left text-sm">
+        <DataTable mode="server" rowNumberStart={rowNumberStart} className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
             <tr>
               <th className="px-4 py-3">เวลา</th>
@@ -270,7 +269,7 @@ export function AuditTable({ items }: { items: AuditLogItem[] }) {
                     </Button>
                   )}
                 </td>
-                <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${resultStyles[log.result]}`}>{log.result}</span></td>
+                <td className="px-4 py-3"><Badge variant={resultTone[log.result]}>{log.result}</Badge></td>
               </tr>
             ))}
           </tbody>
@@ -281,6 +280,6 @@ export function AuditTable({ items }: { items: AuditLogItem[] }) {
   );
 }
 
-function LoginTable({ items }: { items: LoginLogItem[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable mode="server" className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${log.success ? resultStyles.success : resultStyles.fail}`}>{log.success ? 'success' : 'fail'}</span></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></DataTable></div>;
+function LoginTable({ items, rowNumberStart = 1 }: { items: LoginLogItem[]; rowNumberStart?: number }) {
+  return <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable mode="server" rowNumberStart={rowNumberStart} className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-4 py-3">เวลา</th><th className="px-4 py-3">อีเมล</th><th className="px-4 py-3">ผลลัพธ์</th><th className="px-4 py-3">MFA</th><th className="px-4 py-3">IP Address</th><th className="px-4 py-3">สาเหตุ</th></tr></thead><tbody>{items.map((log) => <tr key={log.id} className="border-t border-slate-100 dark:border-slate-700"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatThaiDate(log.created_at, 'd MMM yyyy HH:mm')} น.</td><td className="px-4 py-3 text-slate-700 dark:text-slate-300">{log.email_attempted}</td><td className="px-4 py-3"><Badge variant={log.success ? 'success' : 'warning'}>{log.success ? 'success' : 'fail'}</Badge></td><td className="px-4 py-3 text-slate-500">{log.mfa_used ? 'ใช้งาน' : '—'}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{log.ip_address ?? '—'}</td><td className="px-4 py-3 text-xs text-slate-500">{log.failure_reason ?? '—'}</td></tr>)}</tbody></DataTable></div>;
 }

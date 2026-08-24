@@ -17,6 +17,8 @@ describe('Modal', () => {
     expect(dialog).toBeVisible();
     expect(dialog).toHaveClass('max-w-2xl');
     expect(dialog).not.toHaveClass('inset-0');
+    expect(dialog).toHaveClass('border', 'rounded-modal', 'shadow-elevated');
+    expect(dialog).not.toHaveClass('rounded-none', 'shadow-none');
     expect(document.body).toHaveStyle({ overflow: 'hidden' });
   });
 

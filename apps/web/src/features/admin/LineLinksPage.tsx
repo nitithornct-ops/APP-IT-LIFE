@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { apiFetch } from '../../services/apiClient';
 
 interface LineUserRow {
@@ -47,10 +48,7 @@ export function LineLinksPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">บัญชี LINE ที่ผูกกับพนักงาน</h1>
-      <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">
-        ตรวจและอนุมัติการผูกบัญชี LINE กับทะเบียนผู้ใช้ ก่อนให้สิทธิ์แจ้งซ่อมผ่านพอร์ทัลสาธารณะ
-      </p>
+      <PageTitle eyebrow="บุคลากรและสิทธิ์ / บัญชี LINE ที่ผูก" title="บัญชี LINE ที่ผูกกับพนักงาน" description="ตรวจและอนุมัติการผูกบัญชี LINE กับทะเบียนผู้ใช้ ก่อนให้สิทธิ์แจ้งซ่อมผ่านพอร์ทัลสาธารณะ" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<UsersRound className="h-5 w-5" />} label={`รายการสถานะ ${FILTERS.find((filter) => filter.value === status)?.label ?? 'ทั้งหมด'}`} value={linksQuery.data?.length ?? 0} tone="primary" />

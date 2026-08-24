@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -60,7 +61,7 @@ export function ChangesPage() {
   const items = query.data?.items ?? [];
 
   return <div className="flex flex-col gap-4" data-testid="changes-page">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h1 className="text-xl font-bold">Change Management</h1><p className="text-sm text-slate-500">ยื่นคำขอ · ทดสอบ · อนุมัติอย่างเป็นอิสระ · ติดตั้งใช้งาน</p></div>{canCreate && <Button size="sm" onClick={() => setShowCreate((value) => !value)} data-testid="change-create-toggle"><Plus className="h-4 w-4" /> ยื่นคำขอ</Button>}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><PageTitle eyebrow="บริการและกระบวนการ IT / Change" title="Change Management" description="ยื่นคำขอ · ทดสอบ · อนุมัติอย่างเป็นอิสระ · ติดตั้งใช้งาน" />{canCreate && <Button size="sm" onClick={() => setShowCreate((value) => !value)} data-testid="change-create-toggle"><Plus className="h-4 w-4" /> ยื่นคำขอ</Button>}</div>
     {showCreate && <FormModal title="ยื่นคำขอเปลี่ยนแปลง" description="ระบุขอบเขต ความเสี่ยง แผนทดสอบ และแผนย้อนกลับ" size="xl" onClose={() => setShowCreate(false)}>{references.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : references.data && <CreateChangeForm references={references.data} onClose={() => setShowCreate(false)} />}</FormModal>}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><StatCard icon={<GitPullRequestArrow className="h-5 w-5" />} label="ทั้งหมด" value={query.data?.pagination.totalItems ?? 0} tone="primary" /><StatCard icon={<GitPullRequestArrow className="h-5 w-5" />} label="รอทดสอบ" value={items.filter((item) => item.status === 'ยื่นคำขอ').length} tone="gray" /><StatCard icon={<GitPullRequestArrow className="h-5 w-5" />} label="รออนุมัติ/ติดตั้ง" value={items.filter((item) => ['ผ่านการทดสอบ', 'อนุมัติแล้ว'].includes(item.status)).length} tone="amber" /><StatCard icon={<GitPullRequestArrow className="h-5 w-5" />} label="ติดตั้งแล้ว" value={items.filter((item) => item.status === 'ติดตั้งใช้งานแล้ว').length} tone="teal" /></div>
     <Card><CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>รายการ Change</span><div className="flex gap-2 text-xs font-normal"><select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-full border px-3 py-1 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{CHANGE_STATUSES.map((value) => <option key={value}>{value}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)} className="rounded-full border px-3 py-1 dark:bg-slate-900"><option value="">ทุกระดับความเสี่ยง</option>{CHANGE_RISK_LEVELS.map((value) => <option key={value}>{value}</option>)}</select></div></CardHeader><CardBody>

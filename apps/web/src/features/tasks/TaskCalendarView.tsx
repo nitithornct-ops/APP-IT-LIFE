@@ -120,7 +120,11 @@ export function TaskCalendarView({ tasks, onSelect, onCreate }: { tasks: Task[];
           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
           : task.due_days !== null && task.due_days < 0
             ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-200'
-            : 'bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-200',
+            : task.category === 'ประชุม' || task.category === 'ติดตาม'
+              ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200'
+              : task.category === 'โครงการ' || task.category === 'พัฒนาระบบ'
+                ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200'
+                : 'bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-200',
       )}
     >
       {task.recurrence !== 'ไม่ทำซ้ำ' ? '↻ ' : ''}{task.due_time ? `${task.due_time.slice(0, 5)} ` : ''}{task.title}
@@ -166,7 +170,7 @@ export function TaskCalendarView({ tasks, onSelect, onCreate }: { tasks: Task[];
         <div className="grid grid-cols-7">{monthDays.map((day) => {
           const key = dateKey(day);
           const dayTasks = tasksByDate.get(key) ?? [];
-          return <div key={key} {...dropProps(key)} onClick={() => onCreate(key)} className={cn('min-h-[112px] cursor-pointer border-r border-t border-slate-200 p-1.5 transition last:border-r-0 dark:border-slate-700', !isSameMonth(day, anchorDate) && 'bg-slate-50/70 dark:bg-slate-900/40', key === todayKey && 'bg-primary-50 dark:bg-primary-900/20', dragOverDate === key && 'ring-2 ring-inset ring-primary-400')}><div className="mb-1 flex items-center justify-between"><Plus className="h-3 w-3 text-transparent group-hover:text-slate-300" /><span className={cn('text-xs font-semibold text-slate-600 dark:text-slate-300', !isSameMonth(day, anchorDate) && 'text-slate-300 dark:text-slate-600')}>{format(day, 'd')}</span></div><div className="space-y-1">{dayTasks.slice(0, 3).map((task) => taskButton(task, true))}{dayTasks.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayTasks.length - 3} งาน</p>}</div></div>;
+          return <div key={key} {...dropProps(key)} onClick={() => onCreate(key)} className={cn('group min-h-[112px] cursor-pointer border-r border-t border-slate-200 p-1.5 transition last:border-r-0 dark:border-slate-700', (day.getDay() === 0 || day.getDay() === 6) && 'bg-slate-50/80 dark:bg-slate-900/30', !isSameMonth(day, anchorDate) && 'bg-slate-50/70 dark:bg-slate-900/40', key === todayKey && 'bg-primary-50 shadow-[inset_0_0_0_2px_#1D4ED8] dark:bg-primary-900/20', dragOverDate === key && 'ring-2 ring-inset ring-primary-400')}><div className="mb-1 flex items-center justify-between"><Plus className="h-3 w-3 text-transparent group-hover:text-slate-300" /><span className={cn('text-xs font-semibold text-slate-600 dark:text-slate-300', !isSameMonth(day, anchorDate) && 'text-slate-300 dark:text-slate-600')}>{format(day, 'd')}</span></div><div className="space-y-1">{dayTasks.slice(0, 3).map((task) => taskButton(task, true))}{dayTasks.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayTasks.length - 3} งาน</p>}</div></div>;
         })}</div>
       </div>}
 

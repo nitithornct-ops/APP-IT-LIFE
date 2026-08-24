@@ -11,6 +11,7 @@ import {
   CircleGauge,
   KeyRound,
   Loader2,
+  PackageSearch,
   Plus,
   RefreshCw,
   Save,
@@ -19,15 +20,17 @@ import {
   X,
 } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
-import { LICENSE_STATUSES, type SoftwareLicense } from '../../types/assets';
+import { LICENSE_STATUSES, type LicenseCostSummary, type SoftwareLicense } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
 import { daysUntilLicenseExpiry, licenseHealth, remainingSeats, utilizationPercent, type LicenseHealth } from './licenseDisplay';
@@ -61,6 +64,7 @@ interface LicenseFormState {
   vendorId: string;
   contractId: string;
   assignedTo: string;
+  unitPrice: string;
   expiryNoticeDays: string;
   notes: string;
 }
@@ -76,6 +80,7 @@ function initialForm(license?: SoftwareLicense): LicenseFormState {
     vendorId: license?.vendor_id ?? '',
     contractId: license?.contract_id ?? '',
     assignedTo: license?.assigned_to ?? '',
+    unitPrice: license?.unit_price === null || license?.unit_price === undefined ? '' : String(license.unit_price),
     expiryNoticeDays: String(license?.expiry_notice_days ?? 30),
     notes: license?.notes ?? '',
   };
@@ -129,6 +134,8 @@ function LicenseForm({
           vendorId: form.vendorId,
           contractId: form.contractId,
           assignedTo: form.assignedTo,
+          // ช่องว่างส่ง '' ไป ฝั่ง validator แปลงเป็น null = ยังไม่ได้บันทึกราคา ไม่ใช่ราคา 0
+          unitPrice: form.unitPrice.trim(),
           expiryNoticeDays,
           notes: form.notes,
         }),
@@ -181,6 +188,11 @@ function LicenseForm({
           <label className="text-xs font-semibold">
             ใช้แล้ว
             <input required type="number" min="0" step="1" data-testid="lic-form-used" value={form.usedQty} onChange={(event) => set('usedQty', event.target.value)} className={fieldClass} />
+          </label>
+          <label className="text-xs font-semibold">
+            ราคาต่อสิทธิ์ (บาท)
+            <input type="number" min="0" step="0.01" data-testid="lic-form-unit-price" value={form.unitPrice} onChange={(event) => set('unitPrice', event.target.value)} className={fieldClass} />
+            <span className="mt-1 block text-[10.5px] font-normal text-slate-400 dark:text-slate-500">เว้นว่างได้ถ้ายังไม่รู้ราคา — การ์ดสรุปจะบอกว่ายังไม่รวมรายการนี้</span>
           </label>
           <label className="text-xs font-semibold">
             วันที่เริ่มต้น
@@ -325,15 +337,20 @@ export function LicensesPage() {
   const totalSeats = items.reduce((sum, item) => sum + Number(item.total_qty), 0);
   const usedSeats = items.reduce((sum, item) => sum + Number(item.used_qty), 0);
   const overallUtilization = utilizationPercent(usedSeats, totalSeats);
+  const overusedItems = items.filter((item) => Number(item.used_qty) > Number(item.total_qty));
+  const costQuery = useQuery({
+    queryKey: ['software-licenses', 'summary'],
+    queryFn: () => apiFetch<LicenseCostSummary>('/api/v1/software-licenses/summary'),
+  });
+
+  const unusedSeats = items.reduce((sum, item) => sum + Math.max(0, Number(item.total_qty) - Number(item.used_qty)), 0);
+  const underusedItems = items.filter((item) => Number(item.total_qty) > 0 && Number(item.used_qty) / Number(item.total_qty) <= 0.75);
   const resetForm = () => { setShowForm(false); setEditing(undefined); };
 
   return (
     <div className="flex flex-col gap-4" data-testid="licenses-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Software License</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">ควบคุมจำนวนสิทธิ์ ผู้ใช้งาน สัญญา และรอบการต่ออายุซอฟต์แวร์</p>
-        </div>
+        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Software License" title="Software License" description="ควบคุมจำนวนสิทธิ์ ผู้ใช้งาน สัญญา และรอบการต่ออายุซอฟต์แวร์" />
         {canManage && (
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" isLoading={checkExpiryMutation.isPending} data-testid="lic-check-expiry" onClick={() => { setNotice(null); checkExpiryMutation.mutate(); }}>
@@ -351,7 +368,7 @@ export function LicensesPage() {
         <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="พร้อมใช้งาน" value={activeCount} tone="teal" />
         <StatCard icon={<CalendarClock className="h-5 w-5" />} label="ใกล้หมดใน 30 วัน" value={expiringCount} tone={expiringCount ? 'amber' : 'gray'} />
         <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="หมดอายุแล้ว" value={expiredCount} tone={expiredCount ? 'danger' : 'gray'} />
-        <StatCard icon={<CircleGauge className="h-5 w-5" />} label="อัตราการใช้งาน" value={`${overallUtilization}%`} note={`${usedSeats.toLocaleString('th-TH')} / ${totalSeats.toLocaleString('th-TH')} สิทธิ์`} tone={overallUtilization >= 90 ? 'amber' : 'primary'} />
+        <StatCard icon={<CircleGauge className="h-5 w-5" />} label="อัตราการใช้งาน" value={`${overallUtilization}%`} note={overusedItems.length ? `ใช้เกิน ${overusedItems.length} รายการ` : `${usedSeats.toLocaleString('th-TH')} / ${totalSeats.toLocaleString('th-TH')} สิทธิ์`} tone={overusedItems.length ? 'danger' : overallUtilization >= 90 ? 'amber' : 'primary'} />
       </div>
 
       {notice && (
@@ -362,7 +379,8 @@ export function LicensesPage() {
 
       {showForm && <FormModal title={editing ? 'แก้ไข Software License' : 'เพิ่ม Software License'} description="จัดการจำนวนสิทธิ์ Vendor Contract และวันหมดอายุ" size="xl" onClose={resetForm}>{vendorOptionsQuery.isLoading || contractOptionsQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมข้อมูลแบบฟอร์ม</div> : vendorOptionsQuery.isError || contractOptionsQuery.isError ? <div className="flex items-center justify-between gap-3 p-5 text-sm text-red-700 dark:text-red-300"><span>โหลดข้อมูล Vendor/Contract สำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></div> : <LicenseForm license={editing} vendors={vendorOptionsQuery.data ?? []} contracts={contractOptionsQuery.data ?? []} onClose={resetForm} />}</FormModal>}
 
-      <Card>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <Card className="min-w-0">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p>ทะเบียน Software License</p>
@@ -408,16 +426,16 @@ export function LicensesPage() {
                     const expanded = expandedId === license.id;
                     return (
                       <Fragment key={license.id}>
-                        <tr data-testid={`lic-row-${license.id}`} className="border-t border-slate-100 align-top dark:border-slate-700">
+                        <tr data-testid={`lic-row-${license.id}`} className={`border-t align-top ${Number(license.used_qty) > Number(license.total_qty) ? 'border-red-200 bg-red-50/50 shadow-[inset_3px_0_0_#dc2626] dark:border-red-900 dark:bg-red-950/10' : 'border-slate-100 dark:border-slate-700'}`}>
                           <td className="p-2">
                             <p className="font-semibold text-slate-800 dark:text-slate-100">{license.software_name}</p>
                             <p className="font-mono text-xs text-primary-700 dark:text-primary-300">{license.license_code}</p>
                             <p className="text-xs text-slate-400">{license.license_type || 'ไม่ระบุประเภท'}</p>
                           </td>
                           <td className="min-w-44 p-2">
-                            <div className="flex items-center justify-between text-xs"><span>{license.used_qty} / {license.total_qty}</span><span className="font-semibold">{utilization}%</span></div>
-                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"><div className={`h-full rounded-full ${utilization >= 90 ? 'bg-amber-500' : 'bg-primary-600'}`} style={{ width: `${utilization}%` }} /></div>
-                            <p className="mt-1 text-xs text-slate-400">คงเหลือ {remainingSeats(license.used_qty, license.total_qty)} สิทธิ์</p>
+                            <div className="flex items-center justify-between text-xs"><span>{license.used_qty} / {license.total_qty}</span><span className={`font-semibold ${Number(license.used_qty) > Number(license.total_qty) ? 'text-red-700 dark:text-red-300' : ''}`}>{utilization}%</span></div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"><div className={`h-full rounded-full ${Number(license.used_qty) > Number(license.total_qty) ? 'bg-red-600' : utilization >= 90 ? 'bg-amber-500' : 'bg-primary-600'}`} style={{ width: `${utilization}%` }} /></div>
+                            <p className={`mt-1 text-xs ${Number(license.used_qty) > Number(license.total_qty) ? 'font-semibold text-red-700 dark:text-red-300' : 'text-slate-400'}`}>{Number(license.used_qty) > Number(license.total_qty) ? `ใช้เกิน ${Number(license.used_qty) - Number(license.total_qty)} สิทธิ์` : `คงเหลือ ${remainingSeats(license.used_qty, license.total_qty)} สิทธิ์`}</p>
                           </td>
                           <td className="p-2 text-slate-500 dark:text-slate-400"><ExpiryText license={license} /></td>
                           <td className="max-w-56 p-2 text-slate-500 dark:text-slate-400">
@@ -468,6 +486,43 @@ export function LicensesPage() {
           )}
         </CardBody>
       </Card>
+
+      <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปประสิทธิภาพลิขสิทธิ์">
+        <div className="rounded-[10px] bg-[#0B1B36] p-4 text-white shadow-sm">
+          <p className="font-mono text-[10px] font-semibold tracking-wider text-white/50">LICENSE OPTIMIZATION</p>
+          <p className="mt-3 text-sm font-bold">สิทธิ์ที่ยังไม่ถูกใช้งาน</p>
+          <p className="mt-1 font-mono text-3xl font-bold text-blue-300">{unusedSeats.toLocaleString('th-TH')}</p>
+          <p className="mt-1 text-xs leading-5 text-white/60">จาก {underusedItems.length} รายการที่ใช้งานไม่เกิน 75% ควรทบทวนก่อนรอบต่ออายุครั้งถัดไป</p>
+
+          {/* เงินที่เรียกคืนได้ (design handoff 3e) — ขึ้นเฉพาะเมื่อมีลิขสิทธิ์ที่บันทึกราคาไว้จริง
+              ถ้ายังไม่มีใครกรอกราคาเลย การแสดง "฿0" จะอ่านได้ว่าไม่มีอะไรให้ประหยัด ซึ่งไม่จริง */}
+          {costQuery.data && costQuery.data.pricedCount > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="text-sm font-bold">เรียกคืนได้ถ้าคืนสิทธิ์ที่ไม่ได้ใช้</p>
+              <p className="mt-1 font-mono text-3xl font-bold text-emerald-300">
+                ฿{costQuery.data.reclaimableAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/60">
+                คิดจาก {costQuery.data.reclaimableSeats.toLocaleString('th-TH')} สิทธิ์ใน {costQuery.data.pricedCount.toLocaleString('th-TH')} รายการที่บันทึกราคาไว้
+                {costQuery.data.unpricedCount > 0 && (
+                  <> · <span className="text-amber-300">ยังไม่รวมอีก {costQuery.data.unpricedCount.toLocaleString('th-TH')} รายการที่ยังไม่ได้ใส่ราคา</span></>
+                )}
+              </p>
+            </div>
+          )}
+          {costQuery.data && costQuery.data.pricedCount === 0 && (
+            <p className="mt-4 border-t border-white/10 pt-3 text-xs leading-5 text-white/50">
+              ยังคำนวณเงินที่เรียกคืนได้ไม่ได้ เพราะยังไม่มีลิขสิทธิ์รายการใดบันทึกราคาต่อสิทธิ์ไว้
+            </p>
+          )}
+          <button type="button" onClick={() => { setStatusFilter('Active'); setTypeFilter(''); }} className="mt-4 w-full rounded-lg bg-primary-600 px-3 py-2 text-xs font-bold hover:bg-primary-700">ตรวจรายการที่ใช้งานอยู่</button>
+        </div>
+
+        {overusedItems.length > 0 && <div className="rounded-[10px] border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/20"><p className="flex items-center gap-2 text-xs font-bold text-red-700 dark:text-red-300"><AlertTriangle className="h-4 w-4" />ใช้เกินสิทธิ์ที่ซื้อ</p><div className="mt-3 space-y-2">{overusedItems.slice(0, 4).map((item) => <div key={item.id} className="flex items-start justify-between gap-3 text-xs"><span className="min-w-0 truncate font-semibold">{item.software_name}</span><span className="shrink-0 font-mono font-bold text-red-700 dark:text-red-300">+{Number(item.used_qty) - Number(item.total_qty)}</span></div>)}</div><p className="mt-3 text-[11px] leading-5 text-slate-600 dark:text-slate-300">ลดจำนวนผู้ใช้หรือเพิ่มสิทธิ์ให้ตรงกับการติดตั้งจริง เพื่อปิดความเสี่ยงด้าน compliance</p></div>}
+
+        <Link to="/inventory-items" className="rounded-[10px] border border-slate-200 bg-white p-4 transition hover:border-primary-300 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100"><PackageSearch className="h-4 w-4 text-primary-600" />คลังอะไหล่และวัสดุ</p><p className="mt-2 text-xs text-slate-500">ตรวจสต็อกต่ำ จุดสั่งซื้อ และประวัติการเบิก</p></Link>
+      </aside>
+      </div>
     </div>
   );
 }

@@ -1,13 +1,26 @@
 import { ShieldAlert, Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { Button } from './ui/Button';
+import { Card, CardBody } from './ui/Card';
 import { useAuth } from '../stores/authContext';
 
 function AccessDenied() {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 text-center">
-      <ShieldAlert className="h-8 w-8 text-red-500" aria-hidden="true" />
-      <p className="text-sm text-slate-600 dark:text-slate-300">ท่านไม่มีสิทธิ์เข้าถึงหน้านี้</p>
+    <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center px-4 text-center">
+      <Card className="w-full border-danger-100 dark:border-red-400/30">
+        <CardBody className="flex flex-col items-center gap-3 px-6 py-12">
+          <div className="grid h-14 w-14 place-items-center rounded-[13px] bg-danger-50 text-danger-700 dark:bg-red-400/10 dark:text-red-300">
+            <ShieldAlert className="h-7 w-7" aria-hidden="true" />
+          </div>
+          <p className="text-lg font-extrabold text-ink-heading dark:text-[#e8eef9]">ไม่มีสิทธิ์เข้าถึงส่วนนี้</p>
+          <p className="max-w-sm text-sm text-slate-500 dark:text-white/45">สิทธิ์ของบัญชีนี้ยังไม่ครอบคลุมหน้าที่เปิดอยู่ คุณสามารถกลับไปทำงานต่อหรือส่งคำขอสิทธิ์ได้ทันที</p>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <Link to="/my-work"><Button variant="outline">กลับศูนย์งานของฉัน</Button></Link>
+            <Link to="/access-requests"><Button>ขอสิทธิ์เข้าถึง</Button></Link>
+          </div>
+        </CardBody>
+      </Card>
     </div>
   );
 }

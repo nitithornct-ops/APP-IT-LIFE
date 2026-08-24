@@ -39,10 +39,10 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="relative flex items-center text-slate-600 hover:text-slate-900 dark:text-slate-300"
+        className="relative flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-600 hover:bg-primary-50 hover:text-primary-800 dark:text-slate-300 dark:hover:bg-white/[.07]"
         aria-label="การแจ้งเตือน"
       >
-        <Bell className="h-5 w-5" aria-hidden="true" />
+        <Bell className="h-4 w-4" aria-hidden="true" />
         {unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-medium text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -51,14 +51,14 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-10 mt-2 w-80 rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+        <div className="absolute right-0 z-10 mt-2 w-80 overflow-hidden rounded-card border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-700">
             <span className="text-sm font-medium text-slate-800 dark:text-slate-100">การแจ้งเตือน</span>
             <button
               type="button"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending || unreadCount === 0}
-              className="text-xs text-blue-600 hover:underline disabled:text-slate-400 disabled:no-underline dark:text-blue-400"
+              className="min-h-10 px-2 text-xs font-semibold text-primary-700 hover:underline disabled:text-slate-400 disabled:no-underline dark:text-primary-300"
             >
               อ่านทั้งหมด
             </button>
@@ -80,7 +80,7 @@ export function NotificationBell() {
                     navigate(item.link);
                   }
                 }}
-                className={`block w-full border-b border-slate-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700 ${
+                className={`block min-h-10 w-full border-b border-slate-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700 ${
                   item.is_read ? 'text-slate-500' : 'font-medium text-slate-800 dark:text-slate-100'
                 }`}
               >

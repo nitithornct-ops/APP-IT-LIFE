@@ -24,6 +24,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal, Modal } from '../../components/ui/Modal';
+import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
@@ -321,7 +322,7 @@ function BulkEmployeePanel({
               key={value}
               type="button"
               onClick={() => setAction(value)}
-              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
+              className={`h-9 rounded-lg px-3 text-sm font-semibold ${action === value ? 'bg-primary-600 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
             >
               {label}
             </button>
@@ -408,7 +409,7 @@ export function EmployeesPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="employees-page">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">รายชื่อพนักงานและทรัพย์สินที่ครอบครอง</h1><p className="text-sm text-slate-500 dark:text-slate-400">ทะเบียนพนักงาน อุปกรณ์ Software และสิทธิ์ใช้งานที่อยู่กับแต่ละคน</p></div>
+        <PageTitle eyebrow="บุคลากรและสิทธิ์ / พนักงาน" title="รายชื่อพนักงานและทรัพย์สินที่ครอบครอง" description="ทะเบียนพนักงาน อุปกรณ์ Software และสิทธิ์ใช้งานที่อยู่กับแต่ละคน" />
         <RequirePermission permission="employee.manage"><Button size="sm" onClick={() => setShowCreate(true)} data-testid="employee-create-toggle"><Plus className="h-4 w-4" aria-hidden="true" />เพิ่มพนักงาน</Button></RequirePermission>
       </div>
 
@@ -439,6 +440,7 @@ export function EmployeesPage() {
           {rows.length > 0 && <DataTable
             toolbar={false}
             pagination={false}
+            rowNumberStart={(page - 1) * pageSize + 1}
             itemLabel="คน"
             selectable={canManageEmployee}
             selectedIds={selectedIds}
@@ -447,12 +449,12 @@ export function EmployeesPage() {
             className="min-w-[1180px] text-xs"
             containerClassName="rounded-lg"
           >
-            <thead><tr><th>ลำดับ</th><th>รหัสพนักงาน</th><th>ชื่อพนักงาน</th><th>ตำแหน่ง</th><th>Department</th><th>บัญชีผู้ใช้งาน</th><th>ทรัพย์สินที่ครอบครอง</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
-            <tbody>{rows.map((employee, index) => {
+            <thead><tr><th>รหัสพนักงาน</th><th>ชื่อพนักงาน</th><th>ตำแหน่ง</th><th>Department</th><th>บัญชีผู้ใช้งาน</th><th>ทรัพย์สินที่ครอบครอง</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+            <tbody>{rows.map((employee) => {
               const count = overview?.assignmentCounts[employee.id] ?? 0;
               const department = departments.find((item) => item.id === employee.department_id)?.name_th ?? '—';
               const position = positions.find((item) => item.id === employee.position_id)?.name_th ?? '—';
-              return <tr key={employee.id} data-row-id={employee.id}><td className="text-slate-400">{(page - 1) * pageSize + index + 1}</td><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
+              return <tr key={employee.id} data-row-id={employee.id}><td className="font-mono font-semibold text-slate-600 dark:text-slate-300">{employee.employee_code}</td><td><p className="font-bold text-slate-700 dark:text-slate-100">{employeeName(employee)}</p>{employee.nickname && <p className="text-slate-400">ชื่อเล่น: {employee.nickname}</p>}{englishName(employee) && <p className="text-slate-400">{englishName(employee)}</p>}</td><td className="max-w-56 text-slate-600 dark:text-slate-300">{position}</td><td className="max-w-48 text-slate-600 dark:text-slate-300">{department}</td><td><p className="font-mono text-[11px] text-slate-500">AD: {employee.username_ad || '—'}</p><p className="max-w-44 break-all text-[11px] text-slate-400">{employee.upn || employee.email || '—'}</p></td><td className={count ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'}>{count ? `${count} รายการ` : 'ยังไม่มีรายการ'}</td><td><span className="inline-flex min-w-7 justify-center rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500 dark:bg-slate-700">{count}</span></td><td><Badge variant={employee.status === 'active' ? 'success' : 'secondary'}>{employee.status === 'active' ? 'Active' : 'Inactive'}</Badge></td><td className="text-right"><RowActions
                     recordLabel={employeeName(employee)}
                     actions={[
                       { kind: 'view', onClick: () => setViewingEmployee(employee) },

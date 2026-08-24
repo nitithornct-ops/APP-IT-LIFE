@@ -104,6 +104,7 @@ export interface TicketCategory {
   is_security_default: boolean;
   status: 'active' | 'inactive';
   notes: string | null;
+  created_at: string;
 }
 
 export interface AssetCategory {
@@ -112,6 +113,7 @@ export interface AssetCategory {
   code_prefix: string;
   status: 'active' | 'inactive';
   notes: string | null;
+  created_at: string;
 }
 
 export interface PermissionOverride {
@@ -136,6 +138,7 @@ export interface ApprovalGroup {
   owner_id: string | null;
   notes: string | null;
   status: 'active' | 'inactive';
+  created_at: string;
 }
 
 export interface ApprovalGroupMember {
