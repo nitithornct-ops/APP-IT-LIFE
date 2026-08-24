@@ -125,7 +125,8 @@ test('admin dashboard renders operational cards and urgent data', async ({ page 
   await expect(page.getByRole('heading', { level: 1, name: /วันนี้มี \d+ เรื่อง ที่ควรจัดการก่อนงานอื่น/ })).toBeVisible();
   await expect(page.getByText('สุขภาพงานควบคุมเชิงปฏิบัติการ', { exact: true })).toBeVisible();
   await expect(page.getByText(adminTicketTitle, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('ช่วงเตือนล่วงหน้า')).toHaveValue('30');
+  const leadWindow = page.getByRole('group', { name: 'ช่วงติดตามล่วงหน้า' });
+  await expect(leadWindow.getByRole('button', { name: '30 วัน', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: 'test-results/module21-dashboard-admin.png', fullPage: true });
 });
 

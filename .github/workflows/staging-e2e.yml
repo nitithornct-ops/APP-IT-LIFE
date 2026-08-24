@@ -45,6 +45,13 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # Wrangler 4.122+ can terminate local workerd with an empty error after a
+      # broken pipe, cascading into ECONNREFUSED failures for the browser suite.
+      # The dev script also caps compatibility_date to the newest date supported
+      # by this isolated runtime; the deployment configuration remains unchanged.
+      - name: Install stable Wrangler for live E2E
+        run: npm install --prefix .e2e-tools --no-save --package-lock=false wrangler@4.113.0
+
       - name: Require a complete staging environment
         shell: bash
         run: |

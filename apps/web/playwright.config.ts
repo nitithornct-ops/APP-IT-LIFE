@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: liveE2E
     ? [
       { command: 'npm run dev -- --host 127.0.0.1', url: webUrl, reuseExistingServer: true },
-      { command: 'npm --prefix ../api run dev', url: 'http://localhost:8787/api/v1/health', reuseExistingServer: true },
+      { command: 'npm --prefix ../api run dev:e2e', url: 'http://localhost:8787/api/v1/health', reuseExistingServer: true },
     ]
     : { command: 'npm run preview', url: webUrl, reuseExistingServer: !process.env.CI },
 });

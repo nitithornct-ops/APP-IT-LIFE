@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:e2e": "node ../../.e2e-tools/node_modules/wrangler/bin/wrangler.js dev --compatibility-date 2026-07-28",
     "build": "wrangler deploy --dry-run --env=\"\" --outdir dist",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
