@@ -57,7 +57,7 @@ app.use('*', (c, next) =>
   cors({
     origin: parseAllowedOrigins(c.env.ALLOWED_ORIGINS),
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-tracking-token'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-tracking-token', 'x-line-session'],
   })(c, next),
 );
 
