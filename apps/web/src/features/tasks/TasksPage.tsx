@@ -83,36 +83,54 @@ function TaskProgress({ value }: { value: number }) {
   );
 }
 
-function TaskActions({
+export function TaskActions({
   task,
-  pending,
+  statusPending,
+  deletePending,
   onView,
+  onEdit,
   onStatus,
+  onDelete,
 }: {
   task: Task;
-  pending: boolean;
+  statusPending: boolean;
+  deletePending: boolean;
   onView: () => void;
+  onEdit: () => void;
   onStatus: (status: TaskStatus) => void;
+  onDelete: () => void;
 }) {
   const isTerminal = TERMINAL_STATUSES.includes(task.status);
 
-  // งานที่ปิดไปแล้วเปลี่ยนสถานะไม่ได้ ปุ่มจึงหายไปทั้งชุด เหลือแต่ "ดู"
+  // งานที่ปิดไปแล้วเปลี่ยนสถานะไม่ได้ แต่ยังดู แก้ไข หรือลบแบบ soft delete ได้
   return (
     <div onClick={(event) => event.stopPropagation()}>
       <RowActions
         recordLabel={task.title}
         className="gap-0.5 [&_a]:h-8 [&_a]:w-8 [&_a]:justify-center [&_a]:px-0 [&_a]:text-[0] [&_button]:h-8 [&_button]:w-8 [&_button]:justify-center [&_button]:px-0 [&_button]:text-[0]"
         actions={[
-          { kind: 'view', label: 'ดูรายละเอียด', onClick: onView },
-          { kind: 'custom', icon: pending ? Loader2 : CirclePlay, label: 'เริ่มงาน', disabled: pending, hidden: isTerminal || task.status === 'กำลังทำ', onClick: () => onStatus('กำลังทำ') },
-          { kind: 'custom', icon: pending ? Loader2 : Check, label: 'ทำงานเสร็จ', disabled: pending, hidden: isTerminal, onClick: () => onStatus('เสร็จแล้ว') },
+          { kind: 'view', label: 'ดู', disabled: statusPending || deletePending, onClick: onView },
+          { kind: 'edit', label: 'แก้ไข', disabled: statusPending || deletePending, onClick: onEdit },
+          { kind: 'custom', icon: statusPending ? Loader2 : CirclePlay, label: 'เริ่มงาน', disabled: statusPending || deletePending, hidden: isTerminal || task.status === 'กำลังทำ', onClick: () => onStatus('กำลังทำ') },
+          { kind: 'custom', icon: statusPending ? Loader2 : Check, label: 'ทำงานเสร็จ', disabled: statusPending || deletePending, hidden: isTerminal, onClick: () => onStatus('เสร็จแล้ว') },
           {
             kind: 'cancel',
             label: 'ยกเลิกงาน',
             hidden: isTerminal,
-            isPending: pending,
+            disabled: deletePending,
+            isPending: statusPending,
             confirmDescription: 'งานนี้จะถูกยกเลิก แต่ยังอยู่ในรายการและประวัติการทำงานเพื่อการตรวจสอบย้อนหลัง',
             onConfirm: () => onStatus('ยกเลิก'),
+          },
+          {
+            kind: 'delete',
+            label: 'ลบ',
+            hidden: task.status === 'ยกเลิก',
+            disabled: statusPending,
+            isPending: deletePending,
+            confirmTitle: `ยืนยันลบ “${task.title}”?`,
+            confirmDescription: 'งานจะถูกย้ายเป็นสถานะยกเลิกและซ่อนจากรายการงานที่เปิดอยู่ โดยระบบยังเก็บประวัติไว้สำหรับการตรวจสอบย้อนหลัง',
+            onConfirm: onDelete,
           },
         ]}
       />
@@ -269,6 +287,24 @@ export function TasksPage() {
     statusMutation.mutate({ id: task.id, nextStatus });
   };
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
+    onMutate: () => setActionError(null),
+    onSuccess: (_data, id) => {
+      setSelectedTaskId((current) => current === id ? null : current);
+      setDetailTaskId((current) => current === id ? null : current);
+      setToast({ tone: 'success', message: 'ลบงานสำเร็จ' });
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['task-dashboard'] });
+    },
+    onError: (error) => setActionError(error instanceof ApiError ? error.message : 'ลบงานไม่สำเร็จ กรุณาลองใหม่'),
+  });
+
+  const deleteTask = (task: Task) => {
+    if (deleteMutation.isPending || statusMutation.isPending) return;
+    deleteMutation.mutate(task.id);
+  };
+
   const navItems: { scope: Scope; label: string; icon: typeof Gauge; count?: number; view?: View }[] = [
     { scope: 'focus', label: 'ภาพรวม', icon: Grid2X2, count: openTasks.length },
     { scope: 'today', label: 'วันนี้', icon: Sun, count: summary.today + summary.overdue, view: 'list' },
@@ -383,14 +419,22 @@ export function TasksPage() {
 
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'list' && (
               <div className="overflow-hidden rounded-b-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]">
-                <div className="hidden grid-cols-[minmax(0,1fr)_130px_125px_132px] gap-3 bg-surface-header px-4 py-2 font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400 sm:grid"><span>งาน</span><span>ความคืบหน้า</span><span>สถานะ / กำหนด</span><span className="text-right">จัดการ</span></div>
+                <div className="hidden grid-cols-[minmax(0,1fr)_130px_125px_210px] gap-3 bg-surface-header px-4 py-2 font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400 sm:grid"><span>งาน</span><span>ความคืบหน้า</span><span>สถานะ / กำหนด</span><span className="text-right">จัดการ</span></div>
                 <div className="divide-y divide-hairline-row dark:divide-white/[.07]">
                   {pagedTasks.map((task) => (
-                    <article key={task.id} aria-selected={selectedTaskId === task.id} className={cn('grid cursor-pointer gap-3 px-4 py-3 transition hover:bg-primary-50/60 dark:hover:bg-white/[.05] sm:grid-cols-[minmax(0,1fr)_130px_125px_132px] sm:items-center', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)}>
+                    <article key={task.id} aria-selected={selectedTaskId === task.id} className={cn('grid cursor-pointer gap-3 px-4 py-3 transition hover:bg-primary-50/60 dark:hover:bg-white/[.05] sm:grid-cols-[minmax(0,1fr)_130px_125px_210px] sm:items-center', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)}>
                       <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] font-semibold text-primary-700 dark:text-primary-300">{task.task_no}</span><h3 className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{task.title}</h3><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></div><p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'} · {task.description || task.category}</p></div>
                       <TaskProgress value={task.progress} />
                       <div><Badge variant={statusTone[task.status]}>{task.status}</Badge><div className="mt-1"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></div></div>
-                      <TaskActions task={task} pending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setDetailTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} />
+                      <TaskActions
+                        task={task}
+                        statusPending={statusMutation.isPending && statusMutation.variables?.id === task.id}
+                        deletePending={deleteMutation.isPending && deleteMutation.variables === task.id}
+                        onView={() => setSelectedTaskId(task.id)}
+                        onEdit={() => setDetailTaskId(task.id)}
+                        onStatus={(nextStatus) => changeStatus(task, nextStatus)}
+                        onDelete={() => deleteTask(task)}
+                      />
                     </article>
                   ))}
                 </div>
@@ -398,9 +442,9 @@ export function TasksPage() {
             )}
 
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'table' && (
-              <DataTable mode="server" tableId="personal-tasks" rowNumberStart={(currentPage - 1) * pageSize + 1} cardOnMobile className="w-full min-w-[850px] text-left text-xs" containerClassName="rounded-b-card">
+              <DataTable mode="server" tableId="personal-tasks" rowNumberStart={(currentPage - 1) * pageSize + 1} cardOnMobile className="w-full min-w-[950px] text-left text-xs" containerClassName="rounded-b-card">
                 <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">งาน</th><th className="px-3 py-3">ประเภท</th><th className="px-3 py-3">ความสำคัญ</th><th className="px-3 py-3">ครบกำหนด</th><th className="px-3 py-3">ความคืบหน้า</th><th className="px-3 py-3">สถานะ</th><th className="px-3 py-3">จัดการ</th></tr></thead>
-                <tbody>{pagedTasks.map((task) => <tr key={task.id} aria-selected={selectedTaskId === task.id} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)} className={cn('cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')}><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-primary-700 dark:text-primary-300">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} pending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setDetailTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} /></td></tr>)}</tbody>
+                <tbody>{pagedTasks.map((task) => <tr key={task.id} aria-selected={selectedTaskId === task.id} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)} className={cn('cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')}><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-primary-700 dark:text-primary-300">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} statusPending={statusMutation.isPending && statusMutation.variables?.id === task.id} deletePending={deleteMutation.isPending && deleteMutation.variables === task.id} onView={() => setSelectedTaskId(task.id)} onEdit={() => setDetailTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} onDelete={() => deleteTask(task)} /></td></tr>)}</tbody>
               </DataTable>
             )}
 
