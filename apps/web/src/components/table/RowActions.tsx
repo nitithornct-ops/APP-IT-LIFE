@@ -104,11 +104,12 @@ export function RowActions({ recordLabel, actions, className }: RowActionsProps)
           const content = <><Icon className="h-3.5 w-3.5" aria-hidden />{label}</>;
 
           const button = action.to && !action.disabled
-            ? <Link key={index} to={action.to} aria-label={`${label} ${recordLabel}`} className={cn(BUTTON_CLASS, base.tone)}>{content}</Link>
+            ? <Link key={index} to={action.to} title={label} aria-label={`${label} ${recordLabel}`} className={cn(BUTTON_CLASS, base.tone)}>{content}</Link>
             : (
               <button
                 key={index}
                 type="button"
+                title={label}
                 disabled={action.disabled}
                 aria-label={`${label} ${recordLabel}`}
                 onClick={() => { if (!base.needsConfirm) { action.onClick?.(); return; } setReason(''); setPending(action); }}
