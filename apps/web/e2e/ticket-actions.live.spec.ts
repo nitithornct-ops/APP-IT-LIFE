@@ -15,7 +15,7 @@ test('opens the shared work panel from the Ticket list and explains final status
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto('/tickets');
-  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const workAction = page.getByRole('link', { name: /(?:ดำเนินการ|ตรวจสอบ \/ ปิดงาน) TCK-/ }).first();
   await expect(workAction).toBeVisible();
@@ -44,7 +44,7 @@ test('sorts the Ticket list by SLA due date and keeps the sort across pages', as
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto('/tickets');
-  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const slaHeader = page.getByRole('columnheader', { name: /สถานะ\/SLA/ });
   await expect(slaHeader).toHaveAttribute('aria-sort', 'none');
@@ -87,7 +87,7 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto('/tickets');
-  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   // เรียงก่อนกรอง เพราะเมื่อกรองแคบลงแล้วอาจไม่เหลือแถวในสภาพแวดล้อมจริง และหัวตารางจะหายไปพร้อมกับปุ่มเรียง
   await page.getByRole('button', { name: /เรียงตามวันครบกำหนด SLA/ }).click();
@@ -104,7 +104,7 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
   // refresh แล้วค่าต้องคงเดิม — สถานะอยู่ใน URL ไม่ใช่ใน memory
   const sharedUrl = page.url();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(priorityFilter).toHaveValue('วิกฤต');
   expect(page.url()).toBe(sharedUrl);
 
@@ -133,7 +133,7 @@ test('selects tickets and reports bulk results per ticket', async ({ page }) => 
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto('/tickets');
-  await expect(page.getByRole('heading', { name: 'Ticket', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const selectAll = page.getByRole('checkbox', { name: 'เลือกทุกรายการในหน้านี้', exact: true });
   await expect(selectAll).toBeVisible();

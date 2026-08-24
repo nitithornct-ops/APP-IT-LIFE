@@ -122,7 +122,7 @@ test('live API returns role-aware and RLS-aware dashboard summaries', async () =
 
 test('admin dashboard renders operational cards and urgent data', async ({ page }) => {
   await login(page, emails.admin);
-  await expect(page.getByText('ศูนย์ควบคุมงานปฏิบัติการไอที', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /วันนี้มี \d+ เรื่อง ที่ควรจัดการก่อนงานอื่น/ })).toBeVisible();
   await expect(page.getByText('สุขภาพงานควบคุมเชิงปฏิบัติการ', { exact: true })).toBeVisible();
   await expect(page.getByText(adminTicketTitle, { exact: true })).toBeVisible();
   await expect(page.getByLabel('ช่วงเตือนล่วงหน้า')).toHaveValue('30');
@@ -133,7 +133,7 @@ test('regular user dashboard keeps organizational records out of the personal vi
   const context = await browser.newContext();
   const page = await context.newPage();
   await login(page, emails.user);
-  await expect(page.getByText('งานและคำขอของฉัน', { exact: true })).toBeVisible();
+  await expect(page.getByText(/งานและคำขอของฉัน/)).toBeVisible();
   await expect(page.getByText(userTicketTitle, { exact: true })).toBeVisible();
   await expect(page.getByText(adminTicketTitle, { exact: true })).toHaveCount(0);
   await page.screenshot({ path: 'test-results/module21-dashboard-user.png', fullPage: true });
