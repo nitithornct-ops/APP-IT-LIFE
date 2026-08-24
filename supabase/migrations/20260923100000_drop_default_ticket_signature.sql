@@ -9,11 +9,9 @@
 -- และสิทธิ์แนบลายเซ็นย้ายจาก setting.manage ไปเป็น ticket.update เพราะคนเซ็นคือคนปิดงานหน้างาน
 -- ============================================================================
 
--- ไฟล์ลายเซ็นกลางเก็บไว้ใต้ prefix 'default/' ส่วนของราย Ticket อยู่ใต้ 'tickets/<id>/'
--- จึงลบเฉพาะ prefix แรกได้โดยไม่แตะลายเซ็นจริงของใบไหนเลย
-delete from storage.objects
-where bucket_id = 'ticket-signatures'
-  and name like 'default/%';
+-- Supabase ไม่อนุญาตให้ migration ลบ storage.objects โดยตรง ต้องลบไฟล์ผ่าน
+-- Storage API เท่านั้น การลบ setting ด้านล่างทำให้ไฟล์ default เดิมไม่ถูกอ้างอิงอีก
+-- ส่วน object เก่าที่อาจมีอยู่ให้ cleanup ผ่าน Storage API แยกจาก schema migration
 
 delete from public.system_settings
 where key = 'TICKET_FORM_SIGNATURE_PATH';

@@ -89,9 +89,14 @@ test('primary task actions call the API and update the interface', async ({ page
   await expect(page.getByTestId('task-create-modal')).toHaveCount(0);
   await expect(page.getByText('งานทดสอบ Action', { exact: true })).toBeVisible();
 
+  const startResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && /\/api\/v1\/tasks\/[^/]+\/status$/.test(new URL(response.url()).pathname)
+  ));
   await page.getByLabel('เริ่มงาน จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
+  expect((await startResponsePromise).ok()).toBeTruthy();
   const reportCard = page.getByRole('article').filter({ hasText: 'จัดทำรายงานความพร้อมประจำเดือน' });
-  await expect(reportCard.getByText('กำลังทำ', { exact: true })).toBeVisible();
+  await expect(reportCard.getByText('กำลังทำ', { exact: true })).toBeVisible({ timeout: 20_000 });
 
   await page.getByLabel('ดูรายละเอียด จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
   await expect(page.getByTestId('task-detail-panel')).toBeVisible();
