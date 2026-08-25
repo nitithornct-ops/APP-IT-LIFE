@@ -3,7 +3,7 @@ import { createClient, type Session } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-function liveSupabaseConfig() {
+export function liveSupabaseConfig() {
   const path = resolve(process.cwd(), '../api/.dev.vars');
   const vars = Object.fromEntries(
     readFileSync(path, 'utf8')

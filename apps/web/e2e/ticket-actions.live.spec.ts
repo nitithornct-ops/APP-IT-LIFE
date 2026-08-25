@@ -1,8 +1,53 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { installLiveSession } from './helpers/liveAuth';
+import { installLiveSession, liveSupabaseConfig } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_TICKET_ACTIONS_E2E !== '1', 'Live Ticket action E2E is opt-in');
+test.describe.configure({ mode: 'serial' });
+
+const runId = Date.now();
+const fixtureTitle = `E2E Ticket actions ${runId}`;
+let service: SupabaseClient;
+let ticketId = '';
+let ticketNo = '';
+
+test.beforeAll(async () => {
+  const { supabaseUrl, serviceRoleKey } = liveSupabaseConfig();
+  service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  const { data: category, error: categoryError } = await service
+    .from('ticket_categories')
+    .select('id')
+    .eq('status', 'active')
+    .limit(1)
+    .single();
+  if (categoryError) throw categoryError;
+
+  const trackingHash = createHash('sha256').update(`ticket-actions-${runId}`).digest('hex');
+  const { data: ticket, error: ticketError } = await service
+    .from('tickets')
+    .insert({
+      title: fixtureTitle,
+      description: 'ข้อมูลทดสอบสำหรับเปิดแผงดำเนินการ Ticket',
+      category_id: category.id,
+      priority: 'ปานกลาง',
+      status: 'ใหม่',
+      source_channel: 'guest',
+      guest_name: 'E2E Ticket Actions',
+      public_tracking_token_hash: trackingHash,
+    })
+    .select('id, ticket_no')
+    .single();
+  if (ticketError || !ticket) throw ticketError ?? new Error('Could not create Ticket actions fixture');
+  ticketId = ticket.id;
+  ticketNo = ticket.ticket_no;
+});
+
+test.afterAll(async () => {
+  if (service && ticketId) await service.from('tickets').delete().eq('id', ticketId);
+});
 
 async function login(page: Page) {
   const email = process.env.UAT_ADMIN_EMAIL;
@@ -17,7 +62,7 @@ test('opens the shared work panel from the Ticket list and explains final status
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
-  const workAction = page.getByRole('link', { name: /(?:ดำเนินการ|ตรวจสอบ \/ ปิดงาน) TCK-/ }).first();
+  const workAction = page.getByRole('link', { name: `ดำเนินการ ${ticketNo}`, exact: true });
   await expect(workAction).toBeVisible();
   await workAction.click();
 

@@ -5,12 +5,14 @@ import { calculateTicketOverallRating } from '@itlife/shared';
 import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
 } from '../lib/lineAuth';
-import { notifyTicketTeam } from '../lib/lineMessaging';
+import { notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { sendNotification } from '../services/notificationService';
+import { permissionRecipientIds } from '../services/permissionRecipientService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, LineUserProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
@@ -95,6 +97,30 @@ function clientProfile(user: LineUserRecord) {
     linkStatus: user.link_status ?? 'Pending',
     friendStatus: user.friend_status ?? 'Unknown',
   };
+}
+
+async function notifyPendingLineLinkApprovers(c: Context<AppEnv>, user: LineUserRecord): Promise<void> {
+  try {
+    const recipients = await permissionRecipientIds(c.env, 'line.manage');
+    await Promise.all(recipients.map((recipientId) => sendNotification(c.env, {
+      recipientId,
+      type: 'line_link_approval_needed',
+      title: `บัญชี LINE รออนุมัติ: ${user.full_name ?? user.display_name ?? user.employee_code ?? 'ผู้ใช้งาน LINE'}`,
+      body: user.employee_code ? `รหัสพนักงาน ${user.employee_code}${user.department ? ` · ${user.department}` : ''}` : null,
+      link: '/admin/line-links',
+    })));
+    if (!recipients.length) {
+      console.warn(JSON.stringify({ msg: 'line_link_approval_has_no_recipients', lineUserId: user.id }));
+    }
+  } catch (error) {
+    // The employee link is already stored and remains reviewable from the admin page.
+    // Do not report a false link failure to the LINE user if notification delivery is unavailable.
+    console.error(JSON.stringify({
+      msg: 'line_link_approval_notification_failed',
+      lineUserId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
 }
 
 lineRoute.get('/bootstrap', async (c) => {
@@ -226,6 +252,8 @@ lineRoute.post(
     }
 
     const autoApprove = c.env.LINE_AUTO_APPROVE_EMPLOYEE_LINK === 'true';
+    const shouldNotifyApprovers = !autoApprove
+      && (lineUser.link_status !== 'Pending' || lineUser.employee_code !== employee.employee_code);
     const departmentName = firstRelationField<{ name_th: string }>(profile?.departments)?.name_th ?? null;
     const { data: updated, error } = await admin
       .from('line_users')
@@ -246,6 +274,7 @@ lineRoute.post(
       targetTable: 'line_users', targetId: lineUser.line_user_id,
       detail: { employeeCode: employee.employee_code, autoApprove }, requestId: reqId,
     });
+    if (shouldNotifyApprovers) await notifyPendingLineLinkApprovers(c, updated as LineUserRecord);
     return c.json(ok(reqId, clientProfile(updated as LineUserRecord)));
   },
 );
@@ -434,6 +463,13 @@ lineRoute.post(
     const reqId = c.get('requestId');
     const { status } = c.req.valid('json');
     const admin = createAdminClient(c.env);
+    const { data: current, error: currentError } = await admin
+      .from('line_users')
+      .select('*')
+      .eq('id', c.req.param('id'))
+      .maybeSingle();
+    if (currentError) return dbFailJson(c, 'LINE_ADMIN_LOAD_FAILED', currentError);
+    if (!current) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
     const { data: updated, error } = await admin.from('line_users').update({ link_status: status }).eq('id', c.req.param('id')).select('*').maybeSingle();
     if (error) return dbFailJson(c, 'LINE_ADMIN_UPDATE_FAILED', error);
     if (!updated) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
@@ -441,6 +477,12 @@ lineRoute.post(
       actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'LINE_ADMIN_UPDATE_LINK_STATUS',
       module: 'line', targetTable: 'line_users', targetId: updated.id, detail: { status }, requestId: reqId,
     });
+    if (current.link_status !== status && (status === 'Active' || status === 'Suspended')) {
+      const message = status === 'Active'
+        ? `การเชื่อมบัญชี LINE กับรหัสพนักงาน ${updated.employee_code ?? ''} ได้รับการอนุมัติแล้ว สามารถแจ้งซ่อมผ่าน LINE Service Portal ได้`
+        : 'บัญชี LINE ของท่านถูกระงับการใช้งาน กรุณาติดต่อส่วนงาน IT';
+      await sendLinePush(c.env, updated.line_user_id, message, updated.id);
+    }
     return c.json(ok(reqId, updated));
   },
 );

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, Link2Off, Loader2, MessageCircle, RotateCcw, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
@@ -107,14 +108,25 @@ export function LineLinksPage() {
                         </Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <RowActions
-                          recordLabel={row.full_name ?? row.display_name ?? row.employee_code ?? 'บัญชี LINE'}
-                          actions={[
-                            { kind: 'custom', icon: CheckCircle2, label: 'อนุมัติ', hidden: row.link_status !== 'Pending', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
-                            { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
-                            { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ ข้อมูลการเชื่อมโยงยังอยู่ครบ', onConfirm: () => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
-                          ]}
-                        />
+                        <div className="flex items-center justify-end gap-2">
+                          {row.link_status === 'Pending' && (
+                            <Button
+                              size="sm"
+                              variant="success"
+                              isLoading={updateMutation.isPending}
+                              onClick={() => updateMutation.mutate({ id: row.id, nextStatus: 'Active' })}
+                            >
+                              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> อนุมัติ
+                            </Button>
+                          )}
+                          <RowActions
+                            recordLabel={row.full_name ?? row.display_name ?? row.employee_code ?? 'บัญชี LINE'}
+                            actions={[
+                              { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
+                              { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ ข้อมูลการเชื่อมโยงยังอยู่ครบ', onConfirm: () => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
+                            ]}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}
