@@ -1,17 +1,9 @@
 import { expect, test, type Locator } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createLiveAccessToken, installLiveSession } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_TICKET_FORM_E2E !== '1', 'Live Ticket form E2E is opt-in');
 test.describe.configure({ mode: 'serial' });
-
-function parseEnv(path: string): Record<string, string> {
-  return Object.fromEntries(readFileSync(path, 'utf8').split(/\r?\n/).filter((line) => line && !line.trimStart().startsWith('#') && line.includes('=')).map((line) => {
-    const index = line.indexOf('=');
-    return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
-  }));
-}
 
 async function expectImageLoaded(image: Locator) {
   await expect(image).toHaveAttribute('src', /^https:\/\//, { timeout: 20_000 });
@@ -26,17 +18,12 @@ async function expectImageLoaded(image: Locator) {
 }
 
 test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
-  const vars = parseEnv(resolve(process.cwd(), '../api/.dev.vars'));
   const email = process.env.UAT_ADMIN_EMAIL;
-  const password = process.env.UAT_ADMIN_PASSWORD;
   const sourceTicketId = process.env.UAT_SIGNATURE_SOURCE_TICKET_ID;
   const formTicketId = process.env.UAT_FORM_TICKET_ID;
-  if (!email || !password || !sourceTicketId || !formTicketId) throw new Error('UAT credentials and Ticket IDs are required');
+  if (!email || !sourceTicketId || !formTicketId) throw new Error('UAT email and Ticket IDs are required');
 
-  const client = createClient(vars.SUPABASE_URL, vars.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
-  if (error || !data.session) throw error ?? new Error('UAT sign in failed');
-  const auth = { authorization: `Bearer ${data.session.access_token}` };
+  const auth = { authorization: `Bearer ${await createLiveAccessToken(email)}` };
   const source = await request.get(`http://127.0.0.1:8787/api/v1/tickets/${sourceTicketId}`, { headers: auth });
   expect(source.ok(), await source.text()).toBeTruthy();
   const sourceBody = await source.json() as { data: { signature_url: string | null } };
@@ -56,10 +43,7 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   });
   expect(upload.ok(), await upload.text()).toBeTruthy();
 
-  await page.goto('/login');
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(password);
-  await page.locator('button[type="submit"]').click();
+  await installLiveSession(page, email);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto(`/tickets/${formTicketId}`);

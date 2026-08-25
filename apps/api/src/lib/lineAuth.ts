@@ -3,9 +3,8 @@ import type { Bindings } from '../types';
 /**
  * LINE Login (OAuth 2.0 / OIDC + PKCE) for the public ticket portal — port of legacy-gas/LineAuth.gs.
  * Workers has no CacheService equivalent, so OAuth `state` is self-contained instead of
- * server-stored: it carries the PKCE verifier/nonce/redirect/returnMode, HMAC-signed with
- * LINE_SESSION_SECRET and expiry-checked on callback. A forged state fails signature
- * verification the same way a missing cache entry would in the legacy version.
+ * server-stored. The state is AES-GCM encrypted with a key derived from LINE_SESSION_SECRET,
+ * keeping the PKCE verifier confidential while also providing integrity and expiry checks.
  */
 
 const AUTHORIZE_URL = 'https://access.line.me/oauth2/v2.1/authorize';
@@ -70,21 +69,49 @@ async function createPkceChallenge(verifier: string): Promise<string> {
   return toBase64Url(await sha256(verifier));
 }
 
-async function signState(payload: StatePayload, secret: string): Promise<string> {
-  const json = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-  const signature = await hmacSign(secret, json);
-  return `${json}.${signature}`;
+async function stateEncryptionKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', await sha256(secret), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function encryptState(payload: StatePayload, secret: string): Promise<string> {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    await stateEncryptionKey(secret),
+    new TextEncoder().encode(JSON.stringify(payload)),
+  );
+  return `v1.${toBase64Url(iv)}.${toBase64Url(ciphertext)}`;
+}
+
+function isValidStatePayload(value: unknown): value is StatePayload {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Partial<StatePayload>;
+  const age = Date.now() - Number(payload.createdAt);
+  return /^[0-9a-f]{64}$/.test(payload.nonce ?? '')
+    && /^[0-9a-f]{64}$/.test(payload.verifier ?? '')
+    && typeof payload.redirectUri === 'string'
+    && payload.redirectUri.length <= 1000
+    && ['report', 'status', 'kb'].includes(payload.returnMode ?? '')
+    && Number.isFinite(payload.createdAt)
+    && age >= -60_000
+    && age <= STATE_TTL_SEC * 1000;
 }
 
 async function verifyState(state: string, secret: string): Promise<StatePayload | null> {
-  const [json, signature] = state.split('.');
-  if (!json || !signature) return null;
-  const expected = await hmacSign(secret, json);
-  if (expected !== signature) return null;
+  if (state.length > 4096) return null;
+  const [version, encodedIv, encodedCiphertext, extra] = state.split('.');
+  if (version !== 'v1' || !encodedIv || !encodedCiphertext || extra) return null;
   try {
-    const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(json))) as StatePayload;
-    if (!payload.createdAt || Date.now() - payload.createdAt > STATE_TTL_SEC * 1000) return null;
-    return payload;
+    const iv = fromBase64Url(encodedIv);
+    if (iv.byteLength !== 12) return null;
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      await stateEncryptionKey(secret),
+      fromBase64Url(encodedCiphertext),
+    );
+    const payload: unknown = JSON.parse(new TextDecoder().decode(plaintext));
+    return isValidStatePayload(payload) ? payload : null;
   } catch {
     return null;
   }
@@ -117,8 +144,9 @@ export async function createLineLoginUrl(env: Bindings, returnMode: string | und
   requireLineConfig(env);
 
   const verifier = randomToken();
-  const state = await signState({
-    nonce: randomToken(),
+  const nonce = randomToken();
+  const state = await encryptState({
+    nonce,
     verifier,
     redirectUri: env.LINE_LOGIN_CALLBACK_URL,
     returnMode: normalizeReturnMode(returnMode),
@@ -131,9 +159,7 @@ export async function createLineLoginUrl(env: Bindings, returnMode: string | und
     redirect_uri: env.LINE_LOGIN_CALLBACK_URL,
     state,
     scope: 'openid profile',
-    // Re-derive the same signed state as `nonce` too: OIDC nonce must round-trip through the
-    // ID token, and re-using the same opaque value avoids storing a second secret server-side.
-    nonce: state,
+    nonce,
     code_challenge: await createPkceChallenge(verifier),
     code_challenge_method: 'S256',
     bot_prompt: 'normal',
@@ -240,9 +266,10 @@ export async function completeLineLoginCallback(
 
   const pending = await verifyState(params.state, env.LINE_SESSION_SECRET);
   if (!pending) throw new Error('คำขอ LINE Login หมดอายุหรือไม่ถูกต้อง กรุณาเริ่ม Login ใหม่');
+  if (pending.redirectUri !== env.LINE_LOGIN_CALLBACK_URL) throw new Error('LINE Login callback URL ไม่ถูกต้อง กรุณาเริ่ม Login ใหม่');
 
   const tokenData = await exchangeAuthorizationCode(env, params.code, pending.redirectUri, pending.verifier);
-  const claims = await verifyIdToken(env, tokenData.id_token, params.state);
+  const claims = await verifyIdToken(env, tokenData.id_token, pending.nonce);
   const friendFlag = await getFriendshipStatus(tokenData.access_token);
   await revokeAccessToken(env, tokenData.access_token);
 

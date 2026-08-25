@@ -11,21 +11,41 @@ import type { VendorFormPortalData, VendorResponse } from '../types/forms';
 import { formatThaiDate } from '../utils/date';
 
 const fieldClass = 'public-field mt-1 min-h-10 w-full px-3 py-2 text-sm outline-none';
+const VENDOR_TOKEN_STORAGE_KEY = 'vendor_form_token';
 const initialResponse: Required<Pick<VendorResponse, 'slaCategory' | 'rootCause' | 'resolution' | 'creditType' | 'changeTypes' | 'assessorName'>> & VendorResponse = {
   slaCategory: 'Minor Case', rootCause: '', resolution: '', prevention: '', creditType: 'none', changeTypes: [], assessorName: '',
 };
 
 export function VendorFormPortalPage() {
-  const { token = '' } = useParams();
+  const { token: legacyPathToken = '' } = useParams();
+  const [token] = useState(() => {
+    const incomingToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token') ?? legacyPathToken;
+    if (incomingToken) {
+      sessionStorage.setItem(VENDOR_TOKEN_STORAGE_KEY, incomingToken);
+      window.history.replaceState(null, '', '/vendor/forms');
+      return incomingToken;
+    }
+    return sessionStorage.getItem(VENDOR_TOKEN_STORAGE_KEY) ?? '';
+  });
   const [form, setForm] = useState(initialResponse);
   const [submitted, setSubmitted] = useState(false);
-  const query = useQuery({ queryKey: ['vendor-form', token], queryFn: () => apiFetch<VendorFormPortalData>(`/api/v1/public/forms/${token}`), retry: false });
+  const vendorHeaders = { 'x-vendor-token': token };
+  const query = useQuery({
+    queryKey: ['vendor-form', token],
+    queryFn: () => apiFetch<VendorFormPortalData>('/api/v1/public/forms/current', { headers: vendorHeaders }),
+    enabled: Boolean(token),
+    retry: false,
+  });
   useEffect(() => {
     if (query.data?.vendor_response?.submittedAt) setForm({ ...initialResponse, ...query.data.vendor_response });
   }, [query.data]);
   const submit = useMutation({
-    mutationFn: () => apiFetch<{ id: string; form_no: string; status: string; vendor_responded_at: string }>(`/api/v1/public/forms/${token}/response`, { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => { setSubmitted(true); void query.refetch(); },
+    mutationFn: () => apiFetch<{ id: string; form_no: string; status: string; vendor_responded_at: string }>('/api/v1/public/forms/current/response', { method: 'POST', headers: vendorHeaders, body: JSON.stringify(form) }),
+    onSuccess: () => {
+      sessionStorage.removeItem(VENDOR_TOKEN_STORAGE_KEY);
+      setSubmitted(true);
+      void query.refetch();
+    },
   });
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -37,7 +57,7 @@ export function VendorFormPortalPage() {
     update('changeTypes', current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   }
 
-  if (query.isLoading) return <div className="life-public flex min-h-screen items-center justify-center text-sm text-slate-500"><Clock3 className="mr-2 h-5 w-5 animate-pulse" />กำลังเปิดแบบฟอร์ม...</div>;
+  if (token && query.isLoading) return <div className="life-public flex min-h-screen items-center justify-center text-sm text-slate-500"><Clock3 className="mr-2 h-5 w-5 animate-pulse" />กำลังเปิดแบบฟอร์ม...</div>;
   if (query.isError || !query.data) return <div className="life-public flex min-h-screen items-center justify-center p-4"><Card className="public-sheet max-w-lg"><CardBody className="py-12 text-center"><FileText className="mx-auto h-12 w-12 text-slate-300" /><h1 className="mt-4 text-xl font-extrabold text-slate-800">ไม่สามารถเปิดแบบฟอร์มได้</h1><p className="mt-2 text-sm text-slate-500">ลิงก์อาจไม่ถูกต้อง หมดอายุ หรือแบบฟอร์มถูกปิดแล้ว กรุณาติดต่อเจ้าหน้าที่ IT</p></CardBody></Card></div>;
 
   const data = query.data;

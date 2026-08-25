@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CheckCircle2, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { PublicBrand } from '../components/PublicBrand';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { supabase } from '../lib/supabase';
 
 const forgotPasswordSchema = z.object({
@@ -15,6 +16,9 @@ type ForgotPasswordForm = z.infer<typeof forgotPasswordSchema>;
 
 export function ForgotPasswordPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   const {
     register,
@@ -23,11 +27,26 @@ export function ForgotPasswordPage() {
   } = useForm<ForgotPasswordForm>({ resolver: zodResolver(forgotPasswordSchema) });
 
   async function onSubmit(values: ForgotPasswordForm) {
-    await supabase.auth.resetPasswordForEmail(values.email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    // แสดงข้อความเดียวกันเสมอไม่ว่าจะพบอีเมลนี้ในระบบหรือไม่ เพื่อป้องกัน Email/User Enumeration
-    setSubmitted(true);
+    setErrorMessage(null);
+    if (!captchaToken) {
+      setErrorMessage('กรุณายืนยันความปลอดภัยก่อนส่งลิงก์');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+        captchaToken,
+      });
+      if (error) {
+        setErrorMessage('ไม่สามารถยืนยันความปลอดภัยได้ กรุณาลองใหม่อีกครั้ง');
+        return;
+      }
+      // แสดงข้อความเดียวกันเสมอไม่ว่าจะพบอีเมลนี้ในระบบหรือไม่ เพื่อป้องกัน Email/User Enumeration
+      setSubmitted(true);
+    } finally {
+      turnstileRef.current?.reset();
+    }
   }
 
   if (submitted) {
@@ -71,9 +90,18 @@ export function ForgotPasswordPage() {
             {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
           </div>
 
+          {errorMessage && (
+            <div className="public-notice flex items-center gap-2 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          <TurnstileWidget ref={turnstileRef} action="password_reset" onTokenChange={setCaptchaToken} />
+
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !captchaToken}
             className="public-primary-button flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}

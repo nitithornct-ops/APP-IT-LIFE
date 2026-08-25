@@ -75,7 +75,7 @@ describe('PublicTicketPortalPage guest status search', () => {
       if (path === '/api/v1/public/tickets/form-data') {
         return Promise.resolve({ enabled: true, categories: [], priorities: [], privacy: { version: 'test', summary: '', dpoContact: '' } });
       }
-      if (path === '/api/v1/public/tickets/TCK-2026-0099?token=ABCD-EFGH-JKLM') {
+      if (path === '/api/v1/public/tickets/TCK-2026-0099') {
         return Promise.resolve({
           ticket: {
             id: 'guest-ticket-1', ticket_no: 'TCK-2026-0099', title: 'คอมพิวเตอร์เปิดไม่ติด', description: 'ไม่มีไฟเข้า',
@@ -98,7 +98,9 @@ describe('PublicTicketPortalPage guest status search', () => {
     expect(await screen.findByText('TCK-2026-0099')).toBeVisible();
     expect(screen.getByText('คอมพิวเตอร์เปิดไม่ติด')).toBeVisible();
     expect(screen.getByText(/สถานะ: ซ่อมเสร็จ \(รอยืนยัน\)/)).toBeVisible();
-    expect(publicTicketApiFetchMock).toHaveBeenCalledWith('/api/v1/public/tickets/TCK-2026-0099?token=ABCD-EFGH-JKLM');
+    expect(publicTicketApiFetchMock).toHaveBeenCalledWith('/api/v1/public/tickets/TCK-2026-0099', {
+      headers: { 'x-tracking-token': 'ABCD-EFGH-JKLM' },
+    });
   });
 });
 

@@ -1,18 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { resolve } from 'node:path';
+import { installLiveSession } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_TICKET_ACTIONS_E2E !== '1', 'Live Ticket action E2E is opt-in');
 
-test('opens the shared work panel from the Ticket list and explains final statuses', async ({ page }) => {
+async function login(page: Page) {
   const email = process.env.UAT_ADMIN_EMAIL;
-  const password = process.env.UAT_ADMIN_PASSWORD;
-  if (!email || !password) throw new Error('UAT credentials are required');
-
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+  if (!email) throw new Error('UAT admin email is required');
+  await installLiveSession(page, email);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+}
+
+test('opens the shared work panel from the Ticket list and explains final statuses', async ({ page }) => {
+  await login(page);
 
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
@@ -33,15 +33,7 @@ test('opens the shared work panel from the Ticket list and explains final status
 });
 
 test('sorts the Ticket list by SLA due date and keeps the sort across pages', async ({ page }) => {
-  const email = process.env.UAT_ADMIN_EMAIL;
-  const password = process.env.UAT_ADMIN_PASSWORD;
-  if (!email || !password) throw new Error('UAT credentials are required');
-
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+  await login(page);
 
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
@@ -76,15 +68,7 @@ test('sorts the Ticket list by SLA due date and keeps the sort across pages', as
 });
 
 test('keeps the Ticket list filter and sort in the URL across reload and browser back', async ({ page }) => {
-  const email = process.env.UAT_ADMIN_EMAIL;
-  const password = process.env.UAT_ADMIN_PASSWORD;
-  if (!email || !password) throw new Error('UAT credentials are required');
-
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+  await login(page);
 
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
@@ -122,15 +106,7 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
 });
 
 test('selects tickets and reports bulk results per ticket', async ({ page }) => {
-  const email = process.env.UAT_ADMIN_EMAIL;
-  const password = process.env.UAT_ADMIN_PASSWORD;
-  if (!email || !password) throw new Error('UAT credentials are required');
-
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+  await login(page);
 
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });

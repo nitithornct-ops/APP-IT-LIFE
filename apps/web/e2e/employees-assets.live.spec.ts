@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { installLiveSession } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_E2E !== '1', 'Live employee/assets E2E is opt-in');
 test.describe.configure({ mode: 'serial' });
@@ -23,10 +24,7 @@ function parseEnv(path: string): Record<string, string> {
 }
 
 async function login(page: Page) {
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+  await installLiveSession(page, email);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 }
 

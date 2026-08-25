@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { createUserScopedClient } from '../lib/supabase';
 import type { AppEnv } from '../types';
+import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { fail } from '../utils/response';
 
 /** ตรวจ Supabase JWT จาก Authorization: Bearer — ปฏิเสธถ้าไม่มี/หมดอายุ/ไม่ถูกต้อง */
@@ -17,6 +18,13 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   if (error || !data.user) {
     return c.json(fail(c.get('requestId'), 'SESSION_REQUIRED', 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่'), 401);
+  }
+
+  // A user who has already enrolled a verified second factor must complete it before any
+  // protected API is available. Existing users without MFA remain on AAL1 during rollout.
+  const hasVerifiedMfa = data.user.factors?.some((factor) => factor.status === 'verified') ?? false;
+  if (hasVerifiedMfa && jwtAuthenticatorAssuranceLevel(token) !== 'aal2') {
+    return c.json(fail(c.get('requestId'), 'MFA_REQUIRED', 'กรุณายืนยันรหัส MFA เพื่อเข้าสู่ระบบต่อ'), 403);
   }
 
   // JWT ที่ออกไปแล้วอาจยังใช้ได้จนหมดอายุ แม้ Admin จะปิดบัญชีหรือเพิกถอน refresh token

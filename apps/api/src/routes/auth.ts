@@ -8,6 +8,7 @@ import { writeLoginLog } from '../services/loginLogService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { zodValidationHook } from '../utils/validation';
 import { loginLogSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
 
@@ -130,15 +131,22 @@ authRoute.post(
 
     let verifiedUserId: string | null = null;
     let verifiedEmail: string | null = null;
+    let verifiedMfaUsed = false;
+    let verifiedUserHasMfa = false;
     if (token) {
       const supabase = createUserScopedClient(c.env, token);
       const { data } = await supabase.auth.getUser(token);
       verifiedUserId = data.user?.id ?? null;
       verifiedEmail = data.user?.email ?? null;
+      verifiedMfaUsed = Boolean(data.user) && jwtAuthenticatorAssuranceLevel(token) === 'aal2';
+      verifiedUserHasMfa = data.user?.factors?.some((factor) => factor.status === 'verified') ?? false;
     }
 
     if (body.success && !verifiedUserId) {
       return c.json(fail(reqId, 'SESSION_REQUIRED', 'ต้องมี Session ที่ใช้งานได้จึงจะบันทึกการเข้าสู่ระบบสำเร็จได้'), 401);
+    }
+    if (body.success && verifiedUserHasMfa && !verifiedMfaUsed) {
+      return c.json(fail(reqId, 'MFA_REQUIRED', 'กรุณายืนยันรหัส MFA ก่อนบันทึกการเข้าสู่ระบบสำเร็จ'), 403);
     }
 
     await writeLoginLog(c.env, {
@@ -146,7 +154,7 @@ authRoute.post(
       emailAttempted: body.success ? (verifiedEmail ?? body.email) : body.email,
       success: body.success,
       failureReason: body.success ? null : body.failureReason,
-      mfaUsed: body.mfaUsed,
+      mfaUsed: verifiedMfaUsed,
       ipAddress: clientIp(c),
       userAgent: c.req.header('user-agent') ?? null,
     });

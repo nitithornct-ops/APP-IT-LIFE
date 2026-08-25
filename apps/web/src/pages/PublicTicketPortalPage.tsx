@@ -660,7 +660,9 @@ function StatusTab() {
     setError(null);
     setDetail(null);
     try {
-      setDetail(await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${id}?token=${encodeURIComponent(trackingToken)}`));
+      setDetail(await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(id)}`, {
+        headers: { 'x-tracking-token': trackingToken },
+      }));
     } catch (lookupError) {
       setError(lookupError instanceof ApiError ? lookupError.message : 'ค้นหาไม่สำเร็จ');
     } finally {

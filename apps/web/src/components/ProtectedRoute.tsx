@@ -41,10 +41,10 @@ export function ProtectedRoute({
   permission?: string;
   anyPermission?: string[];
 }) {
-  const { session, isSessionLoading, hasPermission, isMeLoading } = useAuth();
+  const { session, isSessionLoading, isMfaLoading, mfaRequired, hasPermission, isMeLoading } = useAuth();
   const location = useLocation();
 
-  if (isSessionLoading) {
+  if (isSessionLoading || (session && isMfaLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center" role="status">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
@@ -54,6 +54,11 @@ export function ProtectedRoute({
 
   if (!session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+
+  if (mfaRequired) {
+    return <Navigate to="/mfa" replace state={{ from: location.pathname }} />;
   }
 
   if (permission || anyPermission?.length) {

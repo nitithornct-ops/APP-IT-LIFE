@@ -33,6 +33,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
       UAT_ADMIN_EMAIL: ${{ secrets.UAT_ADMIN_EMAIL }}
       UAT_ADMIN_PASSWORD: ${{ secrets.UAT_ADMIN_PASSWORD }}
       UAT_SIGNATURE_SOURCE_TICKET_ID: ${{ vars.UAT_SIGNATURE_SOURCE_TICKET_ID }}
@@ -56,7 +57,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD UAT_SIGNATURE_SOURCE_TICKET_ID UAT_FORM_TICKET_ID; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD UAT_SIGNATURE_SOURCE_TICKET_ID UAT_FORM_TICKET_ID; do
             if [ -z "${!name:-}" ]; then
               echo "::error title=Staging configuration missing::$name is required"
               missing=1
@@ -69,7 +70,7 @@ jobs:
         shell: bash
         run: |
           node -e "const fs=require('fs'); fs.writeFileSync('apps/api/.dev.vars', ['SUPABASE_URL='+process.env.SUPABASE_URL,'SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'SUPABASE_SERVICE_ROLE_KEY='+process.env.SUPABASE_SERVICE_ROLE_KEY,'ALLOWED_ORIGINS=http://localhost:5173','ENVIRONMENT=staging','PUBLIC_APP_URL=http://localhost:5173','PUBLIC_TICKET_FORM_ENABLED=true'].join('\n')+'\n')"
-          node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY].join('\n')+'\n')"
+          node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'VITE_TURNSTILE_SITE_KEY='+process.env.VITE_TURNSTILE_SITE_KEY].join('\n')+'\n')"
       - name: Run all live browser and API flows
         env:
           LIVE_E2E: "1"

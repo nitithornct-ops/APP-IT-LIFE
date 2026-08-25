@@ -45,6 +45,7 @@ export default defineConfig({
       VITE_SUPABASE_URL: 'http://localhost:54321',
       VITE_SUPABASE_ANON_KEY: 'test-anon-key-not-a-real-credential',
       VITE_API_BASE_URL: 'http://localhost:8787',
+      VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
     },
   },
 });

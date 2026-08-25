@@ -2014,13 +2014,13 @@ describe('knowledge base RLS, counters and lifecycle (Phase 6 Module 18)', () =>
     ))).rejects.toThrow(/knowledge.feedback permission required/);
   });
 
-  it('deduplicates authenticated and anonymous views independently each day', async () => {
+  it('deduplicates authenticated and Worker-recorded public views independently each day', async () => {
     await asUser(db, REGULAR_USER_ID, async () => {
       await db.query('select public.record_knowledge_article_view($1, null)', [publishedId]);
       await db.query('select public.record_knowledge_article_view($1, null)', [publishedId]);
     });
     const visitorHash = 'a'.repeat(64);
-    await asAnon(db, async () => {
+    await asServiceRole(db, async () => {
       await db.query('select public.record_knowledge_article_view($1, $2)', [publishedId, visitorHash]);
       await db.query('select public.record_knowledge_article_view($1, $2)', [publishedId, visitorHash]);
     });
@@ -2029,6 +2029,12 @@ describe('knowledge base RLS, counters and lifecycle (Phase 6 Module 18)', () =>
       'select views_count from public.knowledge_articles where id = $1', [publishedId],
     ));
     expect(counter.rows).toEqual([{ views_count: 2 }]);
+  });
+
+  it('rejects anonymous clients calling the view counter RPC directly', async () => {
+    await expect(asAnon(db, async () => db.query(
+      'select public.record_knowledge_article_view($1, $2)', [publishedId, 'b'.repeat(64)],
+    ))).rejects.toThrow();
   });
 
   it('does not expose article rows directly to anonymous visitors', async () => {

@@ -300,10 +300,13 @@ publicTicketsRoute.get(
   '/:id',
   edgeRateLimit({ keyFn: (c) => `public_ticket_track:${clientIp(c)}` }),
   rateLimit({ windowMs: 3600_000, max: 30, keyFn: (c) => `public_ticket_track:${clientIp(c)}` }),
-  zValidator('query', publicTicketStatusQuerySchema, zodValidationHook),
   async (c) => {
     const reqId = c.get('requestId');
-    const { token } = c.req.valid('query');
+    const tokenResult = publicTicketStatusQuerySchema.safeParse({ token: c.req.header('x-tracking-token') });
+    if (!tokenResult.success) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    }
+    const { token } = tokenResult.data;
     const tokenHash = await hashTrackingToken(token);
     const admin = createAdminClient(c.env);
 

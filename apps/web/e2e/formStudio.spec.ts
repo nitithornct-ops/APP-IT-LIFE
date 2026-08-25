@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('Vendor can review the form and fill the response section', async ({ page }, testInfo) => {
-  await page.route('**/api/v1/public/forms/token', async (route) => {
+  await page.route('**/api/v1/public/forms/current', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -24,7 +24,7 @@ test('Vendor can review the form and fill the response section', async ({ page }
     });
   });
 
-  await page.goto('/vendor/forms/token');
+  await page.goto('/vendor/forms#token=token');
   await expect(page.getByText('Vendor Response Portal')).toBeVisible();
   await expect(page.getByText('FRM-202608-00001')).toBeVisible();
   await expect(page.getByText('ส่วนตอบกลับโดย Vendor / Outsource')).toBeVisible();

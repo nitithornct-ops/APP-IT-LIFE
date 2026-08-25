@@ -14,6 +14,7 @@ const INTENTIONALLY_WITHOUT_PAGE_TITLE: Record<string, string> = {
   'pages/WarRoomPage.tsx': 'design handoff 4a มีหัวจอ 60px ของตัวเองสำหรับดูจากระยะ 3 เมตร',
   'pages/HealthPage.tsx': 'ใช้ได้ทั้งในและนอกโครงแอป (standalone) จึงมีหัวข้อของตัวเอง',
   'pages/LoginPage.tsx': 'หน้า auth อยู่นอก AppShell',
+  'pages/MfaChallengePage.tsx': 'หน้า auth ขั้นที่สองอยู่นอก AppShell',
   'pages/ForgotPasswordPage.tsx': 'หน้า auth อยู่นอก AppShell',
   'pages/ResetPasswordPage.tsx': 'หน้า auth อยู่นอก AppShell',
   'pages/LinePortalPage.tsx': 'พอร์ทัลสาธารณะ design handoff 3a ใช้ top-nav คนละแบบ',
