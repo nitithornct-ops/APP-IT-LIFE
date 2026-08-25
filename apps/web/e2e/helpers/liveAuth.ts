@@ -44,6 +44,15 @@ export async function installLiveSession(page: Page, email: string): Promise<voi
   const { supabaseUrl } = liveSupabaseConfig();
   const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
   const session = await createLiveSession(email);
+  const loginLog = await fetch('http://127.0.0.1:8787/api/v1/auth/login-log', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.access_token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ email, success: true }),
+  });
+  if (!loginLog.ok) throw new Error(`Could not record live test login (${loginLog.status})`);
   await page.addInitScript(
     ({ storageKey, serializedSession }) => localStorage.setItem(storageKey, serializedSession),
     { storageKey: `sb-${projectRef}-auth-token`, serializedSession: JSON.stringify(session) },
