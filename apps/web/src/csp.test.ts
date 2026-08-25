@@ -65,15 +65,16 @@ describe('Content-Security-Policy', () => {
     }
   });
 
-  it('still refuses scripts and objects from anywhere but this origin', () => {
-    expect(directive('script-src')).toEqual(["'self'"]);
+  it('allows only this origin and Cloudflare Turnstile to execute or frame content', () => {
+    expect(directive('script-src')).toEqual(["'self'", 'https://challenges.cloudflare.com']);
+    expect(directive('frame-src')).toEqual(['https://challenges.cloudflare.com']);
     expect(directive('object-src')).toEqual(["'none'"]);
     expect(directive('frame-ancestors')).toEqual(["'none'"]);
     expect(directive('base-uri')).toEqual(["'self'"]);
   });
 
-  it('never widens style-src or font-src to a wildcard', () => {
-    for (const name of ['style-src', 'font-src']) {
+  it('never widens executable, framed, style, or font sources to a wildcard', () => {
+    for (const name of ['script-src', 'frame-src', 'style-src', 'font-src']) {
       expect(directive(name)).not.toContain('*');
       expect(directive(name)).not.toContain('https:');
     }
