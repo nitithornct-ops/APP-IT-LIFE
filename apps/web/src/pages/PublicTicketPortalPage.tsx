@@ -716,7 +716,7 @@ function StatusTab() {
     );
   }
 
-  if (lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Suspended') {
+  if (lineBootstrap?.authenticated && lineBootstrap.profile && lineBootstrap.profile.linkStatus !== 'Suspended') {
     return (
       <section className={`${CARD} overflow-hidden`} aria-labelledby="line-ticket-list-title">
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
