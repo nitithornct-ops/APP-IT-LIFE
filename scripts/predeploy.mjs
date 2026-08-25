@@ -4,6 +4,7 @@ const required = [
   'PRODUCTION_API_URL',
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_ANON_KEY',
+  'VITE_TURNSTILE_SITE_KEY',
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -23,6 +24,9 @@ for (const key of required) {
 }
 
 if (process.env.PRODUCTION_DEPLOY_CONFIRM !== 'DEPLOY') errors.push('PRODUCTION_DEPLOY_CONFIRM must equal DEPLOY');
+if (process.env.VITE_TURNSTILE_SITE_KEY && !/^0x[A-Za-z0-9_-]+$/.test(process.env.VITE_TURNSTILE_SITE_KEY)) {
+  errors.push('VITE_TURNSTILE_SITE_KEY must be a valid Cloudflare Turnstile sitekey');
+}
 
 function requireHttps(key) {
   const value = process.env[key];

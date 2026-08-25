@@ -50,7 +50,9 @@ describe('public edge rate limiting', () => {
       ...testEnv,
       PUBLIC_RATE_LIMITER: { limit: async () => ({ success: false }) },
     };
-    const res = await app.request('/api/v1/public/tickets/not-a-ticket?token=12345678901234567890123456789012', {}, env);
+    const res = await app.request('/api/v1/public/tickets/not-a-ticket', {
+      headers: { 'x-tracking-token': '12345678901234567890123456789012' },
+    }, env);
     expect(res.status).toBe(429);
     const body = (await res.json()) as ApiResponse<never>;
     expect(body.success).toBe(false);

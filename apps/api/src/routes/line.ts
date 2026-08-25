@@ -9,7 +9,7 @@ import { notifyTicketTeam } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { clientIp, rateLimit } from '../middleware/rateLimit';
+import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, LineUserProfile } from '../types';
@@ -121,6 +121,7 @@ lineRoute.get('/ticket-categories', async (c) => {
 
 lineRoute.get(
   '/login-url',
+  edgeRateLimit({ keyFn: (c) => `line_login_url:${clientIp(c)}` }),
   rateLimit({ windowMs: 60_000, max: 20, keyFn: (c) => `line_login_url:${clientIp(c)}` }),
   zValidator('query', lineLoginUrlQuerySchema, zodValidationHook),
   async (c) => {
@@ -181,12 +182,13 @@ lineRoute.get('/callback', async (c) => {
     });
 
     const redirect = new URL('/line/callback', frontendBase);
-    redirect.searchParams.set('token', token);
-    redirect.searchParams.set('mode', result.returnMode);
+    redirect.hash = new URLSearchParams({ token, mode: result.returnMode }).toString();
     return c.redirect(redirect.toString(), 302);
   } catch (error) {
     const redirect = new URL('/line/callback', frontendBase);
-    redirect.searchParams.set('error', error instanceof Error ? error.message : 'เข้าสู่ระบบ LINE ไม่สำเร็จ');
+    redirect.hash = new URLSearchParams({
+      error: error instanceof Error ? error.message : 'เข้าสู่ระบบ LINE ไม่สำเร็จ',
+    }).toString();
     return c.redirect(redirect.toString(), 302);
   }
 });

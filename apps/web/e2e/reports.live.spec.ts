@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createLiveAccessToken, installLiveSession } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_REPORT_E2E !== '1', 'Live Report Center E2E is opt-in');
 test.describe.configure({ mode: 'serial' });
@@ -15,8 +16,6 @@ const emails = {
 };
 const userIds: string[] = [];
 let service: SupabaseClient;
-let anonKey = '';
-let supabaseUrl = '';
 
 function parseEnv(path: string): Record<string, string> {
   return Object.fromEntries(readFileSync(path, 'utf8').split(/\r?\n/).filter((line) => line && !line.trimStart().startsWith('#') && line.includes('=')).map((line) => {
@@ -36,10 +35,7 @@ async function createUser(email: string, role: string, name: string) {
 }
 
 async function token(email: string): Promise<string> {
-  const client = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
-  if (error || !data.session) throw error ?? new Error('sign in failed');
-  return data.session.access_token;
+  return createLiveAccessToken(email);
 }
 
 async function api<T>(accessToken: string, path: string, init?: RequestInit, expectedStatus = 200): Promise<T> {
@@ -51,18 +47,13 @@ async function api<T>(accessToken: string, path: string, init?: RequestInit, exp
 }
 
 async function login(page: Page, email: string) {
-  await page.goto('/login');
-  await page.getByLabel('อีเมล', { exact: true }).fill(email);
-  await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+  await installLiveSession(page, email);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 }
 
 test.beforeAll(async () => {
   const vars = parseEnv(resolve(process.cwd(), '../api/.dev.vars'));
-  supabaseUrl = vars.SUPABASE_URL;
-  anonKey = vars.SUPABASE_ANON_KEY;
-  service = createClient(supabaseUrl, vars.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  service = createClient(vars.SUPABASE_URL, vars.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const adminId = await createUser(emails.admin, 'it_admin', 'Module 20 Admin');
   await createUser(emails.user, 'user', 'Module 20 User');
   await service.from('tickets').insert({ title: `LIVE20 Report Ticket ${runId}`, requester_id: adminId, description: 'Report Center live test', priority: 'สูง', status: 'ใหม่', due_at: new Date(Date.now() - 86_400_000).toISOString(), created_by: adminId, updated_by: adminId });

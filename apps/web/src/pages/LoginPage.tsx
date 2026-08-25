@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { PublicBrand } from '../components/PublicBrand';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { supabase } from '../lib/supabase';
 import { apiFetch, showToast } from '../services/apiClient';
 
@@ -36,6 +37,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   const {
     register,
@@ -45,18 +48,37 @@ export function LoginPage() {
 
   async function onSubmit(values: LoginForm) {
     setErrorMessage(null);
-    const { error } = await supabase.auth.signInWithPassword(values);
-
-    if (error) {
-      await recordLoginAttempt(values.email, false, error.message);
-      setErrorMessage('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+    if (!captchaToken) {
+      setErrorMessage('กรุณายืนยันความปลอดภัยก่อนเข้าสู่ระบบ');
       return;
     }
 
-    await recordLoginAttempt(values.email, true);
-    showToast('success', 'เข้าสู่ระบบสำเร็จ');
-    const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
-    navigate(redirectTo, { replace: true });
+    try {
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
+        ...values,
+        options: { captchaToken },
+      });
+
+      if (error) {
+        await recordLoginAttempt(values.email, false, error.message);
+        setErrorMessage('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+        return;
+      }
+
+      const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
+      const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const hasVerifiedFactor = signInData.user?.factors?.some((factor) => factor.status === 'verified') ?? false;
+      if ((aalError && hasVerifiedFactor) || (!aalError && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2')) {
+        navigate('/mfa', { replace: true, state: { from: redirectTo } });
+        return;
+      }
+
+      await recordLoginAttempt(values.email, true);
+      showToast('success', 'เข้าสู่ระบบสำเร็จ');
+      navigate(redirectTo, { replace: true });
+    } finally {
+      turnstileRef.current?.reset();
+    }
   }
 
   return (
@@ -102,9 +124,11 @@ export function LoginPage() {
             </div>
           )}
 
+          <TurnstileWidget ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
+
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !captchaToken}
             className="public-primary-button flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}

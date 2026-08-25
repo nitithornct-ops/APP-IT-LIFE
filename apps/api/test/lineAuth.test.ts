@@ -92,8 +92,9 @@ describe('createLineLoginUrl', () => {
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('code_challenge')).toBeTruthy();
     expect(url.searchParams.get('state')).toBeTruthy();
-    // nonce is the same opaque signed value as state (see lineAuth.ts's comment on why)
-    expect(url.searchParams.get('nonce')).toBe(url.searchParams.get('state'));
+    expect(url.searchParams.get('nonce')).toMatch(/^[0-9a-f]{64}$/);
+    expect(url.searchParams.get('nonce')).not.toBe(url.searchParams.get('state'));
+    expect(url.searchParams.get('state')).toMatch(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   });
 });
 
@@ -102,7 +103,6 @@ describe('completeLineLoginCallback', () => {
   beforeEach(() => { global.fetch = vi.fn(); });
   afterEach(() => { global.fetch = originalFetch; });
 
-  /** `nonce` must equal the signed `state` the caller generated, since createLineLoginUrl reuses it as the OIDC nonce. */
   function mockLineApis(nonce: string, overrides: { sub?: string; aud?: string; friendFlag?: boolean } = {}) {
     (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -139,7 +139,7 @@ describe('completeLineLoginCallback', () => {
   it('completes the flow end to end: builds a login URL, then resolves the callback with matching nonce', async () => {
     const url = new URL(await createLineLoginUrl(configuredEnv, 'kb'));
     const state = url.searchParams.get('state')!;
-    mockLineApis(state, { sub: `U${'b'.repeat(32)}` });
+    mockLineApis(url.searchParams.get('nonce')!, { sub: `U${'b'.repeat(32)}` });
 
     const result = await completeLineLoginCallback(configuredEnv, { code: 'auth-code', state });
     expect(result.lineUserId).toBe(`U${'b'.repeat(32)}`);
@@ -154,7 +154,7 @@ describe('completeLineLoginCallback', () => {
   it('rejects when the verified ID token aud does not match the configured channel (token issued for a different channel)', async () => {
     const url = new URL(await createLineLoginUrl(configuredEnv, 'report'));
     const state = url.searchParams.get('state')!;
-    mockLineApis(state, { aud: '999999999' });
+    mockLineApis(url.searchParams.get('nonce')!, { aud: '999999999' });
     await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state })).rejects.toThrow('ไม่ได้ออกให้ Channel นี้');
   });
 });

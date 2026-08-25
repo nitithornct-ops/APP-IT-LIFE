@@ -232,7 +232,7 @@ formsRoute.post('/issues/:id/send-vendor', requirePermission('form.vendor_send')
   if (error) return dbFailJson(c, 'ISSUE_FORM_VENDOR_SEND_FAILED', error);
   await addActivity(c.env, issue.id, 'SEND_VENDOR', actorId, { vendorId: body.vendorId, expiresAt, dueDate: body.dueDate || null });
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'SEND_VENDOR', module: 'form', targetTable: 'issue_forms', targetId: issue.id, detail: { vendorId: body.vendorId, expiresAt }, requestId: reqId });
-  return c.json(ok(reqId, { issue: data, vendorLink: `/vendor/forms/${token}`, vendor }));
+  return c.json(ok(reqId, { issue: data, vendorLink: `/vendor/forms#token=${encodeURIComponent(token)}`, vendor }));
 });
 
 formsRoute.post('/issues/:id/close', requirePermission('form.close'), async (c) => {
@@ -256,18 +256,22 @@ async function findVendorIssue(env: AppEnv['Bindings'], token: string) {
   ).eq('vendor_access_token_hash', tokenHash).maybeSingle();
 }
 
-publicFormsRoute.get('/:token', edgeRateLimit({ keyFn: (c) => `vendor_form_read:${clientIp(c)}` }), rateLimit({ windowMs: 3600_000, max: 60, keyFn: (c) => `vendor_form_read:${clientIp(c)}` }), zValidator('param', vendorTokenParamSchema, zodValidationHook), async (c) => {
+publicFormsRoute.get('/current', edgeRateLimit({ keyFn: (c) => `vendor_form_read:${clientIp(c)}` }), rateLimit({ windowMs: 3600_000, max: 60, keyFn: (c) => `vendor_form_read:${clientIp(c)}` }), async (c) => {
   const reqId = c.get('requestId');
-  const { data } = await findVendorIssue(c.env, c.req.valid('param').token);
+  const tokenResult = vendorTokenParamSchema.safeParse({ token: c.req.header('x-vendor-token') });
+  if (!tokenResult.success) return c.json(fail(reqId, 'VENDOR_FORM_NOT_FOUND', 'ไม่พบแบบฟอร์ม หรือลิงก์ไม่ถูกต้อง'), 404);
+  const { data } = await findVendorIssue(c.env, tokenResult.data.token);
   if (!data) return c.json(fail(reqId, 'VENDOR_FORM_NOT_FOUND', 'ไม่พบแบบฟอร์ม หรือลิงก์ไม่ถูกต้อง'), 404);
   if (!data.vendor_access_expires_at || Date.parse(data.vendor_access_expires_at) < Date.now()) return c.json(fail(reqId, 'VENDOR_FORM_LINK_EXPIRED', 'ลิงก์แบบฟอร์มนี้หมดอายุแล้ว กรุณาติดต่อเจ้าหน้าที่ IT'), 410);
   if (['Closed', 'Cancelled'].includes(data.status)) return c.json(fail(reqId, 'VENDOR_FORM_CLOSED', 'แบบฟอร์มนี้ปิดรับคำตอบแล้ว'), 410);
   return c.json(ok(reqId, data));
 });
 
-publicFormsRoute.post('/:token/response', edgeRateLimit({ keyFn: (c) => `vendor_form_submit:${clientIp(c)}` }), rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `vendor_form_submit:${clientIp(c)}` }), zValidator('param', vendorTokenParamSchema, zodValidationHook), zValidator('json', submitVendorFormSchema, zodValidationHook), async (c) => {
+publicFormsRoute.post('/current/response', edgeRateLimit({ keyFn: (c) => `vendor_form_submit:${clientIp(c)}` }), rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `vendor_form_submit:${clientIp(c)}` }), zValidator('json', submitVendorFormSchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
-  const token = c.req.valid('param').token;
+  const tokenResult = vendorTokenParamSchema.safeParse({ token: c.req.header('x-vendor-token') });
+  if (!tokenResult.success) return c.json(fail(reqId, 'VENDOR_FORM_NOT_FOUND', 'ไม่พบแบบฟอร์ม หรือลิงก์ไม่ถูกต้อง'), 404);
+  const token = tokenResult.data.token;
   const { data: issue } = await findVendorIssue(c.env, token);
   if (!issue) return c.json(fail(reqId, 'VENDOR_FORM_NOT_FOUND', 'ไม่พบแบบฟอร์ม หรือลิงก์ไม่ถูกต้อง'), 404);
   if (!issue.vendor_access_expires_at || Date.parse(issue.vendor_access_expires_at) < Date.now()) return c.json(fail(reqId, 'VENDOR_FORM_LINK_EXPIRED', 'ลิงก์แบบฟอร์มนี้หมดอายุแล้ว'), 410);

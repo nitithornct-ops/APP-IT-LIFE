@@ -4,7 +4,6 @@ export const loginLogSchema = z.object({
   email: z.string().email(),
   success: z.boolean(),
   failureReason: z.string().max(200).optional(),
-  mfaUsed: z.boolean().optional(),
 });
 
 export type LoginLogInput = z.infer<typeof loginLogSchema>;

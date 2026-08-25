@@ -34,6 +34,8 @@ export interface MeResponse {
 interface AuthContextValue {
   session: Session | null;
   isSessionLoading: boolean;
+  isMfaLoading: boolean;
+  mfaRequired: boolean;
   me: MeResponse | undefined;
   isMeLoading: boolean;
   meError: Error | null;
@@ -41,6 +43,7 @@ interface AuthContextValue {
   hasPermission: (key: string) => boolean;
   hasRole: (key: string) => boolean;
   signOut: () => Promise<void>;
+  refreshMfa: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -48,18 +51,41 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isSessionLoading, setIsSessionLoading] = useState(true);
+  const [isMfaLoading, setIsMfaLoading] = useState(true);
+  const [mfaRequired, setMfaRequired] = useState(false);
   const queryClient = useQueryClient();
+
+  async function evaluateMfa(nextSession: Session | null) {
+    if (!nextSession) {
+      setMfaRequired(false);
+      setIsMfaLoading(false);
+      return;
+    }
+    setIsMfaLoading(true);
+    try {
+      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const hasVerifiedFactor = nextSession.user.factors?.some((factor) => factor.status === 'verified') ?? false;
+      setMfaRequired(error ? hasVerifiedFactor : data.nextLevel === 'aal2' && data.currentLevel !== 'aal2');
+    } catch {
+      // Fail closed for accounts known to have MFA if the assurance-level check is unavailable.
+      setMfaRequired(nextSession.user.factors?.some((factor) => factor.status === 'verified') ?? false);
+    } finally {
+      setIsMfaLoading(false);
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setIsSessionLoading(false);
+      void evaluateMfa(data.session);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      void evaluateMfa(newSession);
       queryClient.invalidateQueries({ queryKey: ['me'] });
     });
 
@@ -69,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const meQuery = useQuery({
     queryKey: ['me'],
     queryFn: () => apiFetch<MeResponse>('/api/v1/auth/me'),
-    enabled: session !== null,
+    enabled: session !== null && !mfaRequired && !isMfaLoading,
     staleTime: 60_000,
   });
 
@@ -81,6 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     session,
     isSessionLoading,
+    isMfaLoading,
+    mfaRequired,
     me: meQuery.data,
     isMeLoading: meQuery.isLoading,
     meError: meQuery.error,
@@ -90,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     hasPermission: (key) => meQuery.data?.permissions.includes(key) ?? false,
     hasRole: (key) => meQuery.data?.roles.some((r) => r.role_key === key) ?? false,
     signOut,
+    refreshMfa: () => evaluateMfa(session),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

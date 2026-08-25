@@ -21,13 +21,15 @@ const ROUTES_WITHOUT_PERMISSION = new Set([
 /** Public routes rendered outside <ProtectedRoute> by design. */
 const PUBLIC_ROUTES = new Set([
   '/login',
+  '/mfa',
   '/forgot-password',
   '/reset-password',
   '/health',
   '/line',
   '/line/callback',
   '/report',
-  '/vendor/forms/:token',
+  '/vendor/forms',
+  '/vendor/forms/:token', // legacy links only; newly generated links carry the token in a fragment
 ]);
 
 interface RouteDeclaration {

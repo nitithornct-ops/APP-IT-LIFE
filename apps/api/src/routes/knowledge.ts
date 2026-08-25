@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
+import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
@@ -210,7 +211,12 @@ knowledgeRoute.delete('/articles/:id', requirePermission('knowledge.manage'), as
   return c.json(ok(reqId, { id }));
 });
 
-publicKnowledgeRoute.get('/', zValidator('query', publicKnowledgeQuerySchema, zodValidationHook), async (c) => {
+publicKnowledgeRoute.get(
+  '/',
+  edgeRateLimit({ keyFn: (c) => `public_knowledge_read:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 120, keyFn: (c) => `public_knowledge_read:${clientIp(c)}` }),
+  zValidator('query', publicKnowledgeQuerySchema, zodValidationHook),
+  async (c) => {
   const reqId = c.get('requestId'); const query = c.req.valid('query'); const admin = createAdminClient(c.env);
   let request = admin.from('knowledge_articles').select('id,article_code,title,symptom,solution,tags,views_count,helpful_count,category:ticket_categories!knowledge_articles_category_id_fkey(id,name)').eq('status', 'เผยแพร่').order('views_count', { ascending: false }).limit(100);
   if (query.categoryId) request = request.eq('category_id', query.categoryId);
@@ -218,12 +224,19 @@ publicKnowledgeRoute.get('/', zValidator('query', publicKnowledgeQuerySchema, zo
   const error = articles.error ?? categories.error; if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_LOAD_FAILED', error);
   const filtered = (articles.data ?? []).filter((article) => matchesSearch(article, query.search)).slice(0, 30).map((article) => ({ id: article.id, article_code: article.article_code, title: article.title, category: firstRelation(article.category)?.name ?? null, symptom: article.symptom, solution: article.solution, tags: article.tags, views: article.views_count, helpful: article.helpful_count }));
   return c.json(ok(reqId, { articles: filtered, categories: categories.data ?? [] }));
-});
+  },
+);
 
-publicKnowledgeRoute.post('/:id/view', zValidator('json', publicKnowledgeViewSchema, zodValidationHook), async (c) => {
+publicKnowledgeRoute.post(
+  '/:id/view',
+  edgeRateLimit({ keyFn: (c) => `public_knowledge_view:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 30, keyFn: (c) => `public_knowledge_view:${clientIp(c)}` }),
+  zValidator('json', publicKnowledgeViewSchema, zodValidationHook),
+  async (c) => {
   const reqId = c.get('requestId'); const id = c.req.param('id')!; const { clientId } = c.req.valid('json'); const admin = createAdminClient(c.env);
   const { data: article } = await admin.from('knowledge_articles').select('id').eq('id', id).eq('status', 'เผยแพร่').maybeSingle(); if (!article) return c.json(fail(reqId, 'KNOWLEDGE_NOT_FOUND', 'ไม่พบบทความที่เผยแพร่'), 404);
   const { error } = await admin.rpc('record_knowledge_article_view', { article_id_input: id, visitor_hash_input: await hashClientId(clientId) });
   if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_VIEW_FAILED', error);
   return c.json(ok(reqId, { recorded: true }));
-});
+  },
+);
