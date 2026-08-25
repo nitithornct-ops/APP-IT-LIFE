@@ -28,7 +28,7 @@ beforeEach(() => {
   });
   lineApiFetchMock.mockImplementation((path: string) => {
     if (path === '/api/v1/line/bootstrap') {
-      return Promise.resolve({ authenticated: true, profile: { fullName: 'สมชาย ใจดี', linkStatus: 'Active' } });
+      return Promise.resolve({ authenticated: true, profile: { fullName: 'สมชาย ใจดี', linkStatus: 'Pending' } });
     }
     if (path === '/api/v1/line/tickets') {
       return Promise.resolve([
@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe('PublicTicketPortalPage LINE status list', () => {
-  it('shows the logged-in LINE user tickets as a table', async () => {
+  it('shows LINE tickets without waiting for an employee-link approval status', async () => {
     render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole('button', { name: 'ติดตามสถานะ' }));

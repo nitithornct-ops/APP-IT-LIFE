@@ -125,7 +125,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Permission Matrix', path: '/admin/permission-matrix', icon: KeyRound, permission: 'role.view' },
       { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
-      { label: 'บัญชี LINE ที่ผูก', path: '/admin/line-links', icon: MessageCircle, permission: 'line.manage' },
+      { label: 'บัญชี LINE', path: '/admin/line-links', icon: MessageCircle, permission: 'line.manage' },
     ],
   },
   {

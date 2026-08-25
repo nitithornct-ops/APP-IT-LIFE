@@ -30,9 +30,7 @@ describe('Integration Center summary', () => {
     expect(result.summary).toMatchObject({ activeChannels: 3, delivered24h: 17, outboxWaiting: 1, outboxFailed: 0 });
     expect(result.channels.find((channel) => channel.id === 'line-login')?.status).toBe('active');
     expect(result.channels.find((channel) => channel.id === 'webhook')?.status).toBe('unavailable');
-    expect(result.rules.find((rule) => rule.id === 'line-link-approval')).toMatchObject({
-      channel: 'In-app Notification', recipients: 'ผู้มีสิทธิ์ line.manage', status: 'active',
-    });
+    expect(result.rules.find((rule) => rule.id === 'line-link-approval')).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain('login-secret');
     expect(JSON.stringify(result)).not.toContain('messaging-secret');
   });

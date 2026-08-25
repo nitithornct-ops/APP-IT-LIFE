@@ -17,7 +17,6 @@ export interface Bindings {
   LINE_LOGIN_CALLBACK_URL?: string;
   LINE_SESSION_SECRET?: string;
   LINE_SESSION_HOURS?: string;
-  LINE_AUTO_APPROVE_EMPLOYEE_LINK?: string;
   NOTIFY_LINE_ENABLED?: string;
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   LINE_DEFAULT_TO?: string;
@@ -49,7 +48,7 @@ export interface Variables {
   supabase: SupabaseClient;
   userId: string;
   userEmail: string;
-  /** LINE session — ตั้งค่าโดย requireLineSession/requireActiveLineSession ใน routes/line.ts เท่านั้น */
+  /** LINE session — ตั้งค่าโดย requireLineSession/requireUsableLineSession ใน routes/line.ts เท่านั้น */
   lineSession?: { token: string; user: LineUserProfile };
 }
 

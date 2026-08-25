@@ -1,10 +1,9 @@
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock3, Link2Off, Loader2, MessageCircle, RotateCcw, UsersRound } from 'lucide-react';
+import { CheckCircle2, Loader2, MessageCircle, RotateCcw, ShieldBan, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
-import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
@@ -14,26 +13,23 @@ interface LineUserRow {
   id: string;
   display_name: string | null;
   full_name: string | null;
-  employee_code: string | null;
-  department: string | null;
   link_status: 'Pending' | 'Active' | 'Suspended' | 'Unlinked' | null;
   friend_status: string | null;
   last_login_at: string | null;
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'secondary'> = {
-  Active: 'success', Pending: 'warning', Suspended: 'danger', Unlinked: 'secondary',
+  Active: 'success', Pending: 'success', Suspended: 'danger', Unlinked: 'success',
 };
-const STATUS_LABEL: Record<string, string> = { Active: 'อนุมัติแล้ว', Pending: 'รออนุมัติ', Suspended: 'ระงับ', Unlinked: 'ยกเลิกผูก' };
+const STATUS_LABEL: Record<string, string> = { Active: 'พร้อมใช้งาน', Pending: 'พร้อมใช้งาน', Suspended: 'ระงับ', Unlinked: 'พร้อมใช้งาน' };
 
 const FILTERS: Array<{ value: string; label: string }> = [
-  { value: 'Pending', label: 'รออนุมัติ' }, { value: 'Active', label: 'อนุมัติแล้ว' },
-  { value: 'Suspended', label: 'ระงับ' }, { value: '', label: 'ทั้งหมด' },
+  { value: '', label: 'ทั้งหมด' }, { value: 'Active', label: 'พร้อมใช้งาน' }, { value: 'Suspended', label: 'ระงับ' },
 ];
 
-/** อนุมัติ/ระงับการผูกบัญชี LINE กับพนักงาน — เทียบเท่า "IT Admin ตรวจและอนุมัติจากหลังบ้าน" ของระบบเดิม */
+/** ดูและระงับบัญชี LINE ที่เข้าใช้ Service Portal โดยไม่ผูกกับทะเบียนพนักงาน */
 export function LineLinksPage() {
-  const [status, setStatus] = useState('Pending');
+  const [status, setStatus] = useState('');
   const queryClient = useQueryClient();
 
   const linksQuery = useQuery({
@@ -49,13 +45,12 @@ export function LineLinksPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageTitle eyebrow="บุคลากรและสิทธิ์ / บัญชี LINE ที่ผูก" title="บัญชี LINE ที่ผูกกับพนักงาน" description="ตรวจและอนุมัติการผูกบัญชี LINE กับทะเบียนผู้ใช้ ก่อนให้สิทธิ์แจ้งซ่อมผ่านพอร์ทัลสาธารณะ" />
+      <PageTitle eyebrow="บุคลากรและสิทธิ์ / บัญชี LINE" title="บัญชี LINE ที่ใช้แจ้งซ่อม" description="บัญชี LINE ใช้งาน Service Portal ได้ทันทีโดยไม่ต้องผูกรหัสพนักงาน หน้านี้ใช้สำหรับตรวจสอบและระงับบัญชีเท่านั้น" />
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
         <StatCard icon={<UsersRound className="h-5 w-5" />} label={`รายการสถานะ ${FILTERS.find((filter) => filter.value === status)?.label ?? 'ทั้งหมด'}`} value={linksQuery.data?.length ?? 0} tone="primary" />
-        <StatCard icon={<Clock3 className="h-5 w-5" />} label="รออนุมัติ (ผลลัพธ์นี้)" value={linksQuery.data?.filter((row) => row.link_status === 'Pending').length ?? 0} tone="amber" />
-        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="อนุมัติแล้ว (ผลลัพธ์นี้)" value={linksQuery.data?.filter((row) => row.link_status === 'Active').length ?? 0} tone="teal" />
-        <StatCard icon={<Link2Off className="h-5 w-5" />} label="ระงับ/ยกเลิก (ผลลัพธ์นี้)" value={linksQuery.data?.filter((row) => row.link_status === 'Suspended' || row.link_status === 'Unlinked').length ?? 0} tone="gray" />
+        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="พร้อมใช้งาน (ผลลัพธ์นี้)" value={linksQuery.data?.filter((row) => row.link_status !== 'Suspended').length ?? 0} tone="teal" />
+        <StatCard icon={<ShieldBan className="h-5 w-5" />} label="ระงับ (ผลลัพธ์นี้)" value={linksQuery.data?.filter((row) => row.link_status === 'Suspended').length ?? 0} tone="gray" />
       </div>
 
       <Card>
@@ -90,8 +85,8 @@ export function LineLinksPage() {
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">ชื่อ LINE</th>
-                    <th className="px-2 py-2">รหัสพนักงาน</th>
-                    <th className="px-2 py-2">หน่วยงาน</th>
+                    <th className="px-2 py-2">สถานะเพื่อน LINE OA</th>
+                    <th className="px-2 py-2">เข้าใช้ล่าสุด</th>
                     <th className="px-2 py-2">สถานะ</th>
                     <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
@@ -100,8 +95,8 @@ export function LineLinksPage() {
                   {linksQuery.data.map((row) => (
                     <tr key={row.id} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="px-2 py-2 font-medium text-slate-800 dark:text-slate-200">{row.full_name ?? row.display_name ?? '-'}</td>
-                      <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{row.employee_code ?? '-'}</td>
-                      <td className="px-2 py-2 text-slate-600 dark:text-slate-300">{row.department ?? '-'}</td>
+                      <td className="px-2 py-2 text-slate-600 dark:text-slate-300">{row.friend_status ?? '-'}</td>
+                      <td className="px-2 py-2 text-xs text-slate-500 dark:text-slate-400">{row.last_login_at ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.last_login_at)) : '-'}</td>
                       <td className="px-2 py-2">
                         <Badge variant={row.link_status ? STATUS_VARIANT[row.link_status] : 'secondary'}>
                           {row.link_status ? STATUS_LABEL[row.link_status] : '-'}
@@ -109,21 +104,11 @@ export function LineLinksPage() {
                       </td>
                       <td className="px-2 py-2 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {row.link_status === 'Pending' && (
-                            <Button
-                              size="sm"
-                              variant="success"
-                              isLoading={updateMutation.isPending}
-                              onClick={() => updateMutation.mutate({ id: row.id, nextStatus: 'Active' })}
-                            >
-                              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> อนุมัติ
-                            </Button>
-                          )}
                           <RowActions
-                            recordLabel={row.full_name ?? row.display_name ?? row.employee_code ?? 'บัญชี LINE'}
+                            recordLabel={row.full_name ?? row.display_name ?? 'บัญชี LINE'}
                             actions={[
                               { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
-                              { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ ข้อมูลการเชื่อมโยงยังอยู่ครบ', onConfirm: () => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
+                              { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ', onConfirm: () => updateMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
                             ]}
                           />
                         </div>

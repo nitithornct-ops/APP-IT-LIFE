@@ -642,7 +642,7 @@ function StatusTab() {
       try {
         const bootstrap = await lineApiFetch<LineBootstrap>('/api/v1/line/bootstrap');
         setLineBootstrap(bootstrap);
-        if (bootstrap.authenticated && bootstrap.profile?.linkStatus === 'Active') {
+        if (bootstrap.authenticated && bootstrap.profile?.linkStatus !== 'Suspended') {
           setLineTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
         }
       } catch (loadError) {
@@ -716,7 +716,7 @@ function StatusTab() {
     );
   }
 
-  if (lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus === 'Active') {
+  if (lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Suspended') {
     return (
       <section className={`${CARD} overflow-hidden`} aria-labelledby="line-ticket-list-title">
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -773,10 +773,10 @@ function StatusTab() {
 
   return (
     <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
-      {lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Active' && (
+      {lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus === 'Suspended' && (
         <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          บัญชี LINE เข้าสู่ระบบแล้ว แต่ยังไม่ได้ผูกหรืออนุมัติบัญชีพนักงาน จึงยังแสดงรายการอัตโนมัติไม่ได้
-          <Link to="/line" className="ml-1 font-semibold text-primary-700 hover:underline">ดำเนินการต่อ</Link>
+          บัญชี LINE นี้ถูกระงับ จึงยังแสดงรายการ Ticket อัตโนมัติไม่ได้
+          <Link to="/line" className="ml-1 font-semibold text-primary-700 hover:underline">ดูรายละเอียด</Link>
         </div>
       )}
       {lineError && <div className="mb-5 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}

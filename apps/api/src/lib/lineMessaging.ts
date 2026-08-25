@@ -27,7 +27,7 @@ export async function sendLinePush(env: Bindings, to: string, message: string, l
   }
 }
 
-/** Never blocks a ticket update on the requester's linked LINE identity — resolves to null (no push) if unset/not found. */
+/** Never blocks a ticket update on the requester's LINE identity — resolves to null (no push) if unset/not found. */
 export async function resolveTicketRequesterLineTarget(env: Bindings, requesterLineUserId: string | null): Promise<{ target: string; lineUserId: string } | null> {
   if (!requesterLineUserId) return null;
   const admin = createAdminClient(env);

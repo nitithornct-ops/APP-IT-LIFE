@@ -13,8 +13,8 @@ interface LineBootstrap {
   message: string;
   authenticated: boolean;
   profile: {
-    displayName: string; pictureUrl: string; fullName: string; department: string;
-    employeeCode: string; linkStatus: string; friendStatus: string;
+    displayName: string; pictureUrl: string; fullName: string;
+    linkStatus: string; friendStatus: string;
   } | null;
 }
 
@@ -122,8 +122,6 @@ export function LinePortalPage() {
         <div className={CARD}>
           <p className="text-center text-sm text-red-600 dark:text-red-400">บัญชี LINE นี้ถูกระงับ กรุณาติดต่อส่วนงาน IT</p>
         </div>
-      ) : bootstrap.profile?.linkStatus !== 'Active' ? (
-        <LinkEmployeeCard profile={bootstrap.profile} onLinked={loadBootstrap} />
       ) : view === 'menu' ? (
         <MenuCard profile={bootstrap.profile} onNavigate={setView} onLogout={() => void logout()} />
       ) : view === 'submit' ? (
@@ -138,48 +136,6 @@ export function LinePortalPage() {
         </div>
       )}
     </main>
-  );
-}
-
-function LinkEmployeeCard({ profile, onLinked }: { profile: LineBootstrap['profile']; onLinked: () => void }) {
-  const [employeeCode, setEmployeeCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await lineApiFetch('/api/v1/line/link-employee', { method: 'POST', body: JSON.stringify({ employeeCode }) });
-      onLinked();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'ผูกบัญชีไม่สำเร็จ');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (profile?.linkStatus === 'Pending' && profile.employeeCode) {
-    return (
-      <div className={CARD}>
-        <p className="text-center text-sm text-slate-600 dark:text-slate-300">
-          รหัสพนักงาน {profile.employeeCode} อยู่ระหว่างรอเจ้าหน้าที่ IT อนุมัติ กรุณากลับมาตรวจสอบภายหลัง
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <form onSubmit={(event) => void submit(event)} className={CARD}>
-      <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">กรุณากรอกรหัสพนักงานเพื่อผูกบัญชี LINE กับทะเบียนผู้ใช้ก่อนแจ้งซ่อม</p>
-      <label htmlFor="employeeCode" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">รหัสพนักงาน</label>
-      <input id="employeeCode" className={INPUT} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} required />
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <button type="submit" disabled={submitting} className={`${BUTTON_PRIMARY} mt-4`}>
-        {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />} ผูกบัญชี
-      </button>
-    </form>
   );
 }
 

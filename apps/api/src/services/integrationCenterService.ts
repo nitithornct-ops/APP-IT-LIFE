@@ -164,8 +164,7 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
     channels,
     rules: [
       { id: 'ticket-created-team', event: 'Ticket ใหม่จาก Public / LINE Portal', channel: 'LINE Messaging API', recipients: 'ห้องทีม IT', status: lineMessagingStatus, managedBy: 'code' },
-      { id: 'ticket-status-requester', event: 'สถานะ Ticket เปลี่ยน', channel: 'LINE Messaging API', recipients: 'ผู้แจ้งที่ผูก LINE', status: lineMessagingStatus, managedBy: 'code' },
-      { id: 'line-link-approval', event: 'บัญชี LINE ผูกรหัสพนักงานรออนุมัติ', channel: 'In-app Notification', recipients: 'ผู้มีสิทธิ์ line.manage', status: 'active', managedBy: 'code' },
+      { id: 'ticket-status-requester', event: 'สถานะ Ticket เปลี่ยน', channel: 'LINE Messaging API', recipients: 'ผู้แจ้งผ่าน LINE', status: lineMessagingStatus, managedBy: 'code' },
       { id: 'access-request', event: 'คำขอสิทธิ์และผลอนุมัติ', channel: 'In-app Notification', recipients: 'ผู้อนุมัติ / ผู้ร้อง', status: 'active', managedBy: 'code' },
       { id: 'change-flow', event: 'Change ขออนุมัติ / ติดตั้งแล้ว', channel: 'In-app Notification', recipients: 'ทีมปฏิบัติการ / ผู้ร้อง', status: 'active', managedBy: 'code' },
       { id: 'backup-anomaly', event: 'Backup ล้มเหลวหรือพบ Log anomaly', channel: 'In-app Notification', recipients: 'ผู้ดูแลระบบ', status: 'active', managedBy: 'code' },

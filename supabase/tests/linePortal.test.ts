@@ -15,9 +15,8 @@ beforeAll(async () => {
       [STAFF_ID],
     );
     const lineUser = await db.query<{ id: string }>(
-      `insert into public.line_users(line_user_id, display_name, link_status, linked_user_id)
-       values ('Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'ทดสอบ LINE', 'Active', $1) returning id`,
-      [STAFF_ID],
+      `insert into public.line_users(line_user_id, display_name, link_status)
+       values ('Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'ทดสอบ LINE', 'Active') returning id`,
     );
     lineUserId = lineUser.rows[0]!.id;
   });
@@ -25,7 +24,7 @@ beforeAll(async () => {
 
 afterAll(async () => { await db.close(); });
 
-describe('LINE public portal database controls (migration 20260829100000)', () => {
+describe('LINE public portal database controls', () => {
   it('rejects an unrecognized link_status but allows the four documented legacy values and null', async () => {
     await asServiceRole(db, async () => {
       await expect(db.query(
@@ -57,22 +56,21 @@ describe('LINE public portal database controls (migration 20260829100000)', () =
     expect(asAnonSessions.rows).toEqual([{ count: 0 }]);
   });
 
-  it('records a LINE-sourced ticket with source_channel + requester_line_user_id, still visible to staff via the normal tickets RLS policy', async () => {
+  it('records a LINE-owned ticket without an employee profile and keeps it visible to help-desk staff', async () => {
     const ticket = await asServiceRole(db, async () => db.query<{ id: string; source_channel: string }>(
-      `insert into public.tickets(title, requester_id, description, source_channel, requester_line_user_id)
-       values ('เครื่องพิมพ์เสีย', $1, 'ใช้งานไม่ได้', 'line', $2) returning id, source_channel`,
-      [STAFF_ID, lineUserId],
+      `insert into public.tickets(title, requester_id, requester_name_snapshot, requester_identity_type, description, source_channel, requester_line_user_id)
+       values ('เครื่องพิมพ์เสีย', null, 'ทดสอบ LINE', 'LINE', 'ใช้งานไม่ได้', 'line', $1) returning id, source_channel`,
+      [lineUserId],
     ));
     expect(ticket.rows[0]!.source_channel).toBe('line');
 
     await asServiceRole(db, async () => db.query(
       `insert into public.ticket_worklogs(ticket_id, action, status_to, is_public, actor_id, actor_line_user_id)
-       values ($1, 'เปิด Ticket', 'ใหม่', true, $2, $3)`,
-      [ticket.rows[0]!.id, STAFF_ID, lineUserId],
+       values ($1, 'เปิด Ticket', 'ใหม่', true, null, $2)`,
+      [ticket.rows[0]!.id, lineUserId],
     ));
 
-    // requester themself can read their own ticket under the existing tickets_select policy —
-    // proves the additive LINE columns didn't disturb the pre-existing staff-facing RLS.
+    // Help-desk staff can still read LINE-owned tickets under the normal ticket permissions.
     const own = await asUser(db, STAFF_ID, async () => db.query(
       `select source_channel from public.tickets where id = $1`, [ticket.rows[0]!.id],
     ));

@@ -5,10 +5,6 @@ export const lineLoginUrlQuerySchema = z.object({
   returnMode: z.enum(['report', 'status', 'kb']).optional(),
 });
 
-export const lineLinkEmployeeSchema = z.object({
-  employeeCode: z.string().trim().min(1, 'กรุณากรอกรหัสพนักงาน').max(80),
-});
-
 const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
 
 export const lineSubmitTicketSchema = z.object({
@@ -29,5 +25,5 @@ export const lineAdminListQuerySchema = z.object({
 });
 
 export const lineAdminUpdateStatusSchema = z.object({
-  status: z.enum(['Active', 'Suspended', 'Unlinked']),
+  status: z.enum(['Active', 'Suspended']),
 });
