@@ -47,6 +47,8 @@ interface SubmitResult {
   attachmentCount?: number;
   attachmentWarning?: string;
 }
+
+type SavedTicket = SubmitResult & { trackingToken: string };
 interface TrackedTicket {
   ticket: {
     id: string;
@@ -166,16 +168,18 @@ function clearTicketDraft() {
   }
 }
 
-function getSavedTickets(): SubmitResult[] {
+function getSavedTickets(): SavedTicket[] {
   try {
     const rows = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]') as SubmitResult[];
-    return Array.isArray(rows) ? rows.slice(0, 20) : [];
+    return Array.isArray(rows)
+      ? rows.filter((row): row is SavedTicket => typeof row.trackingToken === 'string' && row.trackingToken.length > 0).slice(0, 20)
+      : [];
   } catch {
     return [];
   }
 }
 
-function rememberTicket(result: SubmitResult) {
+function rememberTicket(result: SavedTicket) {
   try {
     const rows = getSavedTickets().filter((row) => row.id !== result.id);
     rows.unshift(result);
@@ -339,7 +343,7 @@ function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['p
       loadError={loadError}
       lineProfile={lineProfile}
       onSubmitted={(submitted) => {
-        if (submitted.trackingToken) rememberTicket(submitted);
+        if (submitted.trackingToken) rememberTicket({ ...submitted, trackingToken: submitted.trackingToken });
         setResult(submitted);
       }}
     />
@@ -419,7 +423,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
         description,
         privacyConsent: true as const,
       };
-      const submitted = lineAuthenticated
+      const submitted: SubmitResult = lineAuthenticated
         ? await lineApiFetch<{ id: string; ticket_no?: string }>('/api/v1/line/tickets', {
           method: 'POST',
           body: JSON.stringify({ ...commonPayload, department: guestDepartment || undefined }),
@@ -671,9 +675,10 @@ function KnowledgeTab() {
 function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrackStatus: () => void }) {
   const [copied, setCopied] = useState(false);
   async function copyToken() {
-    if (!result.trackingToken) return;
+    const trackingToken = result.trackingToken;
+    if (!trackingToken) return;
     try {
-      await navigator.clipboard.writeText(result.trackingToken);
+      await navigator.clipboard.writeText(trackingToken);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -713,7 +718,7 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
 }
 
 function StatusTab({ onReport }: { onReport: () => void }) {
-  const [saved, setSaved] = useState<SubmitResult[]>([]);
+  const [saved, setSaved] = useState<SavedTicket[]>([]);
   const [ticketId, setTicketId] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
