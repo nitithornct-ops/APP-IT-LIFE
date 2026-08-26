@@ -13,6 +13,10 @@ export function LineCallbackPage() {
     const mode = params.get('mode');
     const error = params.get('error');
     if (token) setLineSessionToken(token);
+    if (token && mode === 'report') {
+      navigate('/report', { replace: true });
+      return;
+    }
     const search = error ? `?error=${encodeURIComponent(error)}` : mode ? `?mode=${mode}` : '';
     navigate(`/line${search}`, { replace: true });
   }, [navigate]);

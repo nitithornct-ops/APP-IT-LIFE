@@ -3,6 +3,7 @@ import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken,
   normalizeReturnMode, randomToken, sessionHours,
 } from '../src/lib/lineAuth';
+import { lineSubmitTicketSchema } from '../src/validators/line';
 import type { Bindings } from '../src/types';
 
 const configuredEnv: Bindings = {
@@ -95,6 +96,30 @@ describe('createLineLoginUrl', () => {
     expect(url.searchParams.get('nonce')).toMatch(/^[0-9a-f]{64}$/);
     expect(url.searchParams.get('nonce')).not.toBe(url.searchParams.get('state'));
     expect(url.searchParams.get('state')).toMatch(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+});
+
+describe('LINE ticket submit validator', () => {
+  const validPayload = {
+    categoryId: '11111111-1111-4111-8111-111111111111',
+    title: 'เปิดเครื่องไม่ติด',
+    description: 'กดปุ่มแล้วเครื่องไม่มีไฟ',
+    privacyConsent: true,
+  };
+
+  it('accepts contact and asset fields from the shared report form', () => {
+    expect(lineSubmitTicketSchema.safeParse({
+      ...validPayload,
+      requesterPhone: '0812345678',
+      department: 'บัญชี',
+      location: 'อาคาร A ชั้น 3',
+      assetCode: 'NB-0231',
+    }).success).toBe(true);
+  });
+
+  it('requires the privacy consent used by the shared report form', () => {
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: false }).success).toBe(false);
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: undefined }).success).toBe(false);
   });
 });
 

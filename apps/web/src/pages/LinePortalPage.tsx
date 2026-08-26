@@ -163,6 +163,7 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
+  const [privacyConsent, setPrivacyConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,7 +176,7 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
     setSubmitting(true);
     setError(null);
     try {
-      await lineApiFetch('/api/v1/line/tickets', { method: 'POST', body: JSON.stringify({ title, categoryId, description }) });
+      await lineApiFetch('/api/v1/line/tickets', { method: 'POST', body: JSON.stringify({ title, categoryId, description, privacyConsent }) });
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'ส่ง Ticket ไม่สำเร็จ');
@@ -205,8 +206,12 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
           <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">รายละเอียด</label>
           <textarea id="description" className={INPUT} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} required maxLength={3000} />
         </div>
+        <label className="flex items-start gap-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+          <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required className="mt-0.5 h-4 w-4" />
+          <span>ยอมรับการใช้ข้อมูลเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket</span>
+        </label>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <button type="submit" disabled={submitting} className={BUTTON_PRIMARY}>
+        <button type="submit" disabled={submitting || !privacyConsent} className={BUTTON_PRIMARY}>
           {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />} ส่ง Ticket
         </button>
       </div>

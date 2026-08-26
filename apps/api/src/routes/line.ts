@@ -11,11 +11,14 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import type { AppEnv, LineUserProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
+import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
+import { MAX_FILE_SIZE_BYTES } from '../validators/files';
 import { ratingsMatchCriteria } from './tickets';
 import {
   lineAdminListQuerySchema, lineAdminUpdateStatusSchema,
@@ -29,6 +32,9 @@ import {
  * The admin account-management routes at the bottom use normal Supabase auth and permissions.
  */
 export const lineRoute = new Hono<AppEnv>();
+
+const MAX_LINE_TICKET_ATTACHMENTS = 5;
+const LINE_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
 
 type LineUserRecord = LineUserProfile;
 
@@ -82,6 +88,7 @@ function clientProfile(user: LineUserRecord) {
     displayName: user.display_name ?? '',
     pictureUrl: user.picture_url ?? '',
     fullName: user.full_name ?? user.display_name ?? '',
+    department: user.department ?? '',
     linkStatus: user.link_status === 'Suspended' ? 'Suspended' : 'Active',
     friendStatus: user.friend_status ?? 'Unknown',
   };
@@ -208,6 +215,16 @@ lineRoute.post(
     const { data: category } = await admin.from('ticket_categories').select('*').eq('id', body.categoryId).eq('status', 'active').maybeSingle();
     if (!category) return c.json(fail(reqId, 'TICKET_CATEGORY_INVALID', 'กรุณาเลือกหมวดหมู่ Ticket ที่ใช้งานอยู่'), 400);
 
+    let asset: { id: string; name: string } | null = null;
+    if (body.assetCode) {
+      const byCode = await admin.from('assets').select('id, name').eq('asset_code', body.assetCode).maybeSingle();
+      asset = byCode.data;
+      if (!asset) {
+        const byLegacyId = await admin.from('assets').select('id, name').eq('legacy_id', body.assetCode).maybeSingle();
+        asset = byLegacyId.data;
+      }
+    }
+
     const priority = body.priority ?? category.default_priority ?? 'ปานกลาง';
     const responseSlaHours = Number(category.response_sla_hours ?? 4);
     const resolutionSlaHours = Number(category.resolution_sla_hours ?? category.sla_hours ?? 24);
@@ -225,8 +242,13 @@ lineRoute.post(
       .insert({
         title: body.title,
         requester_id: null,
-        requester_name_snapshot: user.display_name ?? user.full_name ?? 'ผู้ใช้งาน LINE',
+        requester_name_snapshot: user.full_name ?? user.display_name ?? 'ผู้ใช้งาน LINE',
         requester_identity_type: 'LINE',
+        requester_phone: body.requesterPhone ?? null,
+        department_name_snapshot: body.department ?? user.department ?? null,
+        location: body.location ?? null,
+        asset_id: asset?.id ?? null,
+        asset_name_snapshot: asset?.name ?? (body.assetCode || null),
         category_id: body.categoryId,
         priority,
         response_sla_hours: responseSlaHours,
@@ -289,12 +311,21 @@ lineRoute.get(
     if (!ticket || !belongsToLineUser) {
       return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
     }
-    const [{ data: worklogs }, { data: ratingCriteria }] = await Promise.all([
+    const [{ data: worklogs }, { data: ratingCriteria }, { data: attachmentRows }] = await Promise.all([
       admin
       .from('ticket_worklogs').select('action, detail, status_from, status_to, created_at')
       .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
       admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status').eq('status', 'active').order('sort_order').order('created_at'),
+      admin
+        .from('file_attachments')
+        .select('id, storage_path, original_filename, mime_type, size_bytes, created_at')
+        .eq('module', 'ticket').eq('target_table', 'tickets').eq('target_id', ticket.id)
+        .order('created_at', { ascending: true }),
     ]);
+    const attachments = await Promise.all((attachmentRows ?? []).map(async ({ storage_path, ...attachment }) => {
+      const signed = await createSignedUrl(admin, storage_path, 600);
+      return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
+    }));
     // ไม่มีลายเซ็นกลางให้ตกทอดแล้ว — ผู้ร้องเห็นลายเซ็นเฉพาะที่มีคนเซ็นให้ใบนี้จริง
     const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
     let signatureUrl: string | null = null;
@@ -302,7 +333,92 @@ lineRoute.get(
       const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(signaturePath, 3600);
       signatureUrl = data?.signedUrl ?? null;
     }
-    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [] }));
+    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [], attachments }));
+  },
+);
+
+lineRoute.post(
+  '/tickets/:id/attachments',
+  requireUsableLineSession,
+  rateLimit({ windowMs: 3600_000, max: 20, keyFn: (c) => `line_ticket_attachment:${c.get('lineSession')!.user.id}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { user } = c.get('lineSession')!;
+    const ticketId = c.req.param('id');
+    const admin = createAdminClient(c.env);
+    const { data: ticket } = await admin
+      .from('tickets')
+      .select('id, requester_id, requester_line_user_id')
+      .eq('id', ticketId)
+      .maybeSingle();
+    const belongsToLineUser = ticket?.requester_line_user_id === user.id
+      || (Boolean(user.linked_user_id) && ticket?.requester_id === user.linked_user_id);
+    if (!ticket || !belongsToLineUser) {
+      return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
+    }
+
+    const contentLength = Number(c.req.header('content-length') ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE_BYTES + 1024 * 1024) {
+      return c.json(fail(reqId, 'FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB'), 413);
+    }
+    const { count, error: countError } = await admin
+      .from('file_attachments')
+      .select('id', { count: 'exact', head: true })
+      .eq('module', 'ticket').eq('target_table', 'tickets').eq('target_id', ticket.id);
+    if (countError) return dbFailJson(c, 'FILE_ATTACHMENT_COUNT_FAILED', countError, 'ตรวจสอบจำนวนไฟล์ไม่สำเร็จ');
+    if ((count ?? 0) >= MAX_LINE_TICKET_ATTACHMENTS) {
+      return c.json(fail(reqId, 'FILE_LIMIT_REACHED', `แนบได้สูงสุด ${MAX_LINE_TICKET_ATTACHMENTS} ไฟล์ต่อ Ticket`), 400);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) return c.json(fail(reqId, 'VALIDATION_ERROR', 'กรุณาเลือกไฟล์ที่ต้องการแนบ'), 400);
+    if (file.size > MAX_FILE_SIZE_BYTES) return c.json(fail(reqId, 'FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB'), 413);
+    if (!(LINE_TICKET_ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+      return c.json(fail(reqId, 'FILE_TYPE_NOT_ALLOWED', 'รองรับเฉพาะ JPG, PNG, GIF, WebP และ PDF'), 400);
+    }
+
+    const signature = await verifyFileSignature(file, file.type);
+    if (!signature.ok || !signature.resolvedMime) {
+      await writeAuditLog(c.env, {
+        actorEmail: `LINE:${user.line_user_id}`, action: 'UPLOAD_REJECTED', module: 'file',
+        targetTable: 'file_attachments', targetId: ticket.id,
+        detail: { filename: file.name, declaredMimeType: file.type, sizeBytes: file.size, reason: signature.reason, channel: 'line' },
+        result: 'denied', requestId: reqId,
+      });
+      return c.json(fail(reqId, 'FILE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ตรงกับชนิดไฟล์ที่ระบุ'), 400);
+    }
+
+    const uploaded = await uploadPublicTicketFile(admin, ticket.id, file, signature.resolvedMime);
+    if ('error' in uploaded) return c.json(fail(reqId, 'FILE_UPLOAD_FAILED', uploaded.error), 400);
+    const { data: attachment, error: metadataError } = await admin
+      .from('file_attachments')
+      .insert({
+        storage_path: uploaded.path,
+        original_filename: file.name,
+        mime_type: signature.resolvedMime,
+        size_bytes: file.size,
+        module: 'ticket',
+        target_table: 'tickets',
+        target_id: ticket.id,
+        uploaded_by: null,
+        uploader_label: `ผู้แจ้งผ่าน LINE: ${user.full_name ?? user.display_name ?? '-'}`,
+      })
+      .select('id, original_filename, mime_type, size_bytes, created_at')
+      .single();
+    if (metadataError || !attachment) {
+      await deleteFile(admin, uploaded.path);
+      return c.json(fail(reqId, 'FILE_METADATA_SAVE_FAILED', 'บันทึกข้อมูลไฟล์ไม่สำเร็จ'), 400);
+    }
+
+    await writeAuditLog(c.env, {
+      actorEmail: `LINE:${user.line_user_id}`, action: 'UPLOAD', module: 'file',
+      targetTable: 'file_attachments', targetId: attachment.id,
+      detail: { ticketId: ticket.id, originalFilename: file.name, sizeBytes: file.size, channel: 'line' },
+      requestId: reqId,
+    });
+    const signed = await createSignedUrl(admin, uploaded.path, 600);
+    return c.json(ok(reqId, { ...attachment, signed_url: 'url' in signed ? signed.url : null }), 201);
   },
 );
 

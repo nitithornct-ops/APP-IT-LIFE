@@ -42,7 +42,8 @@ interface FormData {
 interface SubmitResult {
   id: string;
   ticketNo?: string;
-  trackingToken: string;
+  trackingToken?: string;
+  channel?: 'guest' | 'line';
   attachmentCount?: number;
   attachmentWarning?: string;
 }
@@ -80,6 +81,7 @@ interface LineBootstrap {
   authenticated: boolean;
   profile: {
     fullName: string;
+    department?: string;
     linkStatus: string;
   } | null;
 }
@@ -112,6 +114,7 @@ interface KnowledgeData {
 type PortalTab = 'report' | 'knowledge' | 'status';
 
 const SAVED_KEY = 'public_ticket_saved';
+const DRAFT_KEY = 'public_ticket_draft';
 const INPUT = 'public-field w-full px-3 py-2.5 text-sm placeholder:text-slate-400 transition focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50';
 const LABEL = 'mb-1.5 block text-sm font-medium text-slate-700';
 const PRIMARY_BUTTON = 'public-primary-button inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60';
@@ -124,6 +127,44 @@ const DEFAULT_PRIVACY = {
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+
+interface TicketDraft {
+  guestName: string;
+  requesterPhone: string;
+  guestDepartment: string;
+  location: string;
+  assetCode: string;
+  categoryId: string;
+  priority: string;
+  title: string;
+  description: string;
+  privacyConsent: boolean;
+}
+
+function getTicketDraft(): Partial<TicketDraft> {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? '{}') as Partial<TicketDraft>;
+    return draft && typeof draft === 'object' ? draft : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveTicketDraft(draft: TicketDraft) {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Draft persistence is best-effort; the live form remains usable without Web Storage.
+  }
+}
+
+function clearTicketDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Nothing else is required after a successful submission.
+  }
+}
 
 function getSavedTickets(): SubmitResult[] {
   try {
@@ -146,6 +187,16 @@ function rememberTicket(result: SubmitResult) {
 
 export function PublicTicketPortalPage() {
   const [tab, setTab] = useState<PortalTab>('report');
+  const [lineBootstrap, setLineBootstrap] = useState<LineBootstrap | null>(null);
+  const [lineCheckLoading, setLineCheckLoading] = useState(() => Boolean(getLineSessionToken()));
+
+  useEffect(() => {
+    if (!getLineSessionToken()) return;
+    void lineApiFetch<LineBootstrap>('/api/v1/line/bootstrap')
+      .then(setLineBootstrap)
+      .catch(() => setLineBootstrap(null))
+      .finally(() => setLineCheckLoading(false));
+  }, []);
 
   return (
     <main className="life-public min-h-screen text-slate-800">
@@ -153,7 +204,7 @@ export function PublicTicketPortalPage() {
         <PortalSidebar tab={tab} onChange={setTab} />
 
         <div className="min-w-0">
-          <LineBanner />
+          <LineBanner bootstrap={lineBootstrap} loading={lineCheckLoading} onStatus={() => setTab('status')} />
           <header className="public-portal-hero mb-5 mt-5 flex items-start gap-3 rounded-large p-5 sm:p-6">
             <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
               {tab === 'report' ? <Wrench className="h-5 w-5" aria-hidden="true" /> : tab === 'knowledge' ? <CircleHelp className="h-5 w-5" aria-hidden="true" /> : <TicketCheck className="h-5 w-5" aria-hidden="true" />}
@@ -169,9 +220,9 @@ export function PublicTicketPortalPage() {
             </div>
           </header>
 
-          {tab === 'report' && <ReportTab onSubmitted={() => setTab('status')} />}
+          {tab === 'report' && <ReportTab lineProfile={lineBootstrap?.authenticated ? lineBootstrap.profile : null} onSubmitted={() => setTab('status')} />}
           {tab === 'knowledge' && <KnowledgeTab />}
-          {tab === 'status' && <StatusTab />}
+          {tab === 'status' && <StatusTab onReport={() => setTab('report')} />}
         </div>
       </div>
     </main>
@@ -235,7 +286,8 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
   );
 }
 
-function LineBanner() {
+function LineBanner({ bootstrap, loading, onStatus }: { bootstrap: LineBootstrap | null; loading: boolean; onStatus: () => void }) {
+  const authenticated = bootstrap?.authenticated && bootstrap.profile?.linkStatus !== 'Suspended';
   return (
     <div className="public-sheet flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
@@ -243,18 +295,28 @@ function LineBanner() {
           <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-800">เข้าสู่ระบบด้วย LINE</p>
-          <p className="text-xs text-slate-500">แจ้งซ่อมและติดตามสถานะได้สะดวก พร้อมรับการแจ้งเตือน</p>
+          <p className="text-sm font-bold text-slate-800">{authenticated ? 'เข้าสู่ระบบ LINE แล้ว' : 'เข้าสู่ระบบด้วย LINE'}</p>
+          <p className="text-xs text-slate-500">
+            {authenticated ? `${bootstrap.profile?.fullName ?? 'ผู้ใช้งาน LINE'} · Ticket ที่ส่งจะผูกกับบัญชีนี้` : 'แจ้งซ่อมและติดตามสถานะได้สะดวก พร้อมรับการแจ้งเตือน'}
+          </p>
         </div>
       </div>
-      <Link to="/line" className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
-        <MessageCircle className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> LINE Login
-      </Link>
+      {loading ? (
+        <span className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> กำลังตรวจสอบ LINE</span>
+      ) : authenticated ? (
+        <button type="button" onClick={onStatus} className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
+          <TicketCheck className="h-3.5 w-3.5" aria-hidden="true" /> สถานะของฉัน
+        </button>
+      ) : (
+        <Link to="/line?mode=report" className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
+          <MessageCircle className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> LINE Login
+        </Link>
+      )}
     </div>
   );
 }
 
-function ReportTab({ onSubmitted }: { onSubmitted: () => void }) {
+function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['profile']; onSubmitted: () => void }) {
   const [formData, setFormData] = useState<FormData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResult | null>(null);
@@ -275,29 +337,42 @@ function ReportTab({ onSubmitted }: { onSubmitted: () => void }) {
       formData={formData ?? { enabled: true, categories: [], priorities: ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'], privacy: DEFAULT_PRIVACY }}
       loading={!formData && !loadError}
       loadError={loadError}
+      lineProfile={lineProfile}
       onSubmitted={(submitted) => {
-        rememberTicket(submitted);
+        if (submitted.trackingToken) rememberTicket(submitted);
         setResult(submitted);
       }}
     />
   );
 }
 
-function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: FormData; loading: boolean; loadError: string | null; onSubmitted: (result: SubmitResult) => void }) {
-  const [guestName, setGuestName] = useState('');
-  const [requesterPhone, setRequesterPhone] = useState('');
-  const [guestDepartment, setGuestDepartment] = useState('');
-  const [location, setLocation] = useState('');
-  const [assetCode, setAssetCode] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [priority, setPriority] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: { formData: FormData; loading: boolean; loadError: string | null; lineProfile: LineBootstrap['profile']; onSubmitted: (result: SubmitResult) => void }) {
+  const [initialDraft] = useState(getTicketDraft);
+  const [guestName, setGuestName] = useState(initialDraft.guestName ?? '');
+  const [requesterPhone, setRequesterPhone] = useState(initialDraft.requesterPhone ?? '');
+  const [guestDepartment, setGuestDepartment] = useState(initialDraft.guestDepartment ?? '');
+  const [location, setLocation] = useState(initialDraft.location ?? '');
+  const [assetCode, setAssetCode] = useState(initialDraft.assetCode ?? '');
+  const [categoryId, setCategoryId] = useState(initialDraft.categoryId ?? '');
+  const [priority, setPriority] = useState(initialDraft.priority ?? '');
+  const [title, setTitle] = useState(initialDraft.title ?? '');
+  const [description, setDescription] = useState(initialDraft.description ?? '');
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(initialDraft.privacyConsent ?? false);
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lineAuthenticated = Boolean(lineProfile && lineProfile.linkStatus !== 'Suspended');
+
+  useEffect(() => {
+    if (!lineAuthenticated) return;
+    setGuestName(lineProfile?.fullName || '');
+    setGuestDepartment((current) => current || lineProfile?.department || '');
+  }, [lineAuthenticated, lineProfile]);
+
+  useEffect(() => {
+    saveTicketDraft({ guestName, requesterPhone, guestDepartment, location, assetCode, categoryId, priority, title, description, privacyConsent });
+  }, [guestName, requesterPhone, guestDepartment, location, assetCode, categoryId, priority, title, description, privacyConsent]);
 
   function selectAttachments(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -334,33 +409,40 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
     setSubmitting(true);
     setError(null);
     try {
-      const submitted = await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
-        method: 'POST',
-        body: JSON.stringify({
-          guestName,
-          requesterPhone: requesterPhone || undefined,
-          guestDepartment: guestDepartment || undefined,
-          location: location || undefined,
-          assetCode: assetCode || undefined,
-          categoryId,
-          priority: priority || undefined,
-          title,
-          description,
-          privacyConsent: true,
-          website: website || undefined,
-        }),
-      });
+      const commonPayload = {
+        requesterPhone: requesterPhone || undefined,
+        location: location || undefined,
+        assetCode: assetCode || undefined,
+        categoryId,
+        priority: priority || undefined,
+        title,
+        description,
+        privacyConsent: true as const,
+      };
+      const submitted = lineAuthenticated
+        ? await lineApiFetch<{ id: string; ticket_no?: string }>('/api/v1/line/tickets', {
+          method: 'POST',
+          body: JSON.stringify({ ...commonPayload, department: guestDepartment || undefined }),
+        }).then((ticket) => ({ id: ticket.id, ticketNo: ticket.ticket_no, channel: 'line' as const }))
+        : await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
+          method: 'POST',
+          body: JSON.stringify({ ...commonPayload, guestName, guestDepartment: guestDepartment || undefined, website: website || undefined }),
+        });
       let attachmentCount = 0;
       let attachmentWarning: string | undefined;
       for (const file of attachments) {
         try {
           const uploadBody = new window.FormData();
           uploadBody.append('file', file);
-          await publicTicketApiFetch(`/api/v1/public/tickets/${submitted.id}/attachments`, {
-            method: 'POST',
-            headers: { 'x-tracking-token': submitted.trackingToken },
-            body: uploadBody,
-          });
+          if (lineAuthenticated) {
+            await lineApiFetch(`/api/v1/line/tickets/${submitted.id}/attachments`, { method: 'POST', body: uploadBody });
+          } else {
+            await publicTicketApiFetch(`/api/v1/public/tickets/${submitted.id}/attachments`, {
+              method: 'POST',
+              headers: { 'x-tracking-token': submitted.trackingToken ?? '' },
+              body: uploadBody,
+            });
+          }
           attachmentCount += 1;
         } catch (uploadError) {
           attachmentWarning = uploadError instanceof ApiError
@@ -369,6 +451,7 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
           break;
         }
       }
+      clearTicketDraft();
       onSubmitted({ ...submitted, attachmentCount, attachmentWarning });
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : 'ส่งแจ้งซ่อมไม่สำเร็จ');
@@ -403,8 +486,8 @@ function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: F
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL} htmlFor="guestName">ชื่อผู้แจ้ง <Required /></label>
-              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
+              <label className={LABEL} htmlFor="guestName">ชื่อผู้แจ้ง {lineAuthenticated ? <span className="font-normal text-emerald-600">(จาก LINE)</span> : <Required />}</label>
+              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} readOnly={lineAuthenticated} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
             </div>
             <div>
               <label className={LABEL} htmlFor="phone">เบอร์โทร <Required /></label>
@@ -588,6 +671,7 @@ function KnowledgeTab() {
 function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrackStatus: () => void }) {
   const [copied, setCopied] = useState(false);
   async function copyToken() {
+    if (!result.trackingToken) return;
     try {
       await navigator.clipboard.writeText(result.trackingToken);
       setCopied(true);
@@ -599,17 +683,23 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
 
   return (
     <div className={`${CARD} mx-auto max-w-2xl p-6`}>
-      <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง</p></div>
+      <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">{result.channel === 'line' ? 'Ticket ผูกกับบัญชี LINE แล้ว ติดตามสถานะได้ทันที' : 'กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง'}</p></div>
       <div className="mt-5 rounded-lg border border-primary-200 bg-primary-50 p-4">
         <p className="text-xs text-slate-500">เลข Ticket</p>
         <p className="break-all font-mono text-sm text-slate-800">{result.ticketNo ?? result.id}</p>
-        <p className="mt-4 text-xs font-semibold text-primary-800">รหัสติดตามของคุณ</p>
-        <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-primary-200 bg-white px-4 py-3">
-          <p className="font-mono text-lg font-extrabold tracking-wider text-primary-900" data-testid="public-tracking-code">{result.trackingToken}</p>
-          <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-700 px-3 py-2 text-xs font-bold text-white hover:bg-primary-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
-        </div>
-        <p className="mt-2 text-xs text-primary-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
-        {copied && <p className="mt-1 text-xs font-semibold text-emerald-600">คัดลอกรหัสแล้ว</p>}
+        {result.trackingToken ? (
+          <>
+            <p className="mt-4 text-xs font-semibold text-primary-800">รหัสติดตามของคุณ</p>
+            <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-primary-200 bg-white px-4 py-3">
+              <p className="font-mono text-lg font-extrabold tracking-wider text-primary-900" data-testid="public-tracking-code">{result.trackingToken}</p>
+              <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-700 px-3 py-2 text-xs font-bold text-white hover:bg-primary-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
+            </div>
+            <p className="mt-2 text-xs text-primary-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
+            {copied && <p className="mt-1 text-xs font-semibold text-emerald-600">คัดลอกรหัสแล้ว</p>}
+          </>
+        ) : (
+          <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-primary-800">ใช้เมนู “สถานะของฉัน” เพื่อเปิดดู Ticket นี้ได้โดยไม่ต้องกรอกรหัสติดตาม</p>
+        )}
       </div>
       {result.attachmentCount !== undefined && result.attachmentCount > 0 && (
         <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">แนบไฟล์สำเร็จ {result.attachmentCount} ไฟล์</p>
@@ -622,7 +712,7 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
   );
 }
 
-function StatusTab() {
+function StatusTab({ onReport }: { onReport: () => void }) {
   const [saved, setSaved] = useState<SubmitResult[]>([]);
   const [ticketId, setTicketId] = useState('');
   const [token, setToken] = useState('');
@@ -727,9 +817,9 @@ function StatusTab() {
             </div>
             <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {lineBootstrap.profile.fullName}</p>
           </div>
-          <Link to="/line" className="public-line-button inline-flex items-center justify-center px-4 py-2 text-xs font-bold">
-            แจ้งซ่อมผ่าน LINE
-          </Link>
+          <button type="button" onClick={onReport} className="public-line-button inline-flex items-center justify-center px-4 py-2 text-xs font-bold">
+            แจ้งซ่อม
+          </button>
         </div>
 
         {lineError && <div className="m-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}

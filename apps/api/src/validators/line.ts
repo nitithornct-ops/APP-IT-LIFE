@@ -12,6 +12,11 @@ export const lineSubmitTicketSchema = z.object({
   categoryId: z.string().uuid('กรุณาเลือกหมวดหมู่ Ticket'),
   priority: ticketPriorityEnum.optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
+  requesterPhone: z.string().trim().max(40).optional(),
+  department: z.string().trim().max(160).optional(),
+  location: z.string().trim().max(160).optional(),
+  assetCode: z.string().trim().max(80).optional(),
+  privacyConsent: z.literal(true, { errorMap: () => ({ message: 'กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket' }) }),
   isSecurity: z.boolean().optional(),
 });
 
