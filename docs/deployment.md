@@ -51,8 +51,8 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
   `LINE_SESSION_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_DEFAULT_TO`
 
 Environment `staging` ต้องมี `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-`UAT_ADMIN_EMAIL`, `UAT_ADMIN_PASSWORD` และ Variables `UAT_SIGNATURE_SOURCE_TICKET_ID`,
-`UAT_FORM_TICKET_ID` ให้ครบ หากขาดแม้แต่ค่าเดียว Staging Live E2E จะ fail ไม่ใช่ skip แล้วแสดงผลเขียว
+`UAT_ADMIN_EMAIL` และ `UAT_ADMIN_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ
+หากขาด credential หรือ secret ใด Staging Live E2E จะ fail ไม่ใช่ skip แล้วแสดงผลเขียว
 
 Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
 ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์

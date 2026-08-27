@@ -36,8 +36,6 @@ jobs:
       VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
       UAT_ADMIN_EMAIL: ${{ secrets.UAT_ADMIN_EMAIL }}
       UAT_ADMIN_PASSWORD: ${{ secrets.UAT_ADMIN_PASSWORD }}
-      UAT_SIGNATURE_SOURCE_TICKET_ID: ${{ vars.UAT_SIGNATURE_SOURCE_TICKET_ID }}
-      UAT_FORM_TICKET_ID: ${{ vars.UAT_FORM_TICKET_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,7 +55,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD UAT_SIGNATURE_SOURCE_TICKET_ID UAT_FORM_TICKET_ID; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error title=Staging configuration missing::$name is required"
               missing=1

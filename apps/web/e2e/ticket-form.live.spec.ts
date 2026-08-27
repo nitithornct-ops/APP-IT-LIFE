@@ -1,9 +1,60 @@
 import { expect, test, type Locator } from '@playwright/test';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { createLiveAccessToken, installLiveSession } from './helpers/liveAuth';
+import { createLiveAccessToken, installLiveSession, liveSupabaseConfig } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_TICKET_FORM_E2E !== '1', 'Live Ticket form E2E is opt-in');
 test.describe.configure({ mode: 'serial' });
+
+const runId = Date.now();
+let service: SupabaseClient;
+let formTicketId = '';
+let formTicketNo = '';
+
+test.beforeAll(async () => {
+  const { supabaseUrl, serviceRoleKey } = liveSupabaseConfig();
+  service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: category, error: categoryError } = await service
+    .from('ticket_categories')
+    .select('id')
+    .eq('status', 'active')
+    .limit(1)
+    .single();
+  if (categoryError) throw categoryError;
+
+  const trackingHash = createHash('sha256').update(`ticket-form-${runId}`).digest('hex');
+  const { data: ticket, error: ticketError } = await service
+    .from('tickets')
+    .insert({
+      title: `E2E Ticket form ${runId}`,
+      description: 'Self-contained staging fixture for the automatic Ticket form',
+      category_id: category.id,
+      priority: 'ปานกลาง',
+      status: 'ใหม่',
+      source_channel: 'guest',
+      guest_name: 'E2E Ticket Form',
+      public_tracking_token_hash: trackingHash,
+    })
+    .select('id, ticket_no')
+    .single();
+  if (ticketError || !ticket) throw ticketError ?? new Error('Could not create Ticket form fixture');
+  formTicketId = ticket.id;
+  formTicketNo = ticket.ticket_no;
+});
+
+test.afterAll(async () => {
+  if (!service || !formTicketId) return;
+  const { data: ticket } = await service
+    .from('tickets')
+    .select('signature_storage_path')
+    .eq('id', formTicketId)
+    .maybeSingle();
+  if (ticket?.signature_storage_path) {
+    await service.storage.from('ticket-signatures').remove([String(ticket.signature_storage_path)]);
+  }
+  await service.from('tickets').delete().eq('id', formTicketId);
+});
 
 async function expectImageLoaded(image: Locator) {
   await expect(image).toHaveAttribute('src', /^https:\/\//, { timeout: 20_000 });
@@ -19,27 +70,18 @@ async function expectImageLoaded(image: Locator) {
 
 test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
   const email = process.env.UAT_ADMIN_EMAIL;
-  const sourceTicketId = process.env.UAT_SIGNATURE_SOURCE_TICKET_ID;
-  const formTicketId = process.env.UAT_FORM_TICKET_ID;
-  if (!email || !sourceTicketId || !formTicketId) throw new Error('UAT email and Ticket IDs are required');
+  if (!email) throw new Error('UAT admin email is required');
 
   const auth = { authorization: `Bearer ${await createLiveAccessToken(email)}` };
-  const source = await request.get(`http://127.0.0.1:8787/api/v1/tickets/${sourceTicketId}`, { headers: auth });
-  expect(source.ok(), await source.text()).toBeTruthy();
-  const sourceBody = await source.json() as { data: { signature_url: string | null } };
-  if (!sourceBody.data.signature_url) throw new Error('Source Ticket has no signature');
-
-  const formTicket = await request.get(`http://127.0.0.1:8787/api/v1/tickets/${formTicketId}`, { headers: auth });
-  expect(formTicket.ok(), await formTicket.text()).toBeTruthy();
-  const formTicketBody = await formTicket.json() as { data: { ticket_no: string } };
-  const formTicketNo = formTicketBody.data.ticket_no;
-  if (!formTicketNo) throw new Error('Form Ticket has no ticket number');
-
-  // ยืม PNG จริงจาก Ticket ที่มีลายเซ็นอยู่แล้ว มาเซ็นให้ใบที่จะพิมพ์ — ไม่มีลายเซ็นกลางให้ตั้งอีกแล้ว
-  const signatureResponse = await request.get(sourceBody.data.signature_url);
+  // A self-contained valid 1x1 PNG keeps this release gate independent from
+  // another mutable Ticket fixture while exercising the real upload path.
+  const signatureBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
   const upload = await request.post(`http://127.0.0.1:8787/api/v1/tickets/${formTicketId}/signature`, {
     headers: auth,
-    multipart: { file: { name: 'ticket-signature.png', mimeType: 'image/png', buffer: await signatureResponse.body() } },
+    multipart: { file: { name: 'ticket-signature.png', mimeType: 'image/png', buffer: signatureBuffer } },
   });
   expect(upload.ok(), await upload.text()).toBeTruthy();
 
