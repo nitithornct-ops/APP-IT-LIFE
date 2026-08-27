@@ -4,7 +4,7 @@ import type { Bindings } from '../src/types';
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ createAdminClient: () => ({ from: mocks.from }) }));
 
-import { resolveTicketRequesterLineTarget, sendLinePush } from '../src/lib/lineMessaging';
+import { buildTicketFlexMessage, resolveTicketRequesterLineTarget, sendLinePush } from '../src/lib/lineMessaging';
 
 const env = {} as Bindings;
 
@@ -61,6 +61,24 @@ describe('sendLinePush', () => {
     await expect(sendLinePush(enabledEnv, 'U123', 'test message', 'line-row-1')).resolves.toEqual({ success: true, error: null });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/v2/bot/message/push'), expect.objectContaining({ method: 'POST' }));
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ line_user_id: 'line-row-1', success: true }));
+  });
+
+  it('sends a styled Flex Message while keeping the readable delivery log text', async () => {
+    const insert = mockNotificationLog();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: vi.fn() });
+    vi.stubGlobal('fetch', fetchMock);
+    const flex = buildTicketFlexMessage({
+      eyebrow: 'อัปเดตสถานะแจ้งซ่อม', title: 'เครื่องพิมพ์ไม่ทำงาน', ticketNo: 'TCK-001',
+      status: 'เสร็จสิ้น', requesterName: 'สมชาย ใจดี', url: 'https://life-it.pages.dev/line?mode=status',
+    });
+
+    await sendLinePush(enabledEnv, 'U123', 'TCK-001 เสร็จสิ้น', 'line-row-1', flex);
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(request.body));
+    expect(payload.messages[0]).toMatchObject({ type: 'flex', contents: { type: 'bubble' } });
+    expect(payload.messages[0].altText).toContain('TCK-001');
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ message: 'TCK-001 เสร็จสิ้น', success: true }));
   });
 
   it('returns the LINE API failure and writes a failed delivery log', async () => {

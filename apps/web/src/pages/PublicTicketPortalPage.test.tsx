@@ -201,11 +201,15 @@ describe('PublicTicketPortalPage guest status search', () => {
             id: 'guest-ticket-1', ticket_no: 'TCK-2026-0099', title: 'คอมพิวเตอร์เปิดไม่ติด', description: 'ไม่มีไฟเข้า',
             status: signedOff ? 'ปิดงาน' : 'เสร็จสิ้น', priority: 'ปานกลาง', resolution: 'เปลี่ยน Power Supply แล้ว', created_at: '2026-08-19T03:00:00.000Z',
             resolved_at: '2026-08-19T06:00:00.000Z', closed_at: signedOff ? '2026-08-19T07:00:00.000Z' : null,
+            guest_name: 'สมชาย ใจดี', rating: signedOff ? 5 : null, rating_details: signedOff ? { workQuality: 5 } : null,
+            rating_criteria_snapshot: signedOff ? [{ key: 'workQuality', label: 'คุณภาพงานซ่อม', score: 5 }] : null,
+            feedback: null, feedback_at: signedOff ? '2026-08-19T07:00:00.000Z' : null,
             requester_signature_url: signedOff ? 'https://signed.test/requester.png' : null,
             requester_signature_uploaded_at: signedOff ? '2026-08-19T07:00:00.000Z' : null,
             category: { name: 'คอมพิวเตอร์' },
           },
-          worklogs: signedOff ? [{ action: 'ผู้แจ้งตรวจรับและลงนาม', detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5', status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', created_at: '2026-08-19T07:00:00.000Z' }] : [], attachments: [],
+          ratingCriteria: [{ id: 'criterion-1', key: 'workQuality', label: 'คุณภาพงานซ่อม', description: null, sort_order: 1, status: 'active' }],
+          worklogs: signedOff ? [{ action: 'ผู้แจ้งประเมิน ตรวจรับ และลงนาม', detail: 'ผู้แจ้งประเมิน 5/5 คะแนน', status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', created_at: '2026-08-19T07:00:00.000Z' }] : [], attachments: [],
         });
       }
       if (path === '/api/v1/public/tickets/guest-ticket-1/signoff') {
@@ -230,12 +234,13 @@ describe('PublicTicketPortalPage guest status search', () => {
     });
 
     const signature = new File(['png'], 'requester.png', { type: 'image/png' });
+    fireEvent.click(screen.getByRole('radio', { name: 'คุณภาพงานซ่อม 5 คะแนน ยอดเยี่ยม' }));
     fireEvent.change(screen.getByLabelText('ไฟล์ลายเซ็นผู้แจ้ง PNG'), { target: { files: [signature] } });
     fireEvent.click(screen.getByText(/ข้าพเจ้าได้ตรวจสอบแล้ว/));
-    fireEvent.click(screen.getByRole('button', { name: 'ลงลายเซ็นและยืนยันปิดงาน' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งแบบประเมิน ลงลายเซ็น และปิดงาน' }));
 
     expect(await screen.findByAltText('ลายเซ็นผู้แจ้งตรวจรับงาน')).toBeVisible();
-    expect(screen.getAllByText(/ผู้แจ้งตรวจรับและลงนาม/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/ผู้แจ้งประเมิน ตรวจรับ และลงนาม/).length).toBeGreaterThanOrEqual(2);
     const signoffCall = publicTicketApiFetchMock.mock.calls.find(([path]) => path.endsWith('/signoff'));
     expect(signoffCall?.[1]?.headers).toEqual({ 'x-tracking-token': 'ABCD-EFGH-JKLM' });
     expect(signoffCall?.[1]?.body).toBeInstanceOf(FormData);

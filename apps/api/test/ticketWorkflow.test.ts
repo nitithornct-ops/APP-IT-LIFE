@@ -5,6 +5,7 @@ import {
   applyStatusChange,
   assertTransition,
   changesSlaPause,
+  fieldOutcomesFor,
   type TicketStatusSource,
 } from '../src/services/ticketWorkflow';
 
@@ -110,5 +111,13 @@ describe('changesSlaPause', () => {
     expect(changesSlaPause(ticket(), TICKET_STATUS.RESOLVED)).toBe(false);
     // สถานะไม่เปลี่ยน = ไม่ต้องคำนวณอะไรเลย แม้ใบนั้นจะหยุดเวลาค้างอยู่
     expect(changesSlaPause(ticket(), TICKET_STATUS.IN_PROGRESS)).toBe(false);
+  });
+});
+
+describe('fieldOutcomesFor', () => {
+  it('ส่งงานให้ผู้แจ้งตรวจรับแทนการให้เจ้าหน้าที่ปิดงานโดยตรง', () => {
+    const outcomes = fieldOutcomesFor(TICKET_STATUS.IN_PROGRESS);
+    expect(outcomes.some((outcome) => outcome.status === TICKET_STATUS.RESOLVED)).toBe(true);
+    expect(outcomes.some((outcome) => outcome.status === TICKET_STATUS.CLOSED)).toBe(false);
   });
 });

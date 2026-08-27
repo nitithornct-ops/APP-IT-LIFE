@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { TICKET_RATING_CRITERIA } from '@itlife/shared';
+import { TICKET_RATING_CRITERIA, type TicketRatingCriterion } from '@itlife/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, FileText, MessageSquare, Paperclip, RotateCcw, Send, Shield, Star, Ticket as TicketIcon, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -80,8 +80,8 @@ function validateTicketWorkUpdateRequirements(
   values: TicketWorkUpdate,
   ticket: Pick<TicketDetail, 'resolution' | 'outsource_name'>,
 ): string | null {
-  if (values.status === 'ปิดงาน' && !values.resolution?.trim() && !ticket.resolution?.trim()) {
-    return 'กรุณาระบุผลการแก้ไขก่อนปิดงาน';
+  if (values.status === 'เสร็จสิ้น' && !values.resolution?.trim() && !ticket.resolution?.trim()) {
+    return 'กรุณาระบุผลการแก้ไขก่อนส่งให้ผู้แจ้งตรวจรับ';
   }
   if (values.status === 'ยกเลิก' && !values.note?.trim()) {
     return 'กรุณาระบุเหตุผลการยกเลิก';
@@ -162,17 +162,14 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
               className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
               {...register('status')}
             >
-              {TICKET_STATUSES.map((s) => (
+              {TICKET_STATUSES.filter((status) => status !== 'ปิดงาน').map((s) => (
                 <option key={s} value={s}>
                   {ticketStatusLabel[s]}
                 </option>
               ))}
             </select>
             {selectedStatus === 'เสร็จสิ้น' && (
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">ซ่อมเสร็จแล้วและรอผู้แจ้งตรวจสอบ — ยังไม่เปิดแบบประเมิน</p>
-            )}
-            {selectedStatus === 'ปิดงาน' && (
-              <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">ยืนยันจบ Ticket — ระบบจะเปิดแบบประเมินให้ผู้แจ้ง</p>
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">ซ่อมเสร็จแล้ว — ระบบจะแจ้งให้ผู้แจ้งประเมิน ตรวจรับ และลงลายเซ็นเพื่อปิดงาน</p>
             )}
           </div>
 
@@ -219,10 +216,10 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
             />
           </div>
 
-          {(selectedStatus === 'เสร็จสิ้น' || selectedStatus === 'ปิดงาน') && (
+          {selectedStatus === 'เสร็จสิ้น' && (
             <div className="sm:col-span-2">
               <label htmlFor="upd-resolution" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                ผลการแก้ไข (จำเป็นก่อนปิดงาน)
+                ผลการแก้ไข (จำเป็นก่อนส่งให้ผู้แจ้งตรวจรับ)
               </label>
               <textarea
                 id="upd-resolution"
@@ -442,6 +439,11 @@ export function TicketDetailPage() {
     enabled: hasPermission('ticket.update') || hasPermission('ticket.assign'),
   });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options'), enabled: hasPermission('ticket.update') && hasPermission('vendor.view') });
+  const ratingCriteriaQuery = useQuery({
+    queryKey: ['ticket-rating-criteria', 'active'],
+    queryFn: () => apiFetch<TicketRatingCriterion[]>('/api/v1/ticket-rating-criteria'),
+    enabled: !!id,
+  });
 
   if (ticketQuery.isLoading) {
     return <LoadingState label="กำลังโหลดรายละเอียด Ticket..." />;
@@ -488,7 +490,7 @@ export function TicketDetailPage() {
       <PageHeader
         eyebrow={`Ticket / ${ticket.ticket_no}`}
         title={<span className="inline-flex items-center gap-2">{ticket.title}{ticket.is_security && <AlertTriangle className="h-5 w-5 text-danger-700" aria-label="Security" />}</span>}
-        description={`ผู้แจ้ง ${ticket.requester?.full_name ?? 'ไม่ระบุ'} · เปิดเมื่อ ${formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')}`}
+        description={`ผู้แจ้ง ${ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name ?? 'ไม่ระบุ'} · เปิดเมื่อ ${formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')}`}
         leading={<TicketIcon className="h-5 w-5" />}
         meta={<>
           <StatusBadge display={{ label: ticketStatusLabel[ticket.status], tone: ticketStatusTone[ticket.status] }} />
@@ -582,9 +584,14 @@ export function TicketDetailPage() {
               status={ticket.status}
               signatureUrl={ticket.requester_signature_url}
               signedAt={ticket.requester_signature_uploaded_at}
-              onSign={async (file) => {
+              requesterName={ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name}
+              criteria={ratingCriteriaQuery.data ?? []}
+              rating={ticket.rating}
+              onSign={async (file, ratings, feedback) => {
                 const body = new FormData();
                 body.set('file', file);
+                body.set('ratings', JSON.stringify(ratings));
+                if (feedback) body.set('feedback', feedback);
                 await apiFetch(`/api/v1/tickets/${ticket.id}/requester-signoff`, { method: 'POST', body });
                 await ticketQuery.refetch();
               }}

@@ -2,7 +2,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { calculateTicketOverallRating, type TicketRatingDetails } from '@itlife/shared';
 import { Hono } from 'hono';
-import { resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
+import { buildTicketFlexMessage, resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -851,9 +851,15 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     } catch (e) {
       return c.json(fail(reqId, 'TICKET_TRANSITION_INVALID', (e as Error).message), 400);
     }
-    if (toStatus === TICKET_STATUS.CLOSED && !body.resolution && !current.resolution) {
+    if (toStatus === TICKET_STATUS.CLOSED) {
       return c.json(
-        fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุผลการแก้ไขก่อนปิดงาน', [{ field: 'resolution', message: 'จำเป็น' }]),
+        fail(reqId, 'TICKET_REQUESTER_SIGNOFF_REQUIRED', 'ผู้แจ้งต้องประเมินการบริการและลงลายเซ็นตรวจรับก่อนปิดงาน'),
+        409,
+      );
+    }
+    if (toStatus === TICKET_STATUS.RESOLVED && !body.resolution && !current.resolution) {
+      return c.json(
+        fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุผลการแก้ไขก่อนส่งให้ผู้แจ้งตรวจรับ', [{ field: 'resolution', message: 'จำเป็น' }]),
         400,
       );
     }
@@ -1012,7 +1018,25 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
       });
     }
     if (lineTarget) {
-      await sendLinePush(c.env, lineTarget.target, `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`, lineTarget.lineUserId);
+      const message = `Ticket ${updated.ticket_no} เปลี่ยนสถานะเป็น ${patch.status}`;
+      await sendLinePush(
+        c.env,
+        lineTarget.target,
+        message,
+        lineTarget.lineUserId,
+        buildTicketFlexMessage({
+          eyebrow: 'อัปเดตสถานะแจ้งซ่อม',
+          title: updated.title,
+          ticketNo: updated.ticket_no,
+          status: String(patch.status),
+          requesterName: updated.requester_name_snapshot,
+          detail: patch.status === TICKET_STATUS.RESOLVED
+            ? 'งานซ่อมเสร็จแล้ว กรุณาทดสอบ ประเมินการบริการ และลงลายเซ็นตรวจรับ'
+            : body.note ?? null,
+          url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+          buttonLabel: patch.status === TICKET_STATUS.RESOLVED ? 'ประเมินและตรวจรับงาน' : 'ดูสถานะของฉัน',
+        }),
+      );
     }
   }
 
@@ -1040,6 +1064,32 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
   const body = await c.req.parseBody();
   const file = body.file;
   if (!(file instanceof File)) return c.json(fail(requestId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+  let ratingsPayload: unknown;
+  try {
+    ratingsPayload = typeof body.ratings === 'string' ? JSON.parse(body.ratings) : null;
+  } catch {
+    return c.json(fail(requestId, 'TICKET_RATING_INVALID', 'ข้อมูลแบบประเมินไม่ถูกต้อง กรุณาให้คะแนนใหม่'), 400);
+  }
+  const evaluation = submitTicketFeedbackSchema.safeParse({
+    ratings: ratingsPayload,
+    feedback: typeof body.feedback === 'string' ? body.feedback : undefined,
+  });
+  if (!evaluation.success) {
+    return c.json(fail(requestId, 'TICKET_RATING_INVALID', evaluation.error.issues[0]?.message ?? 'กรุณาให้คะแนนให้ครบทุกหัวข้อ'), 400);
+  }
+  const { data: criteria, error: criteriaError } = await loadActiveRatingCriteria(admin);
+  if (criteriaError || !criteria?.length) {
+    return c.json(fail(requestId, 'TICKET_RATING_CRITERIA_UNAVAILABLE', 'ไม่พบหัวข้อประเมินที่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 409);
+  }
+  if (!ratingsMatchCriteria(evaluation.data.ratings, criteria.map((criterion) => String(criterion.key)))) {
+    return c.json(fail(requestId, 'TICKET_RATING_CRITERIA_CHANGED', 'หัวข้อประเมินมีการเปลี่ยนแปลง กรุณารีเฟรชหน้าแล้วให้คะแนนใหม่'), 409);
+  }
+  const rating = calculateTicketOverallRating(evaluation.data.ratings);
+  const ratingSnapshot = criteria.map((criterion) => ({
+    key: String(criterion.key),
+    label: String(criterion.label),
+    score: evaluation.data.ratings[String(criterion.key)],
+  }));
   const saved = await saveRequesterSignature(admin, {
     ticketId: ticket.id,
     previousPath: ticket.requester_signature_storage_path,
@@ -1051,13 +1101,18 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
   const { error: closeError } = await admin.from('tickets').update({
     status: TICKET_STATUS.CLOSED,
     closed_at: saved.uploadedAt,
+    rating,
+    rating_details: evaluation.data.ratings,
+    rating_criteria_snapshot: ratingSnapshot,
+    feedback: evaluation.data.feedback ?? null,
+    feedback_at: saved.uploadedAt,
     updated_by: actorId,
   }).eq('id', ticket.id).eq('status', TICKET_STATUS.RESOLVED);
   if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
   await admin.from('ticket_worklogs').insert({
     ticket_id: ticket.id,
     action: 'ผู้แจ้งตรวจรับและลงนาม',
-    detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+    detail: `ผู้แจ้งประเมิน ${rating}/5 คะแนน ยืนยันผลการแก้ไข และลงลายเซ็นในส่วนที่ 5`,
     status_from: TICKET_STATUS.RESOLVED,
     status_to: TICKET_STATUS.CLOSED,
     is_public: true,
@@ -1066,7 +1121,7 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
   await writeAuditLog(c.env, {
     actorId, actorEmail: c.get('userEmail'), action: 'REQUESTER_SIGNOFF', module: 'ticket',
     targetTable: 'tickets', targetId: ticket.id,
-    detail: { sizeBytes: file.size, status: TICKET_STATUS.CLOSED }, requestId,
+    detail: { sizeBytes: file.size, status: TICKET_STATUS.CLOSED, rating, ratings: evaluation.data.ratings }, requestId,
   });
   if (ticket.assignee_id && ticket.assignee_id !== actorId) {
     await sendNotification(c.env, {
@@ -1076,7 +1131,7 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
       link: `/tickets/${ticket.id}`,
     });
   }
-  return c.json(ok(requestId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: TICKET_STATUS.CLOSED }), 201);
+  return c.json(ok(requestId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: TICKET_STATUS.CLOSED, rating }), 201);
 });
 
 /**

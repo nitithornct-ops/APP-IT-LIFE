@@ -100,15 +100,13 @@ describe('Ticket work panel', () => {
 
     await waitFor(() => expect(status).toHaveValue('เสร็จสิ้น'));
     expect(screen.getByLabelText('ผู้รับผิดชอบ')).toHaveValue('staff-2');
-    expect(screen.getByLabelText('ผลการแก้ไข (จำเป็นก่อนปิดงาน)')).toHaveValue('ติดตั้งไดรเวอร์แล้ว');
+    expect(screen.getByLabelText('ผลการแก้ไข (จำเป็นก่อนส่งให้ผู้แจ้งตรวจรับ)')).toHaveValue('ติดตั้งไดรเวอร์แล้ว');
   });
 
   it('shows state-specific requirements before calling the API', async () => {
     renderWorkPanel(makeTicket({ status: 'เสร็จสิ้น' }));
-    fireEvent.change(screen.getByLabelText('สถานะ'), { target: { value: 'ปิดงาน' } });
-    fireEvent.click(screen.getByRole('button', { name: 'บันทึก' }));
-    expect(await screen.findByText('กรุณาระบุผลการแก้ไขก่อนปิดงาน')).toBeVisible();
-    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('option', { name: 'ปิดงาน' })).not.toBeInTheDocument();
+    expect(screen.getByText(/ผู้แจ้งประเมิน ตรวจรับ และลงลายเซ็นเพื่อปิดงาน/)).toBeVisible();
 
     cleanup();
     renderWorkPanel(makeTicket());

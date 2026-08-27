@@ -5,7 +5,7 @@ import { calculateTicketOverallRating } from '@itlife/shared';
 import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
 } from '../lib/lineAuth';
-import { notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
+import { buildTicketFlexMessage, notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -223,6 +223,15 @@ lineRoute.patch(
       .single();
     if (error || !data) return dbFailJson(c, 'LINE_PROFILE_UPDATE_FAILED', error, 'บันทึกชื่อ–นามสกุลไม่สำเร็จ');
 
+    // Correct the requester snapshot on tickets that are still in progress. This also repairs
+    // tickets created before LINE display names were separated from real requester names.
+    const { error: ticketNameError } = await admin
+      .from('tickets')
+      .update({ requester_name_snapshot: fullName })
+      .eq('requester_line_user_id', user.id)
+      .in('status', ['ใหม่', 'รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน', 'ส่งต่อ Outsource', 'เสร็จสิ้น']);
+    if (ticketNameError) return dbFailJson(c, 'LINE_TICKET_REQUESTER_NAME_UPDATE_FAILED', ticketNameError, 'อัปเดตชื่อผู้แจ้งใน Ticket ไม่สำเร็จ');
+
     await writeAuditLog(c.env, {
       actorEmail: `LINE:${user.line_user_id}`, action: 'UPDATE', module: 'ticket',
       targetTable: 'line_users', targetId: user.id, detail: { fields: ['full_name'] }, requestId: reqId,
@@ -311,7 +320,17 @@ lineRoute.post(
       actorEmail: `LINE:${user.line_user_id}`, action: 'CREATE', module: 'ticket', targetTable: 'tickets',
       targetId: ticket.id, detail: { title: body.title, categoryId: body.categoryId, channel: 'line' }, requestId: reqId,
     });
-    await notifyTicketTeam(c.env, `Ticket ใหม่จาก LINE: ${ticket.title} (${ticket.ticket_no})`);
+    const teamMessage = `Ticket ใหม่จาก LINE: ${ticket.title} (${ticket.ticket_no})`;
+    await notifyTicketTeam(c.env, teamMessage, buildTicketFlexMessage({
+      eyebrow: 'มีรายการแจ้งซ่อมใหม่',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: ticket.status,
+      requesterName: user.full_name,
+      detail: ticket.description,
+      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      buttonLabel: 'เปิดรับเรื่อง',
+    }));
 
     return c.json(ok(reqId, ticket), 201);
   },
@@ -490,6 +509,37 @@ lineRoute.post(
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) return c.json(fail(reqId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+    let ratingsPayload: unknown;
+    try {
+      ratingsPayload = typeof body.ratings === 'string' ? JSON.parse(body.ratings) : null;
+    } catch {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_INVALID', 'ข้อมูลแบบประเมินไม่ถูกต้อง กรุณาให้คะแนนใหม่'), 400);
+    }
+    const evaluation = lineTicketFeedbackSchema.safeParse({
+      ratings: ratingsPayload,
+      comment: typeof body.feedback === 'string' ? body.feedback : undefined,
+    });
+    if (!evaluation.success) {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_INVALID', evaluation.error.issues[0]?.message ?? 'กรุณาให้คะแนนให้ครบทุกหัวข้อ'), 400);
+    }
+    const { data: criteria, error: criteriaError } = await admin
+      .from('ticket_rating_criteria')
+      .select('key, label')
+      .eq('status', 'active')
+      .order('sort_order')
+      .order('created_at');
+    if (criteriaError || !criteria?.length) {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_CRITERIA_UNAVAILABLE', 'ไม่พบหัวข้อประเมินที่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 409);
+    }
+    if (!ratingsMatchCriteria(evaluation.data.ratings, criteria.map((criterion) => String(criterion.key)))) {
+      return c.json(fail(reqId, 'LINE_TICKET_RATING_CRITERIA_CHANGED', 'หัวข้อประเมินมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่'), 409);
+    }
+    const rating = calculateTicketOverallRating(evaluation.data.ratings);
+    const ratingSnapshot = criteria.map((criterion) => ({
+      key: String(criterion.key),
+      label: String(criterion.label),
+      score: evaluation.data.ratings[String(criterion.key)],
+    }));
     const saved = await saveRequesterSignature(admin, {
       ticketId: ticket.id,
       previousPath: ticket.requester_signature_storage_path,
@@ -498,20 +548,37 @@ lineRoute.post(
     });
     if (!saved.ok) return c.json(fail(reqId, saved.code, saved.message), 400);
 
-    const { error: closeError } = await admin.from('tickets').update({ status: 'ปิดงาน', closed_at: saved.uploadedAt }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
+    const { error: closeError } = await admin.from('tickets').update({
+      status: 'ปิดงาน',
+      closed_at: saved.uploadedAt,
+      rating,
+      rating_details: evaluation.data.ratings,
+      rating_criteria_snapshot: ratingSnapshot,
+      feedback: evaluation.data.comment ?? null,
+      feedback_at: saved.uploadedAt,
+    }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
     if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
     await admin.from('ticket_worklogs').insert({
-      ticket_id: ticket.id, action: 'ผู้แจ้งตรวจรับและลงนาม', detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+      ticket_id: ticket.id, action: 'ผู้แจ้งประเมิน ตรวจรับ และลงนาม', detail: `ผู้แจ้งประเมิน ${rating}/5 คะแนน ยืนยันผลการแก้ไข และลงลายเซ็นในส่วนที่ 5`,
       status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', is_public: true,
       actor_id: user.linked_user_id ?? null, actor_line_user_id: user.id,
     });
 
     await writeAuditLog(c.env, {
       actorEmail: `LINE:${user.line_user_id}`, action: 'REQUESTER_SIGNOFF', module: 'ticket', targetTable: 'tickets',
-      targetId: ticket.id, detail: { channel: 'line', signer: user.full_name, sizeBytes: file.size, status: 'ปิดงาน' }, requestId: reqId,
+      targetId: ticket.id, detail: { channel: 'line', signer: user.full_name, sizeBytes: file.size, status: 'ปิดงาน', rating, ratings: evaluation.data.ratings }, requestId: reqId,
     });
-    await notifyTicketTeam(c.env, `ผู้แจ้งผ่าน LINE ตรวจรับและลงนามปิด ${ticket.ticket_no}: ${ticket.title}`);
-    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน' }), 201);
+    const teamMessage = `ผู้แจ้งผ่าน LINE ประเมิน ตรวจรับ และลงนามปิด ${ticket.ticket_no}: ${ticket.title}`;
+    await notifyTicketTeam(c.env, teamMessage, buildTicketFlexMessage({
+      eyebrow: 'ผู้แจ้งตรวจรับและปิดงานแล้ว',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: 'ปิดงาน',
+      requesterName: user.full_name,
+      detail: `ผลประเมินรวม ${rating}/5 คะแนน`,
+      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+    }));
+    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน', rating }), 201);
   },
 );
 
@@ -647,6 +714,9 @@ lineRoute.patch(
       .update({
         linked_user_id: targetProfile?.id ?? null,
         employee_code: targetProfile?.employee_code ?? null,
+        // A linked system profile is the authoritative source for the employee's real name.
+        // Unlinking keeps the already confirmed name so future LINE tickets remain identifiable.
+        full_name: targetProfile?.full_name ?? current.full_name,
         updated_by: c.get('userId'),
       })
       .eq('id', lineUserId)
@@ -659,6 +729,15 @@ lineRoute.patch(
       return dbFailJson(c, 'LINE_ADMIN_LINK_FAILED', error, message);
     }
     if (!updated) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
+
+    if (targetProfile?.full_name) {
+      const { error: ticketNameError } = await admin
+        .from('tickets')
+        .update({ requester_name_snapshot: targetProfile.full_name })
+        .eq('requester_line_user_id', updated.id)
+        .in('status', ['ใหม่', 'รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน', 'ส่งต่อ Outsource', 'เสร็จสิ้น']);
+      if (ticketNameError) return dbFailJson(c, 'LINE_TICKET_REQUESTER_NAME_UPDATE_FAILED', ticketNameError, 'อัปเดตชื่อผู้แจ้งใน Ticket ไม่สำเร็จ');
+    }
 
     await writeAuditLog(c.env, {
       actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: userId ? 'LINE_ADMIN_LINK_USER' : 'LINE_ADMIN_UNLINK_USER',
@@ -686,11 +765,22 @@ lineRoute.post(
       return c.json(fail(reqId, 'LINE_ACCOUNT_NOT_ACTIVE', 'ส่งข้อความทดสอบได้เฉพาะบัญชี LINE ที่ Active'), 409);
     }
 
+    const testTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const testMessage = `ข้อความทดสอบจาก LIFE IT Smart Service Center\nเวลา ${testTime}`;
     const result = await sendLinePush(
       c.env,
       account.line_user_id,
-      `ข้อความทดสอบจาก LIFE IT Smart Service Center\nเวลา ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
+      testMessage,
       account.id,
+      buildTicketFlexMessage({
+        eyebrow: 'ทดสอบการแจ้งเตือนสำเร็จ',
+        title: 'บัญชีนี้พร้อมรับข้อความจาก LIFE IT',
+        requesterName: account.full_name ?? account.display_name,
+        detail: `ส่งเมื่อ ${testTime}`,
+        url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+        buttonLabel: 'เปิด LINE Service Portal',
+        accentColor: '#06A66A',
+      }),
     );
     await writeAuditLog(c.env, {
       actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'LINE_ADMIN_TEST_MESSAGE',

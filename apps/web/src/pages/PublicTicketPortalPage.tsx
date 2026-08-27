@@ -1,3 +1,4 @@
+import type { TicketRatingCriterion, TicketRatingDetails, TicketRatingSnapshotItem } from '@itlife/shared';
 import {
   AlertTriangle,
   Check,
@@ -63,10 +64,18 @@ interface TrackedTicket {
     created_at: string;
     resolved_at: string | null;
     closed_at: string | null;
+    requester_name_snapshot?: string | null;
+    guest_name?: string | null;
+    rating: number | null;
+    rating_details: TicketRatingDetails | null;
+    rating_criteria_snapshot: TicketRatingSnapshotItem[] | null;
+    feedback: string | null;
+    feedback_at: string | null;
     requester_signature_url: string | null;
     requester_signature_uploaded_at: string | null;
     category: { name: string } | null;
   };
+  ratingCriteria: TicketRatingCriterion[];
   worklogs: Array<{
     action: string;
     detail: string | null;
@@ -439,6 +448,11 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       setError('กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร');
       return;
     }
+    const normalizedRequesterName = guestName.trim().replace(/\s+/g, ' ');
+    if (normalizedRequesterName.split(/\s+/).length < 2) {
+      setError('กรุณากรอกทั้งชื่อและนามสกุลผู้แจ้ง');
+      return;
+    }
     if (!privacyConsent) {
       setError('กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket');
       return;
@@ -446,6 +460,12 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
     setSubmitting(true);
     setError(null);
     try {
+      if (lineAuthenticated && normalizedRequesterName !== lineProfile?.fullName) {
+        await lineApiFetch('/api/v1/line/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({ fullName: normalizedRequesterName }),
+        });
+      }
       const commonPayload = {
         requesterPhone: normalizedPhone,
         requesterPosition: requesterPosition || undefined,
@@ -466,7 +486,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
         }).then((ticket) => ({ id: ticket.id, ticketNo: ticket.ticket_no, channel: 'line' as const }))
         : await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
           method: 'POST',
-          body: JSON.stringify({ ...commonPayload, guestName, guestDepartment: guestDepartment || undefined, website: website || undefined }),
+          body: JSON.stringify({ ...commonPayload, guestName: normalizedRequesterName, guestDepartment: guestDepartment || undefined, website: website || undefined }),
         });
       let attachmentCount = 0;
       let attachmentWarning: string | undefined;
@@ -526,8 +546,9 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL} htmlFor="guestName">ชื่อ–นามสกุล {lineAuthenticated ? <span className="font-normal text-emerald-600">(ข้อมูลที่คุณกรอก)</span> : <Required />}</label>
-              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} readOnly={lineAuthenticated} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
+              <label className={LABEL} htmlFor="guestName">ชื่อ–นามสกุลผู้แจ้ง <Required /></label>
+              <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} required maxLength={160} autoComplete="name" placeholder="เช่น สมชาย ใจดี" />
+              {lineAuthenticated && <p className="mt-1 text-[11px] text-slate-500">ใช้ชื่อจริงในใบแจ้งซ่อม ระบบจะบันทึกชื่อนี้แทนชื่อโปรไฟล์ LINE</p>}
             </div>
             <div>
               <label className={LABEL} htmlFor="phone">เบอร์โทร <Required /></label>
@@ -831,10 +852,12 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     }
   }
 
-  async function signoff(file: File) {
+  async function signoff(file: File, ratings: TicketRatingDetails, feedback?: string) {
     if (!detailAccess) throw new Error('ไม่พบข้อมูลสำหรับยืนยัน Ticket');
     const body = new window.FormData();
     body.set('file', file);
+    body.set('ratings', JSON.stringify(ratings));
+    if (feedback) body.set('feedback', feedback);
     if (detailAccess.channel === 'line') {
       await lineApiFetch(`/api/v1/line/tickets/${detailAccess.id}/signoff`, { method: 'POST', body });
       setDetail(await lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${detailAccess.id}`));
@@ -857,6 +880,9 @@ function StatusTab({ onReport }: { onReport: () => void }) {
             status={detail.ticket.status}
             signatureUrl={detail.ticket.requester_signature_url}
             signedAt={detail.ticket.requester_signature_uploaded_at}
+            requesterName={detail.ticket.requester_name_snapshot ?? detail.ticket.guest_name}
+            criteria={detail.ratingCriteria ?? []}
+            rating={detail.ticket.rating}
             onSign={signoff}
           />
         </div>

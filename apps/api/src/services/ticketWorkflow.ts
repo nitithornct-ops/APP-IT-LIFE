@@ -76,12 +76,6 @@ const FIELD_OUTCOME_COPY: Record<string, Omit<FieldOutcome, 'status'>> = {
     requiresResolution: true,
     tone: 'success',
   },
-  [TICKET_STATUS.CLOSED]: {
-    label: 'ปิดงานเลย',
-    description: 'ผู้แจ้งยืนยันหน้างานแล้วว่าใช้งานได้ ไม่ต้องรอตรวจรับซ้ำ',
-    requiresResolution: true,
-    tone: 'success',
-  },
   [TICKET_STATUS.WAITING_PARTS]: {
     label: 'รออะไหล่',
     description: 'ยังปิดไม่ได้เพราะต้องรอของ ระบบจะหยุดนับเวลา SLA ไว้ก่อน',
