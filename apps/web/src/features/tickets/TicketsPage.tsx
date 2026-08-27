@@ -935,8 +935,8 @@ export function TicketsPage() {
                             { kind: 'custom', icon: FileText, to: `/tickets/${ticket.id}/form`, label: 'ดูแบบฟอร์ม' },
                             {
                               kind: 'edit',
-                              label: ticket.status === 'เสร็จสิ้น' ? 'ตรวจสอบ / ปิดงาน' : 'ดำเนินการ',
-                              hidden: !canManageTicket || LOCKED_TICKET_STATUSES.includes(ticket.status),
+                              label: 'ดำเนินการ',
+                              hidden: !canManageTicket || ticket.status === 'เสร็จสิ้น' || LOCKED_TICKET_STATUSES.includes(ticket.status),
                               to: `/tickets/${ticket.id}?action=edit#ticket-work-panel`,
                             },
                             {

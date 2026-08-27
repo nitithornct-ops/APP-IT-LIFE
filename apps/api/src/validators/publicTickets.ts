@@ -3,7 +3,8 @@ import { z } from 'zod';
 const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
 
 export const publicSubmitTicketSchema = z.object({
-  guestName: z.string().trim().min(1, 'กรุณากรอกชื่อผู้แจ้ง').max(160),
+  guestName: z.string().trim().min(3, 'กรุณากรอกชื่อ–นามสกุลผู้แจ้ง').max(160)
+    .refine((value) => value.split(/\s+/).length >= 2, 'กรุณากรอกทั้งชื่อและนามสกุลผู้แจ้ง'),
   requesterPosition: z.string().trim().max(160).optional(),
   requesterPhone: z.string().trim().min(8, 'กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร').max(40),
   guestDepartment: z.string().trim().max(160).optional(),

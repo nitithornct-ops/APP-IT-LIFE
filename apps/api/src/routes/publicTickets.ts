@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
+import { calculateTicketOverallRating } from '@itlife/shared';
 import { Hono } from 'hono';
-import { notifyTicketTeam } from '../lib/lineMessaging';
+import { buildTicketFlexMessage, notifyTicketTeam } from '../lib/lineMessaging';
 import { createAdminClient } from '../lib/supabase';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
@@ -13,7 +14,9 @@ import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import { publicSubmitTicketSchema, publicTicketStatusQuerySchema } from '../validators/publicTickets';
+import { submitTicketFeedbackSchema } from '../validators/tickets';
 import { MAX_FILE_SIZE_BYTES } from '../validators/files';
+import { ratingsMatchCriteria } from './tickets';
 
 /**
  * Public (no-login) ticket report page — port of legacy-gas/PublicTicket.html's "แจ้งซ่อม" +
@@ -312,6 +315,35 @@ publicTicketsRoute.post(
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) return c.json(fail(reqId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+    let ratingsPayload: unknown;
+    try {
+      ratingsPayload = typeof body.ratings === 'string' ? JSON.parse(body.ratings) : null;
+    } catch {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_RATING_INVALID', 'ข้อมูลแบบประเมินไม่ถูกต้อง กรุณาให้คะแนนใหม่'), 400);
+    }
+    const evaluation = submitTicketFeedbackSchema.safeParse({
+      ratings: ratingsPayload,
+      feedback: typeof body.feedback === 'string' ? body.feedback : undefined,
+    });
+    if (!evaluation.success) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_RATING_INVALID', evaluation.error.issues[0]?.message ?? 'กรุณาให้คะแนนให้ครบทุกหัวข้อ'), 400);
+    }
+    const { data: criteria, error: criteriaError } = await admin
+      .from('ticket_rating_criteria')
+      .select('key, label')
+      .eq('status', 'active')
+      .order('sort_order')
+      .order('created_at');
+    if (criteriaError || !criteria?.length) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_RATING_CRITERIA_UNAVAILABLE', 'ไม่พบหัวข้อประเมินที่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 409);
+    }
+    if (!ratingsMatchCriteria(evaluation.data.ratings, criteria.map((criterion) => String(criterion.key)))) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_RATING_CRITERIA_CHANGED', 'หัวข้อประเมินมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่'), 409);
+    }
+    const rating = calculateTicketOverallRating(evaluation.data.ratings);
+    const ratingSnapshot = criteria.map((criterion) => ({
+      key: String(criterion.key), label: String(criterion.label), score: evaluation.data.ratings[String(criterion.key)],
+    }));
     const saved = await saveRequesterSignature(admin, {
       ticketId: ticket.id,
       previousPath: ticket.requester_signature_storage_path,
@@ -320,20 +352,29 @@ publicTicketsRoute.post(
     });
     if (!saved.ok) return c.json(fail(reqId, saved.code, saved.message), 400);
 
-    const { error: closeError } = await admin.from('tickets').update({ status: 'ปิดงาน', closed_at: saved.uploadedAt }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
+    const { error: closeError } = await admin.from('tickets').update({
+      status: 'ปิดงาน', closed_at: saved.uploadedAt, rating,
+      rating_details: evaluation.data.ratings, rating_criteria_snapshot: ratingSnapshot,
+      feedback: evaluation.data.feedback ?? null, feedback_at: saved.uploadedAt,
+    }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
     if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
     await admin.from('ticket_worklogs').insert({
-      ticket_id: ticket.id, action: 'ผู้แจ้งตรวจรับและลงนาม', detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+      ticket_id: ticket.id, action: 'ผู้แจ้งประเมิน ตรวจรับ และลงนาม', detail: `ผู้แจ้งประเมิน ${rating}/5 คะแนน ยืนยันผลการแก้ไข และลงลายเซ็นในส่วนที่ 5`,
       status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', is_public: true,
       actor_label: `ผู้แจ้งผ่านหน้าสาธารณะ: ${ticket.guest_name ?? '-'}`,
     });
 
     await writeAuditLog(c.env, {
       actorEmail: `GUEST:${clientIp(c)}`, action: 'REQUESTER_SIGNOFF', module: 'ticket', targetTable: 'tickets',
-      targetId: ticket.id, detail: { channel: 'guest', signer: ticket.guest_name, sizeBytes: file.size, status: 'ปิดงาน' }, requestId: reqId,
+      targetId: ticket.id, detail: { channel: 'guest', signer: ticket.guest_name, sizeBytes: file.size, status: 'ปิดงาน', rating, ratings: evaluation.data.ratings }, requestId: reqId,
     });
-    await notifyTicketTeam(c.env, `ผู้แจ้งตรวจรับและลงนามปิด ${ticket.ticket_no}: ${ticket.title}`);
-    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน' }), 201);
+    const teamMessage = `ผู้แจ้งประเมิน ตรวจรับ และลงนามปิด ${ticket.ticket_no}: ${ticket.title}`;
+    await notifyTicketTeam(c.env, teamMessage, buildTicketFlexMessage({
+      eyebrow: 'ผู้แจ้งตรวจรับและปิดงานแล้ว', title: ticket.title, ticketNo: ticket.ticket_no,
+      status: 'ปิดงาน', requesterName: ticket.guest_name, detail: `ผลประเมินรวม ${rating}/5 คะแนน`,
+      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+    }));
+    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน', rating }), 201);
   },
 );
 
@@ -368,7 +409,7 @@ publicTicketsRoute.get(
 
     let ticketQuery = admin
       .from('tickets')
-      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, requester_signature_storage_path, requester_signature_uploaded_at, category:ticket_categories(name)')
+      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, guest_name, rating, rating_details, rating_criteria_snapshot, feedback, feedback_at, requester_signature_storage_path, requester_signature_uploaded_at, category:ticket_categories(name)')
       .eq('source_channel', 'guest')
       .eq('public_tracking_token_hash', tokenHash);
     const ticketRef = c.req.param('id')!;
@@ -378,10 +419,12 @@ publicTicketsRoute.get(
     const { data: ticket } = await ticketQuery.maybeSingle();
     if (!ticket) return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
 
-    const { data: worklogs } = await admin
-      .from('ticket_worklogs')
-      .select('action, detail, status_from, status_to, created_at')
-      .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true });
+    const [{ data: worklogs }, { data: ratingCriteria }] = await Promise.all([
+      admin.from('ticket_worklogs').select('action, detail, status_from, status_to, created_at')
+        .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
+      admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status')
+        .eq('status', 'active').order('sort_order').order('created_at'),
+    ]);
 
     const attachments = await loadPublicAttachments(admin, [ticket.id]);
     let requesterSignatureUrl: string | null = null;
@@ -390,6 +433,6 @@ publicTicketsRoute.get(
       requesterSignatureUrl = data?.signedUrl ?? null;
     }
 
-    return c.json(ok(reqId, { ticket: { ...ticket, requester_signature_url: requesterSignatureUrl }, worklogs: worklogs ?? [], attachments }));
+    return c.json(ok(reqId, { ticket: { ...ticket, requester_signature_url: requesterSignatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [], attachments }));
   },
 );

@@ -1,10 +1,9 @@
-import { TICKET_RATING_CRITERIA, type TicketRatingCriterion, type TicketRatingDetails, type TicketRatingKey, type TicketRatingSnapshotItem } from '@itlife/shared';
+import { TICKET_RATING_CRITERIA, type TicketRatingCriterion, type TicketRatingDetails, type TicketRatingSnapshotItem } from '@itlife/shared';
 import { AlertTriangle, ArrowLeft, Loader2, LogOut, MessageCircleQuestion, Ticket } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
 import { LineProfileNameForm } from '../components/LineProfileNameForm';
-import { TicketRatingFields } from '../components/tickets/TicketRatingFields';
 import { RequesterSignoffCard } from '../components/tickets/RequesterSignoffCard';
 import { ApiError } from '../services/apiClient';
 import { clearLineSessionToken, lineApiFetch } from '../services/lineApiClient';
@@ -25,7 +24,7 @@ interface LineTicketSummary {
 }
 
 interface LineTicketDetail {
-  ticket: LineTicketSummary & { description: string; resolution: string | null; rating: number | null; rating_details: TicketRatingDetails | null; rating_criteria_snapshot: TicketRatingSnapshotItem[] | null; signature_url: string | null; requester_signature_url: string | null; requester_signature_uploaded_at: string | null; category: { name: string } | null };
+  ticket: LineTicketSummary & { requester_name_snapshot: string | null; description: string; resolution: string | null; rating: number | null; rating_details: TicketRatingDetails | null; rating_criteria_snapshot: TicketRatingSnapshotItem[] | null; signature_url: string | null; requester_signature_url: string | null; requester_signature_uploaded_at: string | null; category: { name: string } | null };
   ratingCriteria: TicketRatingCriterion[];
   worklogs: Array<{ action: string; detail: string | null; status_from: string | null; status_to: string | null; created_at: string }>;
 }
@@ -132,7 +131,12 @@ export function LinePortalPage() {
       ) : view === 'menu' ? (
         <MenuCard profile={bootstrap.profile} onNavigate={setView} onLogout={() => void logout()} />
       ) : view === 'submit' ? (
-        <SubmitTicketCard onDone={() => setView('list')} onBack={() => setView('menu')} />
+        <SubmitTicketCard
+          profile={bootstrap.profile}
+          onProfileSaved={(fullName) => setBootstrap((current) => current?.profile ? { ...current, profile: { ...current.profile, fullName } } : current)}
+          onDone={() => setView('list')}
+          onBack={() => setView('menu')}
+        />
       ) : view === 'list' ? (
         <TicketListCard onSelect={() => setView('detail')} onBack={() => setView('menu')} />
       ) : (
@@ -165,14 +169,21 @@ function MenuCard({ profile, onNavigate, onLogout }: { profile: LineBootstrap['p
   );
 }
 
-function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+function SubmitTicketCard({ profile, onProfileSaved, onDone, onBack }: {
+  profile: NonNullable<LineBootstrap['profile']>;
+  onProfileSaved: (fullName: string) => void;
+  onDone: () => void;
+  onBack: () => void;
+}) {
   const [categories, setCategories] = useState<TicketCategory[]>([]);
+  const [fullName, setFullName] = useState(profile.fullName);
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
   const [privacyConsent, setPrivacyConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasFirstAndLastName = fullName.trim().split(/\s+/).length >= 2;
 
   useEffect(() => {
     void lineApiFetch<TicketCategory[]>('/api/v1/line/ticket-categories').then(setCategories).catch(() => setCategories([]));
@@ -183,6 +194,11 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
     setSubmitting(true);
     setError(null);
     try {
+      const normalizedName = fullName.trim().replace(/\s+/g, ' ');
+      if (normalizedName !== profile.fullName) {
+        await lineApiFetch('/api/v1/line/profile', { method: 'PATCH', body: JSON.stringify({ fullName: normalizedName }) });
+        onProfileSaved(normalizedName);
+      }
       await lineApiFetch('/api/v1/line/tickets', { method: 'POST', body: JSON.stringify({ title, categoryId, description, privacyConsent }) });
       onDone();
     } catch (err) {
@@ -198,6 +214,11 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> กลับ
       </button>
       <div className="flex flex-col gap-3">
+        <div>
+          <label htmlFor="requester-name" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">ชื่อ–นามสกุลผู้แจ้ง</label>
+          <input id="requester-name" className={INPUT} value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={3} maxLength={160} autoComplete="name" />
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">ใช้ชื่อจริงสำหรับใบแจ้งซ่อมและการลงนาม ไม่ใช้ชื่อโปรไฟล์ LINE ({profile.displayName || '-'})</p>
+        </div>
         <div>
           <label htmlFor="title" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">หัวข้อปัญหา</label>
           <input id="title" className={INPUT} value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} />
@@ -218,7 +239,7 @@ function SubmitTicketCard({ onDone, onBack }: { onDone: () => void; onBack: () =
           <span>ยอมรับการใช้ข้อมูลเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket</span>
         </label>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <button type="submit" disabled={submitting || !privacyConsent} className={BUTTON_PRIMARY}>
+        <button type="submit" disabled={submitting || !privacyConsent || !hasFirstAndLastName} className={BUTTON_PRIMARY}>
           {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />} ส่ง Ticket
         </button>
       </div>
@@ -244,10 +265,12 @@ function TicketListCard({ onSelect, onBack }: { onSelect: (id: string) => void; 
     }
   }
 
-  async function signoff(file: File) {
+  async function signoff(file: File, ratings: TicketRatingDetails, feedback?: string) {
     if (!detail) return;
     const body = new FormData();
     body.set('file', file);
+    body.set('ratings', JSON.stringify(ratings));
+    if (feedback) body.set('feedback', feedback);
     await lineApiFetch(`/api/v1/line/tickets/${detail.ticket.id}/signoff`, { method: 'POST', body });
     setDetail(await lineApiFetch<LineTicketDetail>(`/api/v1/line/tickets/${detail.ticket.id}`));
     setTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
@@ -280,23 +303,7 @@ function TicketListCard({ onSelect, onBack }: { onSelect: (id: string) => void; 
   );
 }
 
-function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDetail; onSignoff: (file: File) => Promise<void>; onBack: () => void }) {
-  const [ratings, setRatings] = useState<Partial<TicketRatingDetails>>({});
-  const [comment, setComment] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const canRate = detail.ticket.status === 'ปิดงาน' && detail.ticket.rating == null;
-
-  async function submitFeedback() {
-    try {
-      await lineApiFetch(`/api/v1/line/tickets/${detail.ticket.id}/feedback`, { method: 'POST', body: JSON.stringify({ ratings, comment }) });
-      setSubmitted(true);
-    } catch {
-      /* keep the form visible so the user can retry */
-    }
-  }
-
-  const ratingComplete = detail.ratingCriteria.length > 0 && detail.ratingCriteria.every((criterion) => ratings[criterion.key] !== undefined);
-  const setCriterionScore = (key: TicketRatingKey, value: number) => setRatings((current) => ({ ...current, [key]: value }));
+function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDetail; onSignoff: (file: File, ratings: TicketRatingDetails, feedback?: string) => Promise<void>; onBack: () => void }) {
   const ratingBreakdown = detail.ticket.rating_criteria_snapshot?.length
     ? detail.ticket.rating_criteria_snapshot
     : TICKET_RATING_CRITERIA.flatMap((criterion) => {
@@ -316,7 +323,15 @@ function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDet
         <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600 dark:bg-slate-700 dark:text-slate-300">ผลดำเนินการ: {detail.ticket.resolution}</p>
       )}
       <div className="mt-4">
-        <RequesterSignoffCard status={detail.ticket.status} signatureUrl={detail.ticket.requester_signature_url} signedAt={detail.ticket.requester_signature_uploaded_at} onSign={onSignoff} />
+        <RequesterSignoffCard
+          status={detail.ticket.status}
+          signatureUrl={detail.ticket.requester_signature_url}
+          signedAt={detail.ticket.requester_signature_uploaded_at}
+          requesterName={detail.ticket.requester_name_snapshot}
+          criteria={detail.ratingCriteria}
+          rating={detail.ticket.rating}
+          onSign={onSignoff}
+        />
       </div>
       <ul className="mt-3 flex flex-col gap-1 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
         {detail.worklogs.map((log, index) => (
@@ -324,15 +339,7 @@ function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDet
         ))}
       </ul>
       {detail.ticket.signature_url && <div className="mt-4 border-t border-slate-100 pt-4 text-center dark:border-slate-700"><p className="mb-2 text-xs font-semibold text-slate-500">ลายเซ็นรับรอง Ticket</p><img src={detail.ticket.signature_url} alt="ลายเซ็นรับรอง Ticket" className="mx-auto max-h-24 max-w-full object-contain" /></div>}
-      {canRate && !submitted && (
-        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-700">
-          <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">ประเมินการบริการหลังปิดงาน</p>
-          <TicketRatingFields criteria={detail.ratingCriteria} scores={ratings} onChange={setCriterionScore} compact />
-          <textarea className={INPUT} rows={2} placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)" value={comment} onChange={(event) => setComment(event.target.value)} />
-          <button type="button" disabled={!ratingComplete} onClick={() => void submitFeedback()} className={`${BUTTON_PRIMARY} mt-2 disabled:cursor-not-allowed disabled:opacity-50`}>ส่งคะแนน</button>
-        </div>
-      )}
-      {detail.ticket.rating != null && !submitted && (
+      {detail.ticket.rating != null && (
         <div className="mt-4 border-t border-slate-100 pt-4 text-sm dark:border-slate-700">
           <p className="font-semibold text-slate-700 dark:text-slate-200">ผลประเมินการบริการ: {detail.ticket.rating}/5</p>
           {ratingBreakdown.map((criterion) => (
@@ -340,7 +347,6 @@ function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDet
           ))}
         </div>
       )}
-      {submitted && <p className="mt-4 text-center text-sm text-green-600">ขอบคุณสำหรับการประเมินครับ</p>}
     </div>
   );
 }
