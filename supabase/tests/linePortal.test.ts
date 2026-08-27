@@ -56,6 +56,17 @@ describe('LINE public portal database controls', () => {
     expect(asAnonSessions.rows).toEqual([{ count: 0 }]);
   });
 
+  it('allows only one LINE identity to be linked to an application profile', async () => {
+    await asServiceRole(db, async () => {
+      await db.query(`update public.line_users set linked_user_id = $1 where id = $2`, [STAFF_ID, lineUserId]);
+      await expect(db.query(
+        `insert into public.line_users(line_user_id, display_name, link_status, linked_user_id)
+         values ('Ucccccccccccccccccccccccccccccccc', 'LINE ซ้ำ', 'Active', $1)`,
+        [STAFF_ID],
+      )).rejects.toThrow();
+    });
+  });
+
   it('records a LINE-owned ticket without an employee profile and keeps it visible to help-desk staff', async () => {
     const ticket = await asServiceRole(db, async () => db.query<{ id: string; source_channel: string }>(
       `insert into public.tickets(title, requester_id, requester_name_snapshot, requester_identity_type, description, source_channel, requester_line_user_id)

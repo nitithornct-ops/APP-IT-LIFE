@@ -51,6 +51,17 @@ describe('RowActions', () => {
     expect(screen.getByRole('button', { name: 'แก้ไข AST-001' })).toBeVisible();
   });
 
+  it('can show icons only while retaining labels for tooltips and assistive technology', () => {
+    renderActions(<RowActions iconOnly recordLabel="TCK-1" actions={[{ kind: 'view', to: '/tickets/1' }, { kind: 'edit', onClick: () => undefined }]} />);
+
+    const view = screen.getByRole('link', { name: 'ดู TCK-1' });
+    const edit = screen.getByRole('button', { name: 'แก้ไข TCK-1' });
+    expect(view).toHaveAttribute('title', 'ดู');
+    expect(edit).toHaveAttribute('title', 'แก้ไข');
+    expect(view.querySelector('span')).toHaveClass('sr-only');
+    expect(edit.querySelector('span')).toHaveClass('sr-only');
+  });
+
   it('keeps view, edit, cancel and delete in the same order in every module', () => {
     renderActions(
       <RowActions

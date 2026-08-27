@@ -18,24 +18,49 @@ function renderPage() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); apiFetchMock.mockReset(); });
 
 describe('TicketFormPage', () => {
-  it('builds a printable form automatically from the Ticket and its own signature', async () => {
-    apiFetchMock.mockImplementation((path: string) => path.includes('/branding')
-      ? Promise.resolve({ organizationName: 'LIFE IT', logoUrl: '' })
-      : Promise.resolve({
-        id: 'ticket-1', ticket_no: 'TCK-001', title: 'ติดตั้งเครื่องพิมพ์', description: 'เชื่อมต่อเครื่องพิมพ์ไม่ได้', resolution: 'ติดตั้งไดรเวอร์แล้ว',
-        requester_name_snapshot: 'สมชาย ใจดี', department_name_snapshot: 'การเงิน', guest_name: null, guest_department: null, requester_phone: '02-000-0000', location: 'ชั้น 2',
-        requester: { full_name: 'สมชาย ใจดี', email: 'user@example.com' }, assignee: { full_name: 'เจ้าหน้าที่ IT', email: 'it@example.com' }, assignee_name_snapshot: 'เจ้าหน้าที่ IT',
-        ticket_categories: { name: 'Hardware' }, priority: 'ปานกลาง', status: 'ปิดงาน', source_channel: 'web', created_at: '2026-08-19T02:00:00.000Z', due_at: null,
-        rating_criteria_snapshot: [{ key: 'speed', label: 'ความรวดเร็ว', score: 5 }], rating_details: { speed: 5 }, feedback: 'ดีมาก',
-        signature_url: 'https://signed.test/ticket-1.png', worklogs: [],
-      }));
+  it('renders the Form Studio template and its five-section flow for the Ticket', async () => {
+    apiFetchMock.mockResolvedValue({
+      ticketId: 'ticket-1', ticketNo: 'TCK-001', ticketStatus: 'ส่งต่อ Outsource',
+      template: { id: 'template-1', code: 'IT-ERP-ISSUE', name: 'แบบฟอร์มการแจ้งปัญหา IT Support และระบบ ERP', version: 2, source: 'issue', updatedAt: '2026-08-19T02:00:00.000Z' },
+      issueForm: { id: 'form-1', formNo: 'FRM-001', status: 'Sent to Vendor' },
+      pageSettings: { size: 'A4', orientation: 'portrait', marginMm: 20 },
+      contentHtml: '<h1>แบบฟอร์มการแจ้งปัญหา IT Support และระบบ ERP</h1><h2>ส่วนที่ 1: ข้อมูลผู้แจ้ง</h2><p>TCK-001 · สมชาย ใจดี</p><p>☐ คอมพิวเตอร์ ☐ เครื่องพิมพ์</p><p>หมายเหตุ —</p><h2>ส่วนที่ 2: การประเมินโดย IT</h2><p>เจ้าหน้าที่ IT</p><h2>ส่วนที่ 3: การแก้ไขโดย Vendor</h2><p>รอตอบกลับ</p><h2>ส่วนที่ 4: Manday / Credit</h2><h2>ส่วนที่ 5: ปิดงาน</h2><img src="https://signed.test/ticket-1.png" alt="ลายเซ็นรับรอง Ticket">',
+      checkmarks: [1],
+      textValues: {},
+      canEditCheckmarks: true,
+      flow: [
+        { section: 1, title: 'ข้อมูลผู้แจ้ง', state: 'complete', detail: 'ข้อมูลจาก Ticket' },
+        { section: 2, title: 'IT ประเมินและดำเนินการ', state: 'complete', detail: 'ส่งต่อ Vendor/Outsource แล้ว' },
+        { section: 3, title: 'Vendor แก้ไข', state: 'current', detail: 'รอ Vendor ตอบกลับ' },
+        { section: 4, title: 'Manday / Credit', state: 'current', detail: 'บันทึกพร้อมผลตอบกลับ Vendor' },
+        { section: 5, title: 'ตรวจรับและปิดงาน', state: 'pending', detail: 'ดำเนินการหลังแก้ไขเสร็จ' },
+      ],
+    });
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderPage();
-    expect(await screen.findByText('TCK-001')).toBeInTheDocument();
-    expect(screen.getByText('สมชาย ใจดี')).toBeInTheDocument();
-    expect(screen.getByText('ติดตั้งไดรเวอร์แล้ว')).toBeInTheDocument();
-    expect(screen.getByText('ความรวดเร็ว')).toBeInTheDocument();
+    const form = await screen.findByTestId('ticket-form-page');
+    expect(form).toHaveTextContent('TCK-001');
+    expect(form).toHaveTextContent('สมชาย ใจดี');
+    expect(screen.getByText(/IT-ERP-ISSUE/)).toHaveTextContent('แบบฟอร์มการแจ้งปัญหา IT Support และระบบ ERP');
+    expect(screen.getAllByText('รอ Vendor ตอบกลับ')).toHaveLength(1);
+    expect(screen.getByText('ส่วนที่ 5: ปิดงาน')).toBeInTheDocument();
     expect(screen.getByAltText('ลายเซ็นรับรอง Ticket')).toHaveAttribute('src', 'https://signed.test/ticket-1.png');
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[0]).toHaveAttribute('aria-checked', 'false');
+    expect(checkboxes[1]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(checkboxes[0]!);
+    expect(screen.getAllByRole('checkbox')[0]).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-checkmarks', {
+      method: 'PATCH',
+      body: JSON.stringify({ templateId: 'template-1', templateVersion: 2, indices: [0, 1], textValues: {} }),
+    }));
+    const textField = screen.getByRole('textbox', { name: 'กรอกข้อความช่องที่ 1' });
+    textField.textContent = 'ข้อความเพิ่มเติม';
+    fireEvent.blur(textField);
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-checkmarks', {
+      method: 'PATCH',
+      body: JSON.stringify({ templateId: 'template-1', templateVersion: 2, indices: [0, 1], textValues: { 0: 'ข้อความเพิ่มเติม' } }),
+    }));
     fireEvent.click(screen.getByRole('button', { name: 'พิมพ์ / บันทึก PDF' }));
     await waitFor(() => expect(print).toHaveBeenCalledOnce());
   });

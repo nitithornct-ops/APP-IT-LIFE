@@ -3,7 +3,7 @@ import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken,
   normalizeReturnMode, randomToken, sessionHours,
 } from '../src/lib/lineAuth';
-import { lineSubmitTicketSchema } from '../src/validators/line';
+import { lineAdminUpdateLinkSchema, lineProfileSchema, lineSubmitTicketSchema } from '../src/validators/line';
 import type { Bindings } from '../src/types';
 
 const configuredEnv: Bindings = {
@@ -102,6 +102,7 @@ describe('createLineLoginUrl', () => {
 describe('LINE ticket submit validator', () => {
   const validPayload = {
     categoryId: '11111111-1111-4111-8111-111111111111',
+    requesterPhone: '0812345678',
     title: 'เปิดเครื่องไม่ติด',
     description: 'กดปุ่มแล้วเครื่องไม่มีไฟ',
     privacyConsent: true,
@@ -111,7 +112,10 @@ describe('LINE ticket submit validator', () => {
     expect(lineSubmitTicketSchema.safeParse({
       ...validPayload,
       requesterPhone: '0812345678',
+      requesterPosition: 'นักบัญชี',
       department: 'บัญชี',
+      incidentAt: '2026-08-26T02:30:00.000Z',
+      erpModule: 'Finance',
       location: 'อาคาร A ชั้น 3',
       assetCode: 'NB-0231',
     }).success).toBe(true);
@@ -120,6 +124,36 @@ describe('LINE ticket submit validator', () => {
   it('requires the privacy consent used by the shared report form', () => {
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: false }).success).toBe(false);
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: undefined }).success).toBe(false);
+  });
+
+  it('requires a requester phone with at least 8 characters', () => {
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: undefined }).success).toBe(false);
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '1234567' }).success).toBe(false);
+  });
+});
+
+describe('LINE profile validator', () => {
+  it('accepts a manually entered requester name and trims it', () => {
+    expect(lineProfileSchema.parse({ fullName: '  สมชาย ใจดี  ' })).toEqual({ fullName: 'สมชาย ใจดี' });
+  });
+
+  it('rejects an empty requester name', () => {
+    expect(lineProfileSchema.safeParse({ fullName: ' ' }).success).toBe(false);
+  });
+
+  it('requires both a first name and a last name', () => {
+    expect(lineProfileSchema.safeParse({ fullName: 'สมชาย' }).success).toBe(false);
+  });
+});
+
+describe('LINE admin link validator', () => {
+  it('accepts a profile UUID or null for unlinking', () => {
+    expect(lineAdminUpdateLinkSchema.safeParse({ userId: '11111111-1111-4111-8111-111111111111' }).success).toBe(true);
+    expect(lineAdminUpdateLinkSchema.safeParse({ userId: null }).success).toBe(true);
+  });
+
+  it('rejects an invalid profile id', () => {
+    expect(lineAdminUpdateLinkSchema.safeParse({ userId: 'not-a-user-id' }).success).toBe(false);
   });
 });
 
