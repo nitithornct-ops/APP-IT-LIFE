@@ -16,6 +16,10 @@ export interface NotificationInput {
  * และจะ throw เมื่อทั้งการส่งทันทีและการเข้าคิวล้มเหลว เพื่อไม่ให้เหตุการณ์หายแบบเงียบ ๆ
  */
 export async function sendNotification(env: Bindings, input: NotificationInput): Promise<void> {
+  if (!isValidNotificationPayload(input)) {
+    console.warn(JSON.stringify({ msg: 'notification_skipped_invalid_payload' }));
+    return;
+  }
   const supabase = createAdminClient(env);
   let deliveryError: string;
   try {
@@ -58,6 +62,19 @@ function notificationRow(input: NotificationInput) {
     body: input.body ?? null,
     link: input.link ?? null,
   };
+}
+
+export function isValidNotificationPayload(input: unknown): input is NotificationInput {
+  if (!input || typeof input !== 'object') return false;
+  const candidate = input as Partial<NotificationInput>;
+  return typeof candidate.recipientId === 'string'
+    && candidate.recipientId.trim().length > 0
+    && typeof candidate.type === 'string'
+    && candidate.type.trim().length > 0
+    && typeof candidate.title === 'string'
+    && candidate.title.trim().length > 0
+    && (candidate.body == null || typeof candidate.body === 'string')
+    && (candidate.link == null || typeof candidate.link === 'string');
 }
 
 interface NotificationOutboxRow {
@@ -112,13 +129,18 @@ export async function dispatchNotificationOutbox(
     if (!claimed) continue;
 
     const payload = candidate.payload;
-    const validPayload = payload
-      && typeof payload.recipientId === 'string'
-      && typeof payload.type === 'string'
-      && typeof payload.title === 'string';
-    const delivery = validPayload
-      ? await supabase.from('notifications').insert(notificationRow(payload))
-      : { error: { message: 'invalid notification payload' } };
+    if (!isValidNotificationPayload(payload)) {
+      const { error: cancelError } = await supabase.from('integration_outbox').update({
+        status: 'CANCELLED',
+        cancelled_at: now.toISOString(),
+        next_attempt_at: null,
+        last_error: 'cancelled: invalid notification payload',
+      }).eq('id', candidate.id).eq('status', 'PROCESSING');
+      if (cancelError) throw new Error(`notification_outbox_cancel_failed: ${cancelError.message}`);
+      result.failed += 1;
+      continue;
+    }
+    const delivery = await supabase.from('notifications').insert(notificationRow(payload));
 
     if (!delivery.error) {
       const { error: completeError } = await supabase.from('integration_outbox').update({

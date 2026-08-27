@@ -3,13 +3,20 @@ import type { Bindings } from '../types';
 
 const PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 
+export interface LinePushResult {
+  success: boolean;
+  error: string | null;
+}
+
 /**
  * LINE Messaging API push — port of legacy-gas/Notification.gs's sendLinePushDetailed_.
  * Failures never throw into the caller (ticket status updates must succeed even if the push
  * fails); they're logged to notification_log the same way the legacy system's NotificationLog did.
  */
-export async function sendLinePush(env: Bindings, to: string, message: string, lineUserId?: string | null): Promise<void> {
-  if (env.NOTIFY_LINE_ENABLED !== 'true' || !env.LINE_CHANNEL_ACCESS_TOKEN || !to) return;
+export async function sendLinePush(env: Bindings, to: string, message: string, lineUserId?: string | null): Promise<LinePushResult> {
+  if (env.NOTIFY_LINE_ENABLED !== 'true' || !env.LINE_CHANNEL_ACCESS_TOKEN || !to) {
+    return { success: false, error: 'LINE Messaging is disabled or incomplete' };
+  }
   try {
     const response = await fetch(PUSH_URL, {
       method: 'POST',
@@ -18,12 +25,16 @@ export async function sendLinePush(env: Bindings, to: string, message: string, l
     });
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      await logLineNotification(env, to, message, false, `HTTP ${response.status}: ${body.slice(0, 500)}`, lineUserId);
-      return;
+      const error = `HTTP ${response.status}: ${body.slice(0, 500)}`;
+      await logLineNotification(env, to, message, false, error, lineUserId);
+      return { success: false, error };
     }
     await logLineNotification(env, to, message, true, null, lineUserId);
+    return { success: true, error: null };
   } catch (error) {
-    await logLineNotification(env, to, message, false, error instanceof Error ? error.message : String(error), lineUserId);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await logLineNotification(env, to, message, false, errorMessage, lineUserId);
+    return { success: false, error: errorMessage };
   }
 }
 
