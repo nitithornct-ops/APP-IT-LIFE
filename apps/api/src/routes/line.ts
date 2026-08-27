@@ -671,6 +671,40 @@ lineRoute.patch(
 );
 
 lineRoute.post(
+  '/admin/links/:id/test-message', requireAuth, requirePermission('line.manage'),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const admin = createAdminClient(c.env);
+    const { data: account, error } = await admin
+      .from('line_users')
+      .select('id, line_user_id, display_name, full_name, link_status')
+      .eq('id', c.req.param('id'))
+      .maybeSingle();
+    if (error) return dbFailJson(c, 'LINE_ADMIN_LOAD_FAILED', error);
+    if (!account) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
+    if (account.link_status !== 'Active') {
+      return c.json(fail(reqId, 'LINE_ACCOUNT_NOT_ACTIVE', 'ส่งข้อความทดสอบได้เฉพาะบัญชี LINE ที่ Active'), 409);
+    }
+
+    const result = await sendLinePush(
+      c.env,
+      account.line_user_id,
+      `ข้อความทดสอบจาก LIFE IT Smart Service Center\nเวลา ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
+      account.id,
+    );
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'LINE_ADMIN_TEST_MESSAGE',
+      module: 'line', targetTable: 'line_users', targetId: account.id,
+      detail: { success: result.success, error: result.error?.slice(0, 200) ?? null }, requestId: reqId,
+    });
+    if (!result.success) {
+      return c.json(fail(reqId, 'LINE_TEST_MESSAGE_FAILED', 'LINE Messaging API ปฏิเสธข้อความทดสอบ กรุณาตรวจ token และสถานะเพื่อน LINE OA'), 502);
+    }
+    return c.json(ok(reqId, { sent: true, accountName: account.full_name ?? account.display_name ?? null }));
+  },
+);
+
+lineRoute.post(
   '/admin/links/:id/status', requireAuth, requirePermission('line.manage'),
   zValidator('json', lineAdminUpdateStatusSchema, zodValidationHook),
   async (c) => {
