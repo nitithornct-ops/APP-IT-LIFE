@@ -74,7 +74,10 @@ export interface TicketAttachment {
 
 export interface TicketDetail extends TicketListItem {
   requester_phone: string | null;
+  requester_position_snapshot: string | null;
   location: string | null;
+  incident_at: string | null;
+  erp_module: string | null;
   response_sla_hours: number | null;
   resolution_sla_hours: number | null;
   response_due_at: string | null;
@@ -92,6 +95,10 @@ export interface TicketDetail extends TicketListItem {
   signature_url: string | null;
   signature_uploaded_by: string | null;
   signature_uploaded_at: string | null;
+  requester_signature_storage_path: string | null;
+  requester_signature_url: string | null;
+  requester_signature_uploaded_by: string | null;
+  requester_signature_uploaded_at: string | null;
   outsource_name: string | null;
   outsource_vendor_id: string | null;
   outsource_issue_no: string | null;
@@ -108,4 +115,32 @@ export interface AssignableStaff {
   id: string;
   full_name: string;
   email: string;
+}
+
+export type TicketFormFlowState = 'complete' | 'current' | 'pending' | 'not_required';
+
+export interface TicketFormDocument {
+  ticketId: string;
+  ticketNo: string;
+  ticketStatus: TicketStatus;
+  template: {
+    id: string;
+    code: string;
+    name: string;
+    version: number;
+    source: 'template' | 'issue';
+    updatedAt: string;
+  };
+  issueForm: { id: string; formNo: string; status: string } | null;
+  pageSettings: { size?: 'A4' | 'Letter'; orientation?: 'portrait' | 'landscape'; marginMm?: number };
+  contentHtml: string;
+  checkmarks: number[];
+  textValues: Record<string, string>;
+  canEditCheckmarks: boolean;
+  flow: Array<{
+    section: number;
+    title: string;
+    state: TicketFormFlowState;
+    detail: string;
+  }>;
 }

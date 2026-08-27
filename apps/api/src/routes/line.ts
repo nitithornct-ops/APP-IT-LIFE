@@ -13,6 +13,7 @@ import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
+import { saveRequesterSignature } from '../services/ticketSignatureService';
 import type { AppEnv, LineUserProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
@@ -21,8 +22,8 @@ import { zodValidationHook } from '../utils/validation';
 import { MAX_FILE_SIZE_BYTES } from '../validators/files';
 import { ratingsMatchCriteria } from './tickets';
 import {
-  lineAdminListQuerySchema, lineAdminUpdateStatusSchema,
-  lineLoginUrlQuerySchema, lineSubmitTicketSchema, lineTicketFeedbackSchema,
+  lineAdminListQuerySchema, lineAdminUpdateLinkSchema, lineAdminUpdateStatusSchema,
+  lineLoginUrlQuerySchema, lineProfileSchema, lineSubmitTicketSchema, lineTicketFeedbackSchema,
 } from '../validators/line';
 
 /**
@@ -87,7 +88,7 @@ function clientProfile(user: LineUserRecord) {
   return {
     displayName: user.display_name ?? '',
     pictureUrl: user.picture_url ?? '',
-    fullName: user.full_name ?? user.display_name ?? '',
+    fullName: user.full_name ?? '',
     department: user.department ?? '',
     linkStatus: user.link_status === 'Suspended' ? 'Suspended' : 'Active',
     friendStatus: user.friend_status ?? 'Unknown',
@@ -151,10 +152,14 @@ lineRoute.get('/callback', async (c) => {
           line_user_id: result.lineUserId,
           display_name: result.displayName,
           picture_url: result.pictureUrl,
-          employee_code: null,
-          linked_user_id: null,
-          full_name: result.displayName,
-          department: null,
+          // Provider login refreshes LINE-owned metadata only. Keep the administrator's
+          // profile connection intact so a later login cannot silently change recipients.
+          employee_code: existing?.employee_code ?? null,
+          linked_user_id: existing?.linked_user_id ?? null,
+          // Keep the LINE display name only as provider metadata. The requester supplies
+          // their real name in the profile-completion step after login.
+          full_name: existing?.full_name ?? null,
+          department: existing?.department ?? null,
           link_status: linkStatus,
           friend_status: result.friendStatus,
           last_login_at: now,
@@ -201,6 +206,31 @@ lineRoute.post('/logout', requireLineSession, async (c) => {
   return c.json(ok(reqId, { loggedOut: true }));
 });
 
+lineRoute.patch(
+  '/profile',
+  requireUsableLineSession,
+  zValidator('json', lineProfileSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { user } = c.get('lineSession')!;
+    const { fullName } = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const { data, error } = await admin
+      .from('line_users')
+      .update({ full_name: fullName })
+      .eq('id', user.id)
+      .select('*')
+      .single();
+    if (error || !data) return dbFailJson(c, 'LINE_PROFILE_UPDATE_FAILED', error, 'บันทึกชื่อ–นามสกุลไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorEmail: `LINE:${user.line_user_id}`, action: 'UPDATE', module: 'ticket',
+      targetTable: 'line_users', targetId: user.id, detail: { fields: ['full_name'] }, requestId: reqId,
+    });
+    return c.json(ok(reqId, clientProfile(data as LineUserRecord)));
+  },
+);
+
 lineRoute.post(
   '/tickets',
   requireUsableLineSession,
@@ -211,6 +241,10 @@ lineRoute.post(
     const { user } = c.get('lineSession')!;
     const body = c.req.valid('json');
     const admin = createAdminClient(c.env);
+
+    if (!user.full_name?.trim()) {
+      return c.json(fail(reqId, 'LINE_PROFILE_REQUIRED', 'กรุณากรอกชื่อ–นามสกุลก่อนส่ง Ticket'), 400);
+    }
 
     const { data: category } = await admin.from('ticket_categories').select('*').eq('id', body.categoryId).eq('status', 'active').maybeSingle();
     if (!category) return c.json(fail(reqId, 'TICKET_CATEGORY_INVALID', 'กรุณาเลือกหมวดหมู่ Ticket ที่ใช้งานอยู่'), 400);
@@ -241,11 +275,14 @@ lineRoute.post(
       .from('tickets')
       .insert({
         title: body.title,
-        requester_id: null,
-        requester_name_snapshot: user.full_name ?? user.display_name ?? 'ผู้ใช้งาน LINE',
+        requester_id: user.linked_user_id ?? null,
+        requester_name_snapshot: user.full_name,
+        requester_position_snapshot: body.requesterPosition ?? null,
         requester_identity_type: 'LINE',
         requester_phone: body.requesterPhone ?? null,
         department_name_snapshot: body.department ?? user.department ?? null,
+        incident_at: body.incidentAt ? new Date(body.incidentAt).toISOString() : now.toISOString(),
+        erp_module: body.erpModule ?? null,
         location: body.location ?? null,
         asset_id: asset?.id ?? null,
         asset_name_snapshot: asset?.name ?? (body.assetCode || null),
@@ -260,7 +297,7 @@ lineRoute.post(
         status: 'ใหม่',
         source_channel: 'line',
         requester_line_user_id: user.id,
-        created_by: null,
+        created_by: user.linked_user_id ?? null,
       })
       .select()
       .single();
@@ -268,7 +305,7 @@ lineRoute.post(
 
     await admin.from('ticket_worklogs').insert({
       ticket_id: ticket.id, action: 'เปิด Ticket', status_to: 'ใหม่', detail: 'สร้างผ่าน LINE',
-      is_public: true, actor_id: null, actor_line_user_id: user.id,
+      is_public: true, actor_id: user.linked_user_id ?? null, actor_line_user_id: user.id,
     });
     await writeAuditLog(c.env, {
       actorEmail: `LINE:${user.line_user_id}`, action: 'CREATE', module: 'ticket', targetTable: 'tickets',
@@ -328,12 +365,18 @@ lineRoute.get(
     }));
     // ไม่มีลายเซ็นกลางให้ตกทอดแล้ว — ผู้ร้องเห็นลายเซ็นเฉพาะที่มีคนเซ็นให้ใบนี้จริง
     const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
+    const requesterSignaturePath = ticket.requester_signature_storage_path ? String(ticket.requester_signature_storage_path) : '';
     let signatureUrl: string | null = null;
+    let requesterSignatureUrl: string | null = null;
     if (signaturePath) {
       const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(signaturePath, 3600);
       signatureUrl = data?.signedUrl ?? null;
     }
-    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [], attachments }));
+    if (requesterSignaturePath) {
+      const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(requesterSignaturePath, 3600);
+      requesterSignatureUrl = data?.signedUrl ?? null;
+    }
+    return c.json(ok(reqId, { ticket: { ...ticket, signature_url: signatureUrl, requester_signature_url: requesterSignatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [], attachments }));
   },
 );
 
@@ -402,7 +445,7 @@ lineRoute.post(
         target_table: 'tickets',
         target_id: ticket.id,
         uploaded_by: null,
-        uploader_label: `ผู้แจ้งผ่าน LINE: ${user.full_name ?? user.display_name ?? '-'}`,
+        uploader_label: `ผู้แจ้งผ่าน LINE: ${user.full_name ?? '-'}`,
       })
       .select('id, original_filename, mime_type, size_bytes, created_at')
       .single();
@@ -419,6 +462,56 @@ lineRoute.post(
     });
     const signed = await createSignedUrl(admin, uploaded.path, 600);
     return c.json(ok(reqId, { ...attachment, signed_url: 'url' in signed ? signed.url : null }), 201);
+  },
+);
+
+lineRoute.post(
+  '/tickets/:id/signoff',
+  requireUsableLineSession,
+  rateLimit({ windowMs: 3600_000, max: 8, keyFn: (c) => `line_ticket_signature:${c.get('lineSession')!.user.id}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { user } = c.get('lineSession')!;
+    const admin = createAdminClient(c.env);
+    const { data: ticket } = await admin
+      .from('tickets')
+      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, requester_signature_storage_path')
+      .eq('id', c.req.param('id'))
+      .maybeSingle();
+    const belongsToLineUser = ticket?.requester_line_user_id === user.id
+      || (Boolean(user.linked_user_id) && ticket?.requester_id === user.linked_user_id);
+    if (!ticket || !belongsToLineUser) {
+      return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
+    }
+    if (ticket.status !== 'เสร็จสิ้น') {
+      return c.json(fail(reqId, 'TICKET_SIGNOFF_NOT_READY', 'ลงลายเซ็นตรวจรับได้เมื่อช่างดำเนินงานเสร็จสิ้นแล้วเท่านั้น'), 409);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) return c.json(fail(reqId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+    const saved = await saveRequesterSignature(admin, {
+      ticketId: ticket.id,
+      previousPath: ticket.requester_signature_storage_path,
+      file,
+      uploadedBy: user.linked_user_id ?? null,
+    });
+    if (!saved.ok) return c.json(fail(reqId, saved.code, saved.message), 400);
+
+    const { error: closeError } = await admin.from('tickets').update({ status: 'ปิดงาน', closed_at: saved.uploadedAt }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
+    if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
+    await admin.from('ticket_worklogs').insert({
+      ticket_id: ticket.id, action: 'ผู้แจ้งตรวจรับและลงนาม', detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+      status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', is_public: true,
+      actor_id: user.linked_user_id ?? null, actor_line_user_id: user.id,
+    });
+
+    await writeAuditLog(c.env, {
+      actorEmail: `LINE:${user.line_user_id}`, action: 'REQUESTER_SIGNOFF', module: 'ticket', targetTable: 'tickets',
+      targetId: ticket.id, detail: { channel: 'line', signer: user.full_name, sizeBytes: file.size, status: 'ปิดงาน' }, requestId: reqId,
+    });
+    await notifyTicketTeam(c.env, `ผู้แจ้งผ่าน LINE ตรวจรับและลงนามปิด ${ticket.ticket_no}: ${ticket.title}`);
+    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน' }), 201);
   },
 );
 
@@ -461,8 +554,8 @@ lineRoute.post(
 );
 
 /**
- * Admin review of pending LINE-employee links ("IT Admin ตรวจและอนุมัติจากหลังบ้าน" in legacy).
- * Staff-facing, so these two routes use requireAuth (Supabase JWT), unlike everything above.
+ * Staff-facing LINE account administration. These routes use Supabase auth and line.manage;
+ * public LINE sessions above never receive access to the profile directory or link controls.
  */
 lineRoute.get(
   '/admin/links', requireAuth, requirePermission('line.manage'),
@@ -475,6 +568,105 @@ lineRoute.get(
     const { data, error } = await query;
     if (error) return dbFailJson(c, 'LINE_ADMIN_LIST_FAILED', error);
     return c.json(ok(reqId, data ?? []));
+  },
+);
+
+lineRoute.get(
+  '/admin/link-options', requireAuth, requirePermission('line.manage'),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const admin = createAdminClient(c.env);
+    const [{ data: profiles, error: profilesError }, { data: links, error: linksError }] = await Promise.all([
+      admin
+        .from('profiles')
+        .select('id, employee_code, full_name, email, status')
+        .order('full_name')
+        .limit(1000),
+      admin
+        .from('line_users')
+        .select('id, linked_user_id')
+        .not('linked_user_id', 'is', null),
+    ]);
+    if (profilesError || linksError) {
+      return dbFailJson(c, 'LINE_ADMIN_LINK_OPTIONS_FAILED', profilesError ?? linksError, 'โหลดรายชื่อผู้ใช้สำหรับเชื่อม LINE ไม่สำเร็จ');
+    }
+    const linkedLineIdByUserId = new Map(
+      (links ?? []).map((link) => [String(link.linked_user_id), String(link.id)]),
+    );
+    return c.json(ok(reqId, (profiles ?? []).map((profile) => ({
+      ...profile,
+      linked_line_user_id: linkedLineIdByUserId.get(String(profile.id)) ?? null,
+    }))));
+  },
+);
+
+lineRoute.patch(
+  '/admin/links/:id/link', requireAuth, requirePermission('line.manage'),
+  zValidator('json', lineAdminUpdateLinkSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const lineUserId = c.req.param('id');
+    const { userId } = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const { data: current, error: currentError } = await admin
+      .from('line_users')
+      .select('*')
+      .eq('id', lineUserId)
+      .maybeSingle();
+    if (currentError) return dbFailJson(c, 'LINE_ADMIN_LOAD_FAILED', currentError);
+    if (!current) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
+
+    let targetProfile: { id: string; employee_code: string | null; full_name: string | null; status: string } | null = null;
+    if (userId) {
+      const { data, error } = await admin
+        .from('profiles')
+        .select('id, employee_code, full_name, status')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) return dbFailJson(c, 'LINE_ADMIN_PROFILE_LOAD_FAILED', error);
+      if (!data) return c.json(fail(reqId, 'LINE_PROFILE_NOT_FOUND', 'ไม่พบผู้ใช้ที่เลือก'), 404);
+      if (data.status !== 'active') {
+        return c.json(fail(reqId, 'LINE_PROFILE_INACTIVE', 'เชื่อม LINE ได้เฉพาะผู้ใช้สถานะ Active'), 409);
+      }
+      targetProfile = data;
+
+      const { data: duplicate, error: duplicateError } = await admin
+        .from('line_users')
+        .select('id')
+        .eq('linked_user_id', userId)
+        .neq('id', lineUserId)
+        .maybeSingle();
+      if (duplicateError) return dbFailJson(c, 'LINE_ADMIN_DUPLICATE_CHECK_FAILED', duplicateError);
+      if (duplicate) {
+        return c.json(fail(reqId, 'LINE_PROFILE_ALREADY_LINKED', 'ผู้ใช้นี้เชื่อมกับบัญชี LINE อื่นแล้ว กรุณายกเลิกการเชื่อมเดิมก่อน'), 409);
+      }
+    }
+
+    const { data: updated, error } = await admin
+      .from('line_users')
+      .update({
+        linked_user_id: targetProfile?.id ?? null,
+        employee_code: targetProfile?.employee_code ?? null,
+        updated_by: c.get('userId'),
+      })
+      .eq('id', lineUserId)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      const message = error.code === '23505'
+        ? 'ผู้ใช้นี้เชื่อมกับบัญชี LINE อื่นแล้ว'
+        : 'บันทึกการเชื่อมบัญชี LINE ไม่สำเร็จ';
+      return dbFailJson(c, 'LINE_ADMIN_LINK_FAILED', error, message);
+    }
+    if (!updated) return c.json(fail(reqId, 'LINE_USER_NOT_FOUND', 'ไม่พบบัญชี LINE นี้'), 404);
+
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: userId ? 'LINE_ADMIN_LINK_USER' : 'LINE_ADMIN_UNLINK_USER',
+      module: 'line', targetTable: 'line_users', targetId: updated.id,
+      detail: { previousUserId: current.linked_user_id, linkedUserId: userId, linkedUserName: targetProfile?.full_name ?? null },
+      requestId: reqId, before: current, after: updated,
+    });
+    return c.json(ok(reqId, updated));
   },
 );
 

@@ -697,6 +697,14 @@ textarea:focus-visible,
 .form-document th { border: 1px solid #d4d9d5; padding: 0.45rem 0.55rem; vertical-align: top; }
 .form-document th { background: #f4fcf3; font-weight: 800; text-align: left; }
 .form-document .form-variable { border-radius: 4px; background: #e9f9e7; padding: 0.1rem 0.25rem; color: #287a48; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+.ticket-form-checkbox { display: inline-flex; min-width: 1.15em; height: 1.15em; align-items: center; justify-content: center; border: 0; border-radius: 3px; padding: 0; background: transparent; color: #166534; font: inherit; font-weight: 800; line-height: 1; vertical-align: -0.08em; cursor: pointer; }
+.ticket-form-checkbox:hover { background: #dcfce7; }
+.ticket-form-checkbox:focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; }
+.ticket-form-checkbox-readonly { cursor: default; }
+.ticket-form-checkbox-readonly:hover { background: transparent; }
+.ticket-form-text-field { display: inline-block; min-width: 5rem; border-bottom: 1px dashed #64748b; padding: 0 0.2rem; color: #0f172a; outline: none; }
+.ticket-form-text-field:focus { border-bottom-color: #16a34a; background: #f0fdf4; box-shadow: 0 2px 0 #16a34a; }
+.ticket-form-text-field-readonly { min-width: auto; border-bottom: 0; padding: 0; }
 
 .form-image-selection { position: absolute; z-index: 20; border: 2px solid var(--life-green-600); pointer-events: none; }
 .form-image-context-toolbar { position: absolute; bottom: calc(100% + 8px); left: -2px; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-default); background: var(--color-surface); box-shadow: var(--shadow-elevated); pointer-events: auto; }

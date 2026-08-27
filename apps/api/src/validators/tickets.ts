@@ -10,8 +10,21 @@ export const createTicketSchema = z.object({
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   location: z.string().trim().max(160).optional(),
   requesterPhone: z.string().trim().max(40).optional(),
+  incidentAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันที่และเวลาที่พบปัญหาไม่ถูกต้อง').optional(),
+  erpModule: z.string().trim().max(120).optional(),
   assetId: z.string().uuid().optional(),
   isSecurity: z.boolean().optional(),
+});
+
+export const ticketFormCheckmarksSchema = z.object({
+  templateId: z.string().uuid(),
+  templateVersion: z.number().int().positive(),
+  indices: z.array(z.number().int().min(0).max(199)).max(200)
+    .transform((indices) => [...new Set(indices)].sort((left, right) => left - right)),
+  textValues: z.record(z.string().trim().max(1000)).refine(
+    (values) => Object.keys(values).length <= 200 && Object.keys(values).every((key) => /^(?:0|[1-9]\d{0,2})$/.test(key) && Number(key) < 200),
+    'ข้อมูลช่องกรอกในแบบฟอร์มไม่ถูกต้อง',
+  ),
 });
 
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;

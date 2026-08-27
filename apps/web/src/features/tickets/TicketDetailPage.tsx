@@ -16,6 +16,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { QueryError } from '../../components/ui/QueryError';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { RequesterSignoffCard } from '../../components/tickets/RequesterSignoffCard';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssignableStaff, TicketDetail, TicketStatus } from '../../types/tickets';
@@ -467,6 +468,7 @@ export function TicketDetailPage() {
   const canComment = hasPermission('ticket.comment');
   const canInternalNote = hasPermission('ticket.internal_note') && hasPermission('ticket.update');
   const canManageSignature = hasPermission('ticket.update');
+  const isRequester = ticket.requester_id === me?.profile.id;
   const canReopen = hasPermission('ticket.close') && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน');
   const canRate = canSubmitTicketFeedback(ticket, me?.profile.id);
   const canEscalate =
@@ -520,11 +522,15 @@ export function TicketDetailPage() {
             <CardHeader>ข้อมูล Ticket</CardHeader>
             <CardBody className="divide-y divide-slate-100 dark:divide-slate-700">
               <InfoRow label="เลขที่ Ticket" value={ticket.ticket_no} />
-              <InfoRow label="ผู้แจ้ง" value={ticket.requester?.full_name} />
+              <InfoRow label="ผู้แจ้ง" value={ticket.requester?.full_name ?? ticket.requester_name_snapshot} />
+              <InfoRow label="ตำแหน่งผู้แจ้ง" value={ticket.requester_position_snapshot} />
+              <InfoRow label="ส่วนงาน" value={ticket.department_name_snapshot} />
               <InfoRow label="ผู้รับผิดชอบ" value={ticket.assignee?.full_name ?? 'ยังไม่ได้มอบหมาย'} />
               <InfoRow label="หมวดหมู่" value={ticket.ticket_categories?.name} />
               <InfoRow label="สถานที่" value={ticket.location} />
               <InfoRow label="เบอร์ติดต่อ" value={ticket.requester_phone} />
+              <InfoRow label="วันที่พบปัญหา" value={ticket.incident_at ? formatThaiDate(ticket.incident_at, 'd MMM yyyy HH:mm') : null} />
+              {ticket.erp_module && <InfoRow label="ERP Module" value={ticket.erp_module} />}
               <InfoRow label="แจ้งเมื่อ" value={formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')} />
               <InfoRow label="กำหนดตอบกลับ" value={ticket.response_due_at ? formatThaiDate(ticket.response_due_at, 'd MMM yyyy HH:mm') : null} />
               <InfoRow label="กำหนดแก้ไข" value={ticket.due_at ? formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm') : null} />
@@ -571,6 +577,19 @@ export function TicketDetailPage() {
             uploadedAt={ticket.signature_uploaded_at}
             canManage={canManageSignature}
           />
+          {(isRequester || ticket.requester_signature_url) && (
+            <RequesterSignoffCard
+              status={ticket.status}
+              signatureUrl={ticket.requester_signature_url}
+              signedAt={ticket.requester_signature_uploaded_at}
+              onSign={async (file) => {
+                const body = new FormData();
+                body.set('file', file);
+                await apiFetch(`/api/v1/tickets/${ticket.id}/requester-signoff`, { method: 'POST', body });
+                await ticketQuery.refetch();
+              }}
+            />
+          )}
         </>}
       >
           <Card>

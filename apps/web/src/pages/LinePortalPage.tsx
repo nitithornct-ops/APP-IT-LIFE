@@ -3,7 +3,9 @@ import { AlertTriangle, ArrowLeft, Loader2, LogOut, MessageCircleQuestion, Ticke
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
+import { LineProfileNameForm } from '../components/LineProfileNameForm';
 import { TicketRatingFields } from '../components/tickets/TicketRatingFields';
+import { RequesterSignoffCard } from '../components/tickets/RequesterSignoffCard';
 import { ApiError } from '../services/apiClient';
 import { clearLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 
@@ -23,7 +25,7 @@ interface LineTicketSummary {
 }
 
 interface LineTicketDetail {
-  ticket: LineTicketSummary & { description: string; resolution: string | null; rating: number | null; rating_details: TicketRatingDetails | null; rating_criteria_snapshot: TicketRatingSnapshotItem[] | null; signature_url: string | null; category: { name: string } | null };
+  ticket: LineTicketSummary & { description: string; resolution: string | null; rating: number | null; rating_details: TicketRatingDetails | null; rating_criteria_snapshot: TicketRatingSnapshotItem[] | null; signature_url: string | null; requester_signature_url: string | null; requester_signature_uploaded_at: string | null; category: { name: string } | null };
   ratingCriteria: TicketRatingCriterion[];
   worklogs: Array<{ action: string; detail: string | null; status_from: string | null; status_to: string | null; created_at: string }>;
 }
@@ -122,6 +124,11 @@ export function LinePortalPage() {
         <div className={CARD}>
           <p className="text-center text-sm text-red-600 dark:text-red-400">บัญชี LINE นี้ถูกระงับ กรุณาติดต่อส่วนงาน IT</p>
         </div>
+      ) : !bootstrap.profile?.fullName.trim() ? (
+        <LineProfileNameForm onSaved={(fullName) => setBootstrap((current) => current?.profile ? {
+          ...current,
+          profile: { ...current.profile, fullName },
+        } : current)} />
       ) : view === 'menu' ? (
         <MenuCard profile={bootstrap.profile} onNavigate={setView} onLogout={() => void logout()} />
       ) : view === 'submit' ? (
@@ -237,7 +244,16 @@ function TicketListCard({ onSelect, onBack }: { onSelect: (id: string) => void; 
     }
   }
 
-  if (detail) return <TicketDetailCard detail={detail} onBack={() => setDetail(null)} />;
+  async function signoff(file: File) {
+    if (!detail) return;
+    const body = new FormData();
+    body.set('file', file);
+    await lineApiFetch(`/api/v1/line/tickets/${detail.ticket.id}/signoff`, { method: 'POST', body });
+    setDetail(await lineApiFetch<LineTicketDetail>(`/api/v1/line/tickets/${detail.ticket.id}`));
+    setTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
+  }
+
+  if (detail) return <TicketDetailCard detail={detail} onSignoff={signoff} onBack={() => setDetail(null)} />;
 
   return (
     <div className={CARD}>
@@ -264,7 +280,7 @@ function TicketListCard({ onSelect, onBack }: { onSelect: (id: string) => void; 
   );
 }
 
-function TicketDetailCard({ detail, onBack }: { detail: LineTicketDetail; onBack: () => void }) {
+function TicketDetailCard({ detail, onSignoff, onBack }: { detail: LineTicketDetail; onSignoff: (file: File) => Promise<void>; onBack: () => void }) {
   const [ratings, setRatings] = useState<Partial<TicketRatingDetails>>({});
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -299,6 +315,9 @@ function TicketDetailCard({ detail, onBack }: { detail: LineTicketDetail; onBack
       {detail.ticket.resolution && (
         <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600 dark:bg-slate-700 dark:text-slate-300">ผลดำเนินการ: {detail.ticket.resolution}</p>
       )}
+      <div className="mt-4">
+        <RequesterSignoffCard status={detail.ticket.status} signatureUrl={detail.ticket.requester_signature_url} signedAt={detail.ticket.requester_signature_uploaded_at} onSign={onSignoff} />
+      </div>
       <ul className="mt-3 flex flex-col gap-1 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
         {detail.worklogs.map((log, index) => (
           <li key={index}>{log.action}{log.detail ? ` — ${log.detail}` : ''}</li>

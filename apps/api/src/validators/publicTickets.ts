@@ -4,8 +4,11 @@ const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สู
 
 export const publicSubmitTicketSchema = z.object({
   guestName: z.string().trim().min(1, 'กรุณากรอกชื่อผู้แจ้ง').max(160),
-  requesterPhone: z.string().trim().max(40).optional(),
+  requesterPosition: z.string().trim().max(160).optional(),
+  requesterPhone: z.string().trim().min(8, 'กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร').max(40),
   guestDepartment: z.string().trim().max(160).optional(),
+  incidentAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันที่และเวลาที่พบปัญหาไม่ถูกต้อง').optional(),
+  erpModule: z.string().trim().max(120).optional(),
   location: z.string().trim().max(160).optional(),
   assetCode: z.string().trim().max(80).optional(),
   categoryId: z.string().uuid('กรุณาเลือกประเภทปัญหา'),

@@ -27,13 +27,29 @@ export async function sendLinePush(env: Bindings, to: string, message: string, l
   }
 }
 
-/** Never blocks a ticket update on the requester's LINE identity — resolves to null (no push) if unset/not found. */
-export async function resolveTicketRequesterLineTarget(env: Bindings, requesterLineUserId: string | null): Promise<{ target: string; lineUserId: string } | null> {
-  if (!requesterLineUserId) return null;
+/**
+ * Resolve the requester's exact LINE destination. LINE-created tickets carry the LINE row id
+ * directly; web-created tickets fall back to the one-to-one profile link selected by an admin.
+ * A suspended LINE account never receives a push.
+ */
+export async function resolveTicketRequesterLineTarget(
+  env: Bindings,
+  requesterLineUserId: string | null,
+  requesterUserId?: string | null,
+): Promise<{ target: string; lineUserId: string; linkedUserId: string | null } | null> {
+  if (!requesterLineUserId && !requesterUserId) return null;
   const admin = createAdminClient(env);
-  const { data } = await admin.from('line_users').select('id, line_user_id, link_status').eq('id', requesterLineUserId).maybeSingle();
+  let query = admin.from('line_users').select('id, line_user_id, linked_user_id, link_status');
+  query = requesterLineUserId
+    ? query.eq('id', requesterLineUserId)
+    : query.eq('linked_user_id', requesterUserId!);
+  const { data } = await query.maybeSingle();
   if (!data || data.link_status !== 'Active') return null;
-  return { target: data.line_user_id as string, lineUserId: data.id as string };
+  return {
+    target: data.line_user_id as string,
+    lineUserId: data.id as string,
+    linkedUserId: (data.linked_user_id as string | null) ?? null,
+  };
 }
 
 /** `LINE_DEFAULT_TO` is the shared IT-team room — never a substitute for the actual requester's push target. */

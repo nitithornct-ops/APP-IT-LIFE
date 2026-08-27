@@ -9,6 +9,7 @@ const VALID_CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
 function validPayload(overrides: Record<string, unknown> = {}) {
   return {
     guestName: 'สมชาย ใจดี',
+    requesterPhone: '0812345678',
     categoryId: VALID_CATEGORY_ID,
     title: 'เปิดเครื่องไม่ติด',
     description: 'กดปุ่มเปิดแล้วไม่มีไฟขึ้น ลองเสียบปลั๊กใหม่แล้วก็ยังไม่ติด',
@@ -22,8 +23,10 @@ describe('public (no-login) ticket submit validator', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload()).success).toBe(true);
   });
 
-  it('requires guestName, categoryId, title, description and privacyConsent=true', () => {
+  it('requires guestName, requesterPhone, categoryId, title, description and privacyConsent=true', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload({ guestName: '' })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: undefined })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '1234567' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ categoryId: 'not-a-uuid' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ title: '' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ description: '' })).success).toBe(false);
@@ -57,6 +60,13 @@ describe('public ticket status lookup query validator', () => {
     expect(publicTicketStatusQuerySchema.safeParse({ token: 'a'.repeat(63) }).success).toBe(false);
     expect(publicTicketStatusQuerySchema.safeParse({ token: 'not-hex-at-all-'.repeat(5) }).success).toBe(false);
     expect(publicTicketStatusQuerySchema.safeParse({}).success).toBe(false);
+  });
+
+  it('accepts section 1 position, incident time and ERP module fields', () => {
+    expect(publicSubmitTicketSchema.safeParse(validPayload({
+      requesterPosition: 'นักบัญชี', incidentAt: '2026-08-26T02:30:00.000Z', erpModule: 'Finance',
+    })).success).toBe(true);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ incidentAt: 'not-a-date' })).success).toBe(false);
   });
 });
 

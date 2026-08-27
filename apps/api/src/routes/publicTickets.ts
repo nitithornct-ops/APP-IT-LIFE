@@ -6,6 +6,7 @@ import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
+import { saveRequesterSignature } from '../services/ticketSignatureService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
@@ -140,7 +141,10 @@ publicTicketsRoute.post(
       .from('tickets')
       .insert({
         title: body.title,
+        requester_position_snapshot: body.requesterPosition ?? null,
         requester_phone: body.requesterPhone ?? null,
+        incident_at: body.incidentAt ? new Date(body.incidentAt).toISOString() : now.toISOString(),
+        erp_module: body.erpModule ?? null,
         location: body.location ?? null,
         asset_id: asset?.id ?? null,
         asset_name_snapshot: asset?.name ?? (body.assetCode || null),
@@ -282,6 +286,58 @@ publicTicketsRoute.post(
 );
 
 publicTicketsRoute.post(
+  '/:id/signoff',
+  edgeRateLimit({ keyFn: (c) => `public_ticket_signature:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 8, keyFn: (c) => `public_ticket_signature:${clientIp(c)}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const tokenResult = publicTicketStatusQuerySchema.safeParse({ token: c.req.header('x-tracking-token') });
+    if (!tokenResult.success) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    }
+    const admin = createAdminClient(c.env);
+    const tokenHash = await hashTrackingToken(tokenResult.data.token);
+    const { data: ticket } = await admin
+      .from('tickets')
+      .select('id, ticket_no, title, status, guest_name, requester_signature_storage_path')
+      .eq('id', c.req.param('id'))
+      .eq('source_channel', 'guest')
+      .eq('public_tracking_token_hash', tokenHash)
+      .maybeSingle();
+    if (!ticket) return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    if (ticket.status !== 'เสร็จสิ้น') {
+      return c.json(fail(reqId, 'TICKET_SIGNOFF_NOT_READY', 'ลงลายเซ็นตรวจรับได้เมื่อช่างดำเนินงานเสร็จสิ้นแล้วเท่านั้น'), 409);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) return c.json(fail(reqId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+    const saved = await saveRequesterSignature(admin, {
+      ticketId: ticket.id,
+      previousPath: ticket.requester_signature_storage_path,
+      file,
+      uploadedBy: null,
+    });
+    if (!saved.ok) return c.json(fail(reqId, saved.code, saved.message), 400);
+
+    const { error: closeError } = await admin.from('tickets').update({ status: 'ปิดงาน', closed_at: saved.uploadedAt }).eq('id', ticket.id).eq('status', 'เสร็จสิ้น');
+    if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
+    await admin.from('ticket_worklogs').insert({
+      ticket_id: ticket.id, action: 'ผู้แจ้งตรวจรับและลงนาม', detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+      status_from: 'เสร็จสิ้น', status_to: 'ปิดงาน', is_public: true,
+      actor_label: `ผู้แจ้งผ่านหน้าสาธารณะ: ${ticket.guest_name ?? '-'}`,
+    });
+
+    await writeAuditLog(c.env, {
+      actorEmail: `GUEST:${clientIp(c)}`, action: 'REQUESTER_SIGNOFF', module: 'ticket', targetTable: 'tickets',
+      targetId: ticket.id, detail: { channel: 'guest', signer: ticket.guest_name, sizeBytes: file.size, status: 'ปิดงาน' }, requestId: reqId,
+    });
+    await notifyTicketTeam(c.env, `ผู้แจ้งตรวจรับและลงนามปิด ${ticket.ticket_no}: ${ticket.title}`);
+    return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน' }), 201);
+  },
+);
+
+publicTicketsRoute.post(
   '/lookup',
   edgeRateLimit({ keyFn: (c) => `public_ticket_identity_lookup:${clientIp(c)}` }),
   rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `public_ticket_identity_lookup:${clientIp(c)}` }),
@@ -312,7 +368,7 @@ publicTicketsRoute.get(
 
     let ticketQuery = admin
       .from('tickets')
-      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, category:ticket_categories(name)')
+      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, requester_signature_storage_path, requester_signature_uploaded_at, category:ticket_categories(name)')
       .eq('source_channel', 'guest')
       .eq('public_tracking_token_hash', tokenHash);
     const ticketRef = c.req.param('id')!;
@@ -328,7 +384,12 @@ publicTicketsRoute.get(
       .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true });
 
     const attachments = await loadPublicAttachments(admin, [ticket.id]);
+    let requesterSignatureUrl: string | null = null;
+    if (ticket.requester_signature_storage_path) {
+      const { data } = await admin.storage.from('ticket-signatures').createSignedUrl(String(ticket.requester_signature_storage_path), 3600);
+      requesterSignatureUrl = data?.signedUrl ?? null;
+    }
 
-    return c.json(ok(reqId, { ticket, worklogs: worklogs ?? [], attachments }));
+    return c.json(ok(reqId, { ticket: { ...ticket, requester_signature_url: requesterSignatureUrl }, worklogs: worklogs ?? [], attachments }));
   },
 );

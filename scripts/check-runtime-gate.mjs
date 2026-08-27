@@ -103,7 +103,7 @@ const REQUIRED_COLUMNS = {
     'guest_name', 'guest_department', 'source_channel', 'public_tracking_token_hash',
     'requester_line_user_id', 'category_id', 'priority', 'status', 'assignee_id',
     'assignee_name_snapshot', 'is_security', 'incident_id', 'due_at', 'outsource_name',
-    'response_sla_hours', 'resolution_sla_hours', 'response_due_at',
+    'response_sla_hours', 'resolution_sla_hours', 'response_due_at', 'form_checkmarks',
   ],
   ticket_categories: ['name', 'default_priority', 'response_sla_hours', 'resolution_sla_hours', 'sla_hours', 'is_security_default'],
   ticket_worklogs: ['ticket_id', 'action', 'status_to', 'detail', 'is_public', 'actor_label'],

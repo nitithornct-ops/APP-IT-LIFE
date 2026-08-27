@@ -19,7 +19,9 @@ import {
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
+import { LineProfileNameForm } from '../components/LineProfileNameForm';
 import { Badge } from '../components/ui/Badge';
+import { RequesterSignoffCard } from '../components/tickets/RequesterSignoffCard';
 import { ApiError } from '../services/apiClient';
 import { getLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 import { publicTicketApiFetch } from '../services/publicTicketApiClient';
@@ -61,6 +63,8 @@ interface TrackedTicket {
     created_at: string;
     resolved_at: string | null;
     closed_at: string | null;
+    requester_signature_url: string | null;
+    requester_signature_uploaded_at: string | null;
     category: { name: string } | null;
   };
   worklogs: Array<{
@@ -132,8 +136,11 @@ const ATTACHMENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 
 
 interface TicketDraft {
   guestName: string;
+  requesterPosition: string;
   requesterPhone: string;
   guestDepartment: string;
+  incidentAt: string;
+  erpModule: string;
   location: string;
   assetCode: string;
   categoryId: string;
@@ -141,6 +148,11 @@ interface TicketDraft {
   title: string;
   description: string;
   privacyConsent: boolean;
+}
+
+function currentLocalDateTime(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
 function getTicketDraft(): Partial<TicketDraft> {
@@ -224,9 +236,22 @@ export function PublicTicketPortalPage() {
             </div>
           </header>
 
-          {tab === 'report' && <ReportTab lineProfile={lineBootstrap?.authenticated ? lineBootstrap.profile : null} onSubmitted={() => setTab('status')} />}
-          {tab === 'knowledge' && <KnowledgeTab />}
-          {tab === 'status' && <StatusTab onReport={() => setTab('report')} />}
+          {lineCheckLoading ? (
+            <div className="public-sheet flex items-center justify-center gap-2 p-10 text-sm text-slate-500" role="status">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> กำลังตรวจสอบข้อมูล LINE
+            </div>
+          ) : lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Suspended' && !lineBootstrap.profile?.fullName.trim() ? (
+            <LineProfileNameForm onSaved={(fullName) => setLineBootstrap((current) => current?.profile ? {
+              ...current,
+              profile: { ...current.profile, fullName },
+            } : current)} />
+          ) : (
+            <>
+              {tab === 'report' && <ReportTab lineProfile={lineBootstrap?.authenticated ? lineBootstrap.profile : null} onSubmitted={() => setTab('status')} />}
+              {tab === 'knowledge' && <KnowledgeTab />}
+              {tab === 'status' && <StatusTab onReport={() => setTab('report')} />}
+            </>
+          )}
         </div>
       </div>
     </main>
@@ -353,8 +378,11 @@ function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['p
 function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: { formData: FormData; loading: boolean; loadError: string | null; lineProfile: LineBootstrap['profile']; onSubmitted: (result: SubmitResult) => void }) {
   const [initialDraft] = useState(getTicketDraft);
   const [guestName, setGuestName] = useState(initialDraft.guestName ?? '');
+  const [requesterPosition, setRequesterPosition] = useState(initialDraft.requesterPosition ?? '');
   const [requesterPhone, setRequesterPhone] = useState(initialDraft.requesterPhone ?? '');
   const [guestDepartment, setGuestDepartment] = useState(initialDraft.guestDepartment ?? '');
+  const [incidentAt, setIncidentAt] = useState(initialDraft.incidentAt ?? currentLocalDateTime());
+  const [erpModule, setErpModule] = useState(initialDraft.erpModule ?? '');
   const [location, setLocation] = useState(initialDraft.location ?? '');
   const [assetCode, setAssetCode] = useState(initialDraft.assetCode ?? '');
   const [categoryId, setCategoryId] = useState(initialDraft.categoryId ?? '');
@@ -375,8 +403,8 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
   }, [lineAuthenticated, lineProfile]);
 
   useEffect(() => {
-    saveTicketDraft({ guestName, requesterPhone, guestDepartment, location, assetCode, categoryId, priority, title, description, privacyConsent });
-  }, [guestName, requesterPhone, guestDepartment, location, assetCode, categoryId, priority, title, description, privacyConsent]);
+    saveTicketDraft({ guestName, requesterPosition, requesterPhone, guestDepartment, incidentAt, erpModule, location, assetCode, categoryId, priority, title, description, privacyConsent });
+  }, [guestName, requesterPosition, requesterPhone, guestDepartment, incidentAt, erpModule, location, assetCode, categoryId, priority, title, description, privacyConsent]);
 
   function selectAttachments(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -406,6 +434,11 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       setError('ยังโหลดประเภทปัญหาไม่สำเร็จ กรุณาลองรีเฟรชหน้าอีกครั้ง');
       return;
     }
+    const normalizedPhone = requesterPhone.trim();
+    if (normalizedPhone.length < 8) {
+      setError('กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร');
+      return;
+    }
     if (!privacyConsent) {
       setError('กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket');
       return;
@@ -414,7 +447,10 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
     setError(null);
     try {
       const commonPayload = {
-        requesterPhone: requesterPhone || undefined,
+        requesterPhone: normalizedPhone,
+        requesterPosition: requesterPosition || undefined,
+        incidentAt: new Date(incidentAt).toISOString(),
+        erpModule: erpModule || undefined,
         location: location || undefined,
         assetCode: assetCode || undefined,
         categoryId,
@@ -484,13 +520,13 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
           </div>
         )}
 
-        <FormSection icon={CircleHelp} title="ปัญหาที่พบ" subtitle="บอกอาการหรือปัญหา IT เข้าใจง่ายและแก้ได้เร็วขึ้น">
+        <FormSection icon={CircleHelp} title="ส่วนที่ 1: ข้อมูลผู้แจ้ง และรายละเอียดปัญหา" subtitle="ข้อมูลชุดเดียวกับแบบฟอร์ม Ticket สำหรับใช้รับเรื่องและจัดทำเอกสาร">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-sm font-bold text-slate-700">
             <UserRound className="h-4 w-4 text-primary-600" aria-hidden="true" /> ข้อมูลผู้แจ้งและติดต่อกลับ
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL} htmlFor="guestName">ชื่อผู้แจ้ง {lineAuthenticated ? <span className="font-normal text-emerald-600">(จาก LINE)</span> : <Required />}</label>
+              <label className={LABEL} htmlFor="guestName">ชื่อ–นามสกุล {lineAuthenticated ? <span className="font-normal text-emerald-600">(ข้อมูลที่คุณกรอก)</span> : <Required />}</label>
               <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} readOnly={lineAuthenticated} required maxLength={160} placeholder="เช่น สมชาย ใจดี" />
             </div>
             <div>
@@ -499,28 +535,42 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
               <p className="mt-1 text-[11px] text-slate-500">ใช้คู่กับชื่อ–นามสกุลเพื่อค้นหา Ticket โดยไม่ต้องจำเลข Ticket</p>
             </div>
           </div>
-          <div className="sm:max-w-[calc(50%-0.5rem)]">
-            <label className={LABEL} htmlFor="department">แผนก/หน่วยงาน</label>
-            <input id="department" className={INPUT} value={guestDepartment} onChange={(event) => setGuestDepartment(event.target.value)} maxLength={160} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={LABEL} htmlFor="position">ตำแหน่ง</label>
+              <input id="position" className={INPUT} value={requesterPosition} onChange={(event) => setRequesterPosition(event.target.value)} maxLength={160} />
+            </div>
+            <div>
+              <label className={LABEL} htmlFor="department">ส่วนงาน/แผนก</label>
+              <input id="department" className={INPUT} value={guestDepartment} onChange={(event) => setGuestDepartment(event.target.value)} maxLength={160} />
+            </div>
+          </div>
+          <div>
+            <label className={LABEL} htmlFor="incidentAt">วันที่และเวลาที่พบปัญหา <Required /></label>
+            <input id="incidentAt" type="datetime-local" className={INPUT} value={incidentAt} onChange={(event) => setIncidentAt(event.target.value)} required />
           </div>
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2 pt-1 text-sm font-bold text-slate-700">
             <CircleHelp className="h-4 w-4 text-primary-600" aria-hidden="true" /> รายละเอียดปัญหา
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL} htmlFor="category">ประเภทปัญหา <Required /></label>
+              <label className={LABEL} htmlFor="category">ประเภทงานที่ขอรับบริการ <Required /></label>
               <select id="category" className={INPUT} value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required disabled={formData.categories.length === 0}>
                 <option value="">{loading ? 'กำลังโหลด…' : '-- เลือก --'}</option>
                 {formData.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
             </div>
             <div>
-              <label className={LABEL} htmlFor="priority">ความเร่งด่วน</label>
+              <label className={LABEL} htmlFor="priority">ระดับความรุนแรง</label>
               <select id="priority" className={INPUT} value={priority} onChange={(event) => setPriority(event.target.value)}>
                 <option value="">-- เลือก --</option>
                 {formData.priorities.map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <label className={LABEL} htmlFor="erpModule">ERP Module <span className="font-normal text-slate-400">ถ้ามี</span></label>
+            <input id="erpModule" className={INPUT} value={erpModule} onChange={(event) => setErpModule(event.target.value)} maxLength={120} placeholder="เช่น Finance, Inventory" />
           </div>
           <div>
             <label className={LABEL} htmlFor="title">สรุปปัญหาสั้น ๆ <Required /></label>
@@ -724,6 +774,7 @@ function StatusTab({ onReport }: { onReport: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<TrackedTicket | null>(null);
+  const [detailAccess, setDetailAccess] = useState<{ channel: 'guest' | 'line'; id: string; token?: string } | null>(null);
   const [lineBootstrap, setLineBootstrap] = useState<LineBootstrap | null>(null);
   const [lineTickets, setLineTickets] = useState<LineTicketSummary[] | null>(null);
   const [lineCheckLoading, setLineCheckLoading] = useState(() => Boolean(getLineSessionToken()));
@@ -755,9 +806,11 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     setError(null);
     setDetail(null);
     try {
-      setDetail(await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(id)}`, {
+      const loaded = await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(id)}`, {
         headers: { 'x-tracking-token': trackingToken },
-      }));
+      });
+      setDetail(loaded);
+      setDetailAccess({ channel: 'guest', id: loaded.ticket.id, token: trackingToken });
     } catch (lookupError) {
       setError(lookupError instanceof ApiError ? lookupError.message : 'ค้นหาไม่สำเร็จ');
     } finally {
@@ -770,6 +823,7 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     setLineError(null);
     try {
       setDetail(await lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${id}`));
+      setDetailAccess({ channel: 'line', id });
     } catch (loadError) {
       setLineError(loadError instanceof ApiError ? loadError.message : 'โหลดรายละเอียด Ticket ไม่สำเร็จ');
     } finally {
@@ -777,12 +831,35 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     }
   }
 
+  async function signoff(file: File) {
+    if (!detailAccess) throw new Error('ไม่พบข้อมูลสำหรับยืนยัน Ticket');
+    const body = new window.FormData();
+    body.set('file', file);
+    if (detailAccess.channel === 'line') {
+      await lineApiFetch(`/api/v1/line/tickets/${detailAccess.id}/signoff`, { method: 'POST', body });
+      setDetail(await lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${detailAccess.id}`));
+      setLineTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
+    } else {
+      const headers = { 'x-tracking-token': detailAccess.token ?? '' };
+      await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/signoff`, { method: 'POST', headers, body });
+      setDetail(await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}`, { headers }));
+    }
+  }
+
   if (detail) {
     return (
       <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
-        <button type="button" onClick={() => setDetail(null)} className="mb-4 text-sm text-slate-500 hover:text-primary-700">← กลับ</button>
+        <button type="button" onClick={() => { setDetail(null); setDetailAccess(null); }} className="mb-4 text-sm text-slate-500 hover:text-primary-700">← กลับ</button>
         <p className="font-mono text-xs text-slate-500">{detail.ticket.ticket_no}</p><h2 className="mt-1 font-bold text-slate-900">{detail.ticket.title}</h2><p className="mt-1 text-xs text-slate-500">สถานะ: {ticketStatusLabel(detail.ticket.status)} · {detail.ticket.category?.name ?? '-'} · ความเร่งด่วน {detail.ticket.priority}</p><p className="mt-4 text-sm text-slate-600">{detail.ticket.description}</p>
         {detail.ticket.resolution && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">ผลดำเนินการ: {detail.ticket.resolution}</p>}
+        <div className="mt-4">
+          <RequesterSignoffCard
+            status={detail.ticket.status}
+            signatureUrl={detail.ticket.requester_signature_url}
+            signedAt={detail.ticket.requester_signature_uploaded_at}
+            onSign={signoff}
+          />
+        </div>
         {(detail.attachments ?? []).length > 0 && (
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-2 text-xs font-bold text-slate-700">ไฟล์แนบ ({detail.attachments.length})</p>

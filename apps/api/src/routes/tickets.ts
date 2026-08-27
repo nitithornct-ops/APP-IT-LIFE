@@ -9,6 +9,12 @@ import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
+import { saveRequesterSignature } from '../services/ticketSignatureService';
+import {
+  renderTicketFormTemplate,
+  TICKET_FORM_TEMPLATE_CODE,
+  ticketFormFlow,
+} from '../services/ticketFormDocument';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import {
   TICKET_STATUS,
@@ -27,7 +33,7 @@ import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormCheckmarksSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -196,6 +202,156 @@ ticketsRoute.get('/assignable-staff', async (c) => {
   return c.json(ok(reqId, data));
 });
 
+/**
+ * เอกสาร Ticket ต้องใช้แหล่งเดียวกับ Form Studio ไม่ประกอบหน้า A4 แยกกันในฝั่งเว็บ
+ * เพื่อให้การแก้ Template IT-ERP-ISSUE มีผลกับ Ticket และข้อมูลแต่ละช่วงของ workflow
+ * ถูกเติมลงในส่วนที่ 1-5 จาก Ticket/Issue Form ชุดเดียวกัน
+ */
+ticketsRoute.get('/:id/form-document', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const id = c.req.param('id');
+  const { data: ticket, error: ticketError } = await supabase
+    .from('tickets')
+    .select('*, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name, email), assignee:profiles!tickets_assignee_id_fkey(full_name, email)')
+    .eq('id', id)
+    .maybeSingle();
+  if (ticketError) return dbFailJson(c, 'TICKET_FORM_LOAD_FAILED', ticketError, 'โหลดข้อมูลแบบฟอร์ม Ticket ไม่สำเร็จ');
+  if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+
+  const admin = createAdminClient(c.env);
+  const { data: template, error: templateError } = await admin
+    .from('form_templates')
+    .select('id, template_code, name, current_version, content_html, page_settings, status, updated_at')
+    .eq('template_code', TICKET_FORM_TEMPLATE_CODE)
+    .neq('status', 'Archived')
+    .maybeSingle();
+  if (templateError) return dbFailJson(c, 'TICKET_FORM_TEMPLATE_LOAD_FAILED', templateError, 'โหลด Template จาก Form Studio ไม่สำเร็จ');
+  if (!template) {
+    return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
+  }
+
+  const [{ data: issueForm, error: issueError }, { data: worklogs, error: worklogError }] = await Promise.all([
+    admin
+      .from('issue_forms')
+      .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
+      .eq('ticket_id', id)
+      .eq('template_id', template.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('ticket_worklogs')
+      .select('action, detail, created_at')
+      .eq('ticket_id', id)
+      .order('created_at', { ascending: true }),
+  ]);
+  if (issueError ?? worklogError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
+
+  let signatureUrl: string | null = null;
+  let requesterSignatureUrl: string | null = null;
+  if (ticket.signature_storage_path) {
+    const { data } = await admin.storage
+      .from(TICKET_SIGNATURE_BUCKET)
+      .createSignedUrl(String(ticket.signature_storage_path), 3600);
+    signatureUrl = data?.signedUrl ?? null;
+  }
+  if (ticket.requester_signature_storage_path) {
+    const { data } = await admin.storage
+      .from(TICKET_SIGNATURE_BUCKET)
+      .createSignedUrl(String(ticket.requester_signature_storage_path), 3600);
+    requesterSignatureUrl = data?.signedUrl ?? null;
+  }
+
+  const outsourceLog = (worklogs ?? []).find((row) => row.action === 'ส่งต่อ Outsource');
+  const renderSource = {
+    ...ticket,
+    description: ticket.description,
+    outsource_issue_no: ticket.outsource_issue_no,
+    escalation_reason: outsourceLog?.detail ?? null,
+  };
+  const sourceHtml = issueForm?.content_html || template.content_html;
+  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, issueForm, signatureUrl, requesterSignatureUrl);
+  const templateVersion = Number(issueForm?.template_version ?? template.current_version);
+  const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;
+  const checkmarks = savedCheckmarks
+    && savedCheckmarks.templateId === template.id
+    && savedCheckmarks.templateVersion === templateVersion
+    && Array.isArray(savedCheckmarks.indices)
+    ? savedCheckmarks.indices.filter((value): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) < 200)
+    : [];
+  const textValues = savedCheckmarks
+    && savedCheckmarks.templateId === template.id
+    && savedCheckmarks.templateVersion === templateVersion
+    && savedCheckmarks.textValues
+    && typeof savedCheckmarks.textValues === 'object'
+    && !Array.isArray(savedCheckmarks.textValues)
+    ? Object.fromEntries(Object.entries(savedCheckmarks.textValues).filter(([key, value]) => /^(?:0|[1-9]\d{0,2})$/.test(key) && typeof value === 'string'))
+    : {};
+  const canEditCheckmarks = ticket.requester_id === c.get('userId') || await hasPerm(c, 'ticket.update');
+
+  return c.json(ok(reqId, {
+    ticketId: ticket.id,
+    ticketNo: ticket.ticket_no,
+    ticketStatus: ticket.status,
+    template: {
+      id: template.id,
+      code: template.template_code,
+      name: template.name,
+      version: templateVersion,
+      source: issueForm ? 'issue' : 'template',
+      updatedAt: template.updated_at,
+    },
+    issueForm: issueForm ? { id: issueForm.id, formNo: issueForm.form_no, status: issueForm.status } : null,
+    pageSettings: template.page_settings,
+    contentHtml,
+    checkmarks,
+    textValues,
+    canEditCheckmarks,
+    flow: ticketFormFlow(String(ticket.status), issueForm),
+  }));
+});
+
+ticketsRoute.patch(
+  '/:id/form-checkmarks',
+  zValidator('json', ticketFormCheckmarksSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const supabase = c.get('supabase');
+    const { data: ticket, error: loadError } = await supabase
+      .from('tickets')
+      .select('id, ticket_no, requester_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (loadError) return dbFailJson(c, 'TICKET_FORM_CHECKMARKS_LOAD_FAILED', loadError, 'ตรวจสอบแบบฟอร์ม Ticket ไม่สำเร็จ');
+    if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+
+    const canEdit = ticket.requester_id === c.get('userId') || await hasPerm(c, 'ticket.update');
+    if (!canEdit) return c.json(fail(reqId, 'FORBIDDEN', 'ไม่มีสิทธิ์ทำเครื่องหมายในแบบฟอร์ม Ticket นี้'), 403);
+
+    const formCheckmarks = {
+      templateId: body.templateId,
+      templateVersion: body.templateVersion,
+      indices: body.indices,
+      textValues: body.textValues,
+    };
+    const { error } = await createAdminClient(c.env)
+      .from('tickets')
+      .update({ form_checkmarks: formCheckmarks })
+      .eq('id', id);
+    if (error) return dbFailJson(c, 'TICKET_FORM_CHECKMARKS_UPDATE_FAILED', error, 'บันทึกเครื่องหมายในแบบฟอร์มไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'ticket',
+      targetTable: 'tickets', targetId: id,
+      detail: { fields: ['form_checkmarks'], checkedCount: body.indices.length, textFieldCount: Object.keys(body.textValues).length }, requestId: reqId,
+    });
+    return c.json(ok(reqId, { indices: body.indices, textValues: body.textValues }));
+  },
+);
+
 ticketsRoute.get('/:id', async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -244,15 +400,22 @@ ticketsRoute.get('/:id', async (c) => {
   const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
   const signatureUploadedAt = ticket.signature_uploaded_at ?? null;
   let signatureUrl: string | null = null;
+  let requesterSignatureUrl: string | null = null;
   if (signaturePath) {
     const { data } = await admin.storage
       .from(TICKET_SIGNATURE_BUCKET)
       .createSignedUrl(signaturePath, 3600);
     signatureUrl = data?.signedUrl ?? null;
   }
+  if (ticket.requester_signature_storage_path) {
+    const { data } = await admin.storage
+      .from(TICKET_SIGNATURE_BUCKET)
+      .createSignedUrl(String(ticket.requester_signature_storage_path), 3600);
+    requesterSignatureUrl = data?.signedUrl ?? null;
+  }
 
   // field_outcomes มาจาก state machine ตัวเดียวกับที่ PATCH บังคับ จอหน้างานจึงเสนอเฉพาะสิ่งที่ทำได้จริง
-  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [], field_outcomes: fieldOutcomesFor(String(ticket.status)) }));
+  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, requester_signature_url: requesterSignatureUrl, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [], field_outcomes: fieldOutcomesFor(String(ticket.status)) }));
 });
 
 ticketsRoute.post(
@@ -362,12 +525,30 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
   const responseDueAt = addTicketBusinessHours(now, responseSlaHours, businessCalendar);
   const dueAt = addTicketBusinessHours(now, resolutionSlaHours, businessCalendar);
 
+  const admin = createAdminClient(c.env);
+  const { data: requesterProfile, error: requesterError } = await admin
+    .from('profiles')
+    .select('full_name, department_id, department:departments(name_th), position:positions(name_th)')
+    .eq('id', actorId)
+    .maybeSingle();
+  if (requesterError || !requesterProfile) {
+    return c.json(fail(reqId, 'TICKET_REQUESTER_PROFILE_NOT_FOUND', 'ไม่พบข้อมูลผู้แจ้งสำหรับสร้าง Ticket'), 400);
+  }
+  const requesterDepartment = Array.isArray(requesterProfile.department) ? requesterProfile.department[0] : requesterProfile.department;
+  const requesterPosition = Array.isArray(requesterProfile.position) ? requesterProfile.position[0] : requesterProfile.position;
+
   const { data: ticket, error } = await supabase
     .from('tickets')
     .insert({
       title: body.title,
       requester_id: actorId,
+      requester_name_snapshot: requesterProfile.full_name,
+      requester_position_snapshot: requesterPosition?.name_th ?? null,
+      department_id: requesterProfile.department_id,
+      department_name_snapshot: requesterDepartment?.name_th ?? null,
       requester_phone: body.requesterPhone ?? null,
+      incident_at: body.incidentAt ? new Date(body.incidentAt).toISOString() : now.toISOString(),
+      erp_module: body.erpModule ?? null,
       location: body.location ?? null,
       asset_id: body.assetId ?? null,
       category_id: body.categoryId,
@@ -815,20 +996,87 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
       link: `/tickets/${id}`,
     });
   }
-  if (patch.status && patch.status !== fromStatus && current.requester_id !== actorId) {
-    await sendNotification(c.env, {
-      recipientId: current.requester_id,
-      type: 'ticket_status_changed',
-      title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
-      link: `/tickets/${id}`,
-    });
-    const lineTarget = await resolveTicketRequesterLineTarget(c.env, current.requester_line_user_id);
+  if (patch.status && patch.status !== fromStatus) {
+    const lineTarget = await resolveTicketRequesterLineTarget(
+      c.env,
+      current.requester_line_user_id,
+      current.requester_id,
+    );
+    const inAppRecipientId = current.requester_id ?? lineTarget?.linkedUserId ?? null;
+    if (inAppRecipientId && inAppRecipientId !== actorId) {
+      await sendNotification(c.env, {
+        recipientId: inAppRecipientId,
+        type: 'ticket_status_changed',
+        title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
+        link: `/tickets/${id}`,
+      });
+    }
     if (lineTarget) {
       await sendLinePush(c.env, lineTarget.target, `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`, lineTarget.lineUserId);
     }
   }
 
   return c.json(ok(reqId, updated));
+});
+
+/** ผู้แจ้งลงนามตรวจรับในส่วนที่ 5 หลังช่างเปลี่ยนสถานะเป็น "เสร็จสิ้น" แล้วเท่านั้น */
+ticketsRoute.post('/:id/requester-signoff', async (c) => {
+  const requestId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id');
+  const admin = createAdminClient(c.env);
+  const { data: ticket } = await admin
+    .from('tickets')
+    .select('id, ticket_no, title, status, requester_id, assignee_id, requester_signature_storage_path')
+    .eq('id', id)
+    .maybeSingle();
+  if (!ticket || ticket.requester_id !== actorId) {
+    return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในรายการแจ้งของท่าน'), 404);
+  }
+  if (ticket.status !== TICKET_STATUS.RESOLVED) {
+    return c.json(fail(requestId, 'TICKET_SIGNOFF_NOT_READY', 'ลงลายเซ็นตรวจรับได้เมื่อช่างดำเนินงานเสร็จสิ้นแล้วเท่านั้น'), 409);
+  }
+
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json(fail(requestId, 'TICKET_SIGNATURE_REQUIRED', 'กรุณาเพิ่มลายเซ็นผู้แจ้ง'), 400);
+  const saved = await saveRequesterSignature(admin, {
+    ticketId: ticket.id,
+    previousPath: ticket.requester_signature_storage_path,
+    file,
+    uploadedBy: actorId,
+  });
+  if (!saved.ok) return c.json(fail(requestId, saved.code, saved.message), 400);
+
+  const { error: closeError } = await admin.from('tickets').update({
+    status: TICKET_STATUS.CLOSED,
+    closed_at: saved.uploadedAt,
+    updated_by: actorId,
+  }).eq('id', ticket.id).eq('status', TICKET_STATUS.RESOLVED);
+  if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
+  await admin.from('ticket_worklogs').insert({
+    ticket_id: ticket.id,
+    action: 'ผู้แจ้งตรวจรับและลงนาม',
+    detail: 'ผู้แจ้งยืนยันผลการแก้ไขในส่วนที่ 5',
+    status_from: TICKET_STATUS.RESOLVED,
+    status_to: TICKET_STATUS.CLOSED,
+    is_public: true,
+    actor_id: actorId,
+  });
+  await writeAuditLog(c.env, {
+    actorId, actorEmail: c.get('userEmail'), action: 'REQUESTER_SIGNOFF', module: 'ticket',
+    targetTable: 'tickets', targetId: ticket.id,
+    detail: { sizeBytes: file.size, status: TICKET_STATUS.CLOSED }, requestId,
+  });
+  if (ticket.assignee_id && ticket.assignee_id !== actorId) {
+    await sendNotification(c.env, {
+      recipientId: ticket.assignee_id,
+      type: 'ticket_closed',
+      title: `ผู้แจ้งตรวจรับและลงนามปิด ${ticket.ticket_no}`,
+      link: `/tickets/${ticket.id}`,
+    });
+  }
+  return c.json(ok(requestId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: TICKET_STATUS.CLOSED }), 201);
 });
 
 /**
@@ -838,11 +1086,21 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
  */
 ticketsRoute.post(
   '/:id/signature',
-  requirePermission('ticket.update'),
   async (c) => {
     const requestId = c.get('requestId');
     const actorId = c.get('userId');
     const id = c.req.param('id');
+    const admin = createAdminClient(c.env);
+    const { data: ticket, error: ticketError } = await admin
+      .from('tickets')
+      .select('id, requester_id, signature_storage_path')
+      .eq('id', id)
+      .maybeSingle();
+    if (ticketError || !ticket) return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุ'), 404);
+    if (!(await hasPerm(c, 'ticket.update'))) {
+      return c.json(fail(requestId, 'FORBIDDEN', 'เฉพาะเจ้าหน้าที่ที่มีสิทธิ์เท่านั้นที่เพิ่มลายเซ็น IT ได้'), 403);
+    }
+
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) {
@@ -858,15 +1116,6 @@ ticketsRoute.post(
     if (!signature.ok) {
       return c.json(fail(requestId, 'TICKET_SIGNATURE_CONTENT_MISMATCH', signature.reason ?? 'เนื้อหาไฟล์ไม่ใช่ PNG'), 400);
     }
-
-    const admin = createAdminClient(c.env);
-    const { data: ticket, error: ticketError } = await admin
-      .from('tickets')
-      .select('id, signature_storage_path')
-      .eq('id', id)
-      .maybeSingle();
-    if (ticketError || !ticket) return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุ'), 404);
-
     const path = `tickets/${id}/${crypto.randomUUID()}.png`;
     const { error: uploadError } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).upload(path, file, {
       contentType: 'image/png',
@@ -903,13 +1152,16 @@ ticketsRoute.post(
   },
 );
 
-ticketsRoute.delete('/:id/signature', requirePermission('ticket.update'), async (c) => {
+ticketsRoute.delete('/:id/signature', async (c) => {
   const requestId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id');
   const admin = createAdminClient(c.env);
-  const { data: ticket, error } = await admin.from('tickets').select('id, signature_storage_path').eq('id', id).maybeSingle();
+  const { data: ticket, error } = await admin.from('tickets').select('id, requester_id, signature_storage_path').eq('id', id).maybeSingle();
   if (error || !ticket) return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket ที่ระบุ'), 404);
+  if (!(await hasPerm(c, 'ticket.update'))) {
+    return c.json(fail(requestId, 'FORBIDDEN', 'เฉพาะเจ้าหน้าที่ที่มีสิทธิ์เท่านั้นที่ลบลายเซ็น IT ได้'), 403);
+  }
   if (!ticket.signature_storage_path) return c.json(ok(requestId, { deleted: false }));
 
   const path = String(ticket.signature_storage_path);

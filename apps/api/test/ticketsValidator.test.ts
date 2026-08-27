@@ -42,11 +42,23 @@ describe('ticket create form', () => {
       priority: 'สูง',
       description: 'กดปุ่มแล้วเครื่องไม่ตอบสนอง',
       requesterPhone: '1234',
+      incidentAt: '2026-08-26T09:30',
+      erpModule: 'Inventory',
       location: 'ชั้น 2',
       assetId: '22222222-2222-4222-8222-222222222222',
       isSecurity: true,
     });
     expect(result.success).toBe(true);
+  });
+
+  it('rejects an invalid problem date/time for section 1 while keeping old clients compatible', () => {
+    const base = {
+      title: 'เปิดเครื่องไม่ได้',
+      categoryId: CATEGORY_ID,
+      description: 'กดปุ่มแล้วเครื่องไม่ตอบสนอง',
+    };
+    expect(createTicketSchema.safeParse(base).success).toBe(true);
+    expect(createTicketSchema.safeParse({ ...base, incidentAt: 'ไม่ใช่วันที่' }).success).toBe(false);
   });
 });
 

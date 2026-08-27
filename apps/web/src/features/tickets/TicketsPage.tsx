@@ -39,7 +39,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
-import type { TicketCategory } from '../../types/admin';
+import type { Department, Position, TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { AssignableStaff, TicketDetail, TicketListItem, TicketPriority, TicketStatus } from '../../types/tickets';
@@ -285,6 +285,8 @@ const ticketSchema = z.object({
   ),
   location: z.string().trim().optional(),
   requesterPhone: z.string().trim().optional(),
+  incidentAt: z.string().min(1, 'กรุณาระบุวันที่และเวลาที่พบปัญหา'),
+  erpModule: z.string().trim().max(120, 'ERP Module ต้องไม่เกิน 120 ตัวอักษร').optional(),
   assetId: z.string().optional(),
   isSecurity: z.boolean().optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด'),
@@ -292,11 +294,18 @@ const ticketSchema = z.object({
 
 type TicketForm = z.infer<typeof ticketSchema>;
 
-function CreateTicketForm({
+function currentLocalDateTime(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+export function CreateTicketForm({
   categories,
   assets,
   assetsLoading,
   initialAssetId,
+  requester,
   onClose,
 }: {
   categories: TicketCategory[];
@@ -304,6 +313,7 @@ function CreateTicketForm({
   assetsLoading: boolean;
   /** เครื่องที่สแกนมาจากหน้างาน — เลือกไว้ให้ล่วงหน้าเพื่อไม่ให้ช่างต้องค้นหาเครื่องซ้ำ */
   initialAssetId?: string;
+  requester: { fullName: string; position: string; department: string; phone: string };
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -315,7 +325,15 @@ function CreateTicketForm({
     formState: { errors },
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
-    defaultValues: { assetId: initialAssetId ?? '', categoryId: '', isSecurity: false, priority: undefined },
+    defaultValues: {
+      assetId: initialAssetId ?? '',
+      categoryId: '',
+      isSecurity: false,
+      priority: undefined,
+      requesterPhone: requester.phone,
+      incidentAt: currentLocalDateTime(),
+      erpModule: '',
+    },
   });
 
   useEffect(() => {
@@ -342,6 +360,8 @@ function CreateTicketForm({
           ...values,
           assetId: values.assetId || undefined,
           priority: values.priority || undefined,
+          erpModule: values.erpModule || undefined,
+          incidentAt: new Date(values.incidentAt).toISOString(),
         }),
       });
 
@@ -367,7 +387,7 @@ function CreateTicketForm({
   const labelClass = 'mb-1.5 block text-[13px] font-semibold text-slate-600 dark:text-slate-300';
 
   return (
-    <FormModal title="เปิด Ticket แจ้งซ่อม" description="ระบุปัญหา สถานที่ และหลักฐานเพื่อส่งเข้าคิวบริการ" size="lg" closeDisabled={mutation.isPending} onClose={onClose}>
+    <FormModal title="เปิด Ticket แจ้งซ่อม" description="กรอกข้อมูลส่วนที่ 1 เพื่อส่งเข้าคิวบริการและสร้างแบบฟอร์มอัตโนมัติ" size="lg" closeDisabled={mutation.isPending} onClose={onClose}>
       <form
         onSubmit={handleSubmit((values) => {
           setServerError(null);
@@ -376,17 +396,42 @@ function CreateTicketForm({
         noValidate
       >
         <div className="grid grid-cols-1 gap-x-3 gap-y-5 px-5 py-6 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <label htmlFor="tk-title" className={labelClass}>
-              หัวข้อปัญหา <span className="text-red-500">*</span>
+          <div className="md:col-span-3">
+            <p className="text-sm font-bold text-primary-800 dark:text-primary-200">ส่วนที่ 1: ข้อมูลผู้แจ้ง และรายละเอียดปัญหา</p>
+            <p className="mt-1 text-xs text-slate-500">ข้อมูลผู้แจ้งอ้างอิงจากบัญชีที่เข้าสู่ระบบ และจะถูกเก็บเป็นข้อมูล ณ วันที่แจ้ง</p>
+          </div>
+
+          <div>
+            <label className={labelClass}>ชื่อ-นามสกุล</label>
+            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.fullName || '—'}</div>
+          </div>
+
+          <div>
+            <label className={labelClass}>ตำแหน่ง</label>
+            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.position || '—'}</div>
+          </div>
+
+          <div>
+            <label className={labelClass}>ส่วนงาน</label>
+            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.department || '—'}</div>
+          </div>
+
+          <div>
+            <label htmlFor="tk-phone" className={labelClass}>เบอร์โทรศัพท์</label>
+            <input id="tk-phone" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
+          </div>
+
+          <div>
+            <label htmlFor="tk-incident-at" className={labelClass}>
+              วันที่และเวลาที่พบปัญหา <span className="text-red-500">*</span>
             </label>
-            <input id="tk-title" autoFocus className={fieldClass} {...register('title')} />
-            {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
+            <input id="tk-incident-at" type="datetime-local" className={fieldClass} {...register('incidentAt')} />
+            {errors.incidentAt && <p className="mt-1 text-xs text-red-600">{errors.incidentAt.message}</p>}
           </div>
 
           <div>
             <label htmlFor="tk-category" className={labelClass}>
-              ประเภทปัญหา <span className="text-red-500">*</span>
+              ประเภทงานที่ขอรับบริการ <span className="text-red-500">*</span>
             </label>
             <select id="tk-category" className={fieldClass} {...register('categoryId')}>
               <option value="">-- เลือก --</option>
@@ -397,8 +442,16 @@ function CreateTicketForm({
             {errors.categoryId && <p className="mt-1 text-xs text-red-600">{errors.categoryId.message}</p>}
           </div>
 
+          <div className="md:col-span-2">
+            <label htmlFor="tk-title" className={labelClass}>
+              หัวข้อปัญหา <span className="text-red-500">*</span>
+            </label>
+            <input id="tk-title" autoFocus className={fieldClass} {...register('title')} />
+            {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
+          </div>
+
           <div>
-            <label htmlFor="tk-priority" className={labelClass}>ความเร่งด่วน</label>
+            <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
             <select id="tk-priority" className={fieldClass} {...register('priority')}>
               <option value="">-- เลือก --</option>
               <option value="ต่ำ">ต่ำ</option>
@@ -409,8 +462,9 @@ function CreateTicketForm({
           </div>
 
           <div>
-            <label htmlFor="tk-phone" className={labelClass}>เบอร์โทรติดต่อ</label>
-            <input id="tk-phone" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
+            <label htmlFor="tk-erp-module" className={labelClass}>ERP Module (ถ้ามี)</label>
+            <input id="tk-erp-module" className={fieldClass} placeholder="เช่น Finance, Inventory" {...register('erpModule')} />
+            {errors.erpModule && <p className="mt-1 text-xs text-red-600">{errors.erpModule.message}</p>}
           </div>
 
           <div>
@@ -538,6 +592,18 @@ export function TicketsPage() {
     enabled: showCreate && hasPermission('asset.view'),
   });
 
+  const departmentsQuery = useQuery({
+    queryKey: ['admin', 'departments'],
+    queryFn: () => apiFetch<Department[]>('/api/v1/departments'),
+    enabled: showCreate,
+  });
+
+  const positionsQuery = useQuery({
+    queryKey: ['admin', 'positions'],
+    queryFn: () => apiFetch<Position[]>('/api/v1/positions'),
+    enabled: showCreate,
+  });
+
   // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
   // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
   const ticketListParams = (() => {
@@ -646,6 +712,12 @@ export function TicketsPage() {
           assets={assetOptionsQuery.data ?? []}
           assetsLoading={assetOptionsQuery.isLoading}
           initialAssetId={newForAssetId || undefined}
+          requester={{
+            fullName: me?.profile.full_name ?? '',
+            phone: me?.profile.phone ?? '',
+            department: departmentsQuery.data?.find((item) => item.id === me?.profile.department_id)?.name_th ?? '',
+            position: positionsQuery.data?.find((item) => item.id === me?.profile.position_id)?.name_th ?? '',
+          }}
           onClose={closeCreate}
         />
       )}
@@ -857,6 +929,7 @@ export function TicketsPage() {
                       <td className="px-3 py-3 text-right">
                         <RowActions
                           recordLabel={ticket.ticket_no}
+                          iconOnly
                           actions={[
                             { kind: 'view', to: `/tickets/${ticket.id}`, label: 'รายละเอียด' },
                             { kind: 'custom', icon: FileText, to: `/tickets/${ticket.id}/form`, label: 'ดูแบบฟอร์ม' },
