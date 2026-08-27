@@ -19,27 +19,25 @@ async function expectImageLoaded(image: Locator) {
 
 test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
   const email = process.env.UAT_ADMIN_EMAIL;
-  const sourceTicketId = process.env.UAT_SIGNATURE_SOURCE_TICKET_ID;
   const formTicketId = process.env.UAT_FORM_TICKET_ID;
-  if (!email || !sourceTicketId || !formTicketId) throw new Error('UAT email and Ticket IDs are required');
+  if (!email || !formTicketId) throw new Error('UAT email and form Ticket ID are required');
 
   const auth = { authorization: `Bearer ${await createLiveAccessToken(email)}` };
-  const source = await request.get(`http://127.0.0.1:8787/api/v1/tickets/${sourceTicketId}`, { headers: auth });
-  expect(source.ok(), await source.text()).toBeTruthy();
-  const sourceBody = await source.json() as { data: { signature_url: string | null } };
-  if (!sourceBody.data.signature_url) throw new Error('Source Ticket has no signature');
-
   const formTicket = await request.get(`http://127.0.0.1:8787/api/v1/tickets/${formTicketId}`, { headers: auth });
   expect(formTicket.ok(), await formTicket.text()).toBeTruthy();
   const formTicketBody = await formTicket.json() as { data: { ticket_no: string } };
   const formTicketNo = formTicketBody.data.ticket_no;
   if (!formTicketNo) throw new Error('Form Ticket has no ticket number');
 
-  // ยืม PNG จริงจาก Ticket ที่มีลายเซ็นอยู่แล้ว มาเซ็นให้ใบที่จะพิมพ์ — ไม่มีลายเซ็นกลางให้ตั้งอีกแล้ว
-  const signatureResponse = await request.get(sourceBody.data.signature_url);
+  // A self-contained valid 1x1 PNG keeps this release gate independent from
+  // another mutable Ticket fixture while exercising the real upload path.
+  const signatureBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
   const upload = await request.post(`http://127.0.0.1:8787/api/v1/tickets/${formTicketId}/signature`, {
     headers: auth,
-    multipart: { file: { name: 'ticket-signature.png', mimeType: 'image/png', buffer: await signatureResponse.body() } },
+    multipart: { file: { name: 'ticket-signature.png', mimeType: 'image/png', buffer: signatureBuffer } },
   });
   expect(upload.ok(), await upload.text()).toBeTruthy();
 

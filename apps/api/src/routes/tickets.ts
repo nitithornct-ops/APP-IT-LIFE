@@ -786,7 +786,7 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
         link: `/tickets/${id}`,
       });
     }
-    if (patch.status && patch.status !== fromStatus && current.requester_id !== actorId) {
+    if (patch.status && patch.status !== fromStatus && current.requester_id && current.requester_id !== actorId) {
       await sendNotification(c.env, {
         recipientId: current.requester_id,
         type: 'ticket_status_changed',
