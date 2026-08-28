@@ -2,7 +2,7 @@ import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Building2, CalendarClock, Check, ClipboardCheck, FileText, Loader2, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarClock, Check, ClipboardCheck, FileText, KeyRound, Loader2, Plus, RefreshCw, RotateCcw, UserPlus, X } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -20,6 +20,7 @@ import {
   type Contract,
   type ContractReferences,
   type Vendor,
+  type VendorPortalAccount,
   type VendorReferences,
 } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
@@ -77,6 +78,52 @@ function VendorForm({ vendor, references, onClose }: { vendor?: Vendor; referenc
   </CardBody></Card>;
 }
 
+function generatedPortalPassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('') + '9aA';
+}
+
+function VendorPortalAccounts({ vendor, onClose }: { vendor: Vendor; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({ email: vendor.email ?? '', fullName: vendor.contact_person ?? '', position: '', password: generatedPortalPassword() });
+  const [resetting, setResetting] = useState<VendorPortalAccount | null>(null);
+  const [resetPassword, setResetPassword] = useState(generatedPortalPassword());
+  const [error, setError] = useState('');
+  const queryKey = ['vendors-contracts', 'portal-accounts', vendor.id];
+  const accountsQuery = useQuery({ queryKey, queryFn: () => apiFetch<VendorPortalAccount[]>(`/api/v1/vendors/${vendor.id}/portal-accounts`) });
+  const createMutation = useMutation({
+    mutationFn: () => apiFetch<VendorPortalAccount>(`/api/v1/vendors/${vendor.id}/portal-accounts`, { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey }); setForm({ email: '', fullName: '', position: '', password: generatedPortalPassword() }); setError(''); },
+    onError: (reason) => setError(errorText(reason, 'สร้างบัญชีบริษัทไม่สำเร็จ')),
+  });
+  const statusMutation = useMutation({
+    mutationFn: ({ account, status }: { account: VendorPortalAccount; status: 'Active' | 'Inactive' }) => apiFetch(`/api/v1/vendors/${vendor.id}/portal-accounts/${account.id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey }),
+    onError: (reason) => setError(errorText(reason, 'เปลี่ยนสถานะบัญชีไม่สำเร็จ')),
+  });
+  const resetMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/vendors/${vendor.id}/portal-accounts/${resetting!.id}/reset-password`, { method: 'POST', body: JSON.stringify({ password: resetPassword }) }),
+    onSuccess: () => { setResetting(null); setResetPassword(generatedPortalPassword()); setError(''); },
+    onError: (reason) => setError(errorText(reason, 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ')),
+  });
+
+  return <Card><CardHeader className="flex items-center justify-between"><span>บัญชี Outsource Portal · {vendor.name}</span><button type="button" aria-label="ปิด" onClick={onClose}><X className="h-4 w-4" /></button></CardHeader><CardBody>
+    <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><strong>รหัสบริษัทสำหรับเข้าสู่ระบบ:</strong> <span className="font-mono font-bold text-primary-700">{vendor.vendor_code}</span><br />บริษัทเข้าสู่ระบบที่ <span className="font-mono">/vendor/portal</span> โดยใช้รหัสบริษัท อีเมล และรหัสผ่าน</div>
+    <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setError(''); createMutation.mutate(); }}>
+      <label className="text-xs font-semibold">ชื่อ–นามสกุล<input required maxLength={160} value={form.fullName} onChange={(e) => setForm((v) => ({ ...v, fullName: e.target.value }))} className={fieldClass} /></label>
+      <label className="text-xs font-semibold">ตำแหน่ง<input maxLength={160} value={form.position} onChange={(e) => setForm((v) => ({ ...v, position: e.target.value }))} className={fieldClass} /></label>
+      <label className="text-xs font-semibold">อีเมลเข้าสู่ระบบ<input required type="email" maxLength={254} value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} className={fieldClass} /></label>
+      <label className="text-xs font-semibold">รหัสผ่านเริ่มต้น<div className="flex gap-2"><input required minLength={12} value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} className={fieldClass} /><Button type="button" size="sm" variant="outline" className="mt-1" onClick={() => setForm((v) => ({ ...v, password: generatedPortalPassword() }))}><RefreshCw className="h-4 w-4" /></Button></div></label>
+      {error && <p className="text-sm font-semibold text-red-600 sm:col-span-2">{error}</p>}
+      <div className="sm:col-span-2"><Button type="submit" size="sm" isLoading={createMutation.isPending}><UserPlus className="h-4 w-4" />สร้างบัญชีบริษัท</Button></div>
+    </form>
+    <div className="mt-5 border-t pt-4"><p className="mb-3 text-sm font-bold">บัญชีที่สร้างแล้ว</p>{accountsQuery.isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (accountsQuery.data?.length ?? 0) === 0 ? <p className="text-sm text-slate-400">ยังไม่มีบัญชี Portal</p> : <div className="space-y-2">{accountsQuery.data?.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div><p className="text-sm font-bold">{account.full_name}</p><p className="text-xs text-slate-500">{account.email}{account.position ? ` · ${account.position}` : ''}</p><p className="mt-1 text-[11px] text-slate-400">เข้าใช้ล่าสุด {account.last_login_at ? formatThaiDate(account.last_login_at, 'd MMM yyyy HH:mm') : 'ยังไม่เคยเข้าใช้'}</p></div><div className="flex items-center gap-2"><Badge variant={account.status === 'Active' ? 'success' : 'neutral'}>{account.status}</Badge><Button size="sm" variant="outline" onClick={() => { setResetting(account); setResetPassword(generatedPortalPassword()); }}><KeyRound className="h-4 w-4" />ตั้งรหัสใหม่</Button><Button size="sm" variant="outline" onClick={() => statusMutation.mutate({ account, status: account.status === 'Active' ? 'Inactive' : 'Active' })}>{account.status === 'Active' ? 'ปิดใช้' : 'เปิดใช้'}</Button></div></div>)}</div>}</div>
+    {resetting && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm font-bold">ตั้งรหัสผ่านใหม่: {resetting.full_name}</p><div className="mt-2 flex flex-wrap gap-2"><input minLength={12} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} className={`${fieldClass} mt-0 flex-1`} /><Button size="sm" isLoading={resetMutation.isPending} onClick={() => resetMutation.mutate()}>ยืนยันและออกจากระบบทุกอุปกรณ์</Button><Button size="sm" variant="outline" onClick={() => setResetting(null)}>ยกเลิก</Button></div></div>}
+  </CardBody></Card>;
+}
+
 function ContractForm({ contract, references, onClose }: { contract?: Contract; references: ContractReferences; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -119,7 +166,7 @@ function ContractForm({ contract, references, onClose }: { contract?: Contract; 
   </CardBody></Card>;
 }
 
-function VendorTable({ items, canManage, onEdit }: { items: Vendor[]; canManage: boolean; onEdit: (vendor: Vendor) => void }) {
+function VendorTable({ items, canManage, onEdit, onManagePortal }: { items: Vendor[]; canManage: boolean; onEdit: (vendor: Vendor) => void; onManagePortal: (vendor: Vendor) => void }) {
   const queryClient = useQueryClient();
   const [assessing, setAssessing] = useState<Vendor | null>(null);
   const [result, setResult] = useState('');
@@ -130,6 +177,7 @@ function VendorTable({ items, canManage, onEdit }: { items: Vendor[]; canManage:
   return <>{assessing && <Card className="mb-3"><CardHeader className="flex items-center justify-between"><span>ประเมิน/ตรวจรับ: {assessing.name}</span><button type="button" onClick={() => setAssessing(null)} aria-label="ปิด"><X className="h-4 w-4" /></button></CardHeader><CardBody><textarea autoFocus rows={3} maxLength={2000} value={result} onChange={(e) => setResult(e.target.value)} className={`${fieldClass} mb-2`} />{error && <p className="mb-2 text-sm text-red-600">{error}</p>}<Button size="sm" disabled={!result.trim()} isLoading={assessMutation.isPending} onClick={() => assessMutation.mutate()}>บันทึกผลประเมิน</Button></CardBody></Card>}
     <div className="overflow-x-auto"><DataTable className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">ผู้ให้บริการ</th><th className="p-2">ผู้ติดต่อ</th><th className="p-2">สัญญา</th><th className="p-2">ผลประเมิน</th><th className="p-2">สถานะ</th>{canManage && <th className="p-2">จัดการ</th>}</tr></thead><tbody>{items.map((item) => <tr key={item.id} data-testid={`vendor-row-${item.id}`} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="p-2"><p className="font-semibold">{item.name}</p><p className="font-mono text-xs text-slate-400">{item.vendor_code}</p><p className="text-xs text-slate-500">{item.service_type}</p></td><td className="p-2 text-slate-500"><p>{item.contact_person || '—'}</p><p className="text-xs">{item.phone || item.email || ''}</p></td><td className="p-2 text-slate-500">{item.contracts?.length ?? 0} ฉบับ</td><td className="max-w-xs p-2 text-slate-500"><p className="line-clamp-2">{item.assessment_result || '—'}</p>{item.assessment_date && <p className="text-xs text-slate-400">{formatThaiDate(item.assessment_date)}</p>}</td><td className="p-2"><Badge variant={vendorStatusTone[item.status]}>{item.status}</Badge></td>{canManage && <td className="p-2 text-right"><RowActions recordLabel={item.vendor_code ?? item.name} actions={[
           { kind: 'edit', onClick: () => onEdit(item) },
+          { kind: 'custom', icon: KeyRound, label: 'บัญชี Portal', onClick: () => onManagePortal(item) },
           { kind: 'custom', icon: ClipboardCheck, label: 'ประเมิน', onClick: () => { setAssessing(item); setResult(item.assessment_result ?? ''); } },
           item.status === 'Active'
             ? { kind: 'cancel', label: 'ปิดใช้', confirmDescription: 'ผู้ให้บริการรายนี้จะไม่ปรากฏให้เลือกในงานใหม่ สัญญาและประวัติที่บันทึกไว้ยังอยู่ครบ', onConfirm: () => statusMutation.mutate({ id: item.id, status: 'Inactive' }) }
@@ -159,6 +207,7 @@ export function VendorContractsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingVendor, setEditingVendor] = useState<Vendor | undefined>();
   const [editingContract, setEditingContract] = useState<Contract | undefined>();
+  const [portalVendor, setPortalVendor] = useState<Vendor | null>(null);
   const debouncedSearch = useDebouncedValue(search);
   const queryClient = useQueryClient();
 
@@ -191,12 +240,13 @@ export function VendorContractsPage() {
     <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{canVendorView && <button type="button" onClick={() => switchTab('vendors')} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === 'vendors' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500'}`}>ผู้ให้บริการ</button>}{canContractView && <button type="button" onClick={() => switchTab('contracts')} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === 'contracts' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500'}`}>สัญญา</button>}</div>
     {showForm && tab === 'vendors' && <FormModal title={editingVendor ? 'แก้ไขผู้ให้บริการ' : 'เพิ่มผู้ให้บริการ'} description="จัดการข้อมูลผู้ติดต่อและการประเมิน Vendor" size="xl" onClose={resetForm}>{vendorRefs.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : vendorRefs.data && <VendorForm vendor={editingVendor} references={vendorRefs.data} onClose={resetForm} />}</FormModal>}
     {showForm && tab === 'contracts' && <FormModal title={editingContract ? 'แก้ไขสัญญา' : 'เพิ่มสัญญา'} description="จัดการคู่สัญญา ขอบเขต และวันหมดอายุ" size="xl" onClose={resetForm}>{contractRefs.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : contractRefs.data && <ContractForm contract={editingContract} references={contractRefs.data} onClose={resetForm} />}</FormModal>}
+    {portalVendor && <FormModal title="บัญชี Outsource Portal" description="สร้างบัญชีผู้ติดต่อของบริษัทโดยไม่ให้สิทธิระบบภายใน" size="xl" onClose={() => setPortalVendor(null)}><VendorPortalAccounts vendor={portalVendor} onClose={() => setPortalVendor(null)} /></FormModal>}
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_352px]">
     <Card className="min-w-0"><CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>{tab === 'vendors' ? 'ทะเบียนผู้ให้บริการ' : 'ทะเบียนสัญญา'}</span><select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs font-normal dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{(tab === 'vendors' ? ['Active', 'Inactive'] : CONTRACT_STATUSES).map((item) => <option key={item}>{item}</option>)}</select></CardHeader><CardBody>
       <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tab === 'vendors' ? 'ค้นหารหัส ชื่อ ผู้ติดต่อ หรืออีเมล...' : 'ค้นหาเลขที่ ชื่อ หรือขอบเขตสัญญา...'} className={`${fieldClass} mb-3 max-w-md`} />
       {loading && <Loader2 className="mx-auto my-8 h-5 w-5 animate-spin" />}
       {!loading && activeItems.length === 0 && <EmptyState icon={tab === 'vendors' ? <Building2 className="h-10 w-10" /> : <FileText className="h-10 w-10" />} title={tab === 'vendors' ? 'ยังไม่มีผู้ให้บริการ' : 'ยังไม่มีสัญญา'} />}
-      {tab === 'vendors' && vendors.length > 0 && <VendorTable items={vendors} canManage={canVendorManage} onEdit={(item) => { setEditingVendor(item); setShowForm(true); }} />}
+      {tab === 'vendors' && vendors.length > 0 && <VendorTable items={vendors} canManage={canVendorManage} onEdit={(item) => { setEditingVendor(item); setShowForm(true); }} onManagePortal={setPortalVendor} />}
       {tab === 'contracts' && contracts.length > 0 && <ContractTable items={contracts} canManage={canContractManage} onEdit={(item) => { setEditingContract(item); setShowForm(true); }} />}
     </CardBody></Card>
     <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปการต่ออายุสัญญา">

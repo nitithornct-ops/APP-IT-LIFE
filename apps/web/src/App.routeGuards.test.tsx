@@ -30,6 +30,7 @@ const PUBLIC_ROUTES = new Set([
   '/report',
   '/vendor/forms',
   '/vendor/forms/:token', // legacy links only; newly generated links carry the token in a fragment
+  '/vendor/portal', // company-only session and API authorization; never uses internal employee RBAC
 ]);
 
 interface RouteDeclaration {

@@ -44,6 +44,7 @@ import { technicianSkillsRoute } from './routes/technicianSkills';
 import { usersRoute } from './routes/users';
 import { contractsRoute, vendorsRoute } from './routes/vendorsContracts';
 import { vulnerabilitiesRoute } from './routes/vulnerabilities';
+import { outsourceAdminRoute, vendorPortalRoute } from './routes/vendorPortal';
 import { workflowsRoute } from './routes/workflows';
 import type { AppEnv } from './types';
 import { fail } from './utils/response';
@@ -57,7 +58,7 @@ app.use('*', (c, next) =>
   cors({
     origin: parseAllowedOrigins(c.env.ALLOWED_ORIGINS),
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-tracking-token', 'x-line-session', 'x-vendor-token'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-tracking-token', 'x-line-session', 'x-vendor-token', 'x-vendor-session'],
   })(c, next),
 );
 
@@ -119,6 +120,8 @@ app.route('/api/v1/notifications', notificationsRoute);
 app.route('/api/v1/files', filesRoute);
 app.route('/api/v1/forms', formsRoute);
 app.route('/api/v1/public/forms', publicFormsRoute);
+app.route('/api/v1/vendor-portal', vendorPortalRoute);
+app.route('/api/v1/outsource-submissions', outsourceAdminRoute);
 app.route('/api/v1/line', lineRoute);
 app.route('/api/v1/public/tickets', publicTicketsRoute);
 

@@ -17,6 +17,7 @@ import { QueryError } from '../../components/ui/QueryError';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { RequesterSignoffCard } from '../../components/tickets/RequesterSignoffCard';
+import { OutsourceSubmissionCard } from '../../components/tickets/OutsourceSubmissionCard';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssignableStaff, TicketDetail, TicketStatus } from '../../types/tickets';
@@ -579,6 +580,7 @@ export function TicketDetailPage() {
             uploadedAt={ticket.signature_uploaded_at}
             canManage={canManageSignature}
           />
+          {ticket.outsource_vendor_id && <OutsourceSubmissionCard ticketId={ticket.id} canReview={canUpdateWork} />}
           {(isRequester || ticket.requester_signature_url) && (
             <RequesterSignoffCard
               status={ticket.status}

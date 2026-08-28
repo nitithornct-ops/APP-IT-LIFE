@@ -29,4 +29,11 @@ describe('RequesterSignoffCard', () => {
     expect(screen.getByAltText('ลายเซ็นผู้แจ้งตรวจรับงาน')).toHaveAttribute('src', 'https://signed.test/requester.png');
     expect(screen.getByText('ผลประเมินรวม 5/5 คะแนน')).toBeVisible();
   });
+
+  it('allows retry when a signature was uploaded but closing the Ticket failed', () => {
+    render(<RequesterSignoffCard status="เสร็จสิ้น" signatureUrl="https://signed.test/orphaned-attempt.png" criteria={criteria} onSign={vi.fn()} />);
+
+    expect(screen.getByTestId('requester-signoff-card')).toBeVisible();
+    expect(screen.queryByTestId('requester-signoff-history')).not.toBeInTheDocument();
+  });
 });
