@@ -74,6 +74,7 @@ test('opens the shared work panel from the Ticket list and explains final status
   const status = panel.getByLabel('สถานะ', { exact: true });
   await expect(status.locator('option', { hasText: 'ซ่อมเสร็จ (รอยืนยัน)' })).toHaveCount(1);
   await expect(status.locator('option', { hasText: 'ปิดงานแล้ว' })).toHaveCount(0);
+  await status.selectOption('เสร็จสิ้น');
   await expect(panel.getByText(/ผู้แจ้งประเมิน ตรวจรับ และลงลายเซ็นเพื่อปิดงาน/)).toBeVisible();
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-actions-fixed.png'), fullPage: true });
 });
