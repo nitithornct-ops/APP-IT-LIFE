@@ -393,7 +393,10 @@ export function CmdbPage() {
                         <Badge variant={ciStatusTone[c.status]}>{c.status}</Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <RowActions recordLabel={c.ci_code} actions={[{ kind: 'view', to: `/cmdb/${c.id}` }]} />
+                        <RowActions recordLabel={c.ci_code} actions={[
+                          { kind: 'view', to: `/cmdb/${c.id}` },
+                          { kind: 'delete', permission: 'cmdb.manage', deleteEndpoint: `/api/v1/record-deletions/configuration-items/${c.id}` },
+                        ]} />
                       </td>
                     </tr>
                   ))}

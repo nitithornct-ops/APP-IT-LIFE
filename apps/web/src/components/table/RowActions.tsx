@@ -1,8 +1,10 @@
 import { Ban, Eye, Pencil, Trash2, type LucideIcon } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
+import { useContext, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { RequirePermission } from '../RequirePermission';
 import { ConfirmModal } from '../ui/Modal';
+import { apiFetch } from '../../services/apiClient';
 import { cn } from '../../utils/cn';
 
 /**
@@ -29,6 +31,8 @@ export interface RowAction {
   onClick?: () => void;
   /** cancel/delete: เรียกเมื่อผู้ใช้กดยืนยันในกล่องแล้วเท่านั้น — ได้เหตุผลมาด้วยเมื่อตั้ง reasonLabel */
   onConfirm?: (reason: string) => void;
+  /** delete: endpoint กลางที่ RowActions เรียกหลังยืนยัน แล้ว refresh query ที่กำลังแสดงอยู่ */
+  deleteEndpoint?: string;
   /** บังคับให้พิมพ์เหตุผลก่อนยืนยัน สำหรับงานที่ต้องตอบให้ได้ภายหลังว่าทำไมถึงยกเลิก */
   reasonLabel?: string;
   reasonPlaceholder?: string;
@@ -80,6 +84,21 @@ const BUTTON_CLASS = 'inline-flex min-h-10 items-center gap-1.5 whitespace-nowra
 export function RowActions({ recordLabel, actions, className, iconOnly = false }: RowActionsProps) {
   const [pending, setPending] = useState<RowAction | null>(null);
   const [reason, setReason] = useState('');
+  const [endpointDeletePending, setEndpointDeletePending] = useState(false);
+  const queryClient = useContext(QueryClientContext);
+
+  const deleteFromEndpoint = async (endpoint: string) => {
+    setEndpointDeletePending(true);
+    try {
+      await apiFetch(endpoint, { method: 'DELETE' });
+      setPending(null);
+      await queryClient?.invalidateQueries({ type: 'active' });
+    } catch {
+      // apiFetch แสดงข้อความผิดพลาดให้ผู้ใช้แล้ว และคง modal ไว้ให้ลองใหม่ได้
+    } finally {
+      setEndpointDeletePending(false);
+    }
+  };
   // Array.sort ใน JavaScript เป็น stable sort: custom actions ที่มี rank เดียวกันจึงยังเรียงตามที่โมดูลส่งมา
   // แต่ action หลักจะอยู่ ดู -> แก้ไข -> ยกเลิก -> ลบ เหมือนกันทุกตาราง แม้ caller จะส่งสลับลำดับ
   const visible = actions
@@ -137,10 +156,14 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
           tone={pending.kind === 'delete' ? 'danger' : 'primary'}
           confirmLabel={pending.kind === 'delete' ? 'ลบข้อมูล' : 'ยืนยันยกเลิก'}
           cancelLabel="ไม่ใช่ตอนนี้"
-          isPending={pending.isPending}
+          isPending={pending.isPending || endpointDeletePending}
           testId="row-actions-confirm"
           confirmDisabled={Boolean(pending.reasonLabel) && !reason.trim()}
           onConfirm={() => {
+            if (pending.kind === 'delete' && pending.deleteEndpoint) {
+              void deleteFromEndpoint(pending.deleteEndpoint);
+              return;
+            }
             pending.onConfirm?.(reason.trim());
             setPending(null);
           }}

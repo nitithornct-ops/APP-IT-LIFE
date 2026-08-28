@@ -382,12 +382,15 @@ export function ApprovalGroupsPage() {
                         <td className="px-2 py-2 text-right">
                           <RowActions
                             recordLabel={g.name}
-                            actions={[{
-                              kind: 'custom',
-                              icon: expandedGroupId === g.id ? ChevronUp : UsersRound,
-                              label: expandedGroupId === g.id ? 'ปิด' : 'จัดการสมาชิก',
-                              onClick: () => setExpandedGroupId(expandedGroupId === g.id ? null : g.id),
-                            }]}
+                            actions={[
+                              {
+                                kind: 'custom',
+                                icon: expandedGroupId === g.id ? ChevronUp : UsersRound,
+                                label: expandedGroupId === g.id ? 'ปิด' : 'จัดการสมาชิก',
+                                onClick: () => setExpandedGroupId(expandedGroupId === g.id ? null : g.id),
+                              },
+                              { kind: 'delete', permission: 'approval_group.manage', deleteEndpoint: `/api/v1/record-deletions/approval-groups/${g.id}` },
+                            ]}
                           />
                         </td>
                       </tr>

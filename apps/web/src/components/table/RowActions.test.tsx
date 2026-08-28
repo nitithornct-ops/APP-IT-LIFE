@@ -1,16 +1,21 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RowActions } from './RowActions';
 
 const permissions = new Set<string>();
+const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
+
+vi.mock('../../services/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 vi.mock('../../stores/authContext', () => ({
   useAuth: () => ({ hasPermission: (key: string) => permissions.has(key), isMeLoading: false }),
 }));
 
 function renderActions(ui: React.ReactNode) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>);
 }
 
 afterEach(() => {
@@ -104,6 +109,20 @@ describe('RowActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ลบ หมวดหมู่ทดสอบ' }));
     fireEvent.click(screen.getByRole('button', { name: 'ไม่ใช่ตอนนี้' }));
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('calls a configured DELETE endpoint only after the user confirms', async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ id: '1' });
+    renderActions(<RowActions recordLabel="AST-001" actions={[{ kind: 'delete', deleteEndpoint: '/api/v1/record-deletions/assets/00000000-0000-4000-8000-000000000001' }]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'ลบ AST-001' }));
+    expect(mocks.apiFetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ลบข้อมูล' }));
+    await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/v1/record-deletions/assets/00000000-0000-4000-8000-000000000001',
+      { method: 'DELETE' },
+    ));
   });
 
   /**

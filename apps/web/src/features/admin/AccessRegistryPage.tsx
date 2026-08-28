@@ -133,6 +133,7 @@ function RegistrySection() {
                             onClick: () => reviewMutation.mutate(entry.id),
                           },
                           { kind: 'node', hidden: entry.status !== 'active', node: <RevokeButton entryId={entry.id} /> },
+                          { kind: 'delete', permission: 'access_registry.manage', deleteEndpoint: `/api/v1/record-deletions/access-registry/${entry.id}` },
                         ]}
                       />
                     </td>

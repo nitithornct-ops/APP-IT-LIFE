@@ -213,17 +213,10 @@ function TicketCategoriesSection() {
                       <StatusBadge status={cat.status} />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <RequirePermission permission="ticket_category.manage">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' })
-                          }
-                          className="text-xs text-primary-700 hover:underline dark:text-primary-300"
-                        >
-                          {cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน'}
-                        </button>
-                      </RequirePermission>
+                      <RowActions recordLabel={cat.name} actions={[
+                        { kind: 'custom', icon: cat.status === 'active' ? Ban : CheckCircle2, label: cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน', permission: 'ticket_category.manage', onClick: () => toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' }) },
+                        { kind: 'delete', permission: 'ticket_category.manage', deleteEndpoint: `/api/v1/record-deletions/ticket-categories/${cat.id}` },
+                      ]} />
                     </td>
                   </tr>
                 ))}
@@ -371,13 +364,16 @@ function AssetCategoriesSection() {
                     <td className="px-2 py-2 text-right">
                       <RowActions
                         recordLabel={cat.name}
-                        actions={[{
-                          kind: 'custom',
-                          icon: cat.status === 'active' ? Ban : CheckCircle2,
-                          label: cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน',
-                          permission: 'asset_category.manage',
-                          onClick: () => toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' }),
-                        }]}
+                        actions={[
+                          {
+                            kind: 'custom',
+                            icon: cat.status === 'active' ? Ban : CheckCircle2,
+                            label: cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน',
+                            permission: 'asset_category.manage',
+                            onClick: () => toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' }),
+                          },
+                          { kind: 'delete', permission: 'asset_category.manage', deleteEndpoint: `/api/v1/record-deletions/asset-categories/${cat.id}` },
+                        ]}
                       />
                     </td>
                   </tr>
@@ -502,17 +498,10 @@ function AccessSystemsSection() {
                       <StatusBadge status={system.status} />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <RequirePermission permission="access_system.manage">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleStatus.mutate({ id: system.id, status: system.status === 'active' ? 'inactive' : 'active' })
-                          }
-                          className="text-xs text-primary-700 hover:underline dark:text-primary-300"
-                        >
-                          {system.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน'}
-                        </button>
-                      </RequirePermission>
+                      <RowActions recordLabel={system.name} actions={[
+                        { kind: 'custom', icon: system.status === 'active' ? Ban : CheckCircle2, label: system.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน', permission: 'access_system.manage', onClick: () => toggleStatus.mutate({ id: system.id, status: system.status === 'active' ? 'inactive' : 'active' }) },
+                        { kind: 'delete', permission: 'access_system.manage', deleteEndpoint: `/api/v1/record-deletions/access-systems/${system.id}` },
+                      ]} />
                     </td>
                   </tr>
                 ))}

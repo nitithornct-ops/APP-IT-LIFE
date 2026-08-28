@@ -182,6 +182,7 @@ function VendorTable({ items, canManage, onEdit, onManagePortal }: { items: Vend
           item.status === 'Active'
             ? { kind: 'cancel', label: 'ปิดใช้', confirmDescription: 'ผู้ให้บริการรายนี้จะไม่ปรากฏให้เลือกในงานใหม่ สัญญาและประวัติที่บันทึกไว้ยังอยู่ครบ', onConfirm: () => statusMutation.mutate({ id: item.id, status: 'Inactive' }) }
             : { kind: 'custom', icon: RotateCcw, label: 'เปิดใช้', onClick: () => statusMutation.mutate({ id: item.id, status: 'Active' }) },
+          { kind: 'delete', permission: 'vendor.manage', deleteEndpoint: `/api/v1/record-deletions/vendors/${item.id}` },
         ]} /></td>}</tr>)}</tbody></DataTable></div>
   </>;
 }
@@ -192,6 +193,7 @@ function ContractTable({ items, canManage, onEdit }: { items: Contract[]; canMan
   return <div className="overflow-x-auto"><DataTable className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">สัญญา</th><th className="p-2">ผู้ให้บริการ</th><th className="p-2">ระยะเวลา</th><th className="p-2">มูลค่า</th><th className="p-2">สถานะ</th>{canManage && <th className="p-2">จัดการ</th>}</tr></thead><tbody>{items.map((item) => { const days = daysUntilDate(item.end_date); const state = effectiveContractState(item); return <tr key={item.id} data-testid={`contract-row-${item.id}`} className="border-t border-slate-100 align-top dark:border-slate-700"><td className="p-2"><p className="font-semibold">{item.name}</p><p className="font-mono text-xs text-primary-700 dark:text-primary-300">{item.contract_number}</p><p className="text-xs text-slate-500">{item.contract_type} · {profileName(item.owner)}</p></td><td className="p-2 text-slate-500">{item.vendor?.name ?? '—'}</td><td className="p-2 text-slate-500"><p>{item.start_date ? formatThaiDate(item.start_date) : '—'} – {item.end_date ? formatThaiDate(item.end_date) : 'ไม่กำหนด'}</p>{state === 'expiring' && <p className="text-xs font-semibold text-amber-600">เหลือ {days} วัน</p>}{state === 'expired' && <p className="text-xs font-semibold text-red-600">พ้นวันสิ้นสุดแล้ว</p>}</td><td className="p-2 text-slate-500">{item.contract_value === null ? '—' : `${new Intl.NumberFormat('th-TH').format(item.contract_value)} ${item.currency}`}</td><td className="p-2"><Badge variant={state === 'expired' ? 'danger' : state === 'expiring' ? 'warning' : contractStatusTone[item.status]}>{item.status}</Badge></td>{canManage && <td className="p-2 text-right"><RowActions recordLabel={item.contract_number} actions={[
           { kind: 'edit', onClick: () => onEdit(item) },
           { kind: 'node', node: <select aria-label={`สถานะ ${item.contract_number}`} disabled={statusMutation.isPending} value={item.status} onChange={(e) => statusMutation.mutate({ id: item.id, status: e.target.value })} className="min-h-8 rounded-lg border border-slate-300 px-2 text-xs dark:border-slate-600 dark:bg-slate-900">{CONTRACT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select> },
+          { kind: 'delete', permission: 'contract.manage', deleteEndpoint: `/api/v1/record-deletions/contracts/${item.id}` },
         ]} /></td>}</tr>; })}</tbody></DataTable></div>;
 }
 

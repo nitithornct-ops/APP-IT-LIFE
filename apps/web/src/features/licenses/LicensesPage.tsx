@@ -451,6 +451,7 @@ export function LicensesPage() {
                                 { kind: 'view', icon: expanded ? ChevronUp : ChevronDown, label: expanded ? 'ย่อ' : 'รายละเอียด', onClick: () => setExpandedId(expanded ? null : license.id) },
                                 { kind: 'custom', icon: KeyRound, label: 'สิทธิ์', permission: 'license.manage', onClick: () => setEditingUsageId(editingUsageId === license.id ? null : license.id) },
                                 { kind: 'edit', permission: 'license.manage', onClick: () => { setEditing(license); setShowForm(true); } },
+                                { kind: 'delete', permission: 'license.manage', deleteEndpoint: `/api/v1/record-deletions/software-licenses/${license.id}` },
                               ]}
                             />
                             {editingUsageId === license.id && <div className="mt-2"><UsageEditor license={license} onClose={() => setEditingUsageId(null)} /></div>}

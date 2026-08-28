@@ -134,6 +134,7 @@ export function LineLinksPage() {
                         <td className="px-2 py-3 text-right"><RowActions recordLabel={row.full_name ?? row.display_name ?? 'บัญชี LINE'} actions={[
                           { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateStatusMutation.mutate({ id: row.id, nextStatus: 'Active' }) },
                           { kind: 'cancel', label: 'ระงับ', hidden: row.link_status === 'Suspended', confirmDescription: 'บัญชี LINE นี้จะใช้แจ้งงานและรับแจ้งเตือนผ่าน LINE ไม่ได้จนกว่าจะยกเลิกระงับ', onConfirm: () => updateStatusMutation.mutate({ id: row.id, nextStatus: 'Suspended' }) },
+                          { kind: 'delete', deleteEndpoint: `/api/v1/record-deletions/line-links/${row.id}` },
                         ]} /></td>
                       </tr>
                     );

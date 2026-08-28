@@ -384,7 +384,7 @@ export function ProblemsPage() {
                 <td className="text-slate-500">{item.owner?.full_name ?? '—'}</td>
                 <td><Badge variant={priorityTone[item.priority]}>{item.priority}</Badge></td>
                 <td><Badge variant={problemStatusTone[item.status]}>{item.status}</Badge></td>
-                <td className="text-right"><RowActions recordLabel={item.problem_number} actions={[{ kind: 'view', to: `/problems/${item.id}` }]} /></td>
+                <td className="text-right"><RowActions recordLabel={item.problem_number} actions={[{ kind: 'view', to: `/problems/${item.id}` }, { kind: 'delete', permission: 'problem.manage', deleteEndpoint: `/api/v1/record-deletions/problems/${item.id}` }]} /></td>
               </tr>
             ))}</tbody>
           </DataTable>
@@ -406,7 +406,7 @@ export function ProblemsPage() {
                 <td className="max-w-sm whitespace-pre-wrap text-xs">{item.workaround}</td>
                 <td className="text-xs">{item.knowledge_article_ref ? <Link to="/knowledge" className="text-primary-700 hover:underline dark:text-primary-300">{item.knowledge_article_ref}</Link> : '—'}</td>
                 <td><Badge variant={knownErrorStatusTone[item.status]}>{item.status}</Badge></td>
-                <td className="text-right"><RowActions recordLabel={item.known_error_number} actions={[{ kind: 'view', to: `/problems/${item.problem_id}`, label: 'ดู Problem' }]} /></td>
+                <td className="text-right"><RowActions recordLabel={item.known_error_number} actions={[{ kind: 'view', to: `/problems/${item.problem_id}`, label: 'ดู Problem' }, { kind: 'delete', permission: 'problem.manage', deleteEndpoint: `/api/v1/record-deletions/known-errors/${item.id}` }]} /></td>
               </tr>
             ))}</tbody>
           </DataTable>

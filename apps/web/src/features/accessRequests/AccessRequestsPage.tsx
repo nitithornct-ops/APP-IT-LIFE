@@ -288,7 +288,10 @@ export function AccessRequestsPage() {
                       </td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(r.created_at, 'd MMM yyyy HH:mm')}</td>
                       <td className="px-2 py-2 text-right">
-                        <RowActions recordLabel={r.access_systems?.name ?? 'คำขอสิทธิ์'} actions={[{ kind: 'view', to: `/access-requests/${r.id}` }]} />
+                        <RowActions recordLabel={r.access_systems?.name ?? 'คำขอสิทธิ์'} actions={[
+                          { kind: 'view', to: `/access-requests/${r.id}` },
+                          { kind: 'delete', permission: 'access_request.process', deleteEndpoint: `/api/v1/record-deletions/access-requests/${r.id}` },
+                        ]} />
                       </td>
                     </tr>
                   ))}

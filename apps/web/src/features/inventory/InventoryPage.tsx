@@ -4,6 +4,7 @@ import { AlertTriangle, KeyRound, Loader2, PackageSearch, Plus, ShoppingCart, X 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
+import { RowActions } from '../../components/table/RowActions';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -122,6 +123,9 @@ function ItemActions({ item }: { item: InventoryItem }) {
         <button type="button" data-testid={`inv-action-out-${item.id}`} onClick={() => setMode(mode === 'out' ? null : 'out')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">เบิกออก</button>
         <button type="button" data-testid={`inv-action-adjust-${item.id}`} onClick={() => setMode(mode === 'adjust' ? null : 'adjust')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">ตรวจนับ</button>
         <button type="button" data-testid={`inv-action-ledger-${item.id}`} onClick={() => setMode(mode === 'ledger' ? null : 'ledger')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">ประวัติ</button>
+        <RowActions recordLabel={item.item_name} actions={[
+          { kind: 'delete', permission: 'inventory.manage', deleteEndpoint: `/api/v1/record-deletions/inventory-items/${item.id}` },
+        ]} />
       </div>
 
       {(mode === 'in' || mode === 'out') && (
