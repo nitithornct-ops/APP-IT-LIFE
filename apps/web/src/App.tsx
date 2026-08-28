@@ -119,6 +119,7 @@ const LineLinksPage = lazy(() =>
 const FormManagementPage = lazy(() =>
   import('./features/forms/FormManagementPage').then((m) => ({ default: m.FormManagementPage })),
 );
+const VendorPortalPage = lazy(() => import('./pages/VendorPortalPage').then((m) => ({ default: m.VendorPortalPage })));
 
 function LazyPageFallback() {
   return (
@@ -147,6 +148,7 @@ export function App() {
       <Route path="/vendor/forms" element={<VendorFormPortalPage />} />
       {/* Compatibility only for links issued before token fragments were introduced. New links never use this route. */}
       <Route path="/vendor/forms/:token" element={<VendorFormPortalPage />} />
+      <Route path="/vendor/portal" element={<Suspense fallback={<LazyPageFallback />}><VendorPortalPage /></Suspense>} />
 
       <Route
         element={

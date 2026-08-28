@@ -231,7 +231,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
   }
 
-  const [{ data: issueForm, error: issueError }, { data: worklogs, error: worklogError }] = await Promise.all([
+  const [{ data: issueForm, error: issueError }, { data: worklogs, error: worklogError }, { data: outsourceSubmission, error: outsourceSubmissionError }] = await Promise.all([
     admin
       .from('issue_forms')
       .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
@@ -245,11 +245,19 @@ ticketsRoute.get('/:id/form-document', async (c) => {
       .select('action, detail, created_at')
       .eq('ticket_id', id)
       .order('created_at', { ascending: true }),
+    admin
+      .from('ticket_outsource_submissions')
+      .select('id, revision, response, signature_storage_path, review_status, submitted_at')
+      .eq('ticket_id', id)
+      .order('revision', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
-  if (issueError ?? worklogError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
+  if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
 
   let signatureUrl: string | null = null;
   let requesterSignatureUrl: string | null = null;
+  let vendorSignatureUrl: string | null = null;
   if (ticket.signature_storage_path) {
     const { data } = await admin.storage
       .from(TICKET_SIGNATURE_BUCKET)
@@ -262,6 +270,20 @@ ticketsRoute.get('/:id/form-document', async (c) => {
       .createSignedUrl(String(ticket.requester_signature_storage_path), 3600);
     requesterSignatureUrl = data?.signedUrl ?? null;
   }
+  if (outsourceSubmission?.signature_storage_path) {
+    const { data } = await admin.storage
+      .from('ticket-outsource-signatures')
+      .createSignedUrl(String(outsourceSubmission.signature_storage_path), 3600);
+    vendorSignatureUrl = data?.signedUrl ?? null;
+  }
+
+  const effectiveIssueForm = outsourceSubmission
+    ? {
+        ...(issueForm ?? {}),
+        status: outsourceSubmission.review_status === 'Accepted' ? 'Vendor Replied' : 'Sent to Vendor',
+        vendor_response: outsourceSubmission.response as Record<string, unknown>,
+      }
+    : issueForm;
 
   const outsourceLog = (worklogs ?? []).find((row) => row.action === 'ส่งต่อ Outsource');
   const renderSource = {
@@ -271,7 +293,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     escalation_reason: outsourceLog?.detail ?? null,
   };
   const sourceHtml = issueForm?.content_html || template.content_html;
-  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, issueForm, signatureUrl, requesterSignatureUrl);
+  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, signatureUrl, requesterSignatureUrl, vendorSignatureUrl);
   const templateVersion = Number(issueForm?.template_version ?? template.current_version);
   const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;
   const checkmarks = savedCheckmarks
@@ -308,7 +330,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     checkmarks,
     textValues,
     canEditCheckmarks,
-    flow: ticketFormFlow(String(ticket.status), issueForm),
+    flow: ticketFormFlow(String(ticket.status), effectiveIssueForm),
   }));
 });
 

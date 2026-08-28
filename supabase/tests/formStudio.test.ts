@@ -28,15 +28,18 @@ beforeAll(async () => {
 afterAll(async () => { await db?.close(); });
 
 describe('Form Studio database controls', () => {
-  it('seeds the source Word template and its first immutable version', async () => {
-    const templates = await asUser(db, TECHNICIAN_ID, async () => db.query<{ template_code: string; current_version: number }>(
-      `select template_code, current_version from public.form_templates where template_code = 'IT-ERP-ISSUE'`,
+  it('keeps the source version and publishes the company-signature template version', async () => {
+    const templates = await asUser(db, TECHNICIAN_ID, async () => db.query<{ template_code: string; current_version: number; has_vendor_signature: boolean }>(
+      `select template_code, current_version, content_html like '%{{vendor_signature}}%' as has_vendor_signature
+       from public.form_templates where template_code = 'IT-ERP-ISSUE'`,
     ));
     const versions = await asUser(db, TECHNICIAN_ID, async () => db.query(
-      `select version from public.form_template_versions where template_id = (select id from public.form_templates where template_code = 'IT-ERP-ISSUE')`,
+      `select version from public.form_template_versions
+       where template_id = (select id from public.form_templates where template_code = 'IT-ERP-ISSUE')
+       order by version`,
     ));
-    expect(templates.rows).toEqual([{ template_code: 'IT-ERP-ISSUE', current_version: 1 }]);
-    expect(versions.rows).toEqual([{ version: 1 }]);
+    expect(templates.rows).toEqual([{ template_code: 'IT-ERP-ISSUE', current_version: 2, has_vendor_signature: true }]);
+    expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }]);
   });
 
   it('grants edit/send/close to technicians and read-only access to managers', async () => {
@@ -64,7 +67,7 @@ describe('Form Studio database controls', () => {
     ));
     const hidden = await asUser(db, USER_ID, async () => db.query('select id from public.issue_forms'));
     expect(created.rows[0].form_no).toMatch(/^FRM-\d{6}-\d{5}$/);
-    expect(created.rows[0].template_version).toBe(1);
+    expect(created.rows[0].template_version).toBe(2);
     expect(hidden.rows).toHaveLength(0);
   });
 });

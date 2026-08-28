@@ -97,12 +97,14 @@ export function renderTicketFormTemplate(
   issueForm?: TicketIssueFormSource | null,
   itSignatureUrl?: string | null,
   requesterSignatureUrl?: string | null,
+  vendorSignatureUrl?: string | null,
 ): string {
   const response = issueForm?.vendor_response ?? {};
   const requesterName = ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name;
   const department = ticket.department_name_snapshot ?? ticket.guest_department;
   const prevention = responseValue(response, 'prevention');
   const vendorResolution = responseValue(response, 'resolution');
+  const vendorAssessor = [responseValue(response, 'assessorName'), responseValue(response, 'assessorPosition')].filter(Boolean).join(' · ');
   const resolutionAndPrevention = [vendorResolution ?? ticket.resolution, prevention].filter(Boolean).join('\n') || '—';
   const submittedAt = responseValue(response, 'submittedAt');
 
@@ -120,27 +122,28 @@ export function renderTicketFormTemplate(
     received_at: formatBangkokDate(ticket.acknowledged_at, true),
     receiver_name: ticket.assignee?.full_name,
     escalation_reason: ticket.escalation_reason,
-    vendor_ticket_no: ticket.outsource_issue_no,
+    vendor_ticket_no: responseValue(response, 'vendorIssueNo') ?? ticket.outsource_issue_no,
     vendor_received_time: responseValue(response, 'receivedDuration'),
     vendor_workaround_time: responseValue(response, 'workaroundDuration'),
     vendor_analysis_time: responseValue(response, 'analysisDuration'),
     vendor_resolution_time: responseValue(response, 'resolutionDuration'),
     root_cause: responseValue(response, 'rootCause') ?? ticket.root_cause,
     resolution_and_prevention: resolutionAndPrevention,
-    vendor_assessor_name: responseValue(response, 'assessorName') ?? ticket.outsource_name,
+    vendor_assessor_name: vendorAssessor || ticket.outsource_name,
     vendor_signed_date: formatBangkokDate(submittedAt),
     credit_balance_before: responseValue(response, 'creditBalanceBefore'),
     manday_used: responseValue(response, 'mandayUsed'),
     credit_balance_after: responseValue(response, 'creditBalanceAfter'),
     credit_note: responseValue(response, 'assessmentNote'),
-    completed_at: formatBangkokDate(ticket.resolved_at ?? ticket.closed_at, true),
-    test_result: ticket.resolution,
+    completed_at: formatBangkokDate(responseValue(response, 'workCompletedAt') ?? ticket.resolved_at ?? ticket.closed_at, true),
+    test_result: responseValue(response, 'testResult') ?? ticket.resolution,
     requester_sign_date: formatBangkokDate(ticket.requester_signature_uploaded_at),
     it_sign_date: formatBangkokDate(ticket.signature_uploaded_at),
   };
   const rawValues: Record<string, string> = {
     requester_signature: signatureHtml(requesterSignatureUrl),
     it_signature: signatureHtml(itSignatureUrl),
+    vendor_signature: signatureHtml(vendorSignatureUrl),
   };
 
   return templateHtml.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key: string) => {

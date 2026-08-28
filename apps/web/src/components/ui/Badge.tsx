@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../utils/cn';
 
-type Variant = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'teal' | 'purple' | 'secondary';
+type Variant = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'teal' | 'purple' | 'secondary' | 'neutral';
 
 const variantClasses: Record<Variant, string> = {
   primary: 'border border-primary-200 bg-primary-100 text-primary-800 dark:border-primary-700 dark:bg-primary-900/40 dark:text-primary-200',
@@ -12,6 +12,7 @@ const variantClasses: Record<Variant, string> = {
   teal: 'border border-transparent bg-teal-50 text-teal-600 dark:bg-teal-700/30 dark:text-teal-100',
   purple: 'border border-transparent bg-purple-50 text-purple-600 dark:bg-purple-700/30 dark:text-purple-100',
   secondary: 'border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200',
+  neutral: 'border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400',
 };
 
 export function Badge({ variant = 'secondary', children }: { variant?: Variant; children: ReactNode }) {

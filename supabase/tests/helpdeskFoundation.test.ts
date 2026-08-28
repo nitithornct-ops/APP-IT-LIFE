@@ -276,21 +276,22 @@ describe('Help Desk Phase 2 foundation', () => {
       ),
     ).rejects.toThrow(/หลังปิดงาน Ticket/);
 
-    await asUser(db, ADMIN_ID, async () =>
-      db.query(
-        `update public.tickets set status = 'ปิดงาน' where id = $1`,
-        [ticketId],
-      ),
-    );
-
-    const submitted = await asUser(db, REQUESTER_ID, async () =>
+    // The requester-signoff API uses the service role and writes the evaluation
+    // in the same statement that transitions the Ticket from resolved to closed.
+    const submitted = await asServiceRole(db, async () =>
       db.query(
         `update public.tickets
-         set rating = 5, feedback = 'ให้บริการรวดเร็ว'
-         where id = $1 returning rating, feedback_at`,
+         set status = 'ปิดงาน',
+             rating = 5,
+             rating_details = '{"responsiveness":5,"workQuality":5,"serviceManners":5,"expertise":5,"communication":5}'::jsonb,
+             rating_criteria_snapshot = '[{"key":"responsiveness","label":"ความรวดเร็ว","score":5}]'::jsonb,
+             feedback = 'ให้บริการรวดเร็ว',
+             feedback_at = now()
+         where id = $1 returning status, rating, feedback_at`,
         [ticketId],
       ),
     );
+    expect((submitted.rows[0] as { status: string }).status).toBe('ปิดงาน');
     expect((submitted.rows[0] as { rating: number }).rating).toBe(5);
     expect((submitted.rows[0] as { feedback_at: string | null }).feedback_at).not.toBeNull();
 

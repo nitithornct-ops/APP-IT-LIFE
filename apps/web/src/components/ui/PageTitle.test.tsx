@@ -20,6 +20,7 @@ const INTENTIONALLY_WITHOUT_PAGE_TITLE: Record<string, string> = {
   'pages/LinePortalPage.tsx': 'พอร์ทัลสาธารณะ design handoff 3a ใช้ top-nav คนละแบบ',
   'pages/PublicTicketPortalPage.tsx': 'พอร์ทัลสาธารณะ design handoff 3a ใช้ top-nav คนละแบบ',
   'pages/VendorFormPortalPage.tsx': 'ฟอร์มสาธารณะสำหรับผู้ให้บริการ อยู่นอก AppShell',
+  'pages/VendorPortalPage.tsx': 'พอร์ทัลบริษัทภายนอกใช้ session แยกและอยู่นอก AppShell',
   'pages/ProfilePage.tsx': 'design handoff 3h ใช้การ์ดโปรไฟล์พื้นเข้มแทนหัวข้อปกติ',
   'features/tickets/TicketFormPage.tsx': 'หน้าสำหรับสั่งพิมพ์ ใช้พื้นขาวขนาด A4 เสมอ',
 };

@@ -41,6 +41,16 @@ export interface LineUserProfile {
   friend_status: string | null;
 }
 
+export interface VendorPortalProfile {
+  accountId: string;
+  vendorId: string;
+  vendorCode: string;
+  vendorName: string;
+  email: string;
+  fullName: string;
+  position: string | null;
+}
+
 /** ค่าที่ middleware แนบไว้บน Hono Context ระหว่างการประมวลผล request */
 export interface Variables {
   requestId: string;
@@ -50,6 +60,8 @@ export interface Variables {
   userEmail: string;
   /** LINE session — ตั้งค่าโดย requireLineSession/requireUsableLineSession ใน routes/line.ts เท่านั้น */
   lineSession?: { token: string; user: LineUserProfile };
+  /** Company session — never shares the internal Supabase JWT/RBAC context. */
+  vendorSession?: { token: string; profile: VendorPortalProfile };
 }
 
 export interface AppEnv {

@@ -38,6 +38,20 @@ export interface Vendor {
   updated_at: string;
 }
 
+export interface VendorPortalAccount {
+  id: string;
+  vendor_id: string;
+  email: string;
+  full_name: string;
+  position: string | null;
+  status: 'Active' | 'Inactive';
+  failed_login_count: number;
+  locked_until: string | null;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ContractVendorRef {
   id: string;
   vendor_code: string;

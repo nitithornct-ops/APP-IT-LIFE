@@ -4,19 +4,22 @@ import { renderTicketFormTemplate, ticketFormFlow } from '../src/services/ticket
 describe('Ticket Form Studio document', () => {
   it('fills the five-section template from Ticket and Vendor data without leaking HTML', () => {
     const html = renderTicketFormTemplate(
-      '<h1>{{ticket_no}}</h1><p>{{requester_name}}</p><p>{{root_cause}}</p><p>{{it_signature}}</p>',
+      '<h1>{{ticket_no}}</h1><p>{{requester_name}}</p><p>{{root_cause}}</p><p>{{it_signature}}</p><p>{{vendor_signature}}</p>',
       {
         ticket_no: 'TCK-001', requester_name_snapshot: '<script>สมชาย</script>',
         root_cause: 'ข้อมูลเดิม', signature_uploaded_at: '2026-08-20T03:00:00.000Z',
       },
       { status: 'Vendor Replied', vendor_response: { rootCause: 'ERP validation ผิด' } },
       'https://signed.test/ticket.png',
+      undefined,
+      'https://signed.test/vendor.png',
     );
 
     expect(html).toContain('TCK-001');
     expect(html).toContain('&lt;script&gt;สมชาย&lt;/script&gt;');
     expect(html).toContain('ERP validation ผิด');
     expect(html).toContain('alt="ลายเซ็นรับรอง Ticket"');
+    expect(html).toContain('https://signed.test/vendor.png');
   });
 
   it('maps an outsourced Ticket with no reply to sections 3 and 4', () => {

@@ -36,7 +36,10 @@ export function RequesterSignoffCard({
     setScores((current) => ({ ...current, [key]: value }));
   }
 
-  if (signatureUrl) {
+  // A previous sign-off attempt may have uploaded its signature before the
+  // database close failed. Treat it as completed evidence only after the
+  // Ticket itself is closed, so the requester can retry a resolved Ticket.
+  if (signatureUrl && status === 'ปิดงาน') {
     return (
       <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800 dark:bg-emerald-950/30" data-testid="requester-signoff-history">
         <p className="flex items-center gap-2 text-sm font-bold text-emerald-800 dark:text-emerald-200">

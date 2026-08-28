@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
+import { hashVendorPassword } from '../lib/vendorPortalAuth';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
@@ -23,6 +24,11 @@ import {
   updateContractSchema,
   updateVendorSchema,
 } from '../validators/vendorsContracts';
+import {
+  createVendorPortalAccountSchema,
+  resetVendorPortalPasswordSchema,
+  setVendorPortalAccountStatusSchema,
+} from '../validators/vendorPortal';
 
 export const vendorsRoute = new Hono<AppEnv>();
 vendorsRoute.use('*', requireAuth);
@@ -57,6 +63,80 @@ vendorsRoute.get('/references', requirePermission('vendor.manage'), async (c) =>
   const { data, error } = await createAdminClient(c.env).from('profiles').select('id, full_name, email').eq('status', 'active').order('full_name').limit(1000);
   if (error) return c.json(fail(reqId, 'VENDOR_REFERENCES_FAILED', 'ดึงข้อมูลผู้รับผิดชอบไม่สำเร็จ'), 400);
   return c.json(ok(reqId, { owners: data ?? [] }));
+});
+
+const VENDOR_PORTAL_ACCOUNT_SELECT =
+  'id, vendor_id, email, full_name, position, status, failed_login_count, locked_until, last_login_at, created_at, updated_at';
+
+vendorsRoute.get('/:id/portal-accounts', requirePermission('vendor.manage'), async (c) => {
+  const reqId = c.get('requestId');
+  const admin = createAdminClient(c.env);
+  const { data: vendor } = await admin.from('vendors').select('id').eq('id', c.req.param('id')).maybeSingle();
+  if (!vendor) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการ'), 404);
+  const { data, error } = await admin.from('vendor_portal_accounts').select(VENDOR_PORTAL_ACCOUNT_SELECT).eq('vendor_id', vendor.id).order('created_at');
+  if (error) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_LIST_FAILED', error, 'โหลดบัญชีบริษัทไม่สำเร็จ');
+  return c.json(ok(reqId, data ?? []));
+});
+
+vendorsRoute.post('/:id/portal-accounts', requirePermission('vendor.manage'), zValidator('json', createVendorPortalAccountSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const body = c.req.valid('json');
+  const admin = createAdminClient(c.env);
+  const { data: vendor } = await admin.from('vendors').select('id, vendor_code, name, status').eq('id', c.req.param('id')).maybeSingle();
+  if (!vendor) return c.json(fail(reqId, 'VENDOR_NOT_FOUND', 'ไม่พบผู้ให้บริการ'), 404);
+  if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'ต้องเปิดใช้งานบริษัทก่อนสร้างบัญชี Portal'), 409);
+  const { data, error } = await admin.from('vendor_portal_accounts').insert({
+    vendor_id: vendor.id,
+    email: body.email,
+    full_name: body.fullName,
+    position: body.position || null,
+    password_hash: await hashVendorPassword(body.password),
+    created_by: actorId,
+    updated_by: actorId,
+  }).select(VENDOR_PORTAL_ACCOUNT_SELECT).single();
+  if (error || !data) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_CREATE_FAILED', error, error?.code === '23505' ? 'อีเมลนี้มีบัญชีของบริษัทแล้ว' : 'สร้างบัญชีบริษัทไม่สำเร็จ');
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code, email: body.email }, requestId: reqId });
+  return c.json(ok(reqId, data), 201);
+});
+
+vendorsRoute.post('/:id/portal-accounts/:accountId/status', requirePermission('vendor.manage'), zValidator('json', setVendorPortalAccountStatusSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const body = c.req.valid('json');
+  const admin = createAdminClient(c.env);
+  const { data, error } = await admin.from('vendor_portal_accounts').update({
+    status: body.status,
+    failed_login_count: 0,
+    locked_until: null,
+    updated_by: actorId,
+  }).eq('id', c.req.param('accountId')).eq('vendor_id', c.req.param('id')).select(VENDOR_PORTAL_ACCOUNT_SELECT).maybeSingle();
+  if (error) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_STATUS_FAILED', error, 'เปลี่ยนสถานะบัญชีไม่สำเร็จ');
+  if (!data) return c.json(fail(reqId, 'VENDOR_PORTAL_ACCOUNT_NOT_FOUND', 'ไม่พบบัญชีบริษัท'), 404);
+  if (body.status === 'Inactive') {
+    const { data: sessions } = await admin.from('vendor_portal_sessions').select('id').eq('account_id', data.id).is('revoked_at', null);
+    if (sessions?.length) await admin.from('vendor_portal_sessions').update({ revoked_at: new Date().toISOString() }).in('id', sessions.map((session) => session.id));
+  }
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE_STATUS', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { status: body.status }, requestId: reqId });
+  return c.json(ok(reqId, data));
+});
+
+vendorsRoute.post('/:id/portal-accounts/:accountId/reset-password', requirePermission('vendor.manage'), zValidator('json', resetVendorPortalPasswordSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const admin = createAdminClient(c.env);
+  const { data, error } = await admin.from('vendor_portal_accounts').update({
+    password_hash: await hashVendorPassword(c.req.valid('json').password),
+    failed_login_count: 0,
+    locked_until: null,
+    updated_by: actorId,
+  }).eq('id', c.req.param('accountId')).eq('vendor_id', c.req.param('id')).select(VENDOR_PORTAL_ACCOUNT_SELECT).maybeSingle();
+  if (error) return dbFailJson(c, 'VENDOR_PORTAL_PASSWORD_RESET_FAILED', error, 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ');
+  if (!data) return c.json(fail(reqId, 'VENDOR_PORTAL_ACCOUNT_NOT_FOUND', 'ไม่พบบัญชีบริษัท'), 404);
+  const { data: sessions } = await admin.from('vendor_portal_sessions').select('id').eq('account_id', data.id).is('revoked_at', null);
+  if (sessions?.length) await admin.from('vendor_portal_sessions').update({ revoked_at: new Date().toISOString() }).in('id', sessions.map((session) => session.id));
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'RESET_PASSWORD', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: c.req.param('id') }, requestId: reqId });
+  return c.json(ok(reqId, data));
 });
 
 vendorsRoute.get('/', zValidator('query', listVendorsQuerySchema, zodValidationHook), async (c) => {

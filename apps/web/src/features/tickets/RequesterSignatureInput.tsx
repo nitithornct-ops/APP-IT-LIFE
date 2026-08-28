@@ -16,9 +16,15 @@ function canvasPoint(canvas: HTMLCanvasElement, event: PointerEvent<HTMLCanvasEl
 export function RequesterSignatureInput({
   onChange,
   disabled = false,
+  title = 'ลายเซ็นผู้แจ้ง',
+  description = 'เซ็นในกรอบ หรืออัปโหลดไฟล์ PNG (ไม่บังคับ)',
+  inputLabel = 'ผู้แจ้ง',
 }: {
   onChange: (file: File | null) => void;
   disabled?: boolean;
+  title?: string;
+  description?: string;
+  inputLabel?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,9 +87,9 @@ export function RequesterSignatureInput({
         <div>
           <p className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
             <FileSignature className="h-4 w-4 text-primary-600" aria-hidden="true" />
-            ลายเซ็นผู้แจ้ง
+            {title}
           </p>
-          <p className="mt-0.5 text-xs text-slate-500">เซ็นในกรอบ หรืออัปโหลดไฟล์ PNG (ไม่บังคับ)</p>
+          <p className="mt-0.5 text-xs text-slate-500">{description}</p>
         </div>
         {hasSignature && (
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={clear}>
@@ -95,7 +101,7 @@ export function RequesterSignatureInput({
         ref={canvasRef}
         width={SIGNATURE_WIDTH}
         height={SIGNATURE_HEIGHT}
-        aria-label="พื้นที่เขียนลายเซ็นผู้แจ้ง"
+        aria-label={`พื้นที่เขียนลายเซ็น${inputLabel}`}
         className="h-36 w-full touch-none rounded-lg border border-dashed border-slate-300 bg-white dark:border-slate-600"
         onPointerDown={startDrawing}
         onPointerMove={draw}
@@ -107,7 +113,7 @@ export function RequesterSignatureInput({
           ref={fileInputRef}
           type="file"
           accept="image/png"
-          aria-label="ไฟล์ลายเซ็นผู้แจ้ง PNG"
+          aria-label={`ไฟล์ลายเซ็น${inputLabel} PNG`}
           className="sr-only"
           disabled={disabled}
           onChange={(event) => {
