@@ -196,7 +196,10 @@ export function RolesPage() {
                   <td className="px-4 py-2 text-right">
                     <RowActions
                       recordLabel={role.name_th}
-                      actions={[{ kind: 'view', to: '/admin/permission-matrix', label: 'ดูสิทธิ์' }]}
+                      actions={[
+                        { kind: 'view', to: '/admin/permission-matrix', label: 'ดูสิทธิ์' },
+                        { kind: 'delete', permission: 'role.manage', hidden: role.is_system, deleteEndpoint: `/api/v1/record-deletions/roles/${role.id}` },
+                      ]}
                     />
                   </td>
                 </tr>

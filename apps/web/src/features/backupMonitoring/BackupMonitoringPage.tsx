@@ -173,8 +173,15 @@ export function BackupMonitoringPage() {
   if (overviewQuery.isError || !data) return <Card><CardBody className="text-red-700">{errorText(overviewQuery.error, 'โหลดข้อมูล Backup / Monitoring ไม่สำเร็จ')}</CardBody></Card>;
 
   // ทุกแท็บของหน้านี้ใช้ตัวช่วยเดียวกัน ปุ่มจึงอยู่ตำแหน่งเดียวกับตารางอื่นทั้งระบบโดยอัตโนมัติ
+  const deleteResourceByTab: Record<Tab, string> = {
+    backups: 'backup-logs', recoveries: 'recovery-tests', bcp: 'bcp-plans', systems: 'logging-systems', reviews: 'log-reviews',
+  };
+  const managePermission = tab === 'systems' || tab === 'reviews' ? 'monitoring.manage' : 'backup.manage';
   const editButton = (record: EditableRecord, label: string) => (
-    <RowActions recordLabel={label} actions={[{ kind: 'edit', permission: 'backup.manage', onClick: () => openEdit(record) }]} />
+    <RowActions recordLabel={label} actions={[
+      { kind: 'edit', permission: managePermission, onClick: () => openEdit(record) },
+      { kind: 'delete', permission: managePermission, deleteEndpoint: `/api/v1/record-deletions/${deleteResourceByTab[tab]}/${record.id}` },
+    ]} />
   );
   const tableEmpty = (title: string) => <EmptyState icon={<CloudCog className="h-10 w-10" />} title={title} message="ยังไม่มีข้อมูลในทะเบียนนี้" />;
 

@@ -91,11 +91,16 @@ export function RequesterSignatureInput({
           </p>
           <p className="mt-0.5 text-xs text-slate-500">{description}</p>
         </div>
-        {hasSignature && (
-          <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={clear}>
-            <Eraser className="h-4 w-4" aria-hidden="true" /> ล้างลายเซ็น
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !hasSignature}
+          className={hasSignature ? undefined : 'invisible pointer-events-none'}
+          onClick={clear}
+        >
+          <Eraser className="h-4 w-4" aria-hidden="true" /> ล้างลายเซ็น
+        </Button>
       </div>
       <canvas
         ref={canvasRef}

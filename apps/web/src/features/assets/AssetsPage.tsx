@@ -476,7 +476,10 @@ export function AssetsPage() {
                         <Badge variant={assetStatusTone[a.status]}>{a.status}</Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <RowActions recordLabel={a.asset_code} actions={[{ kind: 'view', to: `/assets/${a.id}` }]} />
+                        <RowActions recordLabel={a.asset_code} actions={[
+                          { kind: 'view', to: `/assets/${a.id}` },
+                          { kind: 'delete', permission: 'asset.dispose', deleteEndpoint: `/api/v1/record-deletions/assets/${a.id}` },
+                        ]} />
                       </td>
                     </tr>
                   ))}

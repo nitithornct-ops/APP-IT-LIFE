@@ -184,6 +184,7 @@ export function EmployeeAssignmentsPage() {
               <td data-label="จัดการ" className="text-right"><RowActions recordLabel={assignment.item_name} actions={[
                 { kind: 'view', onClick: () => setViewingAssignment(assignment) },
                 { kind: 'edit', permission: 'employee.manage', onClick: () => setEditingAssignment(assignment) },
+                { kind: 'delete', permission: 'employee.manage', deleteEndpoint: `/api/v1/record-deletions/employee-assignments/${assignment.id}` },
               ]} /></td>
             </tr>)}</tbody>
           </DataTable>}

@@ -461,6 +461,7 @@ export function EmployeesPage() {
                       { kind: 'edit', onClick: () => setEditingEmployee(employee) },
                       { kind: 'custom', icon: Box, label: 'เพิ่มทรัพย์สิน', onClick: () => setAssetEmployee(employee) },
                       { kind: 'custom', icon: GitBranch, label: 'Lifecycle', permission: 'operations.manage', onClick: () => setLifecycleEmployee(employee) },
+                      { kind: 'delete', permission: 'employee.manage', deleteEndpoint: `/api/v1/record-deletions/employees/${employee.id}` },
                       {
                         kind: 'cancel',
                         label: employee.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน',

@@ -3,6 +3,7 @@ import { ListTree, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RequirePermission } from '../../components/RequirePermission';
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -199,11 +200,10 @@ export function CauseCodesSection() {
                       <Badge variant={cause.is_active ? 'success' : 'secondary'}>{cause.is_active ? 'ใช้งาน' : 'ปิดใช้'}</Badge>
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <RequirePermission permission="cause_code.manage">
-                        <Button size="sm" variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate(cause)}>
-                          {cause.is_active ? 'ปิดใช้' : 'เปิดใช้'}
-                        </Button>
-                      </RequirePermission>
+                      <RowActions recordLabel={cause.code} actions={[
+                        { kind: 'custom', label: cause.is_active ? 'ปิดใช้' : 'เปิดใช้', permission: 'cause_code.manage', disabled: toggle.isPending, onClick: () => toggle.mutate(cause) },
+                        { kind: 'delete', permission: 'cause_code.manage', deleteEndpoint: `/api/v1/record-deletions/cause-codes/${cause.id}` },
+                      ]} />
                     </td>
                   </tr>
                 ))}

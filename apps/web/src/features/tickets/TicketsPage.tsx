@@ -948,6 +948,12 @@ export function TicketsPage() {
                               confirmDescription: 'Ticket จะถูกยกเลิกแต่ยังอยู่ในระบบพร้อมเหตุผล เพื่อให้ตรวจสอบย้อนหลังและออกรายงานได้ครบ',
                               onConfirm: (reason) => updateTicket.mutate({ id: ticket.id, body: { status: 'ยกเลิก', note: reason } }),
                             },
+                            {
+                              kind: 'delete',
+                              permission: 'ticket.close',
+                              deleteEndpoint: `/api/v1/record-deletions/tickets/${ticket.id}`,
+                              confirmDescription: 'Ticket จะถูกนำออกจากรายการใช้งาน แต่ยังเก็บข้อมูลไว้ในฐานข้อมูลเพื่อการตรวจสอบย้อนหลัง',
+                            },
                           ]}
                         />
                       </td>
