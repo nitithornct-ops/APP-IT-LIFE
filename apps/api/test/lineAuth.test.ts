@@ -3,7 +3,7 @@ import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken,
   normalizeReturnMode, randomToken, sessionHours,
 } from '../src/lib/lineAuth';
-import { lineAdminUpdateLinkSchema, lineProfileSchema, lineSubmitTicketSchema } from '../src/validators/line';
+import { lineAdminUpdateLinkSchema, lineProfileSchema, lineSubmitTicketSchema, lineTicketMessageSchema } from '../src/validators/line';
 import type { Bindings } from '../src/types';
 
 const configuredEnv: Bindings = {
@@ -126,8 +126,9 @@ describe('LINE ticket submit validator', () => {
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: undefined }).success).toBe(false);
   });
 
-  it('requires a requester phone with at least 8 characters', () => {
-    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: undefined }).success).toBe(false);
+  it('allows an omitted requester phone but validates it when provided', () => {
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: undefined }).success).toBe(true);
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '   ' }).success).toBe(true);
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '1234567' }).success).toBe(false);
   });
 });
@@ -215,5 +216,17 @@ describe('completeLineLoginCallback', () => {
     const state = url.searchParams.get('state')!;
     mockLineApis(url.searchParams.get('nonce')!, { aud: '999999999' });
     await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state })).rejects.toThrow('ไม่ได้ออกให้ Channel นี้');
+  });
+});
+
+describe('lineTicketMessageSchema', () => {
+  it('ตัดช่องว่างหัวท้ายและรับข้อความปกติ', () => {
+    expect(lineTicketMessageSchema.parse({ message: '  รับทราบครับ  ' })).toEqual({ message: 'รับทราบครับ' });
+  });
+
+  it('ปฏิเสธข้อความว่างและข้อความที่ยาวเกินขีดจำกัด', () => {
+    expect(lineTicketMessageSchema.safeParse({ message: '   ' }).success).toBe(false);
+    expect(lineTicketMessageSchema.safeParse({ message: 'ก'.repeat(1001) }).success).toBe(false);
+    expect(lineTicketMessageSchema.safeParse({ message: 'ก'.repeat(1000) }).success).toBe(true);
   });
 });
