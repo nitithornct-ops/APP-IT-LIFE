@@ -92,18 +92,19 @@ jobs:
           echo "STAMP=$STAMP" >> "$GITHUB_ENV"
           mkdir -p "backup/$STAMP"
 
-          # ใช้ pg_dump 15 ให้ตรงรุ่นกับ Supabase (supabase/config.toml major_version = 15)
+          # Production Supabase reports PostgreSQL 17.x. pg_dump must use the
+          # same major version (or newer) or it aborts before producing a dump.
           # ส่ง URL ผ่าน environment ไม่ใช่ argv เพื่อไม่ให้ความลับไปโผล่ใน process list
           #
           # ห้ามใส่ --no-privileges: migration มี GRANT ... TO authenticated อยู่ 188 บรรทัด ถ้าตัดออก
           # ไฟล์สำรองจะกู้กลับมาได้ "ครบทุกแถวแต่เปิดใช้ไม่ได้" เพราะ PostgREST จะถูกปฏิเสธสิทธิ์ทั้งหมด
           # ส่วน --no-owner ยังต้องมี เพราะ role เจ้าของในโปรเจกต์ปลายทางไม่จำเป็นต้องชื่อเดียวกัน
-          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:15-alpine sh -c \
+          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:17-alpine sh -c \
             'pg_dump --dbname="$PGURL" --schema=public --no-owner --quote-all-identifiers' \
             > "backup/$STAMP/db-public.sql"
 
           # auth.identities ต้องมาด้วย ไม่ใช่แค่ auth.users — ขาดไปแล้ว GoTrue จะหาบัญชีจากอีเมลไม่เจอ
-          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:15-alpine sh -c \
+          docker run --rm -e PGURL="$SUPABASE_DB_URL" postgres:17-alpine sh -c \
             'pg_dump --dbname="$PGURL" --data-only --table=auth.users --table=auth.identities --no-owner --quote-all-identifiers' \
             > "backup/$STAMP/db-auth.sql"
 
