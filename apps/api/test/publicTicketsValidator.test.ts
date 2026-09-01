@@ -28,7 +28,7 @@ describe('public (no-login) ticket submit validator', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload({ guestName: '' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: undefined })).success).toBe(true);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '   ' })).success).toBe(true);
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '1234567' })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '1234567' })).success).toBe(true);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ categoryId: 'not-a-uuid' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ title: '' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ description: '' })).success).toBe(false);

@@ -40,6 +40,11 @@ test.beforeAll(async () => {
     guest_name: guestName,
     requester_phone: requesterPhone,
     public_tracking_token_hash: tokenHash,
+    privacy_consent_confirmed: true,
+    privacy_notice_version: 'e2e-public-ticket-tracking',
+    privacy_consent_at: new Date().toISOString(),
+    privacy_consent_channel: 'PUBLIC_TICKET_WEB',
+    privacy_consent_text: 'E2E consent for public Ticket tracking verification',
   }).select('id, ticket_no').single();
   if (error || !ticket) throw error ?? new Error('create guest Ticket failed');
   ticketId = ticket.id;

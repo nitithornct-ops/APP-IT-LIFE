@@ -14,7 +14,7 @@ const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สู
 
 const optionalRequesterPhoneSchema = z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-  z.string().trim().min(8, 'กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร').max(40).optional(),
+  z.string().trim().max(40).optional(),
 );
 
 export const lineSubmitTicketSchema = z.object({

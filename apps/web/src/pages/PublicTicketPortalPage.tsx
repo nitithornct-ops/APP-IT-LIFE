@@ -460,10 +460,6 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       return;
     }
     const normalizedPhone = requesterPhone.trim();
-    if (normalizedPhone && normalizedPhone.length < 8) {
-      setError('กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร');
-      return;
-    }
     const normalizedRequesterName = guestName.trim().replace(/\s+/g, ' ');
     if (normalizedRequesterName.split(/\s+/).length < 2) {
       setError('กรุณากรอกทั้งชื่อและนามสกุลผู้แจ้ง');
@@ -573,7 +569,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
             </div>
             <div>
               <label className={LABEL} htmlFor="phone">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} minLength={8} maxLength={40} placeholder="เช่น 081-234-5678" inputMode="tel" autoComplete="tel" />
+              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} maxLength={40} placeholder="เช่น 081-234-5678" inputMode="tel" autoComplete="tel" />
               <p className="mt-1 text-[11px] text-slate-500">กรอกเมื่อสะดวกให้ทีม IT โทรติดต่อกลับ หากไม่กรอกยังส่งแจ้งซ่อมได้ตามปกติ</p>
             </div>
           </div>
