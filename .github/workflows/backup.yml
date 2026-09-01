@@ -30,25 +30,17 @@ permissions:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    # ใช้ environment แยกที่ไม่ตั้ง required reviewers — การสำรองข้อมูลไม่ควรต้องรอใครอนุมัติ
-    # เพราะมันไม่ได้เปลี่ยนแปลงอะไรในระบบ อ่านข้อมูลออกมาเก็บอย่างเดียว
-    environment: backup
+    # Reuse the protected production environment so the backup operates on the
+    # same Supabase project and Cloudflare account as the pending deployment.
+    environment: production
     timeout-minutes: 45
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
-      # AWS CLI v2 ใส่ checksum แบบใหม่มาให้เองซึ่ง R2 ปฏิเสธ ทำให้ upload ล้มโดยไม่บอกสาเหตุที่แท้จริง
-      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
-      AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
-      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-      R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
-      # นับเป็น "จำนวนชุด" ไม่ใช่ "จำนวนวัน" เพราะงานนี้กดเอง จึงไม่มีระยะห่างที่แน่นอน
-      # ถ้าใช้เกณฑ์อายุ การเว้นช่วงนาน ๆ แล้วกดครั้งเดียวจะลบของเก่าทิ้งหมดจนเหลือสำเนาเดียว
-      BACKUP_KEEP_COUNT: ${{ vars.BACKUP_KEEP_COUNT || '10' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET || 'itlife-backups' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,25 +49,19 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # ตรวจค่าตั้งต้นก่อนเริ่ม เพื่อให้ล้มพร้อมข้อความที่อ่านรู้เรื่อง แทนที่จะไปล้มกลางทางด้วย error ของ aws
+      # ตรวจค่าตั้งต้นก่อนเริ่ม เพื่อให้ล้มพร้อมข้อความที่อ่านรู้เรื่อง
       - name: Verify backup configuration
         shell: bash
         run: |
           missing=()
           for name in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY \
-                      AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_BUCKET; do
+                      CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID R2_BUCKET; do
             [ -n "${!name}" ] || missing+=("$name")
           done
-          case "$R2_ENDPOINT" in https://.r2.cloudflarestorage.com) missing+=("R2_ACCOUNT_ID");; esac
 
-          # แปลงชื่อภายในกลับเป็นชื่อที่ผู้ใช้เห็นในหน้า GitHub — AWS_* เป็นชื่อที่ aws cli ต้องการ
-          # แต่คนตั้งค่าจะไปหาชื่อนั้นใน Environment ไม่เจอ เพราะที่นั่นชื่อ R2_*
           label() {
             case "$1" in
-              AWS_ACCESS_KEY_ID)     echo "R2_ACCESS_KEY_ID (Secret)";;
-              AWS_SECRET_ACCESS_KEY) echo "R2_SECRET_ACCESS_KEY (Secret)";;
               R2_BUCKET)             echo "R2_BACKUP_BUCKET (Variable)";;
-              R2_ACCOUNT_ID)         echo "R2_ACCOUNT_ID (Secret)";;
               *)                     echo "$1 (Secret)";;
             esac
           }
@@ -85,14 +71,14 @@ jobs:
             for name in "${missing[@]}"; do names="$names, $(label "$name")"; done
             names="${names#, }"
             # ใช้ ::error:: เพื่อให้ชื่อที่ขาดโผล่บนหน้า run และอ่านผ่าน API ได้ ไม่ต้องเปิด log ทีละบรรทัด
-            echo "::error title=ยังตั้งค่า backup ไม่ครบ::ขาด $names — ตั้งที่ GitHub → Settings → Environments → backup"
+            echo "::error title=ยังตั้งค่า backup ไม่ครบ::ขาด $names — ตั้งที่ GitHub → Settings → Environments → production"
             {
               echo "### ❌ ยังตั้งค่าไม่ครบ"
               echo ""
-              echo "ขาดค่าต่อไปนี้ใน Environment \`backup\`:"
+              echo "ขาดค่าต่อไปนี้ใน Environment \`production\`:"
               for name in "${missing[@]}"; do echo "- \`$(label "$name")\`"; done
               echo ""
-              echo "ตั้งที่ **Settings → Environments → backup** แล้วกด Run workflow ใหม่"
+              echo "ตั้งที่ **Settings → Environments → production** แล้วกด Run workflow ใหม่"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -140,66 +126,33 @@ jobs:
           tar -czf "$ARCHIVE" -C "backup/$STAMP" .
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           ls -lh "$ARCHIVE"
-          aws s3 cp "$ARCHIVE" "s3://$R2_BUCKET/$ARCHIVE" --endpoint-url "$R2_ENDPOINT"
+          if ! npx wrangler r2 bucket info "$R2_BUCKET" --json >/dev/null 2>&1; then
+            npx wrangler r2 bucket create "$R2_BUCKET"
+          fi
+          npx wrangler r2 object put "$R2_BUCKET/$ARCHIVE" \
+            --file "$ARCHIVE" --content-type application/gzip --remote
 
       # สำเนาที่ไม่เคยลองเปิดกลับมาดู ไม่นับว่าเป็นสำเนา — ดึงกลับมาตรวจว่าไฟล์ไม่เสียจริง
       - name: Verify the uploaded archive can be read back
         shell: bash
         run: |
           set -euo pipefail
-          aws s3 cp "s3://$R2_BUCKET/$ARCHIVE" verify.tar.gz --endpoint-url "$R2_ENDPOINT"
+          npx wrangler r2 object get "$R2_BUCKET/$ARCHIVE" --file verify.tar.gz --remote
           gzip -t verify.tar.gz
           tar -tzf verify.tar.gz | grep -q 'db-public.sql'
           tar -tzf verify.tar.gz | grep -q 'manifest.json'
           echo "ตรวจแล้ว: ไฟล์สำรองบน R2 เปิดอ่านได้และมีข้อมูลฐานข้อมูลครบ"
 
-      # เก็บ "ชุดล่าสุด N ชุด" ไม่ใช่ "ลบตามอายุ" — งานนี้กดเอง จึงไม่มีระยะห่างที่แน่นอน
-      # เกณฑ์อายุจะกลายเป็นกับดัก: เว้นไป 3 เดือนแล้วกดครั้งเดียว ของเก่าจะถูกลบหมดจนเหลือสำเนาเดียว
-      # ขั้นนี้รันหลังอัปโหลดและตรวจไฟล์สำเร็จแล้วเสมอ ชุดที่เพิ่งสร้างจึงถูกนับเป็นชุดล่าสุดไปด้วย
-      - name: Keep only the most recent backups
-        shell: bash
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-
-          KEEP="${BACKUP_KEEP_COUNT:-10}"
-          case "$KEEP" in ''|*[!0-9]*) KEEP=10 ;; esac
-          [ "$KEEP" -ge 1 ] || KEEP=1
-
-          # ชื่อไฟล์ฝังเวลา UTC แบบ YYYYMMDDTHHMMSSZ ไว้ การเรียงตามตัวอักษรจึงเท่ากับเรียงตามเวลา
-          # จำกัดขอบเขตไว้ที่ไฟล์ที่งานนี้สร้างเองเท่านั้น เพื่อไม่ให้ไปแตะของอื่นใน bucket
-          keys="$(aws s3 ls "s3://$R2_BUCKET/" --endpoint-url "$R2_ENDPOINT" \
-            | awk '{print $4}' \
-            | grep -E '^itlife-backup-[0-9]{8}T[0-9]{6}Z\.tar\.gz$' | sort -r || true)"
-
-          if [ -z "$keys" ]; then
-            echo "ไม่พบไฟล์สำรองใน bucket"
-            exit 0
-          fi
-
-          total="$(printf '%s\n' "$keys" | wc -l)"
-          echo "มีสำเนาทั้งหมด $total ชุด — ตั้งให้เก็บชุดล่าสุดไว้ $KEEP ชุด"
-
-          old="$(printf '%s\n' "$keys" | tail -n +"$((KEEP + 1))")"
-          if [ -z "$old" ]; then
-            echo "  ยังไม่เกินจำนวนที่ตั้งไว้ ไม่มีอะไรต้องลบ"
-          else
-            printf '%s\n' "$old" | while read -r key; do
-              [ -n "$key" ] || continue
-              echo "  ลบ $key"
-              aws s3 rm "s3://$R2_BUCKET/$key" --endpoint-url "$R2_ENDPOINT"
-            done
-          fi
-
       - name: Summary
         shell: bash
         run: |
+          echo "- R2 retention: bootstrap mode keeps every verified archive" >> "$GITHUB_STEP_SUMMARY"
           {
             echo "### สำรองข้อมูลสำเร็จ"
             echo ""
             echo "- ไฟล์: \`$ARCHIVE\`"
             echo "- ขนาด: $(du -h "$ARCHIVE" | cut -f1)"
-            echo "- เก็บสำเนาล่าสุดไว้: $BACKUP_KEEP_COUNT ชุด"
+            echo "- การเก็บรักษา: bootstrap mode เก็บ archive ที่ตรวจสอบแล้วทุกชุด"
             echo ""
             echo "งานนี้ทำงานเมื่อกดสั่งเท่านั้น — ข้อมูลที่เกิดขึ้นหลังจากนี้จะยังไม่มีสำเนา"
           } >> "$GITHUB_STEP_SUMMARY"
