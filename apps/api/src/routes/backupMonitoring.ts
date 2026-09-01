@@ -58,11 +58,11 @@ async function activeReferenceError(
     if (!data) return 'ไม่พบ Configuration Item ที่เลือก';
   }
   if (refs.backupLogId) {
-    const { data } = await admin.from('backup_logs').select('id').eq('id', refs.backupLogId).maybeSingle();
+    const { data } = await admin.from('backup_logs').select('id').eq('id', refs.backupLogId).is('archived_at', null).maybeSingle();
     if (!data) return 'ไม่พบ Backup Log ที่อ้างอิง';
   }
   if (refs.loggingSystemId) {
-    const { data } = await admin.from('logging_systems').select('id').eq('id', refs.loggingSystemId).maybeSingle();
+    const { data } = await admin.from('logging_systems').select('id').eq('id', refs.loggingSystemId).is('archived_at', null).maybeSingle();
     if (!data) return 'ไม่พบระบบ Logging ที่เลือก';
   }
   return null;
@@ -77,11 +77,11 @@ backupMonitoringRoute.get('/', requireAnyPermission(['backup.view', 'monitoring.
   const reqId = c.get('requestId');
   const client = c.get('supabase');
   const [backups, recoveries, bcpPlans, loggingSystems, logReviews] = await Promise.all([
-    client.from('backup_logs').select(BACKUP_SELECT).order('backup_date', { ascending: false }).limit(500),
-    client.from('recovery_tests').select(RECOVERY_SELECT).order('test_date', { ascending: false }).limit(500),
-    client.from('bcp_plans').select(BCP_SELECT).order('created_at', { ascending: false }).limit(500),
-    client.from('logging_systems').select(LOG_SYSTEM_SELECT).order('created_at', { ascending: false }).limit(500),
-    client.from('log_reviews').select(LOG_REVIEW_SELECT).order('review_date', { ascending: false }).limit(500),
+    client.from('backup_logs').select(BACKUP_SELECT).is('archived_at', null).order('backup_date', { ascending: false }).limit(500),
+    client.from('recovery_tests').select(RECOVERY_SELECT).is('archived_at', null).order('test_date', { ascending: false }).limit(500),
+    client.from('bcp_plans').select(BCP_SELECT).is('archived_at', null).order('created_at', { ascending: false }).limit(500),
+    client.from('logging_systems').select(LOG_SYSTEM_SELECT).is('archived_at', null).order('created_at', { ascending: false }).limit(500),
+    client.from('log_reviews').select(LOG_REVIEW_SELECT).is('archived_at', null).order('review_date', { ascending: false }).limit(500),
   ]);
   const error = backups.error ?? recoveries.error ?? bcpPlans.error ?? loggingSystems.error ?? logReviews.error;
   if (error) return dbFailJson(c, 'BACKUP_MONITORING_LOAD_FAILED', error);

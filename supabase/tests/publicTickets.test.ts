@@ -21,8 +21,10 @@ afterAll(async () => { await db.close(); });
 describe('Public (no-login) ticket report page database controls (migration 20260831100000)', () => {
   it('accepts a guest ticket with requester_id null, guest_name + tracking token hash set, source_channel = guest', async () => {
     const inserted = await asServiceRole(db, async () => db.query<{ id: string; source_channel: string; requester_id: string | null }>(
-      `insert into public.tickets(title, description, source_channel, guest_name, guest_department, public_tracking_token_hash)
-       values ('เครื่องพิมพ์เสีย', 'พิมพ์ไม่ออก', 'guest', 'สมชาย ใจดี', 'บัญชี', repeat('a', 64)) returning id, source_channel, requester_id`,
+      `insert into public.tickets(title, description, source_channel, guest_name, guest_department, public_tracking_token_hash,
+         privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+       values ('เครื่องพิมพ์เสีย', 'พิมพ์ไม่ออก', 'guest', 'สมชาย ใจดี', 'บัญชี', repeat('a', 64),
+         true, 'test-v1', now(), 'PUBLIC_TICKET_WEB', 'accepted in database test') returning id, source_channel, requester_id`,
     ));
     expect(inserted.rows[0]).toEqual({ id: expect.any(String), source_channel: 'guest', requester_id: null });
   });
@@ -47,20 +49,23 @@ describe('Public (no-login) ticket report page database controls (migration 2026
   it('enforces a unique tracking token hash across guest tickets', async () => {
     await asServiceRole(db, async () => {
       await db.query(
-        `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash)
-         values ('a', 'b', 'guest', 'คนที่ 1', repeat('b', 64))`,
+        `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash,
+           privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+         values ('a', 'b', 'guest', 'คนที่ 1', repeat('b', 64), true, 'test-v1', now(), 'PUBLIC_TICKET_WEB', 'accepted in database test')`,
       );
       await expect(db.query(
-        `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash)
-         values ('c', 'd', 'guest', 'คนที่ 2', repeat('b', 64))`,
+        `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash,
+           privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+         values ('c', 'd', 'guest', 'คนที่ 2', repeat('b', 64), true, 'test-v1', now(), 'PUBLIC_TICKET_WEB', 'accepted in database test')`,
       )).rejects.toThrow();
     });
   });
 
   it('accepts a guest worklog with actor_id null and actor_label set, but rejects one with no actor identity at all', async () => {
     const ticket = await asServiceRole(db, async () => db.query<{ id: string }>(
-      `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash)
-       values ('e', 'f', 'guest', 'ผู้แจ้ง', repeat('c', 64)) returning id`,
+      `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash,
+         privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+       values ('e', 'f', 'guest', 'ผู้แจ้ง', repeat('c', 64), true, 'test-v1', now(), 'PUBLIC_TICKET_WEB', 'accepted in database test') returning id`,
     ));
     const ticketId = ticket.rows[0]!.id;
 
@@ -81,8 +86,9 @@ describe('Public (no-login) ticket report page database controls (migration 2026
 
   it('lets staff with ticket.view see a guest ticket via the existing tickets RLS policy, while anon sees none', async () => {
     const ticket = await asServiceRole(db, async () => db.query<{ id: string }>(
-      `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash)
-       values ('เมาส์เสีย', 'คลิกไม่ติด', 'guest', 'ผู้แจ้งทดสอบ', repeat('d', 64)) returning id`,
+      `insert into public.tickets(title, description, source_channel, guest_name, public_tracking_token_hash,
+         privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+       values ('เมาส์เสีย', 'คลิกไม่ติด', 'guest', 'ผู้แจ้งทดสอบ', repeat('d', 64), true, 'test-v1', now(), 'PUBLIC_TICKET_WEB', 'accepted in database test') returning id`,
     ));
     const ticketId = ticket.rows[0]!.id;
 

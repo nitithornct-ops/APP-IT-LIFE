@@ -1,10 +1,11 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { createUserScopedClient } from '../lib/supabase';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireSession } from '../middleware/auth';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { writeLoginLog } from '../services/loginLogService';
+import { loadMfaPolicy } from '../services/mfaPolicy';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -13,6 +14,25 @@ import { zodValidationHook } from '../utils/validation';
 import { loginLogSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
 
 export const authRoute = new Hono<AppEnv>();
+
+/**
+ * MFA bootstrap is the only authenticated endpoint intentionally available at AAL1. The
+ * browser uses it to learn that a newly privileged account must enroll before /auth/me and
+ * every business API are unlocked.
+ */
+authRoute.get('/mfa-policy', requireSession, async (c) => {
+  try {
+    const policy = await loadMfaPolicy(c.get('supabase'), c.get('hasVerifiedMfa'));
+    return c.json(ok(c.get('requestId'), {
+      ...policy,
+      enrolled: c.get('hasVerifiedMfa'),
+      currentLevel: c.get('authAal'),
+      needsEnrollment: policy.required && !c.get('hasVerifiedMfa'),
+    }));
+  } catch {
+    return c.json(fail(c.get('requestId'), 'MFA_POLICY_UNAVAILABLE', 'ตรวจสอบนโยบาย MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
+  }
+});
 
 /** ข้อมูลผู้ใช้ปัจจุบัน + บทบาท + สิทธิ์ที่ resolve แล้ว — Frontend ใช้ผลลัพธ์นี้ทำ Permission-aware Menu */
 authRoute.get('/me', requireAuth, async (c) => {
@@ -133,6 +153,8 @@ authRoute.post(
     let verifiedEmail: string | null = null;
     let verifiedMfaUsed = false;
     let verifiedUserHasMfa = false;
+    let verifiedMfaPolicyRequired = false;
+    let mfaPolicyLookupFailed = false;
     if (token) {
       const supabase = createUserScopedClient(c.env, token);
       const { data } = await supabase.auth.getUser(token);
@@ -140,13 +162,26 @@ authRoute.post(
       verifiedEmail = data.user?.email ?? null;
       verifiedMfaUsed = Boolean(data.user) && jwtAuthenticatorAssuranceLevel(token) === 'aal2';
       verifiedUserHasMfa = data.user?.factors?.some((factor) => factor.status === 'verified') ?? false;
+      if (data.user && !verifiedMfaUsed) {
+        try {
+          verifiedMfaPolicyRequired = (await loadMfaPolicy(supabase, verifiedUserHasMfa)).required;
+        } catch {
+          mfaPolicyLookupFailed = true;
+        }
+      }
     }
 
     if (body.success && !verifiedUserId) {
       return c.json(fail(reqId, 'SESSION_REQUIRED', 'ต้องมี Session ที่ใช้งานได้จึงจะบันทึกการเข้าสู่ระบบสำเร็จได้'), 401);
     }
-    if (body.success && verifiedUserHasMfa && !verifiedMfaUsed) {
-      return c.json(fail(reqId, 'MFA_REQUIRED', 'กรุณายืนยันรหัส MFA ก่อนบันทึกการเข้าสู่ระบบสำเร็จ'), 403);
+    if (body.success && mfaPolicyLookupFailed) {
+      return c.json(fail(reqId, 'MFA_POLICY_UNAVAILABLE', 'ตรวจสอบนโยบาย MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
+    }
+    if (body.success && verifiedMfaPolicyRequired && !verifiedMfaUsed) {
+      const message = verifiedUserHasMfa
+        ? 'กรุณายืนยันรหัส MFA ก่อนบันทึกการเข้าสู่ระบบสำเร็จ'
+        : 'บัญชีนี้ต้องตั้งค่า MFA ก่อนบันทึกการเข้าสู่ระบบสำเร็จ';
+      return c.json(fail(reqId, 'MFA_REQUIRED', message), 403);
     }
 
     await writeLoginLog(c.env, {

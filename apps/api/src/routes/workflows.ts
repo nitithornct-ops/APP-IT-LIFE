@@ -132,9 +132,9 @@ workflowsRoute.get('/', requirePermission('workflow.view'), async (c) => {
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const admin = createAdminClient(c.env);
   const [canManage, canApprove, canDelegate, canViewAll] = await Promise.all(['workflow.manage', 'workflow.approve', 'workflow.delegate', 'workflow.view_all'].map((key) => hasPermission(c, key)));
   const [definitions, steps, instances, approvals, histories, delegations, profiles] = await Promise.all([
-    admin.from('workflow_definitions').select('*').order('workflow_code'),
+    admin.from('workflow_definitions').select('*').is('archived_at', null).order('workflow_code'),
     admin.from('workflow_steps').select('*').eq('status', 'ใช้งาน').order('step_order'),
-    admin.from('workflow_instances').select('*').order('started_at', { ascending: false }).limit(500),
+    admin.from('workflow_instances').select('*').is('archived_at', null).order('started_at', { ascending: false }).limit(500),
     admin.from('workflow_approvals').select('*').order('created_at').limit(2000),
     admin.from('workflow_history').select('*').order('action_at').limit(3000),
     admin.from('workflow_delegations').select('*').order('start_at', { ascending: false }).limit(500),

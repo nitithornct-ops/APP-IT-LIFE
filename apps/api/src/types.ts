@@ -24,6 +24,10 @@ export interface Bindings {
   MYBROWSER?: BrowserWorker;
   /** Kill switch for the public no-login ticket report page (routes/publicTickets.ts) — unset/anything but 'false' means enabled. */
   PUBLIC_TICKET_FORM_ENABLED?: string;
+  /** Existing Turnstile widget secret. Store only as a Worker secret; never commit a value. */
+  TURNSTILE_SECRET?: string;
+  /** Deployment-specific frontend hostnames accepted from Siteverify, comma separated. */
+  TURNSTILE_HOSTNAMES?: string;
   /** Cloudflare edge rate limiter for unauthenticated endpoints. Local tests may omit it. */
   PUBLIC_RATE_LIMITER?: RateLimit;
 }
@@ -58,6 +62,10 @@ export interface Variables {
   supabase: SupabaseClient;
   userId: string;
   userEmail: string;
+  /** Authenticator assurance level from the already-verified Supabase access token. */
+  authAal: string | null;
+  /** Whether Supabase reports at least one verified MFA factor for this user. */
+  hasVerifiedMfa: boolean;
   /** LINE session — ตั้งค่าโดย requireLineSession/requireUsableLineSession ใน routes/line.ts เท่านั้น */
   lineSession?: { token: string; user: LineUserProfile };
   /** Company session — never shares the internal Supabase JWT/RBAC context. */

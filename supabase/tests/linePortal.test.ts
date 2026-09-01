@@ -69,8 +69,10 @@ describe('LINE public portal database controls', () => {
 
   it('records a LINE-owned ticket without an employee profile and keeps it visible to help-desk staff', async () => {
     const ticket = await asServiceRole(db, async () => db.query<{ id: string; source_channel: string }>(
-      `insert into public.tickets(title, requester_id, requester_name_snapshot, requester_identity_type, description, source_channel, requester_line_user_id)
-       values ('เครื่องพิมพ์เสีย', null, 'ทดสอบ LINE', 'LINE', 'ใช้งานไม่ได้', 'line', $1) returning id, source_channel`,
+      `insert into public.tickets(title, requester_id, requester_name_snapshot, requester_identity_type, description, source_channel, requester_line_user_id,
+         privacy_consent_confirmed, privacy_notice_version, privacy_consent_at, privacy_consent_channel, privacy_consent_text)
+       values ('เครื่องพิมพ์เสีย', null, 'ทดสอบ LINE', 'LINE', 'ใช้งานไม่ได้', 'line', $1,
+         true, 'test-v1', now(), 'PUBLIC_TICKET_LINE', 'accepted in database test') returning id, source_channel`,
       [lineUserId],
     ));
     expect(ticket.rows[0]!.source_channel).toBe('line');

@@ -31,6 +31,14 @@ export interface MeResponse {
   permissions: string[];
 }
 
+export interface MfaPolicyResponse {
+  required: boolean;
+  reason: 'enrolled_factor' | 'admin_role' | 'approver_role' | 'approval_permission' | 'export_permission' | null;
+  enrolled: boolean;
+  currentLevel: string | null;
+  needsEnrollment: boolean;
+}
+
 interface AuthContextValue {
   session: Session | null;
   isSessionLoading: boolean;
@@ -63,12 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsMfaLoading(true);
     try {
-      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      const hasVerifiedFactor = nextSession.user.factors?.some((factor) => factor.status === 'verified') ?? false;
-      setMfaRequired(error ? hasVerifiedFactor : data.nextLevel === 'aal2' && data.currentLevel !== 'aal2');
+      const policy = await apiFetch<MfaPolicyResponse>('/api/v1/auth/mfa-policy', undefined, { silent: true });
+      setMfaRequired(policy.required && policy.currentLevel !== 'aal2');
     } catch {
-      // Fail closed for accounts known to have MFA if the assurance-level check is unavailable.
-      setMfaRequired(nextSession.user.factors?.some((factor) => factor.status === 'verified') ?? false);
+      // The server is authoritative for privileged roles. A lookup outage must not silently
+      // downgrade an admin/approver/exporter to AAL1.
+      setMfaRequired(true);
     } finally {
       setIsMfaLoading(false);
     }

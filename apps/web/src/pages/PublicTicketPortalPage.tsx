@@ -1,31 +1,44 @@
 import type { TicketRatingCriterion, TicketRatingDetails, TicketRatingSnapshotItem } from '@itlife/shared';
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
   Check,
   CheckCircle2,
+  ChevronRight,
   CircleHelp,
   ClipboardCopy,
+  ClipboardList,
   Clock3,
   FileImage,
+  History,
   LifeBuoy,
   Loader2,
+  LockKeyhole,
   MessageCircle,
+  PackageSearch,
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   TicketCheck,
   UserRound,
   Wrench,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
 import { LineProfileNameForm } from '../components/LineProfileNameForm';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { Badge } from '../components/ui/Badge';
 import { RequesterSignoffCard } from '../components/tickets/RequesterSignoffCard';
+import { ticketStatusLabel, ticketStatusTone, type TicketStatusTone } from '../features/tickets/ticketDisplay';
+import { getTicketFlowIndex, isTicketFlowInterrupted, TICKET_FLOW_STEPS } from '../features/tickets/ticketFlow';
 import { ApiError } from '../services/apiClient';
 import { getLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 import { publicTicketApiFetch } from '../services/publicTicketApiClient';
+import type { TicketPriority, TicketStatus } from '../types/tickets';
 
 interface TicketCategory {
   id: string;
@@ -39,7 +52,7 @@ interface FormData {
   enabled: boolean;
   categories: TicketCategory[];
   priorities: string[];
-  privacy: { version: string; summary: string; dpoContact: string };
+  privacy: { version: string; summary: string; dpoContact: string; consentText?: string };
 }
 
 interface SubmitResult {
@@ -58,8 +71,8 @@ interface TrackedTicket {
     ticket_no: string;
     title: string;
     description: string;
-    status: string;
-    priority: string;
+    status: TicketStatus;
+    priority: TicketPriority;
     resolution: string | null;
     created_at: string;
     resolved_at: string | null;
@@ -79,8 +92,8 @@ interface TrackedTicket {
   worklogs: Array<{
     action: string;
     detail: string | null;
-    status_from: string | null;
-    status_to: string | null;
+    status_from: TicketStatus | null;
+    status_to: TicketStatus | null;
     created_at: string;
   }>;
   attachments: Array<{
@@ -105,8 +118,8 @@ interface LineTicketSummary {
   id: string;
   ticket_no: string;
   title: string;
-  priority: string;
-  status: string;
+  priority: TicketPriority;
+  status: TicketStatus;
   created_at: string;
   category: { name: string } | null;
 }
@@ -138,6 +151,7 @@ const DEFAULT_PRIVACY = {
   version: '2026-08-31',
   summary: 'ระบบใช้ข้อมูลผู้แจ้งเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket เท่านั้น',
   dpoContact: 'DPO / ส่วนงาน IT',
+  consentText: 'ข้าพเจ้าอ่านและยอมรับการใช้ข้อมูลเพื่อรับเรื่อง แจ้งสถานะ ดำเนินการแจ้งซ่อม และเก็บหลักฐานตามนโยบายขององค์กร',
 };
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -400,6 +414,8 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
   const [description, setDescription] = useState(initialDraft.description ?? '');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [privacyConsent, setPrivacyConsent] = useState(initialDraft.privacyConsent ?? false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -444,7 +460,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       return;
     }
     const normalizedPhone = requesterPhone.trim();
-    if (normalizedPhone.length < 8) {
+    if (normalizedPhone && normalizedPhone.length < 8) {
       setError('กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร');
       return;
     }
@@ -457,6 +473,10 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       setError('กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket');
       return;
     }
+    if (!lineAuthenticated && !turnstileToken) {
+      setError('กรุณายืนยันความปลอดภัยก่อนส่ง Ticket');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -467,7 +487,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
         });
       }
       const commonPayload = {
-        requesterPhone: normalizedPhone,
+        requesterPhone: normalizedPhone || undefined,
         requesterPosition: requesterPosition || undefined,
         incidentAt: new Date(incidentAt).toISOString(),
         erpModule: erpModule || undefined,
@@ -486,7 +506,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
         }).then((ticket) => ({ id: ticket.id, ticketNo: ticket.ticket_no, channel: 'line' as const }))
         : await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
           method: 'POST',
-          body: JSON.stringify({ ...commonPayload, guestName: normalizedRequesterName, guestDepartment: guestDepartment || undefined, website: website || undefined }),
+          body: JSON.stringify({ ...commonPayload, guestName: normalizedRequesterName, guestDepartment: guestDepartment || undefined, website: website || undefined, turnstileToken }),
         });
       let attachmentCount = 0;
       let attachmentWarning: string | undefined;
@@ -516,6 +536,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : 'ส่งแจ้งซ่อมไม่สำเร็จ');
     } finally {
+      if (!lineAuthenticated) turnstileRef.current?.reset();
       setSubmitting(false);
     }
   }
@@ -551,9 +572,9 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
               {lineAuthenticated && <p className="mt-1 text-[11px] text-slate-500">ใช้ชื่อจริงในใบแจ้งซ่อม ระบบจะบันทึกชื่อนี้แทนชื่อโปรไฟล์ LINE</p>}
             </div>
             <div>
-              <label className={LABEL} htmlFor="phone">เบอร์โทร <Required /></label>
-              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} minLength={8} maxLength={40} required placeholder="ใช้ติดต่อกลับและค้นหาสถานะ" inputMode="tel" />
-              <p className="mt-1 text-[11px] text-slate-500">ใช้คู่กับชื่อ–นามสกุลเพื่อค้นหา Ticket โดยไม่ต้องจำเลข Ticket</p>
+              <label className={LABEL} htmlFor="phone">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+              <input id="phone" className={INPUT} value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} minLength={8} maxLength={40} placeholder="เช่น 081-234-5678" inputMode="tel" autoComplete="tel" />
+              <p className="mt-1 text-[11px] text-slate-500">กรอกเมื่อสะดวกให้ทีม IT โทรติดต่อกลับ หากไม่กรอกยังส่งแจ้งซ่อมได้ตามปกติ</p>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -645,8 +666,11 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
           </div>
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 text-xs leading-5 text-slate-600 transition hover:border-primary-200 hover:bg-primary-50/30">
             <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-700 focus:ring-primary-500" />
-            <span>ข้าพเจ้าอ่านและยอมรับการใช้ข้อมูลเพื่อรับเรื่อง แจ้งสถานะ ดำเนินการแจ้งซ่อม และเก็บหลักฐานตามนโยบายขององค์กร</span>
+            <span>{formData.privacy.consentText ?? DEFAULT_PRIVACY.consentText}</span>
           </label>
+          {!lineAuthenticated && (
+            <TurnstileWidget ref={turnstileRef} action="public_ticket" onTokenChange={setTurnstileToken} />
+          )}
         </FormSection>
 
         <input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} className="absolute left-[-9999px] opacity-0" aria-hidden="true" />
@@ -666,7 +690,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
               <p className="text-[11px] text-slate-500">ช่องที่มี <span className="text-red-500">*</span> จำเป็นต้องกรอก</p>
             </div>
           </div>
-          <button type="submit" disabled={submitting || loading} className={PRIMARY_BUTTON}>
+          <button type="submit" disabled={submitting || loading || (!lineAuthenticated && !turnstileToken)} className={PRIMARY_BUTTON}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             ส่งแจ้งซ่อม
           </button>
@@ -871,37 +895,11 @@ function StatusTab({ onReport }: { onReport: () => void }) {
 
   if (detail) {
     return (
-      <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
-        <button type="button" onClick={() => { setDetail(null); setDetailAccess(null); }} className="mb-4 text-sm text-slate-500 hover:text-primary-700">← กลับ</button>
-        <p className="font-mono text-xs text-slate-500">{detail.ticket.ticket_no}</p><h2 className="mt-1 font-bold text-slate-900">{detail.ticket.title}</h2><p className="mt-1 text-xs text-slate-500">สถานะ: {ticketStatusLabel(detail.ticket.status)} · {detail.ticket.category?.name ?? '-'} · ความเร่งด่วน {detail.ticket.priority}</p><p className="mt-4 text-sm text-slate-600">{detail.ticket.description}</p>
-        {detail.ticket.resolution && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">ผลดำเนินการ: {detail.ticket.resolution}</p>}
-        <div className="mt-4">
-          <RequesterSignoffCard
-            status={detail.ticket.status}
-            signatureUrl={detail.ticket.requester_signature_url}
-            signedAt={detail.ticket.requester_signature_uploaded_at}
-            requesterName={detail.ticket.requester_name_snapshot ?? detail.ticket.guest_name}
-            criteria={detail.ratingCriteria ?? []}
-            rating={detail.ticket.rating}
-            onSign={signoff}
-          />
-        </div>
-        {(detail.attachments ?? []).length > 0 && (
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <p className="mb-2 text-xs font-bold text-slate-700">ไฟล์แนบ ({detail.attachments.length})</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {detail.attachments.map((attachment) => (
-                <a key={attachment.id} href={attachment.signed_url ?? undefined} target="_blank" rel="noreferrer" className={`rounded-lg border border-slate-200 p-2 text-xs text-primary-700 hover:bg-primary-50 ${attachment.signed_url ? '' : 'pointer-events-none opacity-60'}`}>
-                  {attachment.mime_type.startsWith('image/') && attachment.signed_url && <img src={attachment.signed_url} alt={attachment.original_filename} className="mb-2 h-28 w-full rounded object-cover" />}
-                  <span className="block truncate font-semibold">{attachment.original_filename}</span>
-                  <span className="text-slate-400">{(attachment.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-        <ul className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">{detail.worklogs.map((log, index) => <li key={index}>{log.action}{log.detail ? ` — ${log.detail}` : ''}</li>)}</ul>
-      </div>
+      <TicketDetailView
+        detail={detail}
+        onBack={() => { setDetail(null); setDetailAccess(null); }}
+        onSign={signoff}
+      />
     );
   }
 
@@ -914,97 +912,567 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     );
   }
 
-  if (lineBootstrap?.authenticated && lineBootstrap.profile && lineBootstrap.profile.linkStatus !== 'Suspended') {
-    return (
-      <section className={`${CARD} overflow-hidden`} aria-labelledby="line-ticket-list-title">
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[var(--line-brand)]" aria-hidden="true" />
-              <h2 id="line-ticket-list-title" className="font-bold text-slate-900">รายการแจ้งซ่อมของฉัน</h2>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {lineBootstrap.profile.fullName}</p>
-          </div>
-          <button type="button" onClick={onReport} className="public-line-button inline-flex items-center justify-center px-4 py-2 text-xs font-bold">
-            แจ้งซ่อม
-          </button>
-        </div>
-
-        {lineError && <div className="m-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
-        {lineTickets === null ? (
-          <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />กำลังโหลดรายการ</div>
-        ) : lineTickets.length === 0 ? (
-          <div className="p-10 text-center"><TicketCheck className="mx-auto h-8 w-8 text-slate-300" aria-hidden="true" /><p className="mt-2 text-sm text-slate-500">ยังไม่มีรายการแจ้งซ่อมผ่านบัญชี LINE นี้</p></div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
-                <tr>
-                  <th scope="col" className="px-5 py-3">เลข Ticket</th>
-                  <th scope="col" className="px-4 py-3">รายการ</th>
-                  <th scope="col" className="px-4 py-3">ประเภท</th>
-                  <th scope="col" className="px-4 py-3">ความเร่งด่วน</th>
-                  <th scope="col" className="px-4 py-3">สถานะ</th>
-                  <th scope="col" className="px-4 py-3">วันที่แจ้ง</th>
-                  <th scope="col" className="px-5 py-3 text-right">ดูข้อมูล</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lineTickets.map((ticket) => (
-                  <tr key={ticket.id} className="transition hover:bg-primary-50/40">
-                    <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-primary-700">{ticket.ticket_no}</td>
-                    <td className="max-w-xs px-4 py-4"><p className="truncate font-medium text-slate-800" title={ticket.title}>{ticket.title}</p></td>
-                    <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.category?.name ?? '-'}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.priority}</td>
-                    <td className="whitespace-nowrap px-4 py-4"><Badge variant={ticketStatusTone(ticket.status)}>{ticketStatusLabel(ticket.status)}</Badge></td>
-                    <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">{formatTicketDate(ticket.created_at)}</td>
-                    <td className="px-5 py-4 text-right"><button type="button" disabled={loading} onClick={() => void openLineDetail(ticket.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 disabled:opacity-50">รายละเอียด</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    );
-  }
+  const hasActiveLineAccount = Boolean(
+    lineBootstrap?.authenticated
+    && lineBootstrap.profile
+    && lineBootstrap.profile.linkStatus !== 'Suspended',
+  );
 
   return (
-    <div className={`${CARD} mx-auto max-w-2xl p-5 sm:p-6`}>
+    <div className="mx-auto max-w-5xl space-y-4">
+      {hasActiveLineAccount && lineBootstrap?.profile && (
+        <LineTicketList
+          profileName={lineBootstrap.profile.fullName}
+          tickets={lineTickets}
+          loading={loading}
+          onOpen={openLineDetail}
+          onReport={onReport}
+        />
+      )}
+
       {lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus === 'Suspended' && (
-        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           บัญชี LINE นี้ถูกระงับ จึงยังแสดงรายการ Ticket อัตโนมัติไม่ได้
           <Link to="/line" className="ml-1 font-semibold text-primary-700 hover:underline">ดูรายละเอียด</Link>
         </div>
       )}
-      {lineError && <div className="mb-5 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
-      {saved.length > 0 && <div className="mb-5"><p className="mb-2 text-xs font-bold text-slate-500">Ticket ที่เคยแจ้งจากเครื่องนี้</p><ul className="space-y-2">{saved.map((row) => <li key={row.id}><button type="button" onClick={() => void lookup(row.ticketNo ?? row.id, row.trackingToken)} className="w-full truncate rounded-lg border border-slate-200 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50">{row.ticketNo ?? row.id}</button></li>)}</ul></div>}
-      <div className="mb-5 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-800">เพื่อปกป้องรายละเอียดและไฟล์แนบ ต้องใช้เลข Ticket คู่กับรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE</div>
-      <form onSubmit={(event) => { event.preventDefault(); void lookup(ticketId, token); }} className="space-y-4" data-testid="public-ticket-code-search">
-        <div><label className={LABEL} htmlFor="ticketId">เลข Ticket</label><input id="ticketId" className={INPUT} value={ticketId} onChange={(event) => setTicketId(event.target.value)} required placeholder="เช่น TCK-2026-0001" /></div>
-        <div><label className={LABEL} htmlFor="token">รหัสติดตาม</label><input id="token" className={INPUT} value={token} onChange={(event) => setToken(event.target.value)} required maxLength={64} placeholder="เช่น ABCD-EFGH-JKLM" autoComplete="off" /><p className="mt-1 text-[11px] text-slate-500">รหัสนี้แสดงหลังส่งแจ้งซ่อมสำเร็จ และระบบบันทึกไว้ในเครื่องที่ใช้แจ้งให้อัตโนมัติ</p></div>
-        {error && <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</div>}
-        <button type="submit" disabled={loading} className={`${PRIMARY_BUTTON} w-full`}>{loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />} ตรวจสอบสถานะ</button>
-      </form>
+      {lineError && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
+
+      <GuestTicketLookup
+        saved={saved}
+        ticketId={ticketId}
+        token={token}
+        loading={loading}
+        error={error}
+        onTicketIdChange={setTicketId}
+        onTokenChange={setToken}
+        onLookup={lookup}
+      />
     </div>
   );
 }
 
+/** สีและไอคอนของแต่ละขั้นใน TICKET_FLOW_STEPS เรียงตาม index เดียวกัน */
+const TICKET_FLOW_STEP_STYLES: Array<{ icon: typeof TicketCheck; reachedClass: string; ringClass: string }> = [
+  { icon: TicketCheck, reachedClass: 'border-cyan-500 bg-cyan-500 text-white', ringClass: 'ring-cyan-100' },
+  { icon: ClipboardList, reachedClass: 'border-primary-600 bg-primary-600 text-white', ringClass: 'ring-primary-100' },
+  { icon: Wrench, reachedClass: 'border-purple-600 bg-purple-600 text-white', ringClass: 'ring-purple-100' },
+  { icon: CheckCircle2, reachedClass: 'border-amber-500 bg-amber-500 text-white', ringClass: 'ring-amber-100' },
+  { icon: ShieldCheck, reachedClass: 'border-emerald-600 bg-emerald-600 text-white', ringClass: 'ring-emerald-100' },
+];
+
+const STATUS_TONE_STYLES: Record<TicketStatusTone, { panel: string; icon: string; dot: string }> = {
+  secondary: {
+    panel: 'border-slate-200 bg-slate-50/90',
+    icon: 'bg-slate-600 text-white',
+    dot: 'bg-slate-500',
+  },
+  info: {
+    panel: 'border-cyan-200 bg-cyan-50/90',
+    icon: 'bg-cyan-600 text-white',
+    dot: 'bg-cyan-500',
+  },
+  primary: {
+    panel: 'border-primary-200 bg-primary-50/90',
+    icon: 'bg-primary-700 text-white',
+    dot: 'bg-primary-600',
+  },
+  warning: {
+    panel: 'border-amber-200 bg-amber-50/90',
+    icon: 'bg-amber-500 text-white',
+    dot: 'bg-amber-500',
+  },
+  success: {
+    panel: 'border-emerald-200 bg-emerald-50/90',
+    icon: 'bg-emerald-600 text-white',
+    dot: 'bg-emerald-600',
+  },
+  danger: {
+    panel: 'border-rose-200 bg-rose-50/90',
+    icon: 'bg-rose-600 text-white',
+    dot: 'bg-rose-600',
+  },
+};
+
+function TicketDetailView({
+  detail,
+  onBack,
+  onSign,
+}: {
+  detail: TrackedTicket;
+  onBack: () => void;
+  onSign: (file: File, ratings: TicketRatingDetails, feedback?: string) => Promise<void>;
+}) {
+  const { ticket } = detail;
+  const lastWorklog = detail.worklogs[detail.worklogs.length - 1];
+  const lastUpdatedAt = lastWorklog?.created_at ?? ticket.created_at;
+  const signoffCard = (
+    <RequesterSignoffCard
+      status={ticket.status}
+      signatureUrl={ticket.requester_signature_url}
+      signedAt={ticket.requester_signature_uploaded_at}
+      requesterName={ticket.requester_name_snapshot ?? ticket.guest_name}
+      criteria={detail.ratingCriteria ?? []}
+      rating={ticket.rating}
+      onSign={onSign}
+    />
+  );
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4">
+      <section className={`${CARD} overflow-hidden`} aria-labelledby="tracked-ticket-title">
+        <div className="bg-gradient-to-br from-primary-950 via-primary-900 to-primary-700 p-5 sm:p-6">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3.5 text-sm font-semibold !text-white hover:bg-white/20"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            กลับไปหน้ารายการ
+          </button>
+          <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 font-mono text-xs font-semibold text-primary-100">
+                <TicketCheck className="h-4 w-4" aria-hidden="true" /> {ticket.ticket_no}
+              </p>
+              <h2 id="tracked-ticket-title" className="mt-2 !text-xl font-bold !text-white sm:!text-2xl">{ticket.title}</h2>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs !text-white">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
+                  <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" /> {ticket.category?.name ?? 'ไม่ระบุประเภท'}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> ความเร่งด่วน {ticket.priority}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" /> แจ้งเมื่อ {formatTicketDate(ticket.created_at)}
+                </span>
+              </div>
+            </div>
+            <div className="shrink-0 rounded-xl border border-white/20 bg-white px-3 py-2 shadow-sm">
+              <Badge variant={ticketStatusTone[ticket.status]}>{ticketStatusLabel[ticket.status]}</Badge>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-5 p-4 sm:p-6">
+          <CurrentTicketStatus status={ticket.status} updatedAt={lastUpdatedAt} />
+          <TicketStatusFlow status={ticket.status} worklogs={detail.worklogs} />
+        </div>
+      </section>
+
+      {ticket.status === 'เสร็จสิ้น' && signoffCard}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-4">
+          <section className={`${CARD} p-5 sm:p-6`} aria-labelledby="ticket-problem-title">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
+                <CircleHelp className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary-600">Problem details</p>
+                <h3 id="ticket-problem-title" className="text-base font-bold text-slate-900">รายละเอียดปัญหา</h3>
+              </div>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-600">{ticket.description}</p>
+
+            <div className={`mt-5 rounded-xl border p-4 ${ticket.resolution ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-slate-50/80'}`}>
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${ticket.resolution ? 'text-emerald-600' : 'text-slate-400'}`} aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-bold text-slate-800">ผลการดำเนินการ</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                    {ticket.resolution ?? 'ทีม IT จะบันทึกผลการแก้ไขไว้ที่นี่เมื่อดำเนินการเรียบร้อย'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <TicketTimeline worklogs={detail.worklogs} />
+        </div>
+
+        <aside className="min-w-0 space-y-4" aria-label="ข้อมูลประกอบ Ticket">
+          {ticket.status !== 'เสร็จสิ้น' && signoffCard}
+          <TicketAttachments attachments={detail.attachments ?? []} />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function CurrentTicketStatus({ status, updatedAt }: { status: TicketStatus; updatedAt: string }) {
+  const guidance = getStatusGuidance(status);
+  const tone = ticketStatusTone[status];
+  const style = STATUS_TONE_STYLES[tone];
+  const StatusIcon = guidance.icon;
+
+  return (
+    <section className={`rounded-2xl border p-4 sm:p-5 ${style.panel}`} aria-labelledby="current-ticket-status" data-testid="public-current-status">
+      <div className="flex items-start gap-3 sm:gap-4">
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${style.icon}`}>
+          <StatusIcon className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">สถานะล่าสุด</p>
+              <h3 id="current-ticket-status" className="mt-0.5 text-lg font-bold text-slate-900">{ticketStatusLabel[status]}</h3>
+            </div>
+            <time dateTime={updatedAt} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" /> อัปเดต {formatTicketDate(updatedAt)}
+            </time>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{guidance.description}</p>
+          <div className="mt-3 flex items-start gap-2 rounded-xl bg-white/80 px-3 py-2.5 text-xs leading-5 text-slate-600">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" aria-hidden="true" />
+            <p><span className="font-bold text-slate-700">ขั้นต่อไป:</span> {guidance.next}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TicketStatusFlow({ status, worklogs }: { status: TicketStatus; worklogs: TrackedTicket['worklogs'] }) {
+  const currentIndex = getTicketFlowIndex(status, worklogs);
+  const interrupted = isTicketFlowInterrupted(status);
+
+  return (
+    <section aria-labelledby="ticket-flow-title">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary-600">Service flow</p>
+          <h3 id="ticket-flow-title" className="text-base font-bold text-slate-900">ลำดับการดำเนินงาน</h3>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">5 ขั้นตอน</span>
+      </div>
+
+      <ol className="grid grid-cols-1 sm:grid-cols-5" aria-label="ลำดับสถานะงาน">
+        {TICKET_FLOW_STEPS.map((step, index) => {
+          const reached = index <= currentIndex;
+          const current = index === currentIndex;
+          const completed = index < currentIndex;
+          const style = TICKET_FLOW_STEP_STYLES[index];
+          const StepIcon = style.icon;
+          return (
+            <li
+              key={step.label}
+              aria-current={current ? 'step' : undefined}
+              className={`relative grid grid-cols-[48px_minmax(0,1fr)] gap-3 pb-5 after:absolute after:bottom-0 after:left-[23px] after:top-12 after:w-0.5 after:content-[''] last:pb-0 last:after:hidden sm:block sm:px-1 sm:pb-0 sm:text-center sm:after:bottom-auto sm:after:left-[calc(50%+24px)] sm:after:right-[calc(-50%+24px)] sm:after:top-6 sm:after:h-0.5 sm:after:w-auto ${index < currentIndex ? 'after:bg-primary-300' : 'after:bg-slate-200'}`}
+            >
+              <span
+                className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 text-sm font-extrabold shadow-sm sm:mx-auto ${reached ? style.reachedClass : 'border-slate-200 bg-white text-slate-400'} ${current ? `ring-4 ${style.ringClass}` : ''}`}
+                aria-hidden="true"
+              >
+                {completed ? <Check className="h-5 w-5" /> : current ? <StepIcon className="h-5 w-5" /> : index + 1}
+              </span>
+              <div className="pt-0.5 sm:mt-3 sm:px-1">
+                <p className={`text-sm font-bold ${reached ? 'text-slate-800' : 'text-slate-400'}`}>{step.label}</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{step.description}</p>
+                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${current ? 'bg-primary-100 text-primary-700' : completed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  {current ? 'ขั้นตอนปัจจุบัน' : completed ? 'เสร็จแล้ว' : 'ขั้นถัดไป'}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {interrupted && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700" role="note">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p>Flow ปกติหยุดที่ขั้น “{TICKET_FLOW_STEPS[currentIndex]?.label ?? TICKET_FLOW_STEPS[0].label}” เนื่องจากสถานะปัจจุบันคือ {ticketStatusLabel[status]}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TicketTimeline({ worklogs }: { worklogs: TrackedTicket['worklogs'] }) {
+  return (
+    <section className={`${CARD} p-5 sm:p-6`} aria-labelledby="ticket-timeline-title">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+          <History className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-purple-600">Timeline</p>
+          <h3 id="ticket-timeline-title" className="text-base font-bold text-slate-900">ประวัติการดำเนินงาน</h3>
+        </div>
+      </div>
+
+      {worklogs.length === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+          <Clock3 className="mx-auto h-6 w-6 text-slate-300" aria-hidden="true" />
+          <p className="mt-2 text-sm font-semibold text-slate-600">ยังไม่มีอัปเดตเพิ่มเติม</p>
+          <p className="mt-1 text-xs text-slate-500">เมื่อทีม IT ดำเนินการ รายละเอียดจะแสดงเรียงตามเวลาในส่วนนี้</p>
+        </div>
+      ) : (
+        <ol className="mt-5" aria-label="ประวัติการอัปเดต Ticket">
+          {worklogs.map((log, index) => {
+            const statusForTone = log.status_to ?? log.status_from;
+            const dotClass = statusForTone ? STATUS_TONE_STYLES[ticketStatusTone[statusForTone]].dot : 'bg-slate-400';
+            return (
+              <li key={`${log.created_at}-${index}`} className="relative pb-6 pl-10 last:pb-0">
+                {index < worklogs.length - 1 && <span className="absolute bottom-0 left-[15px] top-7 w-0.5 bg-slate-200" aria-hidden="true" />}
+                <span className={`absolute left-2 top-1 h-4 w-4 rounded-full border-4 border-white shadow-sm ${dotClass}`} aria-hidden="true" />
+                <time dateTime={log.created_at} className="text-[11px] font-medium text-slate-500">{formatTicketDate(log.created_at)}</time>
+                <p className="mt-1 text-sm font-bold text-slate-800">{log.action}</p>
+                {log.status_to && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2" aria-label="การเปลี่ยนสถานะ">
+                    {log.status_from && <Badge variant={ticketStatusTone[log.status_from]}>{ticketStatusLabel[log.status_from]}</Badge>}
+                    {log.status_from && <ArrowRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />}
+                    <Badge variant={ticketStatusTone[log.status_to]}>{ticketStatusLabel[log.status_to]}</Badge>
+                  </div>
+                )}
+                {log.detail && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">{log.detail}</p>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function TicketAttachments({ attachments }: { attachments: TrackedTicket['attachments'] }) {
+  return (
+    <section className={`${CARD} p-5`} aria-labelledby="ticket-attachments-title">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <FileImage className="h-4 w-4 text-primary-600" aria-hidden="true" />
+          <h3 id="ticket-attachments-title" className="text-sm font-bold text-slate-800">ไฟล์แนบ</h3>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">{attachments.length} ไฟล์</span>
+      </div>
+
+      {attachments.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500">ไม่มีไฟล์แนบใน Ticket นี้</p>
+      ) : (
+        <div className="mt-4 grid gap-3">
+          {attachments.map((attachment) => {
+            const fileContent = (
+              <>
+                {attachment.mime_type.startsWith('image/') && attachment.signed_url && <img src={attachment.signed_url} alt={attachment.original_filename} className="mb-3 h-32 w-full rounded-lg object-cover" />}
+                <span className="block truncate text-xs font-bold text-slate-700">{attachment.original_filename}</span>
+                <span className="mt-1 block text-[11px] text-slate-500">{(attachment.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+              </>
+            );
+            return attachment.signed_url ? (
+              <a key={attachment.id} href={attachment.signed_url} target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 p-3 hover:border-primary-300 hover:bg-primary-50/40">
+                {fileContent}
+              </a>
+            ) : (
+              <div key={attachment.id} className="rounded-xl border border-slate-200 p-3 opacity-60" aria-disabled="true">
+                {fileContent}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LineTicketList({
+  profileName,
+  tickets,
+  loading,
+  onOpen,
+  onReport,
+}: {
+  profileName: string;
+  tickets: LineTicketSummary[] | null;
+  loading: boolean;
+  onOpen: (id: string) => Promise<void>;
+  onReport: () => void;
+}) {
+  return (
+    <section className={`${CARD} overflow-hidden`} aria-labelledby="line-ticket-list-title">
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-gradient-to-r from-white to-primary-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="public-line-button flex h-10 w-10 shrink-0 items-center justify-center">
+            <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="line-ticket-list-title" className="font-bold text-slate-900">รายการแจ้งซ่อมของฉัน</h2>
+              {tickets && <span className="rounded-full bg-primary-100 px-2.5 py-1 text-[10px] font-bold text-primary-700">{tickets.length} รายการ</span>}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {profileName}</p>
+          </div>
+        </div>
+        <button type="button" onClick={onReport} className="public-line-button inline-flex min-h-11 items-center justify-center gap-2 px-4 text-xs font-bold">
+          <Wrench className="h-4 w-4" aria-hidden="true" /> แจ้งซ่อมใหม่
+        </button>
+      </div>
+
+      {tickets === null ? (
+        <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />กำลังโหลดรายการ</div>
+      ) : tickets.length === 0 ? (
+        <div className="p-10 text-center">
+          <TicketCheck className="mx-auto h-9 w-9 text-slate-300" aria-hidden="true" />
+          <p className="mt-3 text-sm font-semibold text-slate-600">ยังไม่มีรายการแจ้งซ่อมผ่านบัญชี LINE นี้</p>
+          <button type="button" onClick={onReport} className="mt-3 text-sm font-bold text-primary-700 hover:underline">เริ่มแจ้งปัญหา</button>
+        </div>
+      ) : (
+        <ul className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="รายการแจ้งซ่อม">
+          {tickets.map((ticket) => (
+            <li key={ticket.id}>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void onOpen(ticket.id)}
+                aria-label={`เปิดรายละเอียด ${ticket.ticket_no} ${ticket.title}`}
+                className="group flex min-h-[190px] w-full flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md disabled:cursor-wait disabled:opacity-60"
+              >
+                <div className="flex w-full items-start justify-between gap-3">
+                  <span className="font-mono text-[11px] font-bold text-primary-700">{ticket.ticket_no}</span>
+                  <Badge variant={ticketStatusTone[ticket.status]}>{ticketStatusLabel[ticket.status]}</Badge>
+                </div>
+                <p className="mt-3 line-clamp-2 text-sm font-bold leading-6 text-slate-800">{ticket.title}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1">{ticket.category?.name ?? 'ไม่ระบุประเภท'}</span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1">เร่งด่วน {ticket.priority}</span>
+                </div>
+                <div className="mt-auto flex w-full items-center justify-between gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+                  <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />{formatTicketDate(ticket.created_at)}</span>
+                  <ChevronRight className="h-4 w-4 text-primary-600 transition group-hover:translate-x-0.5" aria-hidden="true" />
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function GuestTicketLookup({
+  saved,
+  ticketId,
+  token,
+  loading,
+  error,
+  onTicketIdChange,
+  onTokenChange,
+  onLookup,
+}: {
+  saved: SavedTicket[];
+  ticketId: string;
+  token: string;
+  loading: boolean;
+  error: string | null;
+  onTicketIdChange: (value: string) => void;
+  onTokenChange: (value: string) => void;
+  onLookup: (id: string, token: string) => Promise<void>;
+}) {
+  return (
+    <section className={`${CARD} overflow-hidden`} aria-labelledby="ticket-lookup-title">
+      <div className="grid lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="bg-gradient-to-br from-primary-950 via-primary-900 to-primary-700 p-5 sm:p-6">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-white">
+            <PackageSearch className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-300">Track a ticket</p>
+          <h2 id="ticket-lookup-title" className="mt-1 !text-xl font-bold !text-white">ค้นหาสถานะด้วยรหัสติดตาม</h2>
+          <p className="mt-2 text-sm leading-6 text-primary-100">ใช้ข้อมูล 2 รายการที่ได้รับหลังแจ้งซ่อม เพื่อเปิดดูความคืบหน้าอย่างปลอดภัย</p>
+
+          <ol className="mt-6 space-y-4" aria-label="วิธีค้นหาสถานะ Ticket">
+            {[
+              ['1', 'กรอกเลข Ticket', 'ตัวอย่าง TCK-2026-0001'],
+              ['2', 'กรอกรหัสติดตาม', 'รหัส 12 ตัวที่ได้รับหลังส่งเรื่อง'],
+              ['3', 'ดู flow และอัปเดต', 'ตรวจสอบขั้นตอน ผลดำเนินการ และไฟล์แนบ'],
+            ].map(([number, title, description]) => (
+              <li key={number} className="flex gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/15 text-xs font-extrabold text-white">{number}</span>
+                <div>
+                  <p className="text-sm font-bold text-white">{title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-primary-100">{description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <div className="flex items-start gap-3 rounded-xl border border-primary-100 bg-primary-50 px-3.5 py-3 text-xs leading-5 text-primary-800">
+            <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>เพื่อปกป้องรายละเอียดและไฟล์แนบ ต้องใช้เลข Ticket คู่กับรหัสติดตาม หรือเข้าสู่ระบบด้วย LINE</p>
+          </div>
+
+          {saved.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-2 text-xs font-bold text-slate-600">Ticket ที่บันทึกไว้ในเครื่องนี้</p>
+              <ul className="grid gap-2 sm:grid-cols-2" aria-label="Ticket ที่บันทึกในเครื่องนี้">
+                {saved.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => void onLookup(row.ticketNo ?? row.id, row.trackingToken)}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:border-primary-300 hover:bg-primary-50"
+                    >
+                      <span className="truncate font-mono">{row.ticketNo ?? row.id}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-primary-600" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <form onSubmit={(event) => { event.preventDefault(); void onLookup(ticketId.trim(), token.trim()); }} className="mt-5 space-y-4" data-testid="public-ticket-code-search">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL} htmlFor="ticketId">เลข Ticket</label>
+                <input id="ticketId" className={INPUT} value={ticketId} onChange={(event) => onTicketIdChange(event.target.value)} required placeholder="เช่น TCK-2026-0001" autoComplete="off" />
+              </div>
+              <div>
+                <label className={LABEL} htmlFor="token">รหัสติดตาม</label>
+                <input id="token" className={INPUT} value={token} onChange={(event) => onTokenChange(event.target.value)} required maxLength={64} placeholder="เช่น ABCD-EFGH-JKLM" autoComplete="off" />
+              </div>
+            </div>
+            <p className="text-[11px] leading-5 text-slate-500">รหัสติดตามแสดงหลังส่งแจ้งซ่อมสำเร็จ และระบบจะบันทึกไว้ในเครื่องที่ใช้แจ้งให้อัตโนมัติ</p>
+            {error && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</div>}
+            <button type="submit" disabled={loading} className={`${PRIMARY_BUTTON} w-full`}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}
+              ตรวจสอบสถานะ
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function getStatusGuidance(status: TicketStatus): { icon: typeof TicketCheck; description: string; next: string } {
+  switch (status) {
+    case 'ใหม่':
+      return { icon: TicketCheck, description: 'ระบบรับข้อมูลการแจ้งซ่อมและสร้างเลข Ticket เรียบร้อยแล้ว', next: 'ทีม IT จะตรวจสอบรายละเอียดและรับเรื่องเข้าคิวดำเนินการ' };
+    case 'รับเรื่องแล้ว':
+      return { icon: ClipboardList, description: 'ทีม IT ตรวจสอบข้อมูลเบื้องต้นและรับเรื่องไว้ดูแลแล้ว', next: 'เจ้าหน้าที่จะวิเคราะห์สาเหตุ มอบหมายงาน และเริ่มดำเนินการ' };
+    case 'กำลังดำเนินการ':
+      return { icon: Wrench, description: 'เจ้าหน้าที่กำลังตรวจสอบหรือแก้ไขปัญหาตามรายละเอียดที่แจ้ง', next: 'รอผลการแก้ไขหรือข้อความอัปเดตจากทีม IT' };
+    case 'รออะไหล่':
+      return { icon: PackageSearch, description: 'การแก้ไขจำเป็นต้องใช้อะไหล่หรืออุปกรณ์เพิ่มเติม', next: 'ทีม IT จะดำเนินการต่อทันทีเมื่อได้รับอะไหล่' };
+    case 'รอผู้ใช้งาน':
+      return { icon: MessageCircle, description: 'ทีม IT ต้องการข้อมูล การทดสอบ หรือการตอบกลับจากผู้แจ้ง', next: 'ตรวจสอบข้อความอัปเดตและติดต่อทีม IT เพื่อให้งานดำเนินต่อ' };
+    case 'ส่งต่อ Outsource':
+      return { icon: LifeBuoy, description: 'Ticket ถูกส่งต่อให้ผู้ให้บริการภายนอกที่เกี่ยวข้องดำเนินการ', next: 'ทีม IT จะติดตามผู้ให้บริการและอัปเดตผลใน Timeline' };
+    case 'เสร็จสิ้น':
+      return { icon: CheckCircle2, description: 'ทีม IT บันทึกผลการแก้ไขแล้ว และรอผู้แจ้งตรวจสอบผล', next: 'ทดสอบการใช้งาน ประเมินบริการ และลงนามเพื่อยืนยันปิดงาน' };
+    case 'ปิดงาน':
+      return { icon: ShieldCheck, description: 'ผู้แจ้งยืนยันผลและ Ticket ถูกปิดเรียบร้อยแล้ว', next: 'ไม่ต้องดำเนินการเพิ่มเติม สามารถย้อนดูประวัติได้ทุกเวลา' };
+    case 'ยกเลิก':
+      return { icon: AlertTriangle, description: 'Ticket นี้ถูกยกเลิกและหยุดการดำเนินงานแล้ว', next: 'ดูเหตุผลใน Timeline หรือแจ้งเรื่องใหม่หากยังพบปัญหา' };
+    case 'ยกระดับเป็น Incident':
+      return { icon: AlertTriangle, description: 'ปัญหาถูกยกระดับไปจัดการในกระบวนการ Incident', next: 'ทีม IT จะติดตามผลผ่าน Incident และแจ้งความคืบหน้าที่เกี่ยวข้อง' };
+  }
+}
+
 function formatTicketDate(value: string) {
   return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-}
-
-function ticketStatusTone(status: string): 'success' | 'danger' | 'warning' | 'primary' {
-  if (['เสร็จสิ้น', 'ปิดงาน'].includes(status)) return 'success';
-  if (['ยกเลิก', 'ปฏิเสธ'].includes(status)) return 'danger';
-  if (['กำลังดำเนินการ', 'รอข้อมูล', 'รอผู้ใช้งาน'].includes(status)) return 'warning';
-  return 'primary';
-}
-
-function ticketStatusLabel(status: string) {
-  if (status === 'เสร็จสิ้น') return 'ซ่อมเสร็จ (รอยืนยัน)';
-  if (status === 'ปิดงาน') return 'ปิดงานแล้ว';
-  return status;
 }
 
 function ErrorCard({ message }: { message: string }) {

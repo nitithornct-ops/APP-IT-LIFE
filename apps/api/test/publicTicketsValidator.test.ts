@@ -14,6 +14,7 @@ function validPayload(overrides: Record<string, unknown> = {}) {
     title: 'เปิดเครื่องไม่ติด',
     description: 'กดปุ่มเปิดแล้วไม่มีไฟขึ้น ลองเสียบปลั๊กใหม่แล้วก็ยังไม่ติด',
     privacyConsent: true,
+    turnstileToken: 'test-turnstile-token',
     ...overrides,
   };
 }
@@ -23,15 +24,23 @@ describe('public (no-login) ticket submit validator', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload()).success).toBe(true);
   });
 
-  it('requires guestName, requesterPhone, categoryId, title, description and privacyConsent=true', () => {
+  it('requires the core fields while allowing the requester phone to be omitted', () => {
     expect(publicSubmitTicketSchema.safeParse(validPayload({ guestName: '' })).success).toBe(false);
-    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: undefined })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: undefined })).success).toBe(true);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '   ' })).success).toBe(true);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ requesterPhone: '1234567' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ categoryId: 'not-a-uuid' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ title: '' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ description: '' })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ privacyConsent: false })).success).toBe(false);
     expect(publicSubmitTicketSchema.safeParse(validPayload({ privacyConsent: undefined })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ turnstileToken: '' })).success).toBe(false);
+    expect(publicSubmitTicketSchema.safeParse(validPayload({ turnstileToken: undefined })).success).toBe(false);
+  });
+
+  it('normalizes a blank requester phone to undefined', () => {
+    const result = publicSubmitTicketSchema.parse(validPayload({ requesterPhone: '   ' }));
+    expect(result.requesterPhone).toBeUndefined();
   });
 
   it('enforces the legacy ticket core limits (200/3000)', () => {

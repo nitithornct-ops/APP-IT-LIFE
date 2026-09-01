@@ -6,6 +6,7 @@ import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
 } from '../lib/lineAuth';
 import { buildTicketFlexMessage, notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
+import { ticketConsentEvidence } from '../lib/privacyNotice';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -24,6 +25,7 @@ import { ratingsMatchCriteria } from './tickets';
 import {
   lineAdminListQuerySchema, lineAdminUpdateLinkSchema, lineAdminUpdateStatusSchema,
   lineLoginUrlQuerySchema, lineProfileSchema, lineSubmitTicketSchema, lineTicketFeedbackSchema,
+  lineTicketMessageSchema,
 } from '../validators/line';
 
 /**
@@ -35,6 +37,8 @@ import {
 export const lineRoute = new Hono<AppEnv>();
 
 const MAX_LINE_TICKET_ATTACHMENTS = 5;
+/** ใบที่เดินจบแล้วไม่รับข้อความเพิ่ม — ผู้แจ้งต้องเปิดใบใหม่แทนการต่อท้ายใบเดิม */
+const LINE_TICKET_MESSAGE_CLOSED_STATUSES = ['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'];
 const LINE_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
 
 type LineUserRecord = LineUserProfile;
@@ -112,7 +116,12 @@ lineRoute.get('/bootstrap', async (c) => {
 lineRoute.get('/ticket-categories', async (c) => {
   const reqId = c.get('requestId');
   const admin = createAdminClient(c.env);
-  const { data, error } = await admin.from('ticket_categories').select('id, name').eq('status', 'active').order('name');
+  // ส่ง SLA มาด้วยเพื่อให้หน้าแจ้งซ่อมบอกผู้แจ้งได้ว่าจะได้รับการตอบรับภายในกี่ชั่วโมง
+  const { data, error } = await admin
+    .from('ticket_categories')
+    .select('id, name, default_priority, response_sla_hours, resolution_sla_hours, sla_hours')
+    .eq('status', 'active')
+    .order('name');
   if (error) return dbFailJson(c, 'LINE_CATEGORIES_LOAD_FAILED', error);
   return c.json(ok(reqId, data ?? []));
 });
@@ -307,6 +316,7 @@ lineRoute.post(
         source_channel: 'line',
         requester_line_user_id: user.id,
         created_by: user.linked_user_id ?? null,
+        ...ticketConsentEvidence('PUBLIC_TICKET_LINE', now),
       })
       .select()
       .single();
@@ -342,7 +352,7 @@ lineRoute.get('/tickets', requireUsableLineSession, async (c) => {
   const admin = createAdminClient(c.env);
   let ticketQuery = admin
     .from('tickets')
-    .select('id, ticket_no, title, priority, status, created_at, category:ticket_categories(name)')
+    .select('id, ticket_no, title, priority, status, created_at, updated_at, response_due_at, due_at, resolved_at, closed_at, rating, location, assignee_name_snapshot, asset_name_snapshot, category:ticket_categories(name)')
     .order('created_at', { ascending: false })
     .limit(50);
   ticketQuery = user.linked_user_id
@@ -351,6 +361,54 @@ lineRoute.get('/tickets', requireUsableLineSession, async (c) => {
   const { data, error } = await ticketQuery;
   if (error) return dbFailJson(c, 'LINE_TICKET_LIST_FAILED', error);
   return c.json(ok(reqId, data ?? []));
+});
+
+/**
+ * ฟีดแจ้งเตือนของผู้แจ้ง สร้างจาก worklog สาธารณะของ Ticket ที่เป็นของบัญชี LINE นี้
+ * — ไม่มีตารางแจ้งเตือนแยกสำหรับผู้ใช้ LINE และ worklog คือแหล่งเดียวที่บันทึกว่า
+ * ทีม IT ทำอะไรกับใบไปแล้วบ้าง รายการที่ผู้แจ้งเป็นคนทำเองถูกตัดออก เพราะไม่ต้อง
+ * เตือนสิ่งที่ตัวเองเพิ่งกดไปเมื่อครู่
+ */
+lineRoute.get('/notifications', requireUsableLineSession, async (c) => {
+  const reqId = c.get('requestId');
+  const { user } = c.get('lineSession')!;
+  const admin = createAdminClient(c.env);
+  let ticketQuery = admin
+    .from('tickets')
+    .select('id, ticket_no, title')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  ticketQuery = user.linked_user_id
+    ? ticketQuery.or(`requester_line_user_id.eq.${user.id},requester_id.eq.${user.linked_user_id}`)
+    : ticketQuery.eq('requester_line_user_id', user.id);
+  const { data: tickets, error: ticketError } = await ticketQuery;
+  if (ticketError) return dbFailJson(c, 'LINE_NOTIFICATION_LIST_FAILED', ticketError);
+  if (!tickets?.length) return c.json(ok(reqId, []));
+
+  const ticketById = new Map(tickets.map((ticket) => [ticket.id as string, ticket]));
+  const { data: logs, error } = await admin
+    .from('ticket_worklogs')
+    .select('id, ticket_id, action, detail, status_to, created_at')
+    .in('ticket_id', [...ticketById.keys()])
+    .eq('is_public', true)
+    .is('actor_line_user_id', null)
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) return dbFailJson(c, 'LINE_NOTIFICATION_LIST_FAILED', error);
+
+  return c.json(ok(reqId, (logs ?? []).flatMap((log) => {
+    const ticket = ticketById.get(log.ticket_id as string);
+    return ticket ? [{
+      id: log.id,
+      ticket_id: log.ticket_id,
+      ticket_no: ticket.ticket_no,
+      ticket_title: ticket.title,
+      action: log.action,
+      detail: log.detail,
+      status_to: log.status_to,
+      created_at: log.created_at,
+    }] : [];
+  })));
 });
 
 lineRoute.get(
@@ -369,7 +427,8 @@ lineRoute.get(
     }
     const [{ data: worklogs }, { data: ratingCriteria }, { data: attachmentRows }] = await Promise.all([
       admin
-      .from('ticket_worklogs').select('action, detail, status_from, status_to, created_at')
+      .from('ticket_worklogs')
+      .select('id, entry_type, action, detail, status_from, status_to, created_at, actor_line_user_id, actor_label, actor:profiles!ticket_worklogs_actor_id_fkey(full_name)')
       .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
       admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status').eq('status', 'active').order('sort_order').order('created_at'),
       admin
@@ -481,6 +540,68 @@ lineRoute.post(
     });
     const signed = await createSignedUrl(admin, uploaded.path, 600);
     return c.json(ok(reqId, { ...attachment, signed_url: 'url' in signed ? signed.url : null }), 201);
+  },
+);
+
+/**
+ * ข้อความจากผู้แจ้งถึงทีม IT บนใบ Ticket — บันทึกเป็น worklog สาธารณะเพื่อให้ทั้งสองฝั่ง
+ * เห็นบทสนทนาเดียวกันในไทม์ไลน์ ไม่แยกเก็บอีกตาราง
+ */
+lineRoute.post(
+  '/tickets/:id/messages',
+  requireUsableLineSession,
+  rateLimit({ windowMs: 3600_000, max: 60, keyFn: (c) => `line_ticket_message:${c.get('lineSession')!.user.id}` }),
+  zValidator('json', lineTicketMessageSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { user } = c.get('lineSession')!;
+    const admin = createAdminClient(c.env);
+    const { data: ticket } = await admin
+      .from('tickets')
+      .select('id, ticket_no, title, status, requester_id, requester_line_user_id')
+      .eq('id', c.req.param('id'))
+      .maybeSingle();
+    const belongsToLineUser = ticket?.requester_line_user_id === user.id
+      || (Boolean(user.linked_user_id) && ticket?.requester_id === user.linked_user_id);
+    if (!ticket || !belongsToLineUser) {
+      return c.json(fail(reqId, 'LINE_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในบัญชี LINE ของท่าน'), 404);
+    }
+    if (LINE_TICKET_MESSAGE_CLOSED_STATUSES.includes(String(ticket.status))) {
+      return c.json(fail(reqId, 'LINE_TICKET_MESSAGE_NOT_ALLOWED', 'Ticket นี้ปิดแล้ว หากยังพบปัญหากรุณาแจ้งเรื่องใหม่'), 400);
+    }
+
+    const { message } = c.req.valid('json');
+    const { data: worklog, error } = await admin
+      .from('ticket_worklogs')
+      .insert({
+        ticket_id: ticket.id,
+        entry_type: 'comment',
+        action: 'ข้อความสนทนา',
+        detail: message,
+        is_public: true,
+        actor_id: user.linked_user_id ?? null,
+        actor_line_user_id: user.id,
+      })
+      .select('id, entry_type, action, detail, status_from, status_to, created_at, actor_line_user_id, actor_label')
+      .single();
+    if (error || !worklog) return dbFailJson(c, 'LINE_TICKET_MESSAGE_FAILED', error, 'ส่งข้อความไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorEmail: `LINE:${user.line_user_id}`, action: 'CREATE', module: 'ticket',
+      targetTable: 'ticket_worklogs', targetId: String(worklog.id),
+      detail: { ticketId: ticket.id, channel: 'line' }, requestId: reqId,
+    });
+    await notifyTicketTeam(c.env, `ข้อความใหม่จากผู้แจ้ง (${ticket.ticket_no}): ${message}`, buildTicketFlexMessage({
+      eyebrow: 'ผู้แจ้งส่งข้อความใหม่',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: ticket.status,
+      requesterName: user.full_name,
+      detail: message,
+      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      buttonLabel: 'ตอบกลับผู้แจ้ง',
+    }));
+    return c.json(ok(reqId, worklog), 201);
   },
 );
 

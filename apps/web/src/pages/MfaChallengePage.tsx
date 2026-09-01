@@ -11,6 +11,7 @@ export function MfaChallengePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [factorId, setFactorId] = useState<string | null>(null);
+  const [enrollment, setEnrollment] = useState<{ qrCode: string; secret: string } | null>(null);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -19,11 +20,38 @@ export function MfaChallengePage() {
 
   useEffect(() => {
     if (!session) return;
-    void supabase.auth.mfa.listFactors().then(({ data, error: factorsError }) => {
-      setFactorId(data?.totp[0]?.id ?? null);
-      if (factorsError || !data?.totp[0]) setError('ไม่พบอุปกรณ์ MFA แบบ TOTP ที่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-      setLoading(false);
-    });
+    let cancelled = false;
+    void (async () => {
+      const { data, error: factorsError } = await supabase.auth.mfa.listFactors();
+      if (factorsError) throw factorsError;
+      const verified = data?.totp.find((factor) => factor.status === 'verified');
+      if (verified) {
+        if (!cancelled) setFactorId(verified.id);
+        return;
+      }
+
+      // An unfinished enrollment cannot reveal its QR code again. Remove only unverified
+      // factors owned by this session, then issue a fresh enrollment challenge.
+      for (const stale of data?.totp ?? []) {
+        if (stale.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: stale.id });
+      }
+      const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: 'LIFE IT Smart Service Center',
+      });
+      if (enrollError || !enrolled) throw enrollError ?? new Error('MFA enrollment failed');
+      if (!cancelled) {
+        setFactorId(enrolled.id);
+        setEnrollment({ qrCode: enrolled.totp.qr_code, secret: enrolled.totp.secret });
+      }
+    })()
+      .catch(() => {
+        if (!cancelled) setError('ตั้งค่าอุปกรณ์ MFA แบบ TOTP ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [session]);
 
   if (!isSessionLoading && !session) return <Navigate to="/login" replace />;
@@ -65,7 +93,17 @@ export function MfaChallengePage() {
           <KeyRound className="h-5 w-5" aria-hidden="true" />
         </div>
         <h1 className="font-display text-2xl font-semibold text-slate-800">ยืนยันตัวตนสองขั้นตอน</h1>
-        <p className="mt-1 text-sm text-slate-500">กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าสู่ระบบต่อ</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {enrollment ? 'สแกน QR ด้วยแอป Authenticator แล้วกรอกรหัส 6 หลักเพื่อเปิดใช้งาน MFA' : 'กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าสู่ระบบต่อ'}
+        </p>
+
+        {enrollment && (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-center">
+            <img src={enrollment.qrCode} alt="QR code สำหรับตั้งค่า MFA" className="mx-auto h-44 w-44" />
+            <p className="mt-3 text-xs text-slate-500">หากสแกนไม่ได้ ให้กรอกรหัสนี้ในแอปด้วยตนเอง</p>
+            <code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">{enrollment.secret}</code>
+          </div>
+        )}
 
         <form onSubmit={verify} className="mt-6 space-y-4">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">รหัส MFA</label>

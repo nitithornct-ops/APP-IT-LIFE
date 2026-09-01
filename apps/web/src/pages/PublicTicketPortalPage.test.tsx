@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PublicTicketPortalPage } from './PublicTicketPortalPage';
@@ -20,6 +20,14 @@ vi.mock('../services/publicTicketApiClient', () => ({
 
 beforeEach(() => {
   sessionStorage.clear();
+  window.turnstile = {
+    render: vi.fn((_container, options) => {
+      options.callback('test-public-ticket-token');
+      return 'public-ticket-widget';
+    }),
+    reset: vi.fn(),
+    remove: vi.fn(),
+  };
   getLineSessionTokenMock.mockReturnValue('active-line-session');
   publicTicketApiFetchMock.mockResolvedValue({
     enabled: true,
@@ -50,6 +58,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  delete window.turnstile;
   vi.clearAllMocks();
 });
 
@@ -59,12 +68,13 @@ describe('PublicTicketPortalPage LINE status list', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'ติดตามสถานะ' }));
 
-    expect(await screen.findByRole('table')).toBeVisible();
+    expect(await screen.findByRole('list', { name: 'รายการแจ้งซ่อม' })).toBeVisible();
     expect(screen.getByText('รายการแจ้งซ่อมของฉัน')).toBeVisible();
     expect(screen.getByText('TCK-2026-0001')).toBeVisible();
     expect(screen.getByText('เครื่องพิมพ์ใช้งานไม่ได้')).toBeVisible();
     expect(screen.getByText('อุปกรณ์สำนักงาน')).toBeVisible();
     expect(screen.getByText('กำลังดำเนินการ')).toBeVisible();
+    expect(screen.getByTestId('public-ticket-code-search')).toBeVisible();
     expect(lineApiFetchMock).toHaveBeenCalledWith('/api/v1/line/tickets');
   });
 });
@@ -162,6 +172,42 @@ describe('PublicTicketPortalPage LINE report flow', () => {
 });
 
 describe('PublicTicketPortalPage report validation', () => {
+  it('submits a guest Ticket without a phone number', async () => {
+    getLineSessionTokenMock.mockReturnValue(null);
+    publicTicketApiFetchMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/public/tickets/form-data') {
+        return Promise.resolve({
+          enabled: true,
+          categories: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Computer', response_sla_hours: 4, resolution_sla_hours: 24, sla_hours: 24 }],
+          priorities: ['ปานกลาง'],
+          privacy: { version: 'test', summary: 'privacy', dpoContact: 'IT' },
+        });
+      }
+      if (path === '/api/v1/public/tickets') {
+        return Promise.resolve({ id: 'guest-ticket-no-phone', ticketNo: 'TCK-2026-0101', trackingToken: 'ABCD-EFGH-JKLM' });
+      }
+      return Promise.reject(new Error(`Unexpected public API path: ${path}`));
+    });
+
+    render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
+
+    expect(await screen.findByText('ข้อมูลผู้แจ้งและติดต่อกลับ')).toBeVisible();
+    const phoneInput = screen.getByLabelText(/เบอร์โทร/);
+    expect(phoneInput).not.toBeRequired();
+    expect(phoneInput).toHaveValue('');
+    fireEvent.change(screen.getByLabelText(/ชื่อ–นามสกุล/), { target: { value: 'สมชาย ใจดี' } });
+    fireEvent.change(screen.getByLabelText(/ประเภทงานที่ขอรับบริการ/), { target: { value: '11111111-1111-4111-8111-111111111111' } });
+    fireEvent.change(screen.getByLabelText(/สรุปปัญหาสั้น/), { target: { value: 'เปิดเครื่องไม่ติด' } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดเพิ่มเติม/), { target: { value: 'กดปุ่มแล้วเครื่องไม่มีไฟ' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งแจ้งซ่อม' }));
+
+    expect(await screen.findByText('TCK-2026-0101')).toBeVisible();
+    const createCall = publicTicketApiFetchMock.mock.calls.find(([path]) => path === '/api/v1/public/tickets');
+    const payload = JSON.parse(createCall?.[1]?.body as string) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('requesterPhone');
+  });
+
   it('blocks the shared report form when the requester phone is too short', async () => {
     getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockResolvedValue({
@@ -228,7 +274,10 @@ describe('PublicTicketPortalPage guest status search', () => {
 
     expect(await screen.findByText('TCK-2026-0099')).toBeVisible();
     expect(screen.getByText('คอมพิวเตอร์เปิดไม่ติด')).toBeVisible();
-    expect(screen.getByText(/สถานะ: ซ่อมเสร็จ \(รอยืนยัน\)/)).toBeVisible();
+    expect(screen.getByTestId('public-current-status')).toHaveTextContent('ซ่อมเสร็จ (รอยืนยัน)');
+    const flow = screen.getByRole('list', { name: 'ลำดับสถานะงาน' });
+    expect(within(flow).getByText('รอตรวจรับ').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(within(flow).getByText('ปิดงาน').closest('li')).not.toHaveAttribute('aria-current');
     expect(publicTicketApiFetchMock).toHaveBeenCalledWith('/api/v1/public/tickets/TCK-2026-0099', {
       headers: { 'x-tracking-token': 'ABCD-EFGH-JKLM' },
     });
@@ -240,10 +289,54 @@ describe('PublicTicketPortalPage guest status search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ส่งแบบประเมิน ลงลายเซ็น และปิดงาน' }));
 
     expect(await screen.findByAltText('ลายเซ็นผู้แจ้งตรวจรับงาน')).toBeVisible();
+    expect(screen.getByTestId('public-current-status')).toHaveTextContent('ปิดงานแล้ว');
+    const closedFlow = screen.getByRole('list', { name: 'ลำดับสถานะงาน' });
+    expect(within(closedFlow).getByText('ปิดงาน').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('heading', { name: 'ประวัติการดำเนินงาน' })).toBeVisible();
     expect(screen.getAllByText(/ผู้แจ้งประเมิน ตรวจรับ และลงนาม/).length).toBeGreaterThanOrEqual(2);
     const signoffCall = publicTicketApiFetchMock.mock.calls.find(([path]) => path.endsWith('/signoff'));
     expect(signoffCall?.[1]?.headers).toEqual({ 'x-tracking-token': 'ABCD-EFGH-JKLM' });
     expect(signoffCall?.[1]?.body).toBeInstanceOf(FormData);
+  });
+
+  it('shows a cancelled branch at the last normal flow step reached', async () => {
+    getLineSessionTokenMock.mockReturnValue(null);
+    publicTicketApiFetchMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/public/tickets/form-data') {
+        return Promise.resolve({ enabled: true, categories: [], priorities: [], privacy: { version: 'test', summary: '', dpoContact: '' } });
+      }
+      if (path === '/api/v1/public/tickets/TCK-2026-0102') {
+        return Promise.resolve({
+          ticket: {
+            id: 'guest-ticket-cancelled', ticket_no: 'TCK-2026-0102', title: 'จอภาพไม่มีสัญญาณ', description: 'หน้าจอขึ้น No signal',
+            status: 'ยกเลิก', priority: 'ปานกลาง', resolution: null, created_at: '2026-08-20T02:00:00.000Z',
+            resolved_at: null, closed_at: null, guest_name: 'สมชาย ใจดี', rating: null, rating_details: null,
+            rating_criteria_snapshot: null, feedback: null, feedback_at: null, requester_signature_url: null,
+            requester_signature_uploaded_at: null, category: { name: 'คอมพิวเตอร์' },
+          },
+          ratingCriteria: [],
+          worklogs: [
+            { action: 'เปิด Ticket', detail: null, status_from: null, status_to: 'ใหม่', created_at: '2026-08-20T02:00:00.000Z' },
+            { action: 'เริ่มดำเนินการ', detail: 'ตรวจสอบสายสัญญาณแล้ว', status_from: 'รับเรื่องแล้ว', status_to: 'กำลังดำเนินการ', created_at: '2026-08-20T03:00:00.000Z' },
+            { action: 'ยกเลิก Ticket', detail: 'ผู้แจ้งยืนยันว่าไม่ต้องดำเนินการต่อ', status_from: 'กำลังดำเนินการ', status_to: 'ยกเลิก', created_at: '2026-08-20T04:00:00.000Z' },
+          ],
+          attachments: [],
+        });
+      }
+      return Promise.reject(new Error(`Unexpected public API path: ${path}`));
+    });
+
+    render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'ติดตามสถานะ' }));
+    fireEvent.change(screen.getByLabelText('เลข Ticket'), { target: { value: 'TCK-2026-0102' } });
+    fireEvent.change(screen.getByLabelText('รหัสติดตาม'), { target: { value: 'ABCD-EFGH-JKLM' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบสถานะ' }));
+
+    expect(await screen.findByTestId('public-current-status')).toHaveTextContent('ยกเลิก');
+    const flow = screen.getByRole('list', { name: 'ลำดับสถานะงาน' });
+    expect(within(flow).getByText('กำลังแก้ไข').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(/Flow ปกติหยุดที่ขั้น “กำลังแก้ไข”/)).toBeVisible();
+    expect(screen.getByText('ผู้แจ้งยืนยันว่าไม่ต้องดำเนินการต่อ')).toBeVisible();
   });
 });
 
