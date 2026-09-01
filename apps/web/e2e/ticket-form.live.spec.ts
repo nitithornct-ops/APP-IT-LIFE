@@ -8,13 +8,28 @@ test.skip(process.env.LIVE_TICKET_FORM_E2E !== '1', 'Live Ticket form E2E is opt
 test.describe.configure({ mode: 'serial' });
 
 const runId = Date.now();
+const adminEmail = `codex-ticket-form-${runId}@example.com`;
+const adminPassword = `TicketForm21!${runId}Aa`;
 let service: SupabaseClient;
 let formTicketId = '';
 let formTicketNo = '';
+let adminUserId = '';
 
 test.beforeAll(async () => {
   const { supabaseUrl, serviceRoleKey } = liveSupabaseConfig();
   service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: adminUser, error: adminError } = await service.auth.admin.createUser({
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+    user_metadata: { full_name: 'Ticket Form E2E Admin' },
+  });
+  if (adminError || !adminUser.user) throw adminError ?? new Error('Could not create Ticket form admin');
+  adminUserId = adminUser.user.id;
+  const { data: adminRole, error: adminRoleError } = await service.from('roles').select('id').eq('key', 'it_admin').single();
+  if (adminRoleError || !adminRole) throw adminRoleError ?? new Error('Could not find it_admin role');
+  const { error: assignmentError } = await service.from('user_roles').insert({ user_id: adminUserId, role_id: adminRole.id });
+  if (assignmentError) throw assignmentError;
   const { data: category, error: categoryError } = await service
     .from('ticket_categories')
     .select('id')
@@ -54,6 +69,11 @@ test.afterAll(async () => {
     await service.storage.from('ticket-signatures').remove([String(ticket.signature_storage_path)]);
   }
   await service.from('tickets').delete().eq('id', formTicketId);
+  if (adminUserId) {
+    await service.from('audit_logs').delete().eq('actor_id', adminUserId);
+    await service.from('login_logs').delete().eq('user_id', adminUserId);
+    await service.auth.admin.deleteUser(adminUserId);
+  }
 });
 
 async function expectImageLoaded(image: Locator) {
@@ -69,10 +89,7 @@ async function expectImageLoaded(image: Locator) {
 }
 
 test('signs one Ticket and shows that signature on its automatic form', async ({ page, request }) => {
-  const email = process.env.UAT_ADMIN_EMAIL;
-  if (!email) throw new Error('UAT admin email is required');
-
-  const auth = { authorization: `Bearer ${await createLiveAccessToken(email)}` };
+  const auth = { authorization: `Bearer ${await createLiveAccessToken(adminEmail)}` };
   // A self-contained valid 1x1 PNG keeps this release gate independent from
   // another mutable Ticket fixture while exercising the real upload path.
   const signatureBuffer = Buffer.from(
@@ -85,7 +102,7 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   });
   expect(upload.ok(), await upload.text()).toBeTruthy();
 
-  await installLiveSession(page, email);
+  await installLiveSession(page, adminEmail);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto(`/tickets/${formTicketId}`);

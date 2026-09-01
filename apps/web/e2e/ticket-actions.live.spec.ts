@@ -9,13 +9,29 @@ test.describe.configure({ mode: 'serial' });
 
 const runId = Date.now();
 const fixtureTitle = `E2E Ticket actions ${runId}`;
+const adminEmail = `codex-ticket-actions-${runId}@example.com`;
+const adminPassword = `TicketActions21!${runId}Aa`;
 let service: SupabaseClient;
 let ticketId = '';
 let ticketNo = '';
+let adminUserId = '';
 
 test.beforeAll(async () => {
   const { supabaseUrl, serviceRoleKey } = liveSupabaseConfig();
   service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  const { data: adminUser, error: adminError } = await service.auth.admin.createUser({
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+    user_metadata: { full_name: 'Ticket Actions E2E Admin' },
+  });
+  if (adminError || !adminUser.user) throw adminError ?? new Error('Could not create Ticket actions admin');
+  adminUserId = adminUser.user.id;
+  const { data: adminRole, error: adminRoleError } = await service.from('roles').select('id').eq('key', 'it_admin').single();
+  if (adminRoleError || !adminRole) throw adminRoleError ?? new Error('Could not find it_admin role');
+  const { error: assignmentError } = await service.from('user_roles').insert({ user_id: adminUserId, role_id: adminRole.id });
+  if (assignmentError) throw assignmentError;
 
   const { data: category, error: categoryError } = await service
     .from('ticket_categories')
@@ -47,12 +63,15 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (service && ticketId) await service.from('tickets').delete().eq('id', ticketId);
+  if (service && adminUserId) {
+    await service.from('audit_logs').delete().eq('actor_id', adminUserId);
+    await service.from('login_logs').delete().eq('user_id', adminUserId);
+    await service.auth.admin.deleteUser(adminUserId);
+  }
 });
 
 async function login(page: Page) {
-  const email = process.env.UAT_ADMIN_EMAIL;
-  if (!email) throw new Error('UAT admin email is required');
-  await installLiveSession(page, email);
+  await installLiveSession(page, adminEmail);
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 }
 
