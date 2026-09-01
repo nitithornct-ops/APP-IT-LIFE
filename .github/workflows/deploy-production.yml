@@ -57,6 +57,7 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -84,6 +85,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npm run staging:gate
+      # Turnstile ตรวจว่า token ถูกไขมาจาก hostname ที่เราคาดไว้จริง ค่า TURNSTILE_HOSTNAMES จึงต้องตรงกับ
+      # โดเมนที่ฝัง widget ไว้ ปกติคือ PRODUCTION_WEB_URL ที่เดียว จึงถอด host จากค่านั้นให้อัตโนมัติ
+      # ตั้ง Variable TURNSTILE_HOSTNAMES เองเมื่อมีโดเมนเพิ่ม (คั่นด้วยจุลภาค) แล้วค่านั้นจะถูกใช้แทน
+      - name: Resolve Turnstile hostnames
+        shell: bash
+        env:
+          TURNSTILE_HOSTNAMES_INPUT: ${{ vars.TURNSTILE_HOSTNAMES }}
+        run: |
+          set -euo pipefail
+          value="${TURNSTILE_HOSTNAMES_INPUT:-}"
+          if [ -z "$value" ]; then
+            value="${PRODUCTION_WEB_URL#https://}"
+            value="${value%%/*}"
+          fi
+          echo "TURNSTILE_HOSTNAMES=$value" >> "$GITHUB_ENV"
+          echo "Turnstile จะยอมรับ hostname: $value"
       - name: Validate production configuration and migration approval
         run: |
           npm run predeploy
@@ -109,6 +126,8 @@ jobs:
           printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production --cwd apps/api
           printf '%s' "$ALLOWED_ORIGINS" | npx wrangler secret put ALLOWED_ORIGINS --env production --cwd apps/api
           printf '%s' "$PUBLIC_APP_URL" | npx wrangler secret put PUBLIC_APP_URL --env production --cwd apps/api
+          printf '%s' "$TURNSTILE_SECRET" | npx wrangler secret put TURNSTILE_SECRET --env production --cwd apps/api
+          printf '%s' "$TURNSTILE_HOSTNAMES" | npx wrangler secret put TURNSTILE_HOSTNAMES --env production --cwd apps/api
           printf '%s' "${LINE_LOGIN_ENABLED:-false}" | npx wrangler secret put LINE_LOGIN_ENABLED --env production --cwd apps/api
           printf '%s' "${NOTIFY_LINE_ENABLED:-false}" | npx wrangler secret put NOTIFY_LINE_ENABLED --env production --cwd apps/api
           if [ "${LINE_LOGIN_ENABLED:-false}" = "true" ]; then
