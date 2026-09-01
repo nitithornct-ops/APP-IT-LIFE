@@ -4,6 +4,9 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const TEMPORARY_TOTP_NAME = 'Staging E2E temporary factor';
+const temporaryTotpSecrets = new Map<string, string>();
+
 export function liveSupabaseConfig() {
   const path = resolve(process.cwd(), '../api/.dev.vars');
   const vars = Object.fromEntries(
@@ -79,6 +82,8 @@ async function verifyTotp(client: SupabaseClient, secret: string): Promise<Sessi
 function configuredTotpSecret(email: string, explicitSecret?: string): string | undefined {
   if (explicitSecret) return explicitSecret;
   const normalizedEmail = email.trim().toLowerCase();
+  const temporarySecret = temporaryTotpSecrets.get(normalizedEmail);
+  if (temporarySecret) return temporarySecret;
   for (const prefix of ['UAT_ADMIN', 'UAT_TECHNICIAN', 'UAT_APPROVER', 'UAT_MANAGER']) {
     if (process.env[`${prefix}_EMAIL`]?.trim().toLowerCase() === normalizedEmail) {
       return process.env[`${prefix}_TOTP_SECRET`]?.trim() || undefined;
@@ -102,16 +107,18 @@ async function loadMfaPolicy(accessToken: string): Promise<{ required: boolean; 
   return body.data;
 }
 
-async function enrollTemporaryTotp(client: SupabaseClient): Promise<Session> {
+async function enrollTemporaryTotp(client: SupabaseClient, email: string): Promise<Session> {
   const { data: enrollment, error: enrollmentError } = await client.auth.mfa.enroll({
     factorType: 'totp',
-    friendlyName: 'Staging E2E temporary factor',
+    friendlyName: TEMPORARY_TOTP_NAME,
   });
   if (enrollmentError || !enrollment) throw enrollmentError ?? new Error('Could not enroll temporary UAT TOTP factor');
-  return challengeTotp(client, enrollment.id, enrollment.totp.secret);
+  const session = await challengeTotp(client, enrollment.id, enrollment.totp.secret);
+  temporaryTotpSecrets.set(email.trim().toLowerCase(), enrollment.totp.secret);
+  return session;
 }
 
-export async function createLiveSession(email: string, totpSecret?: string): Promise<Session> {
+export async function createLiveSession(email: string, totpSecret?: string, resetAttempted = false): Promise<Session> {
   const { supabaseUrl, anonKey, serviceRoleKey } = liveSupabaseConfig();
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: 'magiclink', email });
@@ -127,8 +134,23 @@ export async function createLiveSession(email: string, totpSecret?: string): Pro
   if (resolvedTotpSecret) return verifyTotp(anon, resolvedTotpSecret);
 
   const policy = await loadMfaPolicy(data.session.access_token);
-  if (policy.needsEnrollment) return enrollTemporaryTotp(anon);
+  if (policy.needsEnrollment) return enrollTemporaryTotp(anon, email);
   if (policy.required && policy.enrolled) {
+    // A previous staging run can be interrupted after enrolling its disposable
+    // factor. Remove only that named test factor; never touch a human MFA factor.
+    if (!resetAttempted) {
+      const userId = data.session.user.id;
+      const { data: factorData, error: factorError } = await admin.auth.admin.mfa.listFactors({ userId });
+      if (factorError) throw factorError;
+      const disposableFactors = factorData.factors.filter((factor) => factor.friendly_name === TEMPORARY_TOTP_NAME);
+      if (disposableFactors.length > 0) {
+        for (const factor of disposableFactors) {
+          const { error: deleteError } = await admin.auth.admin.mfa.deleteFactor({ userId, id: factor.id });
+          if (deleteError) throw deleteError;
+        }
+        return createLiveSession(email, undefined, true);
+      }
+    }
     throw new Error(`A TOTP secret is required for the enrolled live UAT account ${email}`);
   }
   return data.session;
