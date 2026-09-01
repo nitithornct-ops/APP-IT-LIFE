@@ -126,10 +126,10 @@ describe('LINE ticket submit validator', () => {
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, privacyConsent: undefined }).success).toBe(false);
   });
 
-  it('allows an omitted requester phone but validates it when provided', () => {
+  it('allows an omitted or short requester phone', () => {
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: undefined }).success).toBe(true);
     expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '   ' }).success).toBe(true);
-    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '1234567' }).success).toBe(false);
+    expect(lineSubmitTicketSchema.safeParse({ ...validPayload, requesterPhone: '1234567' }).success).toBe(true);
   });
 });
 

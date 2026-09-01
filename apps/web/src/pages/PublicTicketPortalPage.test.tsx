@@ -208,18 +208,27 @@ describe('PublicTicketPortalPage report validation', () => {
     expect(payload).not.toHaveProperty('requesterPhone');
   });
 
-  it('blocks the shared report form when the requester phone is too short', async () => {
+  it('submits the shared report form with a short optional requester phone', async () => {
     getLineSessionTokenMock.mockReturnValue(null);
-    publicTicketApiFetchMock.mockResolvedValue({
-      enabled: true,
-      categories: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Computer', response_sla_hours: 4, resolution_sla_hours: 24, sla_hours: 24 }],
-      priorities: ['ปานกลาง'],
-      privacy: { version: 'test', summary: 'privacy', dpoContact: 'IT' },
+    publicTicketApiFetchMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/public/tickets/form-data') {
+        return Promise.resolve({
+          enabled: true,
+          categories: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Computer', response_sla_hours: 4, resolution_sla_hours: 24, sla_hours: 24 }],
+          priorities: ['ปานกลาง'],
+          privacy: { version: 'test', summary: 'privacy', dpoContact: 'IT' },
+        });
+      }
+      if (path === '/api/v1/public/tickets') {
+        return Promise.resolve({ id: 'guest-ticket-short-phone', ticketNo: 'TCK-2026-0102', trackingToken: 'MNOP-QRST-UVWX' });
+      }
+      return Promise.reject(new Error(`Unexpected public API path: ${path}`));
     });
 
     render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
 
     expect(await screen.findByText('ข้อมูลผู้แจ้งและติดต่อกลับ')).toBeVisible();
+    expect(screen.getByLabelText(/เบอร์โทร/)).not.toHaveAttribute('minlength');
     fireEvent.change(screen.getByLabelText(/ชื่อ–นามสกุล/), { target: { value: 'สมชาย ใจดี' } });
     fireEvent.change(screen.getByLabelText(/เบอร์โทร/), { target: { value: '1234567' } });
     fireEvent.change(screen.getByLabelText(/ประเภทงานที่ขอรับบริการ/), { target: { value: '11111111-1111-4111-8111-111111111111' } });
@@ -228,8 +237,10 @@ describe('PublicTicketPortalPage report validation', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'ส่งแจ้งซ่อม' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('กรุณากรอกเบอร์โทรอย่างน้อย 8 ตัวอักษร');
-    expect(publicTicketApiFetchMock).not.toHaveBeenCalledWith('/api/v1/public/tickets', expect.anything());
+    expect(await screen.findByText('TCK-2026-0102')).toBeVisible();
+    const createCall = publicTicketApiFetchMock.mock.calls.find(([path]) => path === '/api/v1/public/tickets');
+    const payload = JSON.parse(createCall?.[1]?.body as string) as Record<string, unknown>;
+    expect(payload.requesterPhone).toBe('1234567');
   });
 });
 

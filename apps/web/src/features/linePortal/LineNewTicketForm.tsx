@@ -86,10 +86,6 @@ export function LineNewTicketForm({ profile, categories, startWithAssetCode, onC
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const phone = requesterPhone.trim();
-    if (phone && phone.length < 8) {
-      setError('กรุณากรอกเบอร์ติดต่ออย่างน้อย 8 ตัวอักษร');
-      return;
-    }
     setSubmitting(true);
     setError(null);
     try {
@@ -212,7 +208,7 @@ export function LineNewTicketForm({ profile, categories, startWithAssetCode, onC
             />
           </div>
           <div>
-            <label htmlFor="line-ticket-phone" className={LABEL}>เบอร์ติดต่อ</label>
+            <label htmlFor="line-ticket-phone" className={LABEL}>เบอร์ติดต่อ <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
             <input
               id="line-ticket-phone"
               className={INPUT}
