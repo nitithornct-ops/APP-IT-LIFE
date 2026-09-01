@@ -2,12 +2,14 @@ import { zValidator } from '@hono/zod-validator';
 import { calculateTicketOverallRating } from '@itlife/shared';
 import { Hono } from 'hono';
 import { buildTicketFlexMessage, notifyTicketTeam } from '../lib/lineMessaging';
+import { TICKET_PRIVACY_NOTICE, ticketConsentEvidence } from '../lib/privacyNotice';
 import { createAdminClient } from '../lib/supabase';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import { saveRequesterSignature } from '../services/ticketSignatureService';
+import { verifyPublicTicketTurnstile } from '../services/turnstileService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
@@ -28,12 +30,6 @@ import { ratingsMatchCriteria } from './tickets';
 export const publicTicketsRoute = new Hono<AppEnv>();
 
 const PRIORITIES = ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'] as const;
-const PRIVACY_NOTICE = {
-  version: '2026-08-31',
-  summary: 'ระบบใช้ข้อมูลผู้แจ้งเพื่อรับเรื่อง ติดต่อกลับ ดำเนินการแจ้งซ่อม และแจ้งสถานะ Ticket เท่านั้น',
-  dpoContact: 'DPO / ส่วนงาน IT',
-};
-
 const TRACKING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_PUBLIC_TICKET_ATTACHMENTS = 5;
 const PUBLIC_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
@@ -77,7 +73,7 @@ async function loadPublicAttachments(admin: ReturnType<typeof createAdminClient>
 publicTicketsRoute.get('/form-data', async (c) => {
   const reqId = c.get('requestId');
   const enabled = formEnabled(c.env);
-  if (!enabled) return c.json(ok(reqId, { enabled: false, categories: [], priorities: PRIORITIES, privacy: PRIVACY_NOTICE }));
+  if (!enabled) return c.json(ok(reqId, { enabled: false, categories: [], priorities: PRIORITIES, privacy: TICKET_PRIVACY_NOTICE }));
 
   const admin = createAdminClient(c.env);
   const { data, error } = await admin
@@ -86,7 +82,7 @@ publicTicketsRoute.get('/form-data', async (c) => {
     .eq('status', 'active')
     .order('name');
   if (error) return dbFailJson(c, 'PUBLIC_TICKET_FORM_LOAD_FAILED', error);
-  return c.json(ok(reqId, { enabled: true, categories: data ?? [], priorities: PRIORITIES, privacy: PRIVACY_NOTICE }));
+  return c.json(ok(reqId, { enabled: true, categories: data ?? [], priorities: PRIORITIES, privacy: TICKET_PRIVACY_NOTICE }));
 });
 
 publicTicketsRoute.post(
@@ -103,6 +99,16 @@ publicTicketsRoute.post(
       return c.json(fail(reqId, 'PUBLIC_TICKET_FORM_DISABLED', 'ขณะนี้ปิดรับการแจ้งซ่อมจากหน้าสาธารณะ กรุณาติดต่อส่วนงาน IT โดยตรง'), 403);
     }
     const body = c.req.valid('json');
+
+    const turnstile = await verifyPublicTicketTurnstile(c.env, body.turnstileToken, clientIp(c));
+    if (!turnstile.ok) {
+      console.warn(JSON.stringify({
+        msg: 'public_ticket_turnstile_rejected',
+        requestId: reqId,
+        reason: turnstile.reason,
+      }));
+      return c.json(fail(reqId, 'TURNSTILE_VERIFICATION_FAILED', 'ยืนยันความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 403);
+    }
 
     // Honeypot: a real visitor never sees or fills this hidden field. Report a fake success
     // without touching the database, so scripted bots get no signal that they were caught.
@@ -164,6 +170,7 @@ publicTicketsRoute.post(
         guest_name: body.guestName,
         guest_department: body.guestDepartment ?? null,
         public_tracking_token_hash: trackingTokenHash,
+        ...ticketConsentEvidence('PUBLIC_TICKET_WEB', now),
       })
       .select()
       .single();

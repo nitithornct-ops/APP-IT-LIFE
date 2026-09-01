@@ -7,11 +7,45 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   reporter: 'list',
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}-{projectName}{ext}',
+  expect: {
+    toHaveScreenshot: {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.03,
+      scale: 'css',
+    },
+  },
   use: {
     baseURL: webUrl,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      testIgnore: '**/quality-gates.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'quality-390',
+      testMatch: '**/quality-gates.spec.ts',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+    },
+    {
+      name: 'quality-768',
+      testMatch: '**/quality-gates.spec.ts',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
+    },
+    {
+      name: 'quality-1440',
+      testMatch: '**/quality-gates.spec.ts',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+    },
+    {
+      name: 'webkit',
+      testMatch: '**/quality-gates.spec.ts',
+      use: { ...devices['Desktop Safari'] },
+    },
+  ],
   webServer: liveE2E
     ? [
       { command: 'npm run dev -- --host 127.0.0.1', url: webUrl, reuseExistingServer: true },

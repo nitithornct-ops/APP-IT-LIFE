@@ -180,7 +180,7 @@ export function BackupMonitoringPage() {
   const editButton = (record: EditableRecord, label: string) => (
     <RowActions recordLabel={label} actions={[
       { kind: 'edit', permission: managePermission, onClick: () => openEdit(record) },
-      { kind: 'delete', permission: managePermission, deleteEndpoint: `/api/v1/record-deletions/${deleteResourceByTab[tab]}/${record.id}` },
+      { kind: 'archive', permission: managePermission, archiveEndpoint: `/api/v1/record-deletions/${deleteResourceByTab[tab]}/${record.id}` },
     ]} />
   );
   const tableEmpty = (title: string) => <EmptyState icon={<CloudCog className="h-10 w-10" />} title={title} message="ยังไม่มีข้อมูลในทะเบียนนี้" />;

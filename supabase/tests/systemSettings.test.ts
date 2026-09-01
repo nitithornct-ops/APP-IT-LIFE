@@ -34,7 +34,7 @@ describe('Module 22 System Settings database controls', () => {
               count(*) filter (where key in ('LINE_REQUIRE_EMPLOYEE_LINK', 'LINE_AUTO_APPROVE_EMPLOYEE_LINK'))::int as employee_link_settings
        from public.system_settings`,
     ));
-    expect(result.rows).toEqual([{ total: 51, secret_keys: 0, deferred: 6, employee_link_settings: 0 }]);
+    expect(result.rows).toEqual([{ total: 53, secret_keys: 0, deferred: 6, employee_link_settings: 0 }]);
   });
 
   it('grants Settings only to administrators while retaining Audit access for auditors', async () => {
@@ -46,7 +46,7 @@ describe('Module 22 System Settings database controls', () => {
 
   it('enforces row policies for viewing, editing and read-only integrations', async () => {
     const settings = await asUser(db, ADMIN_ID, async () => db.query(`select count(*)::int as count from public.system_settings`));
-    expect(settings.rows).toEqual([{ count: 51 }]);
+    expect(settings.rows).toEqual([{ count: 53 }]);
     const update = await asUser(db, ADMIN_ID, async () => db.query(`update public.system_settings set value = 'LIFE Test' where key = 'ORG_NAME' returning value`));
     expect(update.rows).toEqual([{ value: 'LIFE Test' }]);
     const readOnlyUpdate = await asUser(db, ADMIN_ID, async () => db.query(`update public.system_settings set value = 'true' where key = 'NOTIFY_LINE_ENABLED' returning key`));
@@ -59,6 +59,6 @@ describe('Module 22 System Settings database controls', () => {
     const migration = readFileSync(resolve(process.cwd(), 'migrations/20260827100000_system_settings.sql'), 'utf8');
     await db.exec(migration);
     const result = await asServiceRole(db, async () => db.query(`select count(*)::int as count, max(value) filter (where key = 'ORG_NAME') as org_name from public.system_settings`));
-    expect(result.rows).toEqual([{ count: 53, org_name: 'LIFE Test' }]);
+    expect(result.rows).toEqual([{ count: 55, org_name: 'LIFE Test' }]);
   });
 });

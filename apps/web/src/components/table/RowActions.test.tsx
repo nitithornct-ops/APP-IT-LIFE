@@ -111,17 +111,34 @@ describe('RowActions', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('calls a configured DELETE endpoint only after the user confirms', async () => {
+  it('requires a reason and sends it to a configured DELETE endpoint', async () => {
     mocks.apiFetch.mockResolvedValueOnce({ id: '1' });
     renderActions(<RowActions recordLabel="AST-001" actions={[{ kind: 'delete', deleteEndpoint: '/api/v1/record-deletions/assets/00000000-0000-4000-8000-000000000001' }]} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'ลบ AST-001' }));
     expect(mocks.apiFetch).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'ลบข้อมูล' })).toBeDisabled();
 
+    fireEvent.change(screen.getByTestId('row-actions-reason'), { target: { value: 'ข้อมูลซ้ำจากการนำเข้า' } });
     fireEvent.click(screen.getByRole('button', { name: 'ลบข้อมูล' }));
     await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalledWith(
       '/api/v1/record-deletions/assets/00000000-0000-4000-8000-000000000001',
-      { method: 'DELETE' },
+      { method: 'DELETE', body: JSON.stringify({ reason: 'ข้อมูลซ้ำจากการนำเข้า' }) },
+    ));
+  });
+
+  it('labels an archive honestly and keeps the reason in the API contract', async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ id: '1', mode: 'archive' });
+    renderActions(<RowActions recordLabel="INC-001" actions={[{ kind: 'archive', archiveEndpoint: '/api/v1/record-deletions/incidents/00000000-0000-4000-8000-000000000001' }]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'เก็บถาวร INC-001' }));
+    expect(screen.getByText(/ยังคงเก็บไว้ในระบบ/)).toBeVisible();
+    fireEvent.change(screen.getByTestId('row-actions-reason'), { target: { value: 'หมดความจำเป็นในงานปัจจุบัน' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ยืนยันเก็บถาวร' }));
+
+    await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/v1/record-deletions/incidents/00000000-0000-4000-8000-000000000001',
+      { method: 'DELETE', body: JSON.stringify({ reason: 'หมดความจำเป็นในงานปัจจุบัน' }) },
     ));
   });
 

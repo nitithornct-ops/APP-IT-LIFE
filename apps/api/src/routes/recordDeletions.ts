@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission } from '../middleware/permission';
-import { sanitizeAuditData, writeAuditLog } from '../services/auditService';
+import { writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 
-type DeleteMode = 'hard' | 'soft';
+type DeleteMode = 'hard' | 'soft' | 'archive';
 
 interface DeletionResource {
   table: string;
@@ -32,10 +32,10 @@ const DELETION_RESOURCES = {
   'approval-groups': { table: 'approval_groups', permission: 'approval_group.manage', module: 'approval-group' },
   'asset-categories': { table: 'asset_categories', permission: 'asset_category.manage', module: 'asset-category' },
   assets: { table: 'assets', permission: 'asset.dispose', module: 'asset' },
-  'backup-logs': { table: 'backup_logs', permission: 'backup.manage', module: 'backup' },
-  'bcp-plans': { table: 'bcp_plans', permission: 'backup.manage', module: 'backup' },
+  'backup-logs': { table: 'backup_logs', permission: 'backup.manage', module: 'backup', mode: 'archive' },
+  'bcp-plans': { table: 'bcp_plans', permission: 'backup.manage', module: 'backup', mode: 'archive' },
   'cause-codes': { table: 'ticket_cause_codes', permission: 'cause_code.manage', module: 'cause-code' },
-  changes: { table: 'change_requests', permission: 'change.approve', module: 'change' },
+  changes: { table: 'change_requests', permission: 'change.approve', module: 'change', mode: 'archive' },
   'ci-relationships': { table: 'ci_relationships', permission: 'cmdb.manage', module: 'cmdb' },
   'configuration-items': { table: 'configuration_items', permission: 'cmdb.manage', module: 'cmdb' },
   contracts: { table: 'contracts', permission: 'contract.manage', module: 'contract' },
@@ -43,17 +43,17 @@ const DELETION_RESOURCES = {
   'employee-assignments': { table: 'employee_assignments', permission: 'employee.manage', module: 'employee-assignment' },
   employees: { table: 'employees', permission: 'employee.manage', module: 'employee' },
   'form-templates': { table: 'form_templates', permission: 'form.manage', module: 'form' },
-  incidents: { table: 'incidents', permission: 'incident.manage', module: 'incident' },
+  incidents: { table: 'incidents', permission: 'incident.manage', module: 'incident', mode: 'archive' },
   'inventory-items': { table: 'inventory_items', permission: 'inventory.manage', module: 'inventory' },
   'issue-forms': { table: 'issue_forms', permission: 'form.manage', module: 'form' },
   'line-links': { table: 'line_users', permission: 'line.manage', module: 'line' },
-  'log-reviews': { table: 'log_reviews', permission: 'monitoring.manage', module: 'monitoring' },
-  'logging-systems': { table: 'logging_systems', permission: 'monitoring.manage', module: 'monitoring' },
+  'log-reviews': { table: 'log_reviews', permission: 'monitoring.manage', module: 'monitoring', mode: 'archive' },
+  'logging-systems': { table: 'logging_systems', permission: 'monitoring.manage', module: 'monitoring', mode: 'archive' },
   'known-errors': { table: 'known_errors', permission: 'problem.manage', module: 'problem' },
   'maintenance-plans': { table: 'maintenance_plans', permission: 'maintenance.manage', module: 'maintenance' },
   positions: { table: 'positions', permission: 'position.manage', module: 'position' },
   problems: { table: 'problems', permission: 'problem.manage', module: 'problem' },
-  'recovery-tests': { table: 'recovery_tests', permission: 'backup.manage', module: 'backup' },
+  'recovery-tests': { table: 'recovery_tests', permission: 'backup.manage', module: 'backup', mode: 'archive' },
   roles: { table: 'roles', permission: 'role.manage', module: 'role', protectedFlag: 'is_system' },
   'service-catalog': { table: 'service_catalog', permission: 'service_catalog.manage', module: 'service-catalog' },
   'service-requests': { table: 'service_requests', permission: 'service_request.close', module: 'service-request' },
@@ -62,8 +62,8 @@ const DELETION_RESOURCES = {
   tickets: { table: 'tickets', permission: 'ticket.close', module: 'ticket', mode: 'soft' },
   vendors: { table: 'vendors', permission: 'vendor.manage', module: 'vendor' },
   vulnerabilities: { table: 'vulnerability_findings', permission: 'vulnerability.manage', module: 'vulnerability' },
-  'workflow-definitions': { table: 'workflow_definitions', permission: 'workflow.manage', module: 'workflow' },
-  'workflow-instances': { table: 'workflow_instances', permission: 'workflow.manage', module: 'workflow' },
+  'workflow-definitions': { table: 'workflow_definitions', permission: 'workflow.manage', module: 'workflow', mode: 'archive' },
+  'workflow-instances': { table: 'workflow_instances', permission: 'workflow.manage', module: 'workflow', mode: 'archive' },
 } as const satisfies Record<string, DeletionResource>;
 
 export type DeletionResourceName = keyof typeof DELETION_RESOURCES;
@@ -77,6 +77,9 @@ export function getDeletionResource(name: string): DeletionResource | undefined 
 export const deletionResourceNames = Object.freeze(Object.keys(DELETION_RESOURCES));
 
 const idSchema = z.string().uuid();
+export const deletionReasonSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+}).strict();
 
 export const recordDeletionsRoute = new Hono<AppEnv>();
 recordDeletionsRoute.use('*', requireAuth);
@@ -106,48 +109,46 @@ recordDeletionsRoute.delete('/:resource/:id', async (c) => {
     return c.json(fail(requestId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดำเนินการนี้'), 403);
   }
 
-  const admin = createAdminClient(c.env);
-  const { data: existing, error: loadError } = await admin
-    .from(resource.table)
-    .select('*')
-    .eq('id', parsedId.data)
-    .maybeSingle();
-
-  if (loadError) return dbFailJson(c, 'DELETE_TARGET_LOAD_FAILED', loadError, 'ตรวจสอบรายการก่อนลบไม่สำเร็จ');
-  if (!existing) return c.json(fail(requestId, 'DELETE_TARGET_NOT_FOUND', 'ไม่พบรายการที่ต้องการลบ'), 404);
-  if (resource.protectedFlag && existing[resource.protectedFlag] === true) {
-    return c.json(fail(requestId, 'PROTECTED_RECORD', 'รายการมาตรฐานของระบบไม่สามารถลบได้'), 409);
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    rawBody = null;
+  }
+  const parsedBody = deletionReasonSchema.safeParse(rawBody);
+  if (!parsedBody.success) {
+    return c.json(fail(requestId, 'RECORD_DELETION_REASON_INVALID', 'กรุณาระบุเหตุผลอย่างน้อย 3 ตัวอักษร'), 400);
   }
 
-  const mode = resource.mode ?? 'hard';
-  const mutation = mode === 'soft'
-    ? admin.from(resource.table).update({ deleted_at: new Date().toISOString(), updated_by: c.get('userId') }).eq('id', parsedId.data).select('id').maybeSingle()
-    : admin.from(resource.table).delete().eq('id', parsedId.data).select('id').maybeSingle();
-  const { data: deleted, error: deleteError } = await mutation;
+  const admin = createAdminClient(c.env);
+  const { data, error: mutationError } = await admin.rpc('mutate_record_deletion', {
+    resource_input: resourceName,
+    record_id_input: parsedId.data,
+    actor_id_input: c.get('userId'),
+    actor_email_input: c.get('userEmail'),
+    reason_input: parsedBody.data.reason,
+    request_id_input: requestId,
+  });
 
-  if (deleteError) {
+  if (mutationError) {
+    if (mutationError.message.includes('DELETE_TARGET_NOT_FOUND')) {
+      return c.json(fail(requestId, 'DELETE_TARGET_NOT_FOUND', 'ไม่พบรายการที่ต้องการลบ'), 404);
+    }
+    if (mutationError.message.includes('PROTECTED_RECORD')) {
+      return c.json(fail(requestId, 'PROTECTED_RECORD', 'รายการมาตรฐานของระบบไม่สามารถลบได้'), 409);
+    }
+    if (mutationError.message.includes('DELETE_TARGET_ALREADY_ARCHIVED')) {
+      return c.json(fail(requestId, 'DELETE_TARGET_ALREADY_ARCHIVED', 'รายการนี้ถูกเก็บถาวรไปแล้ว'), 409);
+    }
     return dbFailJson(
       c,
       'RECORD_DELETE_FAILED',
-      deleteError,
-      deleteError.code === '23503'
+      mutationError,
+      mutationError.code === '23503'
         ? 'ยังลบรายการนี้ไม่ได้ เพราะมีข้อมูลอื่นอ้างอิงอยู่ กรุณาลบหรือย้ายข้อมูลที่เกี่ยวข้องก่อน'
         : 'ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
     );
   }
-  if (!deleted) return c.json(fail(requestId, 'DELETE_TARGET_NOT_FOUND', 'ไม่พบรายการที่ต้องการลบ'), 404);
 
-  await writeAuditLog(c.env, {
-    actorId: c.get('userId'),
-    actorEmail: c.get('userEmail'),
-    action: mode === 'soft' ? 'SOFT_DELETE' : 'DELETE',
-    module: resource.module,
-    targetTable: resource.table,
-    targetId: parsedId.data,
-    before: sanitizeAuditData(existing),
-    detail: { resource: resourceName, mode },
-    requestId,
-  });
-
-  return c.json(ok(requestId, { id: parsedId.data, resource: resourceName, mode }));
+  return c.json(ok(requestId, data));
 });

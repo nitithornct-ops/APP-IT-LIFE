@@ -7,7 +7,7 @@ import { useAuth } from '../stores/authContext';
 
 function AccessDenied() {
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center px-4 text-center">
+    <div data-testid="access-denied" className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center px-4 text-center">
       <Card className="w-full border-danger-100 dark:border-red-400/30">
         <CardBody className="flex flex-col items-center gap-3 px-6 py-12">
           <div className="grid h-14 w-14 place-items-center rounded-[13px] bg-danger-50 text-danger-700 dark:bg-red-400/10 dark:text-red-300">

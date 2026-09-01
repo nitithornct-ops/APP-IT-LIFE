@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deletionResourceNames, getDeletionResource } from '../src/routes/recordDeletions';
+import { deletionReasonSchema, deletionResourceNames, getDeletionResource } from '../src/routes/recordDeletions';
 
 describe('record deletion allowlist', () => {
   it('maps public resource names to fixed tables and permissions', () => {
@@ -7,6 +7,22 @@ describe('record deletion allowlist', () => {
     expect(getDeletionResource('access-systems')).toMatchObject({ table: 'access_systems', permission: 'access_system.manage' });
     expect(getDeletionResource('line-links')).toMatchObject({ table: 'line_users', permission: 'line.manage' });
     expect(getDeletionResource('tickets')).toMatchObject({ table: 'tickets', permission: 'ticket.close', mode: 'soft' });
+  });
+
+  it('archives governed work and evidence instead of hard deleting it', () => {
+    for (const resource of [
+      'incidents', 'changes', 'workflow-definitions', 'workflow-instances',
+      'backup-logs', 'recovery-tests', 'bcp-plans', 'logging-systems', 'log-reviews',
+    ]) {
+      expect(getDeletionResource(resource), resource).toMatchObject({ mode: 'archive' });
+    }
+  });
+
+  it('requires a bounded, non-blank reason for every deletion mutation', () => {
+    expect(deletionReasonSchema.safeParse({ reason: '  เก็บตามนโยบาย  ' }).data).toEqual({ reason: 'เก็บตามนโยบาย' });
+    expect(deletionReasonSchema.safeParse({ reason: '  ' }).success).toBe(false);
+    expect(deletionReasonSchema.safeParse({}).success).toBe(false);
+    expect(deletionReasonSchema.safeParse({ reason: 'x'.repeat(1001) }).success).toBe(false);
   });
 
   it('never accepts a table name or prototype property supplied by the client', () => {

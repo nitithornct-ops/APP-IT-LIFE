@@ -73,6 +73,7 @@ searchRoute.get('/', zValidator('query', searchQuerySchema, zodValidationHook), 
       ? supabase
         .from('incidents')
         .select('id, incident_number, title, status, severity')
+        .is('archived_at', null)
         .or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`)
         .order('report_date', { ascending: false })
         .limit(RESULTS_PER_MODULE)

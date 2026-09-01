@@ -1,4 +1,4 @@
-import { Ban, Eye, Pencil, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Ban, Eye, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { useContext, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -19,7 +19,7 @@ import { cn } from '../../utils/cn';
  * ทั้งสองแบบบังคับผ่านกล่องยืนยันเสมอ ไม่มีทางกดพลาดแล้วข้อมูลหายทันที
  */
 export interface RowAction {
-  kind: 'view' | 'edit' | 'cancel' | 'delete' | 'custom' | 'node';
+  kind: 'view' | 'edit' | 'cancel' | 'archive' | 'delete' | 'custom' | 'node';
   /** kind: 'node' — ปุ่มที่มีหน้าต่างของตัวเอง (เช่น ต้องกรอกเหตุผล) วางไว้ในแถวเดียวกันเพื่อให้ตำแหน่งตรงกับหน้าอื่น */
   node?: ReactNode;
   /** ทับข้อความเริ่มต้นของแต่ละชนิด */
@@ -33,11 +33,14 @@ export interface RowAction {
   onConfirm?: (reason: string) => void;
   /** delete: endpoint กลางที่ RowActions เรียกหลังยืนยัน แล้ว refresh query ที่กำลังแสดงอยู่ */
   deleteEndpoint?: string;
+  /** archive: endpoint เดียวกัน แต่ป้ายและคำยืนยันบอกชัดว่าเก็บข้อมูลไว้ตรวจสอบย้อนหลัง */
+  archiveEndpoint?: string;
   /** บังคับให้พิมพ์เหตุผลก่อนยืนยัน สำหรับงานที่ต้องตอบให้ได้ภายหลังว่าทำไมถึงยกเลิก */
   reasonLabel?: string;
   reasonPlaceholder?: string;
   confirmTitle?: string;
   confirmDescription?: ReactNode;
+  confirmLabel?: string;
   isPending?: boolean;
   /** คีย์สิทธิ์ที่ต้องมีจึงจะเห็นปุ่มนี้ — ไม่ใส่ = ทุกคนที่เข้าถึงหน้านี้ได้เห็น */
   permission?: string;
@@ -67,13 +70,15 @@ const ACTION_ORDER: Record<RowAction['kind'], number> = {
   custom: 2,
   node: 2,
   cancel: 3,
-  delete: 4,
+  archive: 4,
+  delete: 5,
 };
 
 const PRESETS: Record<RowAction['kind'], { label: string; icon: LucideIcon; tone: string; needsConfirm: boolean }> = {
   view: { label: 'ดู', icon: Eye, tone: 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700', needsConfirm: false },
   edit: { label: 'แก้ไข', icon: Pencil, tone: 'text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/40', needsConfirm: false },
   cancel: { label: 'ยกเลิก', icon: Ban, tone: 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/40', needsConfirm: true },
+  archive: { label: 'เก็บถาวร', icon: Archive, tone: 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/40', needsConfirm: true },
   delete: { label: 'ลบ', icon: Trash2, tone: 'text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/40', needsConfirm: true },
   custom: { label: '', icon: Eye, tone: 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700', needsConfirm: false },
   node: { label: '', icon: Eye, tone: '', needsConfirm: false },
@@ -87,11 +92,12 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
   const [endpointDeletePending, setEndpointDeletePending] = useState(false);
   const queryClient = useContext(QueryClientContext);
 
-  const deleteFromEndpoint = async (endpoint: string) => {
+  const mutateFromEndpoint = async (endpoint: string, mutationReason: string) => {
     setEndpointDeletePending(true);
     try {
-      await apiFetch(endpoint, { method: 'DELETE' });
+      await apiFetch(endpoint, { method: 'DELETE', body: JSON.stringify({ reason: mutationReason }) });
       setPending(null);
+      setReason('');
       await queryClient?.invalidateQueries({ type: 'active' });
     } catch {
       // apiFetch แสดงข้อความผิดพลาดให้ผู้ใช้แล้ว และคง modal ไว้ให้ลองใหม่ได้
@@ -109,6 +115,8 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
   if (visible.length === 0) return <span className="text-xs text-slate-400">—</span>;
 
   const preset = pending ? PRESETS[pending.kind] : null;
+  const endpointRequiresReason = Boolean(pending?.deleteEndpoint || pending?.archiveEndpoint);
+  const reasonRequired = Boolean(pending?.reasonLabel) || endpointRequiresReason;
 
   return (
     <>
@@ -152,16 +160,19 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
           title={pending.confirmTitle ?? `${pending.label ?? preset.label}${recordLabel ? ` "${recordLabel}"` : ''}`}
           description={pending.confirmDescription ?? (pending.kind === 'delete'
             ? 'ข้อมูลนี้จะถูกลบออกจากระบบและกู้คืนไม่ได้'
-            : 'รายการจะถูกยกเลิกแต่ยังคงอยู่ในระบบเพื่อการตรวจสอบย้อนหลัง')}
+            : pending.kind === 'archive'
+              ? 'รายการจะหายจากงานที่กำลังใช้ แต่ยังคงเก็บไว้ในระบบเพื่อตรวจสอบย้อนหลัง'
+              : 'รายการจะถูกยกเลิกแต่ยังคงอยู่ในระบบเพื่อการตรวจสอบย้อนหลัง')}
           tone={pending.kind === 'delete' ? 'danger' : 'primary'}
-          confirmLabel={pending.kind === 'delete' ? 'ลบข้อมูล' : 'ยืนยันยกเลิก'}
+          confirmLabel={pending.confirmLabel ?? (pending.kind === 'delete' ? 'ลบข้อมูล' : pending.kind === 'archive' ? 'ยืนยันเก็บถาวร' : 'ยืนยันยกเลิก')}
           cancelLabel="ไม่ใช่ตอนนี้"
           isPending={pending.isPending || endpointDeletePending}
           testId="row-actions-confirm"
-          confirmDisabled={Boolean(pending.reasonLabel) && !reason.trim()}
+          confirmDisabled={reasonRequired && reason.trim().length < (endpointRequiresReason ? 3 : 1)}
           onConfirm={() => {
-            if (pending.kind === 'delete' && pending.deleteEndpoint) {
-              void deleteFromEndpoint(pending.deleteEndpoint);
+            const endpoint = pending.archiveEndpoint ?? pending.deleteEndpoint;
+            if (endpoint) {
+              void mutateFromEndpoint(endpoint, reason.trim());
               return;
             }
             pending.onConfirm?.(reason.trim());
@@ -169,16 +180,16 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
           }}
           onClose={() => setPending(null)}
         >
-          {pending.reasonLabel && (
+          {reasonRequired && (
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-              {pending.reasonLabel} <span className="text-rose-600">*</span>
+              {pending.reasonLabel ?? 'เหตุผล'} <span className="text-rose-600">*</span>
               <textarea
                 data-autofocus
                 data-testid="row-actions-reason"
                 rows={3}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder={pending.reasonPlaceholder}
+                placeholder={pending.reasonPlaceholder ?? 'ระบุเหตุผลอย่างน้อย 3 ตัวอักษร'}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
               />
             </label>

@@ -23,8 +23,11 @@
   --life-lime: #4b7be0;
 
   /* สีแบรนด์ LINE — คงที่ทั้งสองธีม เพราะเป็นสีของบริการภายนอก ไม่ใช่ของเรา */
-  --line-brand: #06c755;
-  --line-brand-hover: #05b34b;
+  /* Accessible presentation of LINE green. The service's #06c755 swatch has
+     only 2.25:1 contrast with white text, so interactive controls use the
+     darker brand-family shade required by WCAG AA. */
+  --line-brand: #047a36;
+  --line-brand-hover: #03642d;
 
   --color-bg: #f4f6fb;
   --color-surface: #ffffff;
@@ -573,6 +576,14 @@ textarea:focus-visible,
   box-shadow: 0 10px 24px rgb(23 58 138 / 0.24) !important;
 }
 
+.public-primary-button:disabled {
+  border-color: #475569 !important;
+  background: #475569 !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
 .public-secondary-button {
   min-height: 42px;
   border: 1px solid var(--color-border-strong) !important;
@@ -586,9 +597,8 @@ textarea:focus-visible,
   background: var(--color-surface-green) !important;
 }
 
-/* ปุ่ม LINE ใช้สีแบรนด์ LINE (#06C755) ตาม LINE Login button guideline ไม่ใช่พาเลตของแอป
-   ผู้ใช้จำปุ่มนี้จากสีเขียวของ LINE ไม่ใช่จากสีแบรนด์เรา และเขียวนี้อ่านออกทั้งธีมสว่างและมืด
-   จึงไม่มี override สำหรับ .dark เหมือนปุ่ม secondary */
+/* ปุ่ม LINE คงเอกลักษณ์สีเขียวของบริการ แต่ใช้เฉดเข้มที่ข้อความขาวผ่าน WCAG AA
+   ทั้งธีมสว่างและมืด จึงไม่มี override สำหรับ .dark เหมือนปุ่ม secondary */
 .public-line-button {
   min-height: 42px;
   border: 1px solid var(--line-brand) !important;

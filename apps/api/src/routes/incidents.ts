@@ -132,7 +132,7 @@ function closureGaps(incident: IncidentRow, notifications: Record<string, unknow
 
 incidentsRoute.get('/matrix', async (c) => {
   const reqId = c.get('requestId');
-  const { data, error } = await c.get('supabase').from('incidents').select('likelihood, impact, status').neq('status', 'ปิดเคส');
+  const { data, error } = await c.get('supabase').from('incidents').select('likelihood, impact, status').is('archived_at', null).neq('status', 'ปิดเคส');
   if (error) return c.json(fail(reqId, 'INCIDENT_MATRIX_LOAD_FAILED', 'ดึง Risk Matrix ไม่สำเร็จ'), 400);
   const cells = Array.from({ length: 5 }, (_, likelihoodIndex) =>
     Array.from({ length: 5 }, (_, impactIndex) => ({
@@ -162,6 +162,7 @@ const INCIDENT_SORT_COLUMNS = ['incident_number', 'title', 'report_date', 'risk_
 /** ส่วนของ query builder ที่ตัวกรองรายการ Incident ต้องใช้ */
 interface IncidentFilterableQuery {
   eq(column: string, value: unknown): IncidentFilterableQuery;
+  is(column: string, value: null): IncidentFilterableQuery;
   or(filters: string): IncidentFilterableQuery;
   gte(column: string, value: unknown): IncidentFilterableQuery;
   lte(column: string, value: unknown): IncidentFilterableQuery;
@@ -188,6 +189,7 @@ function applyIncidentListFilters<T>(
 ): T {
   // มอง builder เป็นโครงแคบ ๆ เพราะ generic เต็มของ supabase-js ซ้อนลึกจน TypeScript ยอมแพ้
   let next = query as unknown as IncidentFilterableQuery;
+  next = next.is('archived_at', null);
   if (search) {
     const safe = cleanSearch(search);
     next = next.or(`incident_number.ilike.%${safe}%,title.ilike.%${safe}%`);

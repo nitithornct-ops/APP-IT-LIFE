@@ -43,7 +43,7 @@ function generateChangeNumber(): string {
 }
 
 async function loadChange(env: Bindings, id: string) {
-  const result = await createAdminClient(env).from('change_requests').select(CHANGE_SELECT).eq('id', id).maybeSingle();
+  const result = await createAdminClient(env).from('change_requests').select(CHANGE_SELECT).eq('id', id).is('archived_at', null).maybeSingle();
   return result as unknown as { data: ChangeRow | null; error: { message: string } | null };
 }
 
@@ -68,7 +68,7 @@ changesRoute.get('/references', requirePermission('change.create'), async (c) =>
 changesRoute.get('/', zValidator('query', listChangesQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const { page, pageSize, search, status, riskLevel, requesterId } = c.req.valid('query');
-  let query = c.get('supabase').from('change_requests').select(CHANGE_SELECT, { count: 'exact' }).order('request_date', { ascending: false }).range(...paginationRange(page, pageSize));
+  let query = c.get('supabase').from('change_requests').select(CHANGE_SELECT, { count: 'exact' }).is('archived_at', null).order('request_date', { ascending: false }).range(...paginationRange(page, pageSize));
   if (search) {
     const safe = cleanSearch(search);
     query = query.or(`change_number.ilike.%${safe}%,title.ilike.%${safe}%,system_affected.ilike.%${safe}%`);

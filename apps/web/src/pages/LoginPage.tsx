@@ -8,6 +8,7 @@ import { PublicBrand } from '../components/PublicBrand';
 import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { supabase } from '../lib/supabase';
 import { apiFetch, showToast } from '../services/apiClient';
+import type { MfaPolicyResponse } from '../stores/authContext';
 
 const loginSchema = z.object({
   email: z.string().trim().email('กรุณากรอกอีเมลให้ถูกต้อง'),
@@ -54,7 +55,7 @@ export function LoginPage() {
     }
 
     try {
-      const { data: signInData, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         ...values,
         options: { captchaToken },
       });
@@ -66,9 +67,8 @@ export function LoginPage() {
       }
 
       const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
-      const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      const hasVerifiedFactor = signInData.user?.factors?.some((factor) => factor.status === 'verified') ?? false;
-      if ((aalError && hasVerifiedFactor) || (!aalError && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2')) {
+      const policy = await apiFetch<MfaPolicyResponse>('/api/v1/auth/mfa-policy', undefined, { silent: true });
+      if (policy.required && policy.currentLevel !== 'aal2') {
         navigate('/mfa', { replace: true, state: { from: redirectTo } });
         return;
       }
@@ -76,6 +76,8 @@ export function LoginPage() {
       await recordLoginAttempt(values.email, true);
       showToast('success', 'เข้าสู่ระบบสำเร็จ');
       navigate(redirectTo, { replace: true });
+    } catch {
+      setErrorMessage('ตรวจสอบนโยบายความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();
     }

@@ -21,3 +21,8 @@ LINE_DEFAULT_TO=
 # Public no-login ticket report page (routes/publicTickets.ts) — always enabled unless set to
 # "false" (ops kill switch to pause public intake without a redeploy, e.g. legacy's limits.enabled).
 PUBLIC_TICKET_FORM_ENABLED=true
+
+# Existing Cloudflare Turnstile widget. Never commit the real secret. The hostname list is
+# deployment-specific; production must not contain localhost or 127.0.0.1.
+TURNSTILE_SECRET=
+TURNSTILE_HOSTNAMES=localhost,127.0.0.1
