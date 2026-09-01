@@ -5,6 +5,8 @@ const required = [
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_ANON_KEY',
   'VITE_TURNSTILE_SITE_KEY',
+  'TURNSTILE_SECRET',
+  'TURNSTILE_HOSTNAMES',
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -26,6 +28,29 @@ for (const key of required) {
 if (process.env.PRODUCTION_DEPLOY_CONFIRM !== 'DEPLOY') errors.push('PRODUCTION_DEPLOY_CONFIRM must equal DEPLOY');
 if (process.env.VITE_TURNSTILE_SITE_KEY && !/^0x[A-Za-z0-9_-]+$/.test(process.env.VITE_TURNSTILE_SITE_KEY)) {
   errors.push('VITE_TURNSTILE_SITE_KEY must be a valid Cloudflare Turnstile sitekey');
+}
+
+// ฝั่ง Worker ปฏิเสธคำขอทุกครั้งเมื่อ TURNSTILE_SECRET หรือ TURNSTILE_HOSTNAMES ขาด/ผิดรูป (fail closed)
+// ตรวจตั้งแต่ตรงนี้ ไม่อย่างนั้น deploy จะผ่านหมดแต่ฟอร์มแจ้งซ่อมสาธารณะตอบ 403 ทุกคน
+const turnstileHostnames = (process.env.TURNSTILE_HOSTNAMES ?? '')
+  .split(',')
+  .map((hostname) => hostname.trim().toLowerCase())
+  .filter(Boolean);
+if (turnstileHostnames.some((hostname) => !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(hostname))) {
+  errors.push('TURNSTILE_HOSTNAMES must be bare comma-separated hostnames without scheme or path');
+}
+if (turnstileHostnames.some((hostname) => ['localhost', '127.0.0.1', '::1'].includes(hostname))) {
+  errors.push('TURNSTILE_HOSTNAMES must not contain localhost in production');
+}
+if (process.env.PRODUCTION_WEB_URL) {
+  try {
+    const webHost = new URL(process.env.PRODUCTION_WEB_URL).hostname.toLowerCase();
+    if (turnstileHostnames.length && !turnstileHostnames.includes(webHost)) {
+      errors.push('TURNSTILE_HOSTNAMES must include the PRODUCTION_WEB_URL hostname that serves the widget');
+    }
+  } catch {
+    // URL ที่ผิดรูปถูกรายงานไปแล้วโดย requireHttps
+  }
 }
 
 function requireHttps(key) {
