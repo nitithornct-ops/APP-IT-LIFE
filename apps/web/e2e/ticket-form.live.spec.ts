@@ -50,6 +50,11 @@ test.beforeAll(async () => {
       source_channel: 'guest',
       guest_name: 'E2E Ticket Form',
       public_tracking_token_hash: trackingHash,
+      privacy_consent_confirmed: true,
+      privacy_notice_version: 'e2e-ticket-form',
+      privacy_consent_at: new Date().toISOString(),
+      privacy_consent_channel: 'PUBLIC_TICKET_WEB',
+      privacy_consent_text: 'E2E consent for automatic Ticket form verification',
     })
     .select('id, ticket_no')
     .single();
