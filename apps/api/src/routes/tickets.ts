@@ -453,7 +453,7 @@ ticketsRoute.post(
     // RLS on tickets establishes that the caller is the requester, assignee or ticket.view_all staff.
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
-      .select('id, ticket_no, title, status, requester_id, assignee_id')
+      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, assignee_id')
       .eq('id', id)
       .maybeSingle();
     if (ticketError || !ticket) {
@@ -508,14 +508,41 @@ ticketsRoute.post(
     });
 
     if (!internal) {
-      const recipientId = actorId === ticket.requester_id ? ticket.assignee_id : ticket.requester_id;
-      if (recipientId && recipientId !== actorId) {
+      // ทั้งผู้แจ้งและช่างที่ถือใบต้องรู้ว่ามีข้อความใหม่ ไม่ว่าใครเป็นคนพิมพ์ (หัวหน้างานที่มี
+      // ticket.view_all ก็ตอบในใบได้) — กรองเฉพาะตัวผู้พิมพ์เองออก และกันส่งซ้ำเมื่อเป็นคนเดียวกัน
+      const recipientIds = [...new Set([ticket.requester_id, ticket.assignee_id])]
+        .filter((recipientId): recipientId is string => Boolean(recipientId) && recipientId !== actorId);
+      for (const recipientId of recipientIds) {
         await sendNotification(c.env, {
           recipientId,
           type: 'ticket_comment',
           title: `มีข้อความใหม่ใน ${ticket.ticket_no}`,
+          body: body.message.slice(0, 200),
           link: `/tickets/${id}`,
         });
+      }
+
+      // ผู้แจ้งที่เข้าทาง LINE ไม่ได้เปิดเว็บค้างไว้ จึงต้อง push ไปที่แชทด้วย ไม่เช่นนั้น
+      // การตอบกลับของช่างจะไปค้างอยู่ในใบงานที่ผู้แจ้งไม่มีเหตุให้กลับมาเปิด
+      if (actorId !== ticket.requester_id) {
+        const lineTarget = await resolveTicketRequesterLineTarget(c.env, ticket.requester_line_user_id, ticket.requester_id);
+        if (lineTarget) {
+          await sendLinePush(
+            c.env,
+            lineTarget.target,
+            `ทีม IT ตอบกลับใน ${ticket.ticket_no}: ${body.message}`,
+            lineTarget.lineUserId,
+            buildTicketFlexMessage({
+              eyebrow: 'ทีม IT ตอบกลับข้อความ',
+              title: ticket.title,
+              ticketNo: ticket.ticket_no,
+              status: String(ticket.status),
+              detail: body.message,
+              url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+              buttonLabel: 'เปิดดูและตอบกลับ',
+            }),
+          );
+        }
       }
     }
 

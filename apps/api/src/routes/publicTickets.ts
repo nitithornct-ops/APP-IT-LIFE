@@ -6,6 +6,7 @@ import { TICKET_PRIVACY_NOTICE, ticketConsentEvidence } from '../lib/privacyNoti
 import { createAdminClient } from '../lib/supabase';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { sendNotification } from '../services/notificationService';
 import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import { saveRequesterSignature } from '../services/ticketSignatureService';
@@ -15,7 +16,7 @@ import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
-import { publicSubmitTicketSchema, publicTicketStatusQuerySchema } from '../validators/publicTickets';
+import { publicSubmitTicketSchema, publicTicketMessageSchema, publicTicketStatusQuerySchema } from '../validators/publicTickets';
 import { submitTicketFeedbackSchema } from '../validators/tickets';
 import { MAX_FILE_SIZE_BYTES } from '../validators/files';
 import { ratingsMatchCriteria } from './tickets';
@@ -33,6 +34,8 @@ const PRIORITIES = ['ต่ำ', 'ปานกลาง', 'สูง', 'วิ�
 const TRACKING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_PUBLIC_TICKET_ATTACHMENTS = 5;
 const PUBLIC_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
+/** ใบที่จบแล้วไม่รับข้อความใหม่ — ผู้แจ้งต้องเปิดเรื่องใหม่ เหมือนกฎฝั่ง LINE และฝั่งพนักงาน */
+const PUBLIC_TICKET_CONVERSATION_LOCKED_STATUSES = ['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'];
 
 function normalizeTrackingToken(token: string): string {
   const compact = token.trim().replaceAll('-', '');
@@ -427,7 +430,10 @@ publicTicketsRoute.get(
     if (!ticket) return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
 
     const [{ data: worklogs }, { data: ratingCriteria }] = await Promise.all([
-      admin.from('ticket_worklogs').select('action, detail, status_from, status_to, created_at')
+      // actor_id/actor เป็นตัวบอกว่าใครพูด: ไม่มี actor_id คือข้อความของผู้แจ้งเอง (guest ไม่มีบัญชี)
+      // ส่วนที่มี actor_id คือทีม IT — หน้าเว็บใช้ค่านี้จัดข้างซ้าย/ขวาของบทสนทนา
+      admin.from('ticket_worklogs')
+        .select('id, entry_type, action, detail, status_from, status_to, created_at, actor_id, actor_label, actor:profiles!ticket_worklogs_actor_id_fkey(full_name)')
         .eq('ticket_id', ticket.id).eq('is_public', true).order('created_at', { ascending: true }),
       admin.from('ticket_rating_criteria').select('id, key, label, description, sort_order, status')
         .eq('status', 'active').order('sort_order').order('created_at'),
@@ -441,5 +447,85 @@ publicTicketsRoute.get(
     }
 
     return c.json(ok(reqId, { ticket: { ...ticket, requester_signature_url: requesterSignatureUrl }, ratingCriteria: ratingCriteria ?? [], worklogs: worklogs ?? [], attachments }));
+  },
+);
+
+/**
+ * ข้อความจากผู้แจ้งแบบ guest ถึงช่างที่ดำเนินการ — เก็บเป็น worklog สาธารณะใบเดียวกับที่ทีม IT
+ * เห็นในหน้า Ticket จึงไม่มีกล่องข้อความแยกให้ตกหล่น รหัสติดตามคือสิ่งเดียวที่ยืนยันตัวผู้แจ้ง
+ * (เหมือน GET /:id) และ rate limit กันไม่ให้ใช้เป็นช่องทางยิงข้อความ
+ */
+publicTicketsRoute.post(
+  '/:id/conversation',
+  edgeRateLimit({ keyFn: (c) => `public_ticket_message:${clientIp(c)}` }),
+  rateLimit({ windowMs: 3600_000, max: 30, keyFn: (c) => `public_ticket_message:${clientIp(c)}` }),
+  zValidator('json', publicTicketMessageSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const tokenResult = publicTicketStatusQuerySchema.safeParse({ token: c.req.header('x-tracking-token') });
+    if (!tokenResult.success) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+    }
+
+    const admin = createAdminClient(c.env);
+    const tokenHash = await hashTrackingToken(tokenResult.data.token);
+    const ticketRef = c.req.param('id')!;
+    let ticketQuery = admin
+      .from('tickets')
+      .select('id, ticket_no, title, status, guest_name, assignee_id')
+      .eq('source_channel', 'guest')
+      .eq('public_tracking_token_hash', tokenHash);
+    ticketQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketRef)
+      ? ticketQuery.eq('id', ticketRef)
+      : ticketQuery.eq('ticket_no', ticketRef);
+    const { data: ticket } = await ticketQuery.maybeSingle();
+    if (!ticket) return c.json(fail(reqId, 'PUBLIC_TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือรหัสติดตามไม่ถูกต้อง'), 404);
+
+    if (PUBLIC_TICKET_CONVERSATION_LOCKED_STATUSES.includes(String(ticket.status))) {
+      return c.json(fail(reqId, 'PUBLIC_TICKET_CONVERSATION_LOCKED', 'Ticket นี้ปิดแล้ว หากยังพบปัญหากรุณาแจ้งเรื่องใหม่'), 409);
+    }
+
+    const { message } = c.req.valid('json');
+    const { data: worklog, error } = await admin
+      .from('ticket_worklogs')
+      .insert({
+        ticket_id: ticket.id,
+        entry_type: 'comment',
+        action: 'ข้อความสนทนา',
+        detail: message,
+        is_public: true,
+        actor_label: `ผู้แจ้งผ่านหน้าสาธารณะ: ${ticket.guest_name ?? '-'}`,
+      })
+      .select('id, entry_type, action, detail, status_from, status_to, created_at, actor_id, actor_label')
+      .single();
+    if (error || !worklog) return dbFailJson(c, 'PUBLIC_TICKET_MESSAGE_FAILED', error, 'ส่งข้อความไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorEmail: `GUEST:${clientIp(c)}`, action: 'COMMENT', module: 'ticket',
+      targetTable: 'ticket_worklogs', targetId: String(worklog.id),
+      detail: { ticketId: ticket.id, channel: 'guest' }, requestId: reqId,
+    });
+
+    if (ticket.assignee_id) {
+      await sendNotification(c.env, {
+        recipientId: String(ticket.assignee_id),
+        type: 'ticket_comment',
+        title: `มีข้อความใหม่ใน ${ticket.ticket_no}`,
+        body: message.slice(0, 200),
+        link: `/tickets/${ticket.id}`,
+      });
+    }
+    await notifyTicketTeam(c.env, `ข้อความใหม่จากผู้แจ้ง (${ticket.ticket_no}): ${message}`, buildTicketFlexMessage({
+      eyebrow: 'ผู้แจ้งส่งข้อความใหม่',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: ticket.status,
+      requesterName: ticket.guest_name,
+      detail: message,
+      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      buttonLabel: 'ตอบกลับผู้แจ้ง',
+    }));
+
+    return c.json(ok(reqId, worklog), 201);
   },
 );

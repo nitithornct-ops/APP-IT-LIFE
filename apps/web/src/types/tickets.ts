@@ -57,7 +57,12 @@ export interface TicketWorklog {
   minutes_spent: number | null;
   is_public: boolean;
   entry_type: 'timeline' | 'comment' | 'internal_note' | 'worklog';
-  actor_id: string;
+  /** ว่างได้ — worklog ที่ผู้แจ้งแบบ guest เป็นคนสร้างไม่มีบัญชีผูกอยู่ */
+  actor_id: string | null;
+  /** มีค่าเมื่อผู้แจ้งทำรายการผ่าน LINE Portal ใช้บอกว่าข้อความมาจากฝั่งผู้แจ้ง */
+  actor_line_user_id: string | null;
+  /** ชื่อที่แสดงแทน actor สำหรับรายการที่ผู้แจ้งแบบ guest เป็นคนทำ */
+  actor_label: string | null;
   actor: { full_name: string; email: string } | null;
   created_at: string;
 }

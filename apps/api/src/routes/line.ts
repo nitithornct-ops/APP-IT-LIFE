@@ -12,6 +12,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { sendNotification } from '../services/notificationService';
 import { createSignedUrl, deleteFile, uploadPublicTicketFile } from '../services/storageService';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
 import { saveRequesterSignature } from '../services/ticketSignatureService';
@@ -558,7 +559,7 @@ lineRoute.post(
     const admin = createAdminClient(c.env);
     const { data: ticket } = await admin
       .from('tickets')
-      .select('id, ticket_no, title, status, requester_id, requester_line_user_id')
+      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, assignee_id')
       .eq('id', c.req.param('id'))
       .maybeSingle();
     const belongsToLineUser = ticket?.requester_line_user_id === user.id
@@ -591,6 +592,16 @@ lineRoute.post(
       targetTable: 'ticket_worklogs', targetId: String(worklog.id),
       detail: { ticketId: ticket.id, channel: 'line' }, requestId: reqId,
     });
+    // ช่างที่ถือใบนี้ต้องเห็นในกระดิ่งของตัวเอง ไม่ใช่เห็นแค่ในห้อง LINE รวมของทีม
+    if (ticket.assignee_id) {
+      await sendNotification(c.env, {
+        recipientId: String(ticket.assignee_id),
+        type: 'ticket_comment',
+        title: `มีข้อความใหม่ใน ${ticket.ticket_no}`,
+        body: message.slice(0, 200),
+        link: `/tickets/${ticket.id}`,
+      });
+    }
     await notifyTicketTeam(c.env, `ข้อความใหม่จากผู้แจ้ง (${ticket.ticket_no}): ${message}`, buildTicketFlexMessage({
       eyebrow: 'ผู้แจ้งส่งข้อความใหม่',
       title: ticket.title,

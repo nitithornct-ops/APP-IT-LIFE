@@ -310,6 +310,57 @@ describe('PublicTicketPortalPage guest status search', () => {
     expect(signoffCall?.[1]?.body).toBeInstanceOf(FormData);
   });
 
+  it('lets the guest reply to the technician on the same ticket', async () => {
+    getLineSessionTokenMock.mockReturnValue(null);
+    const sent: string[] = [];
+    publicTicketApiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/public/tickets/form-data') {
+        return Promise.resolve({ enabled: true, categories: [], priorities: [], privacy: { version: 'test', summary: '', dpoContact: '' } });
+      }
+      if (path === '/api/v1/public/tickets/guest-ticket-2/conversation') {
+        sent.push(String(init?.body));
+        return Promise.resolve({ id: 'log-3' });
+      }
+      if (path === '/api/v1/public/tickets/TCK-2026-0100' || path === '/api/v1/public/tickets/guest-ticket-2') {
+        return Promise.resolve({
+          ticket: {
+            id: 'guest-ticket-2', ticket_no: 'TCK-2026-0100', title: 'จอไม่ติด', description: 'กดปุ่มแล้วไม่มีภาพ',
+            status: 'กำลังดำเนินการ', priority: 'ปานกลาง', resolution: null, created_at: '2026-08-19T03:00:00.000Z',
+            resolved_at: null, closed_at: null, guest_name: 'สมชาย ใจดี', rating: null, rating_details: null,
+            rating_criteria_snapshot: null, feedback: null, feedback_at: null,
+            requester_signature_url: null, requester_signature_uploaded_at: null, category: { name: 'คอมพิวเตอร์' },
+          },
+          ratingCriteria: [],
+          worklogs: [
+            { id: 'log-1', entry_type: 'timeline', action: 'รับเรื่องแล้ว', detail: null, status_from: 'ใหม่', status_to: 'รับเรื่องแล้ว', created_at: '2026-08-19T04:00:00.000Z', actor_id: 'staff-1', actor: { full_name: 'ช่างเอ' } },
+            { id: 'log-2', entry_type: 'comment', action: 'ข้อความสนทนา', detail: 'ขอสอบถามรุ่นจอด้วยครับ', status_from: null, status_to: null, created_at: '2026-08-19T05:00:00.000Z', actor_id: 'staff-1', actor: { full_name: 'ช่างเอ' } },
+          ],
+          attachments: [],
+        });
+      }
+      return Promise.reject(new Error(`Unexpected public API path: ${path}`));
+    });
+
+    render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'ติดตามสถานะ' }));
+    fireEvent.change(screen.getByLabelText('เลข Ticket'), { target: { value: 'TCK-2026-0100' } });
+    fireEvent.change(screen.getByLabelText('รหัสติดตาม'), { target: { value: 'ABCD-EFGH-JKLM' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบสถานะ' }));
+
+    const thread = await screen.findByTestId('public-ticket-conversation');
+    // ข้อความของช่างอยู่ในห้องสนทนา ส่วนเหตุการณ์เปลี่ยนสถานะยังอยู่ในไทม์ไลน์เท่านั้น
+    expect(within(thread).getByText('ขอสอบถามรุ่นจอด้วยครับ')).toBeVisible();
+    expect(within(thread).getByText(/ช่างเอ · ช่างผู้ดำเนินการ/)).toBeVisible();
+    expect(within(thread).queryByText('รับเรื่องแล้ว')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('พิมพ์ข้อความถึงช่างผู้ดำเนินการ'), { target: { value: 'รุ่น Dell P2419H ครับ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งข้อความ' }));
+
+    await waitFor(() => expect(sent).toEqual([JSON.stringify({ message: 'รุ่น Dell P2419H ครับ' })]));
+    const messageCall = publicTicketApiFetchMock.mock.calls.find(([path]) => String(path).endsWith('/conversation'));
+    expect(messageCall?.[1]?.headers).toEqual({ 'x-tracking-token': 'ABCD-EFGH-JKLM' });
+  });
+
   it('shows a cancelled branch at the last normal flow step reached', async () => {
     getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockImplementation((path: string) => {

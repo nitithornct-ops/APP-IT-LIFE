@@ -90,11 +90,19 @@ interface TrackedTicket {
   };
   ratingCriteria: TicketRatingCriterion[];
   worklogs: Array<{
+    id?: string;
+    /** ไม่มีค่าเมื่อ API รุ่นเก่ายังไม่ส่งกลับมา — ถือเป็นรายการไทม์ไลน์ตามเดิม */
+    entry_type?: 'timeline' | 'comment' | 'internal_note' | 'worklog';
     action: string;
     detail: string | null;
     status_from: TicketStatus | null;
     status_to: TicketStatus | null;
     created_at: string;
+    /** ไม่มี actor_id/actor คือข้อความของผู้แจ้งเอง ที่เหลือคือทีม IT */
+    actor_id?: string | null;
+    actor_line_user_id?: string | null;
+    actor_label?: string | null;
+    actor?: { full_name: string } | null;
   }>;
   attachments: Array<{
     id: string;
@@ -153,6 +161,8 @@ const DEFAULT_PRIVACY = {
   dpoContact: 'DPO / ส่วนงาน IT',
   consentText: 'ข้าพเจ้าอ่านและยอมรับการใช้ข้อมูลเพื่อรับเรื่อง แจ้งสถานะ ดำเนินการแจ้งซ่อม และเก็บหลักฐานตามนโยบายขององค์กร',
 };
+/** ใบที่จบแล้วไม่รับข้อความใหม่ — ตรงกับกฎฝั่ง API ทั้งช่องทาง guest และ LINE */
+const CONVERSATION_LOCKED_STATUSES: TicketStatus[] = ['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'];
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
@@ -872,6 +882,41 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     }
   }
 
+  /** ดึงใบเดิมซ้ำจากช่องทางที่เปิดอยู่ — ใช้ทั้งหลังส่งข้อความและตอนรีเฟรชอัตโนมัติ */
+  async function reloadDetail(access: NonNullable<typeof detailAccess>): Promise<TrackedTicket> {
+    return access.channel === 'line'
+      ? lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${access.id}`)
+      : publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(access.id)}`, {
+        headers: { 'x-tracking-token': access.token ?? '' },
+      });
+  }
+
+  // ผู้แจ้งเปิดหน้านี้ค้างไว้รอคำตอบจากช่าง จึงดึงซ้ำเป็นระยะแทนที่จะให้กด refresh เอง
+  // ผูกกับ detailAccess ไม่ใช่ detail เพื่อไม่ให้ตั้ง interval ใหม่ทุกครั้งที่ข้อมูลเปลี่ยน
+  useEffect(() => {
+    if (!detailAccess) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      void reloadDetail(detailAccess).then(setDetail).catch(() => undefined);
+    }, 15_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailAccess]);
+
+  async function sendMessage(message: string) {
+    if (!detailAccess) throw new Error('ไม่พบข้อมูลสำหรับส่งข้อความ');
+    if (detailAccess.channel === 'line') {
+      await lineApiFetch(`/api/v1/line/tickets/${detailAccess.id}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
+    } else {
+      await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/conversation`, {
+        method: 'POST',
+        headers: { 'x-tracking-token': detailAccess.token ?? '' },
+        body: JSON.stringify({ message }),
+      });
+    }
+    setDetail(await reloadDetail(detailAccess));
+  }
+
   async function signoff(file: File, ratings: TicketRatingDetails, feedback?: string) {
     if (!detailAccess) throw new Error('ไม่พบข้อมูลสำหรับยืนยัน Ticket');
     const body = new window.FormData();
@@ -895,6 +940,7 @@ function StatusTab({ onReport }: { onReport: () => void }) {
         detail={detail}
         onBack={() => { setDetail(null); setDetailAccess(null); }}
         onSign={signoff}
+        onSendMessage={sendMessage}
       />
     );
   }
@@ -994,14 +1040,19 @@ function TicketDetailView({
   detail,
   onBack,
   onSign,
+  onSendMessage,
 }: {
   detail: TrackedTicket;
   onBack: () => void;
   onSign: (file: File, ratings: TicketRatingDetails, feedback?: string) => Promise<void>;
+  onSendMessage: (message: string) => Promise<void>;
 }) {
   const { ticket } = detail;
   const lastWorklog = detail.worklogs[detail.worklogs.length - 1];
   const lastUpdatedAt = lastWorklog?.created_at ?? ticket.created_at;
+  // บทสนทนากับไทม์ไลน์เก็บในตารางเดียวกัน แยกด้วย entry_type เพื่อให้แต่ละส่วนอ่านได้เป็นเรื่องเดียว
+  const conversation = detail.worklogs.filter((log) => log.entry_type === 'comment');
+  const timeline = detail.worklogs.filter((log) => log.entry_type !== 'comment');
   const signoffCard = (
     <RequesterSignoffCard
       status={ticket.status}
@@ -1052,7 +1103,7 @@ function TicketDetailView({
 
         <div className="space-y-5 p-4 sm:p-6">
           <CurrentTicketStatus status={ticket.status} updatedAt={lastUpdatedAt} />
-          <TicketStatusFlow status={ticket.status} worklogs={detail.worklogs} />
+          <TicketStatusFlow status={ticket.status} worklogs={timeline} />
         </div>
       </section>
 
@@ -1085,7 +1136,13 @@ function TicketDetailView({
             </div>
           </section>
 
-          <TicketTimeline worklogs={detail.worklogs} />
+          <TicketConversation
+            messages={conversation}
+            locked={CONVERSATION_LOCKED_STATUSES.includes(ticket.status)}
+            onSendMessage={onSendMessage}
+          />
+
+          <TicketTimeline worklogs={timeline} />
         </div>
 
         <aside className="min-w-0 space-y-4" aria-label="ข้อมูลประกอบ Ticket">
@@ -1181,6 +1238,116 @@ function TicketStatusFlow({ status, worklogs }: { status: TicketStatus; worklogs
           <p>Flow ปกติหยุดที่ขั้น “{TICKET_FLOW_STEPS[currentIndex]?.label ?? TICKET_FLOW_STEPS[0].label}” เนื่องจากสถานะปัจจุบันคือ {ticketStatusLabel[status]}</p>
         </div>
       )}
+    </section>
+  );
+}
+
+/** ผู้แจ้งอยู่ฝั่งขวา ทีม IT อยู่ฝั่งซ้าย — ข้อความที่ไม่มี actor ผูกอยู่คือของผู้แจ้งเอง */
+function messageFromRequester(log: TrackedTicket['worklogs'][number]): boolean {
+  return Boolean(log.actor_line_user_id) || (!log.actor_id && !log.actor?.full_name);
+}
+
+/**
+ * ห้องสนทนาระหว่างผู้แจ้งกับช่างผู้ดำเนินการบนใบงานเดียวกัน — ข้อความถูกเก็บเป็น worklog
+ * สาธารณะ ทีม IT จึงเห็นในหน้า Ticket ของระบบหลังบ้านทันทีโดยไม่ต้องมีกล่องข้อความแยก
+ */
+function TicketConversation({
+  messages,
+  locked,
+  onSendMessage,
+}: {
+  messages: TrackedTicket['worklogs'];
+  locked: boolean;
+  onSendMessage: (message: string) => Promise<void>;
+}) {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = message.trim();
+    if (!trimmed || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await onSendMessage(trimmed);
+      setMessage('');
+    } catch (error) {
+      setSendError(error instanceof ApiError ? error.message : 'ส่งข้อความไม่สำเร็จ');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className={`${CARD} p-5 sm:p-6`} aria-labelledby="ticket-conversation-title" data-testid="public-ticket-conversation">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary-600">Conversation</p>
+            <h3 id="ticket-conversation-title" className="text-base font-bold text-slate-900">ข้อความถึงช่างผู้ดำเนินการ</h3>
+          </div>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">{messages.length} ข้อความ</span>
+      </div>
+
+      {messages.length === 0 ? (
+        <p className="mt-5 rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs leading-5 text-slate-500">
+          ยังไม่มีข้อความ — ส่งข้อมูลเพิ่มเติมหรือสอบถามความคืบหน้าได้ที่นี่ ช่างผู้ดำเนินการจะเห็นข้อความบนใบงานเดียวกัน
+        </p>
+      ) : (
+        <ul className="mt-5 flex flex-col gap-3" aria-label="บทสนทนากับช่างผู้ดำเนินการ">
+          {messages.map((log, index) => {
+            const mine = messageFromRequester(log);
+            return (
+              <li key={log.id ?? `${log.created_at}-${index}`} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                <span className="text-[10px] text-slate-500">
+                  {mine ? 'ท่าน' : `${log.actor?.full_name ?? 'ทีม IT'} · ช่างผู้ดำเนินการ`} · {formatTicketDate(log.created_at)}
+                </span>
+                <span
+                  className={`mt-1 max-w-[85%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm leading-6 ${
+                    mine ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {log.detail ?? log.action}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {locked ? (
+        <p className="mt-5 rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+          Ticket นี้ปิดแล้ว จึงไม่รับข้อความเพิ่ม หากยังพบปัญหากรุณาแจ้งเรื่องใหม่
+        </p>
+      ) : (
+        <form onSubmit={(event) => void submit(event)} className="mt-5 flex items-end gap-2">
+          <label htmlFor="public-ticket-message" className="sr-only">พิมพ์ข้อความถึงช่างผู้ดำเนินการ</label>
+          <textarea
+            id="public-ticket-message"
+            className={`${INPUT} min-h-11 flex-1 resize-none`}
+            rows={2}
+            value={message}
+            maxLength={1000}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="พิมพ์ข้อความ..."
+          />
+          <button
+            type="submit"
+            disabled={sending || message.trim().length === 0}
+            className={`${PRIMARY_BUTTON} h-11 w-11 shrink-0 !px-0`}
+            aria-label="ส่งข้อความ"
+          >
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        </form>
+      )}
+      {sendError && <p className="mt-2 text-xs text-rose-700" role="alert">{sendError}</p>}
     </section>
   );
 }
