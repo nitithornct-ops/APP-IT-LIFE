@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TicketDetail } from '../../types/tickets';
+import type { TicketDetail, TicketWorklog } from '../../types/tickets';
+import { TicketConversationPanel } from './TicketConversationPanel';
 import { UpdateWorkPanel } from './TicketDetailPage';
 
 const { apiFetchMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn() }));
@@ -84,6 +85,19 @@ function renderWorkPanel(ticket: TicketDetail) {
 afterEach(cleanup);
 
 describe('Ticket work panel', () => {
+  it('keeps the Outsource sidebar fields in one explicit grid column', () => {
+    renderWorkPanel(makeTicket());
+    fireEvent.change(screen.getByLabelText('สถานะ'), { target: { value: 'ส่งต่อ Outsource' } });
+
+    const form = screen.getByTestId('ticket-work-panel').querySelector('form');
+    expect(screen.getByLabelText('เลือกจากทะเบียน Vendor')).toBeVisible();
+    expect(screen.getByLabelText('ชื่อผู้ให้บริการภายนอก (กรณีไม่มีในทะเบียน)')).toBeVisible();
+    expect(screen.getByLabelText('เลขแจ้งปัญหา (ถ้ามี)')).toBeVisible();
+    expect(form).toHaveClass('grid-cols-1');
+    expect(form).not.toHaveClass('sm:grid-cols-2');
+    expect(form?.querySelectorAll('[class~="sm:col-span-2"]')).toHaveLength(0);
+  });
+
   it('resets its fields from the refreshed Ticket instead of retaining a stale status', async () => {
     const ticket = makeTicket();
     const { rerender } = renderWorkPanel(ticket);
@@ -121,5 +135,84 @@ describe('Ticket work panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'บันทึก' }));
     expect(await screen.findByText('กรุณาระบุชื่อผู้ให้บริการภายนอก')).toBeVisible();
     expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+});
+
+function makeWorklog(overrides: Partial<TicketWorklog> = {}): TicketWorklog {
+  return {
+    id: 'log-1',
+    ticket_id: 'ticket-1',
+    action: 'ข้อความสนทนา',
+    detail: 'ข้อความทดสอบ',
+    status_from: null,
+    status_to: null,
+    minutes_spent: null,
+    is_public: true,
+    entry_type: 'comment',
+    actor_id: null,
+    actor_line_user_id: null,
+    actor_label: null,
+    actor: null,
+    created_at: '2026-09-01T03:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function renderConversation(ticket: TicketDetail, viewerId = 'staff-1') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <TicketConversationPanel ticket={ticket} viewerId={viewerId} canComment canInternalNote={false} />
+    </QueryClientProvider>,
+  );
+}
+
+describe('Ticket conversation panel', () => {
+  it('shows only the chat entries, so status events stay on the work timeline', () => {
+    renderConversation(makeTicket({
+      worklogs: [
+        makeWorklog({ id: 'log-1', detail: 'เครื่องยังเปิดไม่ติดครับ' }),
+        makeWorklog({ id: 'log-2', entry_type: 'timeline', action: 'รับเรื่องแล้ว', detail: 'กำลังเข้าตรวจสอบ', actor_id: 'staff-1' }),
+        makeWorklog({ id: 'log-3', detail: 'กำลังเข้าไปดูให้ครับ', actor_id: 'staff-1', actor: { full_name: 'ช่างเอ', email: 'a@example.com' } }),
+      ],
+    }));
+
+    expect(screen.getByText('เครื่องยังเปิดไม่ติดครับ')).toBeVisible();
+    expect(screen.getByText('กำลังเข้าไปดูให้ครับ')).toBeVisible();
+    expect(screen.queryByText('กำลังเข้าตรวจสอบ')).toBeNull();
+    expect(screen.getByText('2 ข้อความ')).toBeVisible();
+  });
+
+  it('names each side so the requester and the technician are never confused', () => {
+    renderConversation(makeTicket({
+      requester_name_snapshot: 'สมชาย ใจดี',
+      worklogs: [
+        makeWorklog({ id: 'log-1', detail: 'เครื่องยังเปิดไม่ติดครับ' }),
+        makeWorklog({ id: 'log-2', detail: 'กำลังเข้าไปดูให้ครับ', actor_id: 'staff-1', actor: { full_name: 'ช่างเอ', email: 'a@example.com' } }),
+      ],
+    }));
+
+    expect(screen.getByText(/สมชาย ใจดี · ผู้แจ้ง/)).toBeVisible();
+    expect(screen.getByText(/^คุณ ·/)).toBeVisible();
+  });
+
+  it('sends the typed message to the ticket conversation endpoint', async () => {
+    apiFetchMock.mockResolvedValue({});
+    renderConversation(makeTicket());
+
+    fireEvent.change(screen.getByLabelText('ข้อความสนทนา'), { target: { value: 'อีกครึ่งชั่วโมงเข้าไปดูครับ' } });
+    fireEvent.click(screen.getByRole('button', { name: /ส่ง/ }));
+
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/conversation', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'อีกครึ่งชั่วโมงเข้าไปดูครับ', visibility: 'public' }),
+    }));
+  });
+
+  it('blocks a new public message once the Ticket is closed', () => {
+    renderConversation(makeTicket({ status: 'ปิดงาน' }));
+
+    expect(screen.getByLabelText('ข้อความสนทนา')).toBeDisabled();
+    expect(screen.getByText('Ticket ที่ปิดหรือยกเลิกแล้วเพิ่มได้เฉพาะบันทึกภายใน')).toBeVisible();
   });
 });

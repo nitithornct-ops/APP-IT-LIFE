@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TICKET_RATING_CRITERIA, type TicketRatingCriterion } from '@itlife/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, FileText, MessageSquare, Paperclip, RotateCcw, Send, Shield, Star, Ticket as TicketIcon, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, FileText, History, Paperclip, RotateCcw, Star, Ticket as TicketIcon, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -24,6 +24,8 @@ import type { AssignableStaff, TicketDetail, TicketStatus } from '../../types/ti
 import type { ContractVendorRef } from '../../types/vendorsContracts';
 import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, type Incident } from '../../types/incidents';
 import { formatThaiDate } from '../../utils/date';
+import { TicketConversationPanel } from './TicketConversationPanel';
+import { isConversationEntry } from './ticketConversation';
 import { TicketFeedbackPanel } from './TicketFeedbackPanel';
 import { TicketSignaturePanel } from './TicketSignaturePanel';
 import { canSubmitTicketFeedback } from './ticketFeedback';
@@ -192,7 +194,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
             </select>
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <label htmlFor="upd-note" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               บันทึกเพิ่มเติม
             </label>
@@ -218,7 +220,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
           </div>
 
           {selectedStatus === 'เสร็จสิ้น' && (
-            <div className="sm:col-span-2">
+            <div className="col-span-full">
               <label htmlFor="upd-resolution" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
                 ผลการแก้ไข (จำเป็นก่อนส่งให้ผู้แจ้งตรวจรับ)
               </label>
@@ -261,12 +263,12 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
           )}
 
           {selectedStatus === 'ยกเลิก' && (
-            <p className="text-xs text-amber-600 sm:col-span-2">กรุณาระบุเหตุผลการยกเลิกในช่อง "บันทึกเพิ่มเติม" ด้านบน</p>
+            <p className="col-span-full text-xs text-amber-600">กรุณาระบุเหตุผลการยกเลิกในช่อง "บันทึกเพิ่มเติม" ด้านบน</p>
           )}
 
-          {serverError && <p className="text-xs text-red-600 sm:col-span-2">{serverError}</p>}
+          {serverError && <p className="col-span-full text-xs text-red-600">{serverError}</p>}
 
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <Button type="submit" size="sm" isLoading={isSubmitting}>
               บันทึก
             </Button>
@@ -357,72 +359,6 @@ function EscalateIncidentPanel({ ticket }: { ticket: TicketDetail }) {
   );
 }
 
-function ConversationComposer({
-  ticketId,
-  canComment,
-  canInternalNote,
-  publicLocked,
-}: {
-  ticketId: string;
-  canComment: boolean;
-  canInternalNote: boolean;
-  publicLocked: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const [message, setMessage] = useState('');
-  const [internal, setInternal] = useState(!canComment && canInternalNote);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const mutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/tickets/${ticketId}/conversation`, {
-      method: 'POST',
-      body: JSON.stringify({ message, visibility: internal ? 'internal' : 'public' }),
-    }),
-    onSuccess: () => {
-      setMessage('');
-      setServerError(null);
-      void queryClient.invalidateQueries({ queryKey: ['tickets', ticketId] });
-    },
-    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'ส่งข้อความไม่สำเร็จ'),
-  });
-
-  if (!canComment && !canInternalNote) return null;
-  const selectedLocked = !internal && publicLocked;
-
-  return (
-    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-      {canInternalNote && (
-        <label className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-          <input
-            type="checkbox"
-            checked={internal}
-            onChange={(event) => setInternal(event.target.checked)}
-            disabled={!canComment && canInternalNote}
-          />
-          <Shield className="h-3.5 w-3.5" />บันทึกภายใน (ผู้แจ้งจะไม่เห็น)
-        </label>
-      )}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="flex-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-          {internal ? 'บันทึกสำหรับเจ้าหน้าที่' : 'ข้อความถึงผู้เกี่ยวข้อง'}
-          <textarea
-            aria-label={internal ? 'บันทึกภายใน' : 'ข้อความสนทนา'}
-            rows={2}
-            value={message}
-            disabled={selectedLocked}
-            onChange={(event) => setMessage(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
-        </label>
-        <Button size="sm" disabled={!message.trim() || selectedLocked} isLoading={mutation.isPending} onClick={() => mutation.mutate()}>
-          <Send className="h-4 w-4" />ส่ง
-        </Button>
-      </div>
-      {selectedLocked && <p className="mt-2 text-xs text-amber-600">Ticket ที่ปิดหรือยกเลิกแล้วเพิ่มได้เฉพาะบันทึกภายใน</p>}
-      {serverError && <p className="mt-2 text-xs text-red-600">{serverError}</p>}
-    </div>
-  );
-}
-
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -432,6 +368,10 @@ export function TicketDetailPage() {
     queryKey: ['tickets', id],
     queryFn: () => apiFetch<TicketDetail>(`/api/v1/tickets/${id}`),
     enabled: !!id,
+    // ผู้แจ้งกับช่างคุยกันคนละหน้าจอ ถ้าไม่ดึงซ้ำจะเห็นข้อความใหม่ต่อเมื่อ refresh เอง
+    // หยุดดึงเมื่อแท็บไม่ได้อยู่หน้าจอ เพื่อไม่ให้แท็บที่เปิดค้างไว้ยิง API ตลอดวัน
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 
   const staffQuery = useQuery({
@@ -479,6 +419,8 @@ export function TicketDetailPage() {
     hasPermission('ticket.escalate') &&
     !ticket.incident_id &&
     !['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(ticket.status);
+  // บทสนทนาย้ายไปอยู่ในห้องแชทแล้ว ไทม์ไลน์จึงเหลือเฉพาะเหตุการณ์การดำเนินงาน
+  const timelineLogs = ticket.worklogs.filter((log) => !isConversationEntry(log));
   const ratingBreakdown = ticket.rating_criteria_snapshot?.length
     ? ticket.rating_criteria_snapshot
     : TICKET_RATING_CRITERIA.flatMap((criterion) => {
@@ -543,35 +485,40 @@ export function TicketDetailPage() {
           </Card>
         </>}
         timeline={<>
+          <TicketConversationPanel
+            ticket={ticket}
+            viewerId={me?.profile.id}
+            canComment={canComment}
+            canInternalNote={canInternalNote}
+          />
           <Card>
-            <CardHeader><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" />การสนทนาและประวัติการดำเนินงาน</span></CardHeader>
+            <CardHeader><span className="flex items-center gap-2"><History className="h-4 w-4" aria-hidden="true" />ประวัติการดำเนินงาน</span></CardHeader>
             <CardBody>
-              <ConversationComposer
-                ticketId={ticket.id}
-                canComment={canComment}
-                canInternalNote={canInternalNote}
-                publicLocked={ticket.status === 'ปิดงาน' || ticket.status === 'ยกเลิก'}
-              />
-              <ol className="flex flex-col gap-3">
-                {ticket.worklogs.map((w) => (
-                  <li key={w.id} className={`border-l-2 pl-3 text-sm ${w.entry_type === 'internal_note' ? 'border-amber-400 bg-amber-50/60 py-2 pr-2 dark:bg-amber-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
-                    <p className="font-semibold text-slate-800 dark:text-slate-200">
-                      {w.action}
-                      {w.entry_type === 'internal_note' && <span className="ml-2"><Badge variant="warning">ภายใน</Badge></span>}
-                      {w.status_from && w.status_to && w.status_from !== w.status_to && (
-                        <span className="ml-1 font-normal text-slate-400">
-                          ({ticketStatusLabel[w.status_from]} → {ticketStatusLabel[w.status_to]})
-                        </span>
-                      )}
-                    </p>
-                    {w.detail && <p className="text-slate-600 dark:text-slate-300">{w.detail}</p>}
-                    <p className="text-xs text-slate-400">
-                      {w.actor?.full_name ?? '—'} · {formatThaiDate(w.created_at, 'd MMM yyyy HH:mm')}
-                      {w.minutes_spent ? ` · ${w.minutes_spent} นาที` : ''}
-                    </p>
-                  </li>
-                ))}
-              </ol>
+              {timelineLogs.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  ยังไม่มีบันทึกการดำเนินงาน
+                </p>
+              ) : (
+                <ol className="flex flex-col gap-3">
+                  {timelineLogs.map((w) => (
+                    <li key={w.id} className="border-l-2 border-slate-200 pl-3 text-sm dark:border-slate-700">
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                        {w.action}
+                        {w.status_from && w.status_to && w.status_from !== w.status_to && (
+                          <span className="ml-1 font-normal text-slate-400">
+                            ({ticketStatusLabel[w.status_from]} → {ticketStatusLabel[w.status_to]})
+                          </span>
+                        )}
+                      </p>
+                      {w.detail && <p className="text-slate-600 dark:text-slate-300">{w.detail}</p>}
+                      <p className="text-xs text-slate-400">
+                        {w.actor?.full_name ?? w.actor_label ?? '—'} · {formatThaiDate(w.created_at, 'd MMM yyyy HH:mm')}
+                        {w.minutes_spent ? ` · ${w.minutes_spent} นาที` : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </CardBody>
           </Card>
           <TicketSignaturePanel

@@ -32,3 +32,13 @@ export type PublicSubmitTicketInput = z.infer<typeof publicSubmitTicketSchema>;
 export const publicTicketStatusQuerySchema = z.object({
   token: z.string().trim().regex(/^(?:[0-9a-f]{64}|[A-HJ-NP-Z2-9]{12}|[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2})$/i, 'รหัสติดตามไม่ถูกต้อง'),
 });
+
+/**
+ * ข้อความที่ผู้แจ้งแบบ guest ส่งถึงช่างบนใบงาน — ความยาวเท่ากับฝั่ง LINE
+ * (lineTicketMessageSchema) เพื่อให้ทั้งสองช่องทางมีข้อจำกัดเดียวกัน
+ */
+export const publicTicketMessageSchema = z.object({
+  message: z.string().trim().min(1, 'กรุณาพิมพ์ข้อความก่อนส่ง').max(1000, 'ข้อความยาวได้ไม่เกิน 1000 ตัวอักษร'),
+});
+
+export type PublicTicketMessageInput = z.infer<typeof publicTicketMessageSchema>;

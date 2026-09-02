@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ApiResponse } from '@itlife/shared';
 import app from '../src/index';
 import type { Bindings } from '../src/types';
-import { publicSubmitTicketSchema, publicTicketStatusQuerySchema } from '../src/validators/publicTickets';
+import { publicSubmitTicketSchema, publicTicketMessageSchema, publicTicketStatusQuerySchema } from '../src/validators/publicTickets';
 
 const VALID_CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -94,5 +94,47 @@ describe('deprecated public ticket identity lookup', () => {
     expect(body.success).toBe(false);
     if (body.success) throw new Error('expected an error response');
     expect(body.error.code).toBe('TRACKING_TOKEN_REQUIRED');
+  });
+});
+
+describe('public ticket conversation validator', () => {
+  it('trims the message and keeps the same 1000-character limit as the LINE channel', () => {
+    expect(publicTicketMessageSchema.parse({ message: '  เครื่องยังเปิดไม่ติดครับ  ' }).message).toBe('เครื่องยังเปิดไม่ติดครับ');
+    expect(publicTicketMessageSchema.safeParse({ message: 'x'.repeat(1000) }).success).toBe(true);
+    expect(publicTicketMessageSchema.safeParse({ message: 'x'.repeat(1001) }).success).toBe(false);
+  });
+
+  it('rejects an empty or whitespace-only message', () => {
+    expect(publicTicketMessageSchema.safeParse({ message: '' }).success).toBe(false);
+    expect(publicTicketMessageSchema.safeParse({ message: '   ' }).success).toBe(false);
+    expect(publicTicketMessageSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('guest ticket conversation endpoint', () => {
+  const env: Bindings = {
+    SUPABASE_URL: 'https://example.invalid', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test',
+    ALLOWED_ORIGINS: 'http://localhost:5173', ENVIRONMENT: 'test',
+  };
+
+  /** รหัสติดตามคือสิ่งเดียวที่ยืนยันตัวผู้แจ้ง — ไม่มีรหัสต้องไม่แตะฐานข้อมูลเลย */
+  it('refuses a message that carries no tracking token', async () => {
+    const response = await app.request('/api/v1/public/tickets/TCK-001/conversation', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'ขอสอบถามความคืบหน้าครับ' }),
+    }, env);
+    expect(response.status).toBe(404);
+    const body = await response.json() as ApiResponse<never>;
+    if (body.success) throw new Error('expected an error response');
+    expect(body.error.code).toBe('PUBLIC_TICKET_NOT_FOUND');
+  });
+
+  it('rejects an empty message before checking the tracking token', async () => {
+    const response = await app.request('/api/v1/public/tickets/TCK-001/conversation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-tracking-token': 'ABCD-EFGH-JKLM' },
+      body: JSON.stringify({ message: '   ' }),
+    }, env);
+    expect(response.status).toBe(400);
   });
 });
