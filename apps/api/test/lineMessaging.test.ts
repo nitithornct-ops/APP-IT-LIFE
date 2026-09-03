@@ -4,7 +4,9 @@ import type { Bindings } from '../src/types';
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ createAdminClient: () => ({ from: mocks.from }) }));
 
-import { buildTicketFlexMessage, resolveTicketRequesterLineTarget, sendLinePush } from '../src/lib/lineMessaging';
+import {
+  buildTicketFlexMessage, buildUserNotificationFlexMessage, resolveTicketRequesterLineTarget, resolveUserLineTarget, sendLinePush,
+} from '../src/lib/lineMessaging';
 
 const env = {} as Bindings;
 
@@ -41,6 +43,26 @@ describe('resolveTicketRequesterLineTarget', () => {
   it('does not target a suspended LINE identity', async () => {
     mockLineRow({ id: 'line-row-3', line_user_id: 'U789', linked_user_id: 'profile-3', link_status: 'Suspended' });
     await expect(resolveTicketRequesterLineTarget(env, null, 'profile-3')).resolves.toBeNull();
+  });
+
+  it('resolves an application notification recipient through the unique profile link', async () => {
+    const { builder } = mockLineRow({ id: 'line-row-4', line_user_id: 'U999', linked_user_id: 'profile-4', link_status: 'Active' });
+    await expect(resolveUserLineTarget(env, 'profile-4')).resolves.toEqual({ target: 'U999', lineUserId: 'line-row-4' });
+    expect(builder.eq).toHaveBeenCalledWith('linked_user_id', 'profile-4');
+  });
+});
+
+describe('buildUserNotificationFlexMessage', () => {
+  it('creates a readable generic card with an optional application link', () => {
+    expect(buildUserNotificationFlexMessage({
+      title: 'รออนุมัติคำขอสิทธิ์', body: 'กรุณาตรวจสอบคำขอ AR-001', url: 'https://life.example/access-requests/1',
+    })).toMatchObject({
+      type: 'flex',
+      altText: expect.stringContaining('รออนุมัติคำขอสิทธิ์'),
+      contents: {
+        footer: { contents: [{ action: { uri: 'https://life.example/access-requests/1' } }] },
+      },
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import { createAdminClient } from '../lib/supabase';
+import { buildUserNotificationFlexMessage, resolveUserLineTarget, sendLinePush } from '../lib/lineMessaging';
 import type { Bindings } from '../types';
 
 export interface NotificationInput {
@@ -7,6 +8,8 @@ export interface NotificationInput {
   title: string;
   body?: string | null;
   link?: string | null;
+  /** False when the caller already sends a richer LINE message for this same event. */
+  line?: boolean;
 }
 
 /**
@@ -24,7 +27,10 @@ export async function sendNotification(env: Bindings, input: NotificationInput):
   let deliveryError: string;
   try {
     const { error } = await supabase.from('notifications').insert(notificationRow(input));
-    if (!error) return;
+    if (!error) {
+      await sendLinkedUserLineNotification(env, input);
+      return;
+    }
     deliveryError = error.message;
   } catch (error) {
     deliveryError = error instanceof Error ? error.message : String(error);
@@ -52,6 +58,43 @@ export async function sendNotification(env: Bindings, input: NotificationInput):
   }
 
   console.warn(JSON.stringify({ msg: 'notification_queued_for_retry', outboxId, error: deliveryError }));
+  await sendLinkedUserLineNotification(env, input);
+}
+
+/**
+ * LINE is an optional companion channel. In-app durability remains authoritative; a LINE failure
+ * is logged by sendLinePush and must never roll back or duplicate the application notification.
+ */
+async function sendLinkedUserLineNotification(env: Bindings, input: NotificationInput): Promise<void> {
+  if (input.line === false || env.NOTIFY_LINE_ENABLED !== 'true' || !env.LINE_CHANNEL_ACCESS_TOKEN) return;
+  try {
+    const target = await resolveUserLineTarget(env, input.recipientId);
+    if (!target) return;
+    const url = notificationUrl(env, input.link);
+    const text = [input.title, input.body].filter((value): value is string => Boolean(value?.trim())).join('\n');
+    await sendLinePush(
+      env,
+      target.target,
+      text,
+      target.lineUserId,
+      buildUserNotificationFlexMessage({ title: input.title, body: input.body, url }),
+    );
+  } catch (error) {
+    console.error(JSON.stringify({
+      msg: 'linked_user_line_notification_failed',
+      recipientId: input.recipientId,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+function notificationUrl(env: Bindings, link: string | null | undefined): string | null {
+  if (!env.PUBLIC_APP_URL || !link?.startsWith('/')) return null;
+  try {
+    return new URL(link, `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/`).toString();
+  } catch {
+    return null;
+  }
 }
 
 function notificationRow(input: NotificationInput) {
@@ -74,7 +117,8 @@ export function isValidNotificationPayload(input: unknown): input is Notificatio
     && typeof candidate.title === 'string'
     && candidate.title.trim().length > 0
     && (candidate.body == null || typeof candidate.body === 'string')
-    && (candidate.link == null || typeof candidate.link === 'string');
+    && (candidate.link == null || typeof candidate.link === 'string')
+    && (candidate.line == null || typeof candidate.line === 'boolean');
 }
 
 interface NotificationOutboxRow {

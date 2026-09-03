@@ -25,6 +25,12 @@ interface TicketFlexMessageInput {
   buttonLabel?: string;
 }
 
+interface UserNotificationFlexMessageInput {
+  title: string;
+  body?: string | null;
+  url?: string | null;
+}
+
 function ticketStatusColor(status?: string | null): string {
   if (status === 'เสร็จสิ้น' || status === 'ปิดงาน') return '#138A5B';
   if (status === 'ยกเลิก') return '#64748B';
@@ -80,6 +86,43 @@ export function buildTicketFlexMessage(input: TicketFlexMessageInput): LineMessa
         ],
       },
       ...(footer ? { footer } : {}),
+      styles: { footer: { separator: true } },
+    },
+  };
+}
+
+/** Generic LIFE notification card for application users who connected an Active LINE account. */
+export function buildUserNotificationFlexMessage(input: UserNotificationFlexMessageInput): LineMessagePayload {
+  const title = input.title.trim().slice(0, 500) || 'มีการแจ้งเตือนใหม่';
+  const body = input.body?.trim().slice(0, 1500) || null;
+  return {
+    type: 'flex',
+    altText: `แจ้งเตือนจาก LIFE IT: ${title}`.slice(0, 400),
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#06A66A', paddingAll: '16px', spacing: 'sm',
+        contents: [
+          { type: 'text', text: 'LIFE IT SERVICE', color: '#FFFFFFCC', size: 'xs', weight: 'bold' },
+          { type: 'text', text: 'การแจ้งเตือน', color: '#FFFFFF', size: 'lg', weight: 'bold' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
+        contents: [
+          { type: 'text', text: title, color: '#172033', size: 'md', weight: 'bold', wrap: true },
+          ...(body ? [{ type: 'text', text: body, color: '#475569', size: 'sm', wrap: true, margin: 'md' }] : []),
+        ],
+      },
+      ...(input.url ? {
+        footer: {
+          type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '16px',
+          contents: [{
+            type: 'button', style: 'primary', height: 'sm', color: '#06A66A',
+            action: { type: 'uri', label: 'เปิดดูในระบบ', uri: input.url },
+          }],
+        },
+      } : {}),
       styles: { footer: { separator: true } },
     },
   };
@@ -144,6 +187,15 @@ export async function resolveTicketRequesterLineTarget(
     lineUserId: data.id as string,
     linkedUserId: (data.linked_user_id as string | null) ?? null,
   };
+}
+
+/** Resolve one application profile to its unique Active LINE identity. */
+export async function resolveUserLineTarget(
+  env: Bindings,
+  recipientId: string,
+): Promise<{ target: string; lineUserId: string } | null> {
+  const resolved = await resolveTicketRequesterLineTarget(env, null, recipientId);
+  return resolved ? { target: resolved.target, lineUserId: resolved.lineUserId } : null;
 }
 
 /** `LINE_DEFAULT_TO` is the shared IT-team room — never a substitute for the actual requester's push target. */
