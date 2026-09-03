@@ -4,6 +4,8 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { ATTACHMENTS_BUCKET } from '../services/storageService';
+import { TICKET_SIGNATURE_BUCKET } from '../services/ticketSignatureService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -81,6 +83,54 @@ export const deletionReasonSchema = z.object({
   reason: z.string().trim().min(3).max(1000),
 }).strict();
 
+/**
+ * Deleting a LINE account cascades away its Tickets (see 20261007100000_line_user_delete_cascade.sql),
+ * but the database can only drop the attachment/signature *rows* — the objects stay in the buckets.
+ * Paths are read before the delete, because afterwards there is nothing left to read them from.
+ */
+async function collectLineUserStoragePaths(
+  admin: ReturnType<typeof createAdminClient>,
+  lineUserId: string,
+): Promise<{ attachments: string[]; signatures: string[] }> {
+  const { data: tickets } = await admin
+    .from('tickets')
+    .select('id, signature_storage_path, requester_signature_storage_path')
+    .eq('requester_line_user_id', lineUserId);
+  const ticketIds = (tickets ?? []).map((ticket) => String(ticket.id));
+  if (ticketIds.length === 0) return { attachments: [], signatures: [] };
+
+  const { data: attachments } = await admin
+    .from('file_attachments')
+    .select('storage_path')
+    .eq('target_table', 'tickets')
+    .in('target_id', ticketIds);
+
+  return {
+    attachments: (attachments ?? []).map((row) => String(row.storage_path)).filter(Boolean),
+    signatures: (tickets ?? [])
+      .flatMap((ticket) => [ticket.signature_storage_path, ticket.requester_signature_storage_path])
+      .filter((path): path is string => typeof path === 'string' && path.length > 0),
+  };
+}
+
+/**
+ * Runs after the delete has already committed, so a storage failure must not fail the request —
+ * the rows are gone either way. It is logged with the request id so an orphaned object can be found.
+ */
+async function removeStoragePaths(
+  admin: ReturnType<typeof createAdminClient>,
+  bucket: string,
+  paths: readonly string[],
+  requestId: string,
+): Promise<void> {
+  const unique = [...new Set(paths)];
+  if (unique.length === 0) return;
+  const { error } = await admin.storage.from(bucket).remove(unique);
+  if (error) {
+    console.error(JSON.stringify({ requestId, code: 'RECORD_DELETE_STORAGE_ORPHANED', bucket, paths: unique, message: error.message }));
+  }
+}
+
 export const recordDeletionsRoute = new Hono<AppEnv>();
 recordDeletionsRoute.use('*', requireAuth);
 
@@ -121,6 +171,9 @@ recordDeletionsRoute.delete('/:resource/:id', async (c) => {
   }
 
   const admin = createAdminClient(c.env);
+  const orphanedStorage = resourceName === 'line-links'
+    ? await collectLineUserStoragePaths(admin, parsedId.data)
+    : null;
   const { data, error: mutationError } = await admin.rpc('mutate_record_deletion', {
     resource_input: resourceName,
     record_id_input: parsedId.data,
@@ -140,14 +193,19 @@ recordDeletionsRoute.delete('/:resource/:id', async (c) => {
     if (mutationError.message.includes('DELETE_TARGET_ALREADY_ARCHIVED')) {
       return c.json(fail(requestId, 'DELETE_TARGET_ALREADY_ARCHIVED', 'รายการนี้ถูกเก็บถาวรไปแล้ว'), 409);
     }
-    return dbFailJson(
-      c,
-      'RECORD_DELETE_FAILED',
-      mutationError,
-      mutationError.code === '23503'
-        ? 'ยังลบรายการนี้ไม่ได้ เพราะมีข้อมูลอื่นอ้างอิงอยู่ กรุณาลบหรือย้ายข้อมูลที่เกี่ยวข้องก่อน'
-        : 'ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
-    );
+    // 23514 used to fall through to the generic retry message, which told an admin nothing —
+    // a check constraint failure never succeeds on retry, it needs the blocking data resolved.
+    const dbMessage = mutationError.code === '23503'
+      ? 'ยังลบรายการนี้ไม่ได้ เพราะมีข้อมูลอื่นอ้างอิงอยู่ กรุณาลบหรือย้ายข้อมูลที่เกี่ยวข้องก่อน'
+      : mutationError.code === '23514'
+        ? 'ยังลบรายการนี้ไม่ได้ เพราะจะทำให้ข้อมูลที่เกี่ยวข้องผิดเงื่อนไขของระบบ กรุณาแจ้งผู้ดูแลระบบพร้อมรหัสคำขอนี้'
+        : 'ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+    return dbFailJson(c, 'RECORD_DELETE_FAILED', mutationError, dbMessage);
+  }
+
+  if (orphanedStorage) {
+    await removeStoragePaths(admin, ATTACHMENTS_BUCKET, orphanedStorage.attachments, requestId);
+    await removeStoragePaths(admin, TICKET_SIGNATURE_BUCKET, orphanedStorage.signatures, requestId);
   }
 
   return c.json(ok(requestId, data));
