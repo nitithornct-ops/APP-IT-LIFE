@@ -16,6 +16,7 @@ LINE_SESSION_SECRET=
 LINE_SESSION_HOURS=24
 NOTIFY_LINE_ENABLED=false
 LINE_CHANNEL_ACCESS_TOKEN=
+# เมื่อเปิดใช้งาน การแจ้งเตือน in-app จะส่งคู่ไปยังบัญชี LINE สถานะ Active ที่เชื่อมกับผู้ใช้
 LINE_DEFAULT_TO=
 
 # Public no-login ticket report page (routes/publicTickets.ts) — always enabled unless set to

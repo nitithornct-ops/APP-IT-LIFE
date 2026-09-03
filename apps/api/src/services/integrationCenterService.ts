@@ -80,7 +80,7 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
     },
     {
       id: 'line-messaging', name: 'LINE Messaging API', status: lineMessagingStatus,
-      description: 'แจ้งทีมเมื่อมี Ticket ใหม่ และแจ้งผู้ร้องเมื่อสถานะเปลี่ยน',
+      description: 'แจ้งผู้ใช้ที่เชื่อมบัญชีและแจ้งทีมเมื่อมีเหตุการณ์สำคัญ',
       delivered24h: input.lineSuccess24h,
       detail: lineMessagingStatus === 'active'
         ? `เชื่อมต่อแล้ว · บัญชีผู้ใช้ Active ${input.activeLineUsers}`
@@ -165,9 +165,10 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
     rules: [
       { id: 'ticket-created-team', event: 'Ticket ใหม่จาก Public / LINE Portal', channel: 'LINE Messaging API', recipients: 'ห้องทีม IT', status: lineMessagingStatus, managedBy: 'code' },
       { id: 'ticket-status-requester', event: 'สถานะ Ticket เปลี่ยน', channel: 'LINE Messaging API', recipients: 'ผู้แจ้งผ่าน LINE', status: lineMessagingStatus, managedBy: 'code' },
-      { id: 'access-request', event: 'คำขอสิทธิ์และผลอนุมัติ', channel: 'In-app Notification', recipients: 'ผู้อนุมัติ / ผู้ร้อง', status: 'active', managedBy: 'code' },
-      { id: 'change-flow', event: 'Change ขออนุมัติ / ติดตั้งแล้ว', channel: 'In-app Notification', recipients: 'ทีมปฏิบัติการ / ผู้ร้อง', status: 'active', managedBy: 'code' },
-      { id: 'backup-anomaly', event: 'Backup ล้มเหลวหรือพบ Log anomaly', channel: 'In-app Notification', recipients: 'ผู้ดูแลระบบ', status: 'active', managedBy: 'code' },
+      { id: 'linked-user-notification', event: 'การแจ้งเตือนผู้ใช้จากทุกโมดูล', channel: 'In-app + LINE Messaging API', recipients: 'ผู้ใช้ที่เชื่อมบัญชี LINE สถานะ Active', status: lineMessagingStatus, managedBy: 'code' },
+      { id: 'access-request', event: 'คำขอสิทธิ์และผลอนุมัติ', channel: 'In-app + LINE', recipients: 'ผู้อนุมัติ / ผู้ร้อง', status: 'active', managedBy: 'code' },
+      { id: 'change-flow', event: 'Change ขออนุมัติ / ติดตั้งแล้ว', channel: 'In-app + LINE', recipients: 'ทีมปฏิบัติการ / ผู้ร้อง', status: 'active', managedBy: 'code' },
+      { id: 'backup-anomaly', event: 'Backup ล้มเหลวหรือพบ Log anomaly', channel: 'In-app + LINE', recipients: 'ผู้ดูแลระบบ', status: 'active', managedBy: 'code' },
       { id: 'notification-retry', event: 'ส่ง In-app ไม่สำเร็จ', channel: 'Integration Outbox', recipients: 'Cron retry สูงสุด 5 ครั้ง', status: outboxFailed ? 'degraded' : 'active', managedBy: 'code' },
     ],
     recentEvents,

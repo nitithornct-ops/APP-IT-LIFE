@@ -519,6 +519,9 @@ ticketsRoute.post(
           title: `มีข้อความใหม่ใน ${ticket.ticket_no}`,
           body: body.message.slice(0, 200),
           link: `/tickets/${id}`,
+          // The requester receives the ticket-specific Flex Message below. Other linked
+          // participants still receive the generic LINE companion notification.
+          line: recipientId !== ticket.requester_id,
         });
       }
 
@@ -1064,6 +1067,8 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
         type: 'ticket_status_changed',
         title: `Ticket "${updated.title}" เปลี่ยนสถานะเป็น ${patch.status}`,
         link: `/tickets/${id}`,
+        // Keep the richer requester-facing Flex Message below as the only LINE delivery.
+        line: false,
       });
     }
     if (lineTarget) {
