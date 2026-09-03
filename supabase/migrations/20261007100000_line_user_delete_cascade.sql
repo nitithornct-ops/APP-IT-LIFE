@@ -239,7 +239,15 @@ begin
       -- remove these rows, so the audit row is the only place the count survives.
       select jsonb_build_object(
         'cascadedTickets', (select count(*) from public.tickets where requester_line_user_id = record_id_input),
-        'cascadedWorklogs', (select count(*) from public.ticket_worklogs where actor_line_user_id = record_id_input),
+        -- Both FK paths, not just the actor one: a doomed ticket takes its staff-authored status
+        -- updates and conversation entries with it through ticket_worklogs.ticket_id.
+        'cascadedWorklogs', (
+          select count(*) from public.ticket_worklogs worklog
+          where worklog.actor_line_user_id = record_id_input
+             or worklog.ticket_id in (
+               select id from public.tickets where requester_line_user_id = record_id_input
+             )
+        ),
         'cascadedTicketNumbers', (
           select coalesce(jsonb_agg(ticket_no order by ticket_no), '[]'::jsonb)
           from public.tickets where requester_line_user_id = record_id_input

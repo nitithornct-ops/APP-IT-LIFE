@@ -32,6 +32,12 @@ async function seedLineUserWithTicket(lineUserId: string) {
        values ($1, 'เปิด Ticket', 'ใหม่', true, null, $2)`,
       [ticketId, id],
     );
+    // และ worklog ที่เจ้าหน้าที่เขียนเอง ซึ่งหายไปกับ Ticket ผ่าน ticket_worklogs.ticket_id ไม่ใช่ actor FK
+    await db.query(
+      `insert into public.ticket_worklogs(ticket_id, action, detail, is_public, actor_id)
+       values ($1, 'บันทึกการแก้ไข', 'เจ้าหน้าที่เข้าตรวจสอบ', true, $2)`,
+      [ticketId, ACTOR_ID],
+    );
     await db.query(
       `insert into public.file_attachments(storage_path, original_filename, mime_type, size_bytes, module, target_table, target_id, uploaded_by, uploader_label)
        values ($1, 'signature.png', 'image/png', 1024, 'ticket', 'tickets', $2, null, 'ผู้แจ้งผ่าน LINE: ทดสอบลบ LINE')`,
@@ -58,7 +64,8 @@ describe('deleting a LINE account', () => {
       `select public.mutate_record_deletion('line-links', $1, $2, $3, $4, $5) as result`,
       [id, ACTOR_ID, 'line-delete-actor@test.local', 'ผู้ใช้ขอให้ลบข้อมูลตาม PDPA', 'req-line-delete-1'],
     ));
-    expect(result.rows[0]!.result).toMatchObject({ resource: 'line-links', mode: 'hard', cascadedTickets: 1, cascadedWorklogs: 1 });
+    // 2 = worklog ของ LINE user เอง + worklog ของเจ้าหน้าที่ ซึ่งถูกลบผ่าน Ticket ทั้งคู่
+    expect(result.rows[0]!.result).toMatchObject({ resource: 'line-links', mode: 'hard', cascadedTickets: 1, cascadedWorklogs: 2 });
 
     const remaining = await asServiceRole(db, async () => db.query<{ users: number; tickets: number; worklogs: number; files: number }>(
       `select
@@ -77,7 +84,7 @@ describe('deleting a LINE account', () => {
     ));
     expect(audit.rows).toHaveLength(1);
     expect(audit.rows[0]!.action).toBe('DELETE');
-    expect(audit.rows[0]!.detail).toMatchObject({ resource: 'line-links', cascadedTickets: 1 });
+    expect(audit.rows[0]!.detail).toMatchObject({ resource: 'line-links', cascadedTickets: 1, cascadedWorklogs: 2 });
   });
 
   it('clears the RESTRICT-guarded ticket dependents that would otherwise block the delete', async () => {
