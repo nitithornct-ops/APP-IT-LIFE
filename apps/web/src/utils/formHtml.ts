@@ -1,32 +1,82 @@
-/**
- * รูปภาพในแบบฟอร์มถูกฝังมากับเอกสารเป็น data:image/... ได้ (เช่นโลโก้หน่วยงานบนหัวกระดาษ) เพื่อให้ไฟล์
- * ที่ export ไป Word หรือสั่งพิมพ์ยังเห็นรูปโดยไม่ต้องต่ออินเทอร์เน็ต — แต่ data: ชนิดอื่นห้ามผ่าน
- * เด็ดขาด เพราะ data:text/html รันสคริปต์ได้เมื่อถูกเปิดเป็นลิงก์ และ image/svg+xml เป็นเอกสาร XML
- * ที่พ่วงสคริปต์มาได้ จึงไม่อยู่ในรายการที่อนุญาต
- */
-const SAFE_IMAGE_DATA_URL = /^data:image\/(png|jpeg|gif|webp);base64,/;
+import DOMPurify from 'dompurify';
 
-function isSafeUrl(value: string): boolean {
-  if (/^(javascript|vbscript):/.test(value)) return false;
-  if (value.startsWith('data:')) return SAFE_IMAGE_DATA_URL.test(value);
-  return true;
+const SAFE_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i;
+const SAFE_FIELD = /^[a-zA-Z0-9_.-]{1,100}$/;
+const ALLOWED_TAGS = [
+  'p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'sub', 'sup', 'blockquote',
+  'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+  'a', 'img', 'hr',
+];
+const ALLOWED_ATTR = [
+  'href', 'title', 'target', 'rel', 'src', 'alt', 'style', 'width', 'height',
+  'colspan', 'rowspan', 'class', 'data-field', 'data-image-layout',
+];
+
+function isSafeImageUrl(value: string): boolean {
+  return /^https:\/\//i.test(value) || SAFE_IMAGE_DATA_URL.test(value);
+}
+
+function isSafeLinkUrl(value: string): boolean {
+  return /^(?:https?:\/\/|mailto:|#|\/)/i.test(value);
+}
+
+function safeLength(value: string, allowAuto = false): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (allowAuto && normalized === 'auto') return normalized;
+  if (normalized === '100%') return normalized;
+  return /^[1-9]\d{0,3}px$/.test(normalized) ? normalized : null;
+}
+
+function constrainStyle(element: Element): void {
+  const input = (element as HTMLElement).style;
+  const output: string[] = [];
+  const textAlign = input.getPropertyValue('text-align').trim().toLowerCase();
+  if (/^(left|right|center|justify)$/.test(textAlign)) output.push(`text-align:${textAlign}`);
+
+  if (element.tagName.toLowerCase() === 'img') {
+    const width = safeLength(input.getPropertyValue('width'));
+    const height = safeLength(input.getPropertyValue('height'), true);
+    const maxWidth = input.getPropertyValue('max-width').trim() === '100%' ? '100%' : null;
+    const display = input.getPropertyValue('display').trim() === 'block' ? 'block' : null;
+    const marginLeft = /^(0|auto)$/.test(input.getPropertyValue('margin-left').trim()) ? input.getPropertyValue('margin-left').trim() : null;
+    const marginRight = /^(0|auto)$/.test(input.getPropertyValue('margin-right').trim()) ? input.getPropertyValue('margin-right').trim() : null;
+    if (width) output.push(`width:${width}`);
+    if (height) output.push(`height:${height}`);
+    if (maxWidth) output.push(`max-width:${maxWidth}`);
+    if (display) output.push(`display:${display}`);
+    if (marginLeft) output.push(`margin-left:${marginLeft}`);
+    if (marginRight) output.push(`margin-right:${marginRight}`);
+  }
+
+  if (output.length > 0) element.setAttribute('style', output.join(';'));
+  else element.removeAttribute('style');
 }
 
 export function sanitizeFormHtml(input: string): string {
-  if (typeof DOMParser === 'undefined') return input;
-  const documentNode = new DOMParser().parseFromString(input, 'text/html');
-  documentNode.querySelectorAll('script, style, iframe, object, embed, form, input, button, textarea, select, option, meta, link, base').forEach((node) => node.remove());
-  documentNode.body.querySelectorAll('*').forEach((element) => {
-    for (const attribute of Array.from(element.attributes)) {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value.trim().toLowerCase();
-      if (name.startsWith('on') || name === 'srcdoc') element.removeAttribute(attribute.name);
-      if ((name === 'href' || name === 'src') && !isSafeUrl(value)) {
-        element.setAttribute(attribute.name, '#');
-      }
-    }
+  if (typeof DOMParser === 'undefined') return '';
+  const purified = DOMPurify.sanitize(input, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+    FORBID_TAGS: ['svg', 'math', 'style', 'template', 'noscript'],
+    FORBID_ATTR: ['xlink:href', 'srcdoc', 'srcset', 'formaction', 'id', 'name'],
   });
-  return documentNode.body.innerHTML;
+  const documentNode = new DOMParser().parseFromString(purified, 'text/html');
+  documentNode.body.querySelectorAll('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'img' && !isSafeImageUrl(element.getAttribute('src') ?? '')) element.removeAttribute('src');
+    if (tag === 'a') {
+      if (!isSafeLinkUrl(element.getAttribute('href') ?? '')) element.removeAttribute('href');
+      if (element.getAttribute('target') === '_blank') element.setAttribute('rel', 'noopener noreferrer');
+    }
+    if (element.hasAttribute('class') && !(tag === 'span' && element.className === 'form-variable')) element.removeAttribute('class');
+    if (element.hasAttribute('data-field') && !(tag === 'span' && SAFE_FIELD.test(element.getAttribute('data-field') ?? ''))) element.removeAttribute('data-field');
+    if (element.hasAttribute('style')) constrainStyle(element);
+  });
+  return documentNode.body.innerHTML.trim();
 }
 
 export function exportHtmlAsWord(contentHtml: string, fileName: string) {
@@ -39,4 +89,3 @@ export function exportHtmlAsWord(contentHtml: string, fileName: string) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
-

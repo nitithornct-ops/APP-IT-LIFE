@@ -836,23 +836,16 @@ describe('personal_tasks / task_subtasks / task_progress_logs / task_links RLS (
     expect(inserted.rows).toHaveLength(1);
   });
 
-  // RLS ของตารางลูกตรวจแค่ owner_id = auth.uid() ระดับแถวของตัวเอง ไม่ join ไปตรวจว่า task_id เป็นของ
-  // owner คนเดียวกันจริง (ดู comment ใน migration) — Backend (routes/tasks.ts) เป็นผู้ตรวจ ownership
-  // ของ taskId ก่อน insert เสมอ ทดสอบนี้ยืนยันพฤติกรรมของ RLS ตรงๆ ไม่ใช่ช่องโหว่ด้านข้อมูล เพราะแถวที่
-  // ได้ยังคงมองเห็นได้เฉพาะเจ้าของแถว (auditor) เท่านั้น ไม่รั่วไปยังเจ้าของ task จริง
-  it('permits owner_id=self on a foreign task_id at the RLS layer (backend enforces task ownership, not RLS)', async () => {
-    const crossInsert = await asUser(db, AUDITOR_ID, async () =>
-      db.query(`insert into public.task_subtasks (task_id, owner_id, title) values ($1, $2, 'แถวของ auditor') returning id`, [
-        taskId,
-        AUDITOR_ID,
-      ]),
-    );
-    expect(crossInsert.rows).toHaveLength(1);
-
-    const ownerView = await asUser(db, REGULAR_USER_ID, async () =>
-      db.query('select id from public.task_subtasks where task_id = $1', [taskId]),
-    );
-    expect(ownerView.rows).toEqual([{ id: ownSubtaskId }]);
+  it('rejects owner_id=self when task_id belongs to another user across every task child table', async () => {
+    await expect(asUser(db, AUDITOR_ID, async () =>
+      db.query(`insert into public.task_subtasks (task_id, owner_id, title) values ($1, $2, 'แถวของ auditor')`, [taskId, AUDITOR_ID])))
+      .rejects.toThrow();
+    await expect(asUser(db, AUDITOR_ID, async () =>
+      db.query(`insert into public.task_progress_logs (task_id, owner_id, progress, note) values ($1, $2, 50, 'แถวของ auditor')`, [taskId, AUDITOR_ID])))
+      .rejects.toThrow();
+    await expect(asUser(db, AUDITOR_ID, async () =>
+      db.query(`insert into public.task_links (task_id, owner_id, label, url) values ($1, $2, 'ลิงก์', 'https://example.test')`, [taskId, AUDITOR_ID])))
+      .rejects.toThrow();
   });
 
   it("rejects a plain user writing to task_progress_logs / task_links under someone else's owner_id", async () => {

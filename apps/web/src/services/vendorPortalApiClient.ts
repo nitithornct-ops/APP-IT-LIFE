@@ -3,15 +3,15 @@ import { ApiError, requestApiData } from './apiClient';
 const STORAGE_KEY = 'vendor_portal_session_token';
 
 export function getVendorSessionToken(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  return sessionStorage.getItem(STORAGE_KEY);
 }
 
 export function setVendorSessionToken(token: string): void {
-  localStorage.setItem(STORAGE_KEY, token);
+  sessionStorage.setItem(STORAGE_KEY, token);
 }
 
 export function clearVendorSessionToken(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
 }
 
 export async function vendorPortalApiFetch<T>(path: string, init?: RequestInit): Promise<T> {

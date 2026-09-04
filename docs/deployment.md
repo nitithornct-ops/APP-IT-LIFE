@@ -49,10 +49,14 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
 - LINE secrets ตาม feature ที่เปิด: `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`,
   `LINE_SESSION_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_DEFAULT_TO`
+- เมื่อเปิด `NOTIFY_LINE_ENABLED=true` การแจ้งเตือน in-app ทุกโมดูลจะส่งคู่ทาง LINE ให้ผู้ใช้ที่มี
+  บัญชี LINE สถานะ `Active`; เหตุการณ์ Ticket ที่มี Flex Message เฉพาะทางจะกันการส่งซ้ำไว้แล้ว
+  ข้อความตอบกลับของผู้ใช้ยังเข้าสู่ LINE OA Manager ตามการตั้งค่า Chat เดิม
 
-Environment `staging` ต้องมี `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-`UAT_ADMIN_EMAIL` และ `UAT_ADMIN_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ
-หากขาด credential หรือ secret ใด Staging Live E2E จะ fail ไม่ใช่ skip แล้วแสดงผลเขียว
+Environment `staging` ต้องมี Supabase keys, อีเมล UAT ของ Requester/Technician/Approver/Manager/Admin,
+TOTP secret ของ Technician/Approver/Manager/Admin และ `UAT_VENDOR_CODE`, `UAT_VENDOR_EMAIL`,
+`UAT_VENDOR_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ หากขาด
+credential/secret ใด หรือมี test ถูก skip แม้แต่รายการเดียว Staging Live E2E จะ fail แทนการแสดงผลเขียว
 
 Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
 ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์

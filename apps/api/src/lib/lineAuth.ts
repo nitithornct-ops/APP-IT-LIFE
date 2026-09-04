@@ -23,6 +23,7 @@ export function normalizeReturnMode(mode: string | undefined | null): LineReturn
 interface StatePayload {
   nonce: string;
   verifier: string;
+  browserBindingHash: string;
   redirectUri: string;
   returnMode: LineReturnMode;
   createdAt: number;
@@ -55,6 +56,19 @@ async function hmacSign(secret: string, message: string): Promise<string> {
   const key = await hmacKey(secret);
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
   return toBase64Url(signature);
+}
+
+async function hmacVerify(secret: string, message: string, encodedSignature: string): Promise<boolean> {
+  try {
+    return await crypto.subtle.verify(
+      'HMAC',
+      await hmacKey(secret),
+      fromBase64Url(encodedSignature),
+      new TextEncoder().encode(message),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function hashSessionToken(secret: string, token: string): Promise<string> {
@@ -90,6 +104,7 @@ function isValidStatePayload(value: unknown): value is StatePayload {
   const age = Date.now() - Number(payload.createdAt);
   return /^[0-9a-f]{64}$/.test(payload.nonce ?? '')
     && /^[0-9a-f]{64}$/.test(payload.verifier ?? '')
+    && /^[A-Za-z0-9_-]{43}$/.test(payload.browserBindingHash ?? '')
     && typeof payload.redirectUri === 'string'
     && payload.redirectUri.length <= 1000
     && ['report', 'status', 'kb'].includes(payload.returnMode ?? '')
@@ -140,14 +155,16 @@ function requireLineConfig(env: Bindings): asserts env is ConfiguredBindings {
   if (!status.configured) throw new Error(status.message);
 }
 
-export async function createLineLoginUrl(env: Bindings, returnMode: string | undefined): Promise<string> {
+export async function createLineLoginUrl(env: Bindings, returnMode: string | undefined, browserBinding: string): Promise<string> {
   requireLineConfig(env);
+  if (!/^[0-9a-f]{64}$/.test(browserBinding)) throw new Error('LINE Login browser binding ไม่ถูกต้อง');
 
   const verifier = randomToken();
   const nonce = randomToken();
   const state = await encryptState({
     nonce,
     verifier,
+    browserBindingHash: await hmacSign(env.LINE_SESSION_SECRET, `line-oauth-browser:${browserBinding}`),
     redirectUri: env.LINE_LOGIN_CALLBACK_URL,
     returnMode: normalizeReturnMode(returnMode),
     createdAt: Date.now(),
@@ -259,6 +276,7 @@ export interface CompletedLineLogin {
 /** Callback entrypoint: verifies `code`/`state`, exchanges the code, verifies the ID token, and revokes the LINE token. */
 export async function completeLineLoginCallback(
   env: Bindings, params: { code?: string; state?: string; error?: string; error_description?: string },
+  browserBinding: string | undefined,
 ): Promise<CompletedLineLogin> {
   requireLineConfig(env);
   if (params.error) throw new Error(`LINE ปฏิเสธการเข้าสู่ระบบ: ${params.error_description ?? params.error}`);
@@ -266,6 +284,10 @@ export async function completeLineLoginCallback(
 
   const pending = await verifyState(params.state, env.LINE_SESSION_SECRET);
   if (!pending) throw new Error('คำขอ LINE Login หมดอายุหรือไม่ถูกต้อง กรุณาเริ่ม Login ใหม่');
+  if (!browserBinding || !/^[0-9a-f]{64}$/.test(browserBinding)
+    || !await hmacVerify(env.LINE_SESSION_SECRET, `line-oauth-browser:${browserBinding}`, pending.browserBindingHash)) {
+    throw new Error('คำขอ LINE Login ไม่ได้เริ่มจาก browser นี้ กรุณาเริ่ม Login ใหม่');
+  }
   if (pending.redirectUri !== env.LINE_LOGIN_CALLBACK_URL) throw new Error('LINE Login callback URL ไม่ถูกต้อง กรุณาเริ่ม Login ใหม่');
 
   const tokenData = await exchangeAuthorizationCode(env, params.code, pending.redirectUri, pending.verifier);

@@ -9,5 +9,7 @@ export const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.m
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    // Do not leave the staff JWT behind after the browser tab/session is closed.
+    storage: typeof window === 'undefined' ? undefined : window.sessionStorage,
   },
 });

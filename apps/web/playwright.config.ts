@@ -6,7 +6,9 @@ const webUrl = liveE2E ? 'http://localhost:5173' : 'http://localhost:4173';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
-  reporter: 'list',
+  reporter: process.env.CI
+    ? [['list'], ['json', { outputFile: 'test-results/results.json' }]]
+    : 'list',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}-{projectName}{ext}',
   expect: {
     toHaveScreenshot: {
