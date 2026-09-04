@@ -10,7 +10,7 @@ vi.mock('../services/vendorPortalApiClient', async () => {
 });
 
 beforeEach(() => {
-  localStorage.clear();
+  sessionStorage.clear();
   vendorPortalApiFetchMock.mockReset();
 });
 
@@ -26,7 +26,7 @@ describe('VendorPortalPage', () => {
   });
 
   it('shows only the assigned outsource list returned by the isolated portal API', async () => {
-    localStorage.setItem('vendor_portal_session_token', 'a'.repeat(64));
+    sessionStorage.setItem('vendor_portal_session_token', 'a'.repeat(64));
     vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
       if (path.endsWith('/me')) return { accountId: 'account-1', vendorId: 'vendor-1', vendorCode: 'VND-001', vendorName: 'บริษัท ทดสอบ จำกัด', email: 'vendor@test.local', fullName: 'สมชาย บริษัท', position: 'ช่าง' };
       if (path.endsWith('/tickets')) return [{ id: 'ticket-1', ticket_no: 'TCK-001', title: 'เครื่องพิมพ์เสีย', description: 'พิมพ์ไม่ได้', priority: 'สูง', status: 'ส่งต่อ Outsource', location: 'สำนักงาน', created_at: '2026-08-28T00:00:00Z', outsource_issue_no: null, outsource_sent_at: '2026-08-28T01:00:00Z', ticket_categories: { name: 'Printer' }, latest_submission: null }];

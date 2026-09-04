@@ -23,20 +23,20 @@ import {
   ShieldCheck,
   Sparkles,
   TicketCheck,
+  Trash2,
   UserRound,
   Wrench,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PublicBrand } from '../components/PublicBrand';
-import { LineProfileNameForm } from '../components/LineProfileNameForm';
 import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { Badge } from '../components/ui/Badge';
+import { RequesterInfoCard } from '../components/tickets/RequesterInfoCard';
 import { RequesterSignoffCard } from '../components/tickets/RequesterSignoffCard';
 import { ticketStatusLabel, ticketStatusTone, type TicketStatusTone } from '../features/tickets/ticketDisplay';
 import { getTicketFlowIndex, isTicketFlowInterrupted, TICKET_FLOW_STEPS } from '../features/tickets/ticketFlow';
 import { ApiError } from '../services/apiClient';
-import { getLineSessionToken, lineApiFetch } from '../services/lineApiClient';
 import { publicTicketApiFetch } from '../services/publicTicketApiClient';
 import type { TicketPriority, TicketStatus } from '../types/tickets';
 
@@ -59,7 +59,6 @@ interface SubmitResult {
   id: string;
   ticketNo?: string;
   trackingToken?: string;
-  channel?: 'guest' | 'line';
   attachmentCount?: number;
   attachmentWarning?: string;
 }
@@ -79,6 +78,13 @@ interface TrackedTicket {
     closed_at: string | null;
     requester_name_snapshot?: string | null;
     guest_name?: string | null;
+    guest_department?: string | null;
+    requester_position_snapshot?: string | null;
+    requester_phone?: string | null;
+    incident_at?: string | null;
+    erp_module?: string | null;
+    location?: string | null;
+    asset_name_snapshot?: string | null;
     rating: number | null;
     rating_details: TicketRatingDetails | null;
     rating_criteria_snapshot: TicketRatingSnapshotItem[] | null;
@@ -111,25 +117,6 @@ interface TrackedTicket {
     size_bytes: number;
     signed_url: string | null;
   }>;
-}
-
-interface LineBootstrap {
-  authenticated: boolean;
-  profile: {
-    fullName: string;
-    department?: string;
-    linkStatus: string;
-  } | null;
-}
-
-interface LineTicketSummary {
-  id: string;
-  ticket_no: string;
-  title: string;
-  priority: TicketPriority;
-  status: TicketStatus;
-  created_at: string;
-  category: { name: string } | null;
 }
 
 interface KnowledgeData {
@@ -215,7 +202,7 @@ function clearTicketDraft() {
 
 function getSavedTickets(): SavedTicket[] {
   try {
-    const rows = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]') as SubmitResult[];
+    const rows = JSON.parse(sessionStorage.getItem(SAVED_KEY) ?? '[]') as SubmitResult[];
     return Array.isArray(rows)
       ? rows.filter((row): row is SavedTicket => typeof row.trackingToken === 'string' && row.trackingToken.length > 0).slice(0, 20)
       : [];
@@ -228,24 +215,22 @@ function rememberTicket(result: SavedTicket) {
   try {
     const rows = getSavedTickets().filter((row) => row.id !== result.id);
     rows.unshift(result);
-    localStorage.setItem(SAVED_KEY, JSON.stringify(rows.slice(0, 20)));
+    sessionStorage.setItem(SAVED_KEY, JSON.stringify(rows.slice(0, 20)));
   } catch {
     // Saving a shortcut is best-effort only. The tracking token is still shown after submit.
   }
 }
 
+function clearSavedTickets() {
+  try {
+    sessionStorage.removeItem(SAVED_KEY);
+  } catch {
+    // The in-memory list is still cleared by the caller.
+  }
+}
+
 export function PublicTicketPortalPage() {
   const [tab, setTab] = useState<PortalTab>('report');
-  const [lineBootstrap, setLineBootstrap] = useState<LineBootstrap | null>(null);
-  const [lineCheckLoading, setLineCheckLoading] = useState(() => Boolean(getLineSessionToken()));
-
-  useEffect(() => {
-    if (!getLineSessionToken()) return;
-    void lineApiFetch<LineBootstrap>('/api/v1/line/bootstrap')
-      .then(setLineBootstrap)
-      .catch(() => setLineBootstrap(null))
-      .finally(() => setLineCheckLoading(false));
-  }, []);
 
   return (
     <main className="life-public min-h-screen text-slate-800">
@@ -253,7 +238,7 @@ export function PublicTicketPortalPage() {
         <PortalSidebar tab={tab} onChange={setTab} />
 
         <div className="min-w-0">
-          <LineBanner bootstrap={lineBootstrap} loading={lineCheckLoading} onStatus={() => setTab('status')} />
+          <LinePortalLink />
           <header className="public-portal-hero mb-5 mt-5 flex items-start gap-3 rounded-large p-5 sm:p-6">
             <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
               {tab === 'report' ? <Wrench className="h-5 w-5" aria-hidden="true" /> : tab === 'knowledge' ? <CircleHelp className="h-5 w-5" aria-hidden="true" /> : <TicketCheck className="h-5 w-5" aria-hidden="true" />}
@@ -269,22 +254,9 @@ export function PublicTicketPortalPage() {
             </div>
           </header>
 
-          {lineCheckLoading ? (
-            <div className="public-sheet flex items-center justify-center gap-2 p-10 text-sm text-slate-500" role="status">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> กำลังตรวจสอบข้อมูล LINE
-            </div>
-          ) : lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus !== 'Suspended' && !lineBootstrap.profile?.fullName.trim() ? (
-            <LineProfileNameForm onSaved={(fullName) => setLineBootstrap((current) => current?.profile ? {
-              ...current,
-              profile: { ...current.profile, fullName },
-            } : current)} />
-          ) : (
-            <>
-              {tab === 'report' && <ReportTab lineProfile={lineBootstrap?.authenticated ? lineBootstrap.profile : null} onSubmitted={() => setTab('status')} />}
-              {tab === 'knowledge' && <KnowledgeTab />}
-              {tab === 'status' && <StatusTab onReport={() => setTab('report')} />}
-            </>
-          )}
+          {tab === 'report' && <ReportTab onSubmitted={() => setTab('status')} />}
+          {tab === 'knowledge' && <KnowledgeTab />}
+          {tab === 'status' && <StatusTab />}
         </div>
       </div>
     </main>
@@ -348,8 +320,11 @@ function PortalSidebar({ tab, onChange }: { tab: PortalTab; onChange: (tab: Port
   );
 }
 
-function LineBanner({ bootstrap, loading, onStatus }: { bootstrap: LineBootstrap | null; loading: boolean; onStatus: () => void }) {
-  const authenticated = bootstrap?.authenticated && bootstrap.profile?.linkStatus !== 'Suspended';
+/**
+ * ทางออกไปพอร์ทัล LINE — หน้านี้เป็นช่องทาง guest ล้วน ไม่อ่าน LINE session
+ * ใครที่มีบัญชี LINE ควรใช้ /line ซึ่งผูก Ticket กับบัญชีและมีแจ้งเตือนให้
+ */
+function LinePortalLink() {
   return (
     <div className="public-sheet flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
@@ -357,28 +332,18 @@ function LineBanner({ bootstrap, loading, onStatus }: { bootstrap: LineBootstrap
           <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-800">{authenticated ? 'เข้าสู่ระบบ LINE แล้ว' : 'เข้าสู่ระบบด้วย LINE'}</p>
-          <p className="text-xs text-slate-500">
-            {authenticated ? `${bootstrap.profile?.fullName ?? 'ผู้ใช้งาน LINE'} · Ticket ที่ส่งจะผูกกับบัญชีนี้` : 'แจ้งซ่อมและติดตามสถานะได้สะดวก พร้อมรับการแจ้งเตือน'}
-          </p>
+          <p className="text-sm font-bold text-slate-800">ใช้ LINE อยู่?</p>
+          <p className="text-xs text-slate-500">แจ้งซ่อมผ่านพอร์ทัล LINE จะผูก Ticket กับบัญชีให้เอง ไม่ต้องจำรหัสติดตาม และได้รับแจ้งเตือนทุกครั้งที่สถานะเปลี่ยน</p>
         </div>
       </div>
-      {loading ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> กำลังตรวจสอบ LINE</span>
-      ) : authenticated ? (
-        <button type="button" onClick={onStatus} className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
-          <TicketCheck className="h-3.5 w-3.5" aria-hidden="true" /> สถานะของฉัน
-        </button>
-      ) : (
-        <Link to="/line?mode=report" className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
-          <MessageCircle className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> LINE Login
-        </Link>
-      )}
+      <Link to="/line" className="public-line-button inline-flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold transition">
+        <MessageCircle className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> ไปหน้า LINE
+      </Link>
     </div>
   );
 }
 
-function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['profile']; onSubmitted: () => void }) {
+function ReportTab({ onSubmitted }: { onSubmitted: () => void }) {
   const [formData, setFormData] = useState<FormData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResult | null>(null);
@@ -399,7 +364,6 @@ function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['p
       formData={formData ?? { enabled: true, categories: [], priorities: ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'], privacy: DEFAULT_PRIVACY }}
       loading={!formData && !loadError}
       loadError={loadError}
-      lineProfile={lineProfile}
       onSubmitted={(submitted) => {
         if (submitted.trackingToken) rememberTicket({ ...submitted, trackingToken: submitted.trackingToken });
         setResult(submitted);
@@ -408,7 +372,7 @@ function ReportTab({ lineProfile, onSubmitted }: { lineProfile: LineBootstrap['p
   );
 }
 
-function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: { formData: FormData; loading: boolean; loadError: string | null; lineProfile: LineBootstrap['profile']; onSubmitted: (result: SubmitResult) => void }) {
+function ReportForm({ formData, loading, loadError, onSubmitted }: { formData: FormData; loading: boolean; loadError: string | null; onSubmitted: (result: SubmitResult) => void }) {
   const [initialDraft] = useState(getTicketDraft);
   const [guestName, setGuestName] = useState(initialDraft.guestName ?? '');
   const [requesterPosition, setRequesterPosition] = useState(initialDraft.requesterPosition ?? '');
@@ -429,13 +393,6 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lineAuthenticated = Boolean(lineProfile && lineProfile.linkStatus !== 'Suspended');
-
-  useEffect(() => {
-    if (!lineAuthenticated) return;
-    setGuestName(lineProfile?.fullName || '');
-    setGuestDepartment((current) => current || lineProfile?.department || '');
-  }, [lineAuthenticated, lineProfile]);
 
   useEffect(() => {
     saveTicketDraft({ guestName, requesterPosition, requesterPhone, guestDepartment, incidentAt, erpModule, location, assetCode, categoryId, priority, title, description, privacyConsent });
@@ -479,56 +436,44 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
       setError('กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket');
       return;
     }
-    if (!lineAuthenticated && !turnstileToken) {
+    if (!turnstileToken) {
       setError('กรุณายืนยันความปลอดภัยก่อนส่ง Ticket');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      if (lineAuthenticated && normalizedRequesterName !== lineProfile?.fullName) {
-        await lineApiFetch('/api/v1/line/profile', {
-          method: 'PATCH',
-          body: JSON.stringify({ fullName: normalizedRequesterName }),
-        });
-      }
-      const commonPayload = {
-        requesterPhone: normalizedPhone || undefined,
-        requesterPosition: requesterPosition || undefined,
-        incidentAt: new Date(incidentAt).toISOString(),
-        erpModule: erpModule || undefined,
-        location: location || undefined,
-        assetCode: assetCode || undefined,
-        categoryId,
-        priority: priority || undefined,
-        title,
-        description,
-        privacyConsent: true as const,
-      };
-      const submitted: SubmitResult = lineAuthenticated
-        ? await lineApiFetch<{ id: string; ticket_no?: string }>('/api/v1/line/tickets', {
-          method: 'POST',
-          body: JSON.stringify({ ...commonPayload, department: guestDepartment || undefined }),
-        }).then((ticket) => ({ id: ticket.id, ticketNo: ticket.ticket_no, channel: 'line' as const }))
-        : await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
-          method: 'POST',
-          body: JSON.stringify({ ...commonPayload, guestName: normalizedRequesterName, guestDepartment: guestDepartment || undefined, website: website || undefined, turnstileToken }),
-        });
+      const submitted = await publicTicketApiFetch<SubmitResult>('/api/v1/public/tickets', {
+        method: 'POST',
+        body: JSON.stringify({
+          requesterPhone: normalizedPhone || undefined,
+          requesterPosition: requesterPosition || undefined,
+          incidentAt: new Date(incidentAt).toISOString(),
+          erpModule: erpModule || undefined,
+          location: location || undefined,
+          assetCode: assetCode || undefined,
+          categoryId,
+          priority: priority || undefined,
+          title,
+          description,
+          privacyConsent: true as const,
+          guestName: normalizedRequesterName,
+          guestDepartment: guestDepartment || undefined,
+          website: website || undefined,
+          turnstileToken,
+        }),
+      });
       let attachmentCount = 0;
       let attachmentWarning: string | undefined;
       for (const file of attachments) {
         try {
           const uploadBody = new window.FormData();
           uploadBody.append('file', file);
-          if (lineAuthenticated) {
-            await lineApiFetch(`/api/v1/line/tickets/${submitted.id}/attachments`, { method: 'POST', body: uploadBody });
-          } else {
-            await publicTicketApiFetch(`/api/v1/public/tickets/${submitted.id}/attachments`, {
-              method: 'POST',
-              headers: { 'x-tracking-token': submitted.trackingToken ?? '' },
-              body: uploadBody,
-            });
-          }
+          await publicTicketApiFetch(`/api/v1/public/tickets/${submitted.id}/attachments`, {
+            method: 'POST',
+            headers: { 'x-tracking-token': submitted.trackingToken ?? '' },
+            body: uploadBody,
+          });
           attachmentCount += 1;
         } catch (uploadError) {
           attachmentWarning = uploadError instanceof ApiError
@@ -542,7 +487,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : 'ส่งแจ้งซ่อมไม่สำเร็จ');
     } finally {
-      if (!lineAuthenticated) turnstileRef.current?.reset();
+      turnstileRef.current?.reset();
       setSubmitting(false);
     }
   }
@@ -575,7 +520,6 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
             <div>
               <label className={LABEL} htmlFor="guestName">ชื่อ–นามสกุลผู้แจ้ง <Required /></label>
               <input id="guestName" className={INPUT} value={guestName} onChange={(event) => setGuestName(event.target.value)} required maxLength={160} autoComplete="name" placeholder="เช่น สมชาย ใจดี" />
-              {lineAuthenticated && <p className="mt-1 text-[11px] text-slate-500">ใช้ชื่อจริงในใบแจ้งซ่อม ระบบจะบันทึกชื่อนี้แทนชื่อโปรไฟล์ LINE</p>}
             </div>
             <div>
               <label className={LABEL} htmlFor="phone">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
@@ -674,9 +618,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
             <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-700 focus:ring-primary-500" />
             <span>{formData.privacy.consentText ?? DEFAULT_PRIVACY.consentText}</span>
           </label>
-          {!lineAuthenticated && (
-            <TurnstileWidget ref={turnstileRef} action="public_ticket" onTokenChange={setTurnstileToken} />
-          )}
+          <TurnstileWidget ref={turnstileRef} action="public_ticket" onTokenChange={setTurnstileToken} />
         </FormSection>
 
         <input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} className="absolute left-[-9999px] opacity-0" aria-hidden="true" />
@@ -696,7 +638,7 @@ function ReportForm({ formData, loading, loadError, lineProfile, onSubmitted }: 
               <p className="text-[11px] text-slate-500">ช่องที่มี <span className="text-red-500">*</span> จำเป็นต้องกรอก</p>
             </div>
           </div>
-          <button type="submit" disabled={submitting || loading || (!lineAuthenticated && !turnstileToken)} className={PRIMARY_BUTTON}>
+          <button type="submit" disabled={submitting || loading || !turnstileToken} className={PRIMARY_BUTTON}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             ส่งแจ้งซ่อม
           </button>
@@ -789,7 +731,7 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
 
   return (
     <div className={`${CARD} mx-auto max-w-2xl p-6`}>
-      <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">{result.channel === 'line' ? 'Ticket ผูกกับบัญชี LINE แล้ว ติดตามสถานะได้ทันที' : 'กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง'}</p></div>
+      <div className="flex flex-col items-center gap-2 text-center"><CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden="true" /><h2 className="text-lg font-bold text-slate-900">ส่งแจ้งซ่อมสำเร็จ</h2><p className="text-sm text-slate-500">กรุณาบันทึกรหัสติดตามนี้ไว้เพื่อเช็คสถานะภายหลัง</p></div>
       <div className="mt-5 rounded-lg border border-primary-200 bg-primary-50 p-4">
         <p className="text-xs text-slate-500">เลข Ticket</p>
         <p className="break-all font-mono text-sm text-slate-800">{result.ticketNo ?? result.id}</p>
@@ -800,7 +742,7 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
               <p className="font-mono text-lg font-extrabold tracking-wider text-primary-900" data-testid="public-tracking-code">{result.trackingToken}</p>
               <button type="button" onClick={() => void copyToken()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-700 px-3 py-2 text-xs font-bold text-white hover:bg-primary-800" aria-label="คัดลอกรหัสติดตาม"><ClipboardCopy className="h-4 w-4" aria-hidden="true" /> คัดลอก</button>
             </div>
-            <p className="mt-2 text-xs text-primary-800">ระบบบันทึก Ticket นี้ไว้ในเครื่องให้อัตโนมัติ กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
+            <p className="mt-2 text-xs text-primary-800">ระบบจำ Ticket นี้ไว้เฉพาะ browser session ปัจจุบัน กรุณาเก็บรหัสติดตามเป็นความลับเพราะใช้เปิดดูรายละเอียดและไฟล์แนบได้</p>
             {copied && <p className="mt-1 text-xs font-semibold text-emerald-600">คัดลอกรหัสแล้ว</p>}
           </>
         ) : (
@@ -818,38 +760,17 @@ function SubmittedCard({ result, onTrackStatus }: { result: SubmitResult; onTrac
   );
 }
 
-function StatusTab({ onReport }: { onReport: () => void }) {
+function StatusTab() {
   const [saved, setSaved] = useState<SavedTicket[]>([]);
   const [ticketId, setTicketId] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<TrackedTicket | null>(null);
-  const [detailAccess, setDetailAccess] = useState<{ channel: 'guest' | 'line'; id: string; token?: string } | null>(null);
-  const [lineBootstrap, setLineBootstrap] = useState<LineBootstrap | null>(null);
-  const [lineTickets, setLineTickets] = useState<LineTicketSummary[] | null>(null);
-  const [lineCheckLoading, setLineCheckLoading] = useState(() => Boolean(getLineSessionToken()));
-  const [lineError, setLineError] = useState<string | null>(null);
+  const [detailAccess, setDetailAccess] = useState<{ id: string; token: string } | null>(null);
 
   useEffect(() => {
     setSaved(getSavedTickets());
-    if (!getLineSessionToken()) return;
-
-    async function loadLineAccount() {
-      try {
-        const bootstrap = await lineApiFetch<LineBootstrap>('/api/v1/line/bootstrap');
-        setLineBootstrap(bootstrap);
-        if (bootstrap.authenticated && bootstrap.profile?.linkStatus !== 'Suspended') {
-          setLineTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
-        }
-      } catch (loadError) {
-        setLineError(loadError instanceof ApiError ? loadError.message : 'โหลดรายการ Ticket จาก LINE ไม่สำเร็จ');
-      } finally {
-        setLineCheckLoading(false);
-      }
-    }
-
-    void loadLineAccount();
   }, []);
 
   async function lookup(id: string, trackingToken: string) {
@@ -861,7 +782,7 @@ function StatusTab({ onReport }: { onReport: () => void }) {
         headers: { 'x-tracking-token': trackingToken },
       });
       setDetail(loaded);
-      setDetailAccess({ channel: 'guest', id: loaded.ticket.id, token: trackingToken });
+      setDetailAccess({ id: loaded.ticket.id, token: trackingToken });
     } catch (lookupError) {
       setError(lookupError instanceof ApiError ? lookupError.message : 'ค้นหาไม่สำเร็จ');
     } finally {
@@ -869,26 +790,11 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     }
   }
 
-  async function openLineDetail(id: string) {
-    setLoading(true);
-    setLineError(null);
-    try {
-      setDetail(await lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${id}`));
-      setDetailAccess({ channel: 'line', id });
-    } catch (loadError) {
-      setLineError(loadError instanceof ApiError ? loadError.message : 'โหลดรายละเอียด Ticket ไม่สำเร็จ');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /** ดึงใบเดิมซ้ำจากช่องทางที่เปิดอยู่ — ใช้ทั้งหลังส่งข้อความและตอนรีเฟรชอัตโนมัติ */
+  /** ดึงใบเดิมซ้ำ — ใช้ทั้งหลังส่งข้อความและตอนรีเฟรชอัตโนมัติ */
   async function reloadDetail(access: NonNullable<typeof detailAccess>): Promise<TrackedTicket> {
-    return access.channel === 'line'
-      ? lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${access.id}`)
-      : publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(access.id)}`, {
-        headers: { 'x-tracking-token': access.token ?? '' },
-      });
+    return publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(access.id)}`, {
+      headers: { 'x-tracking-token': access.token },
+    });
   }
 
   // ผู้แจ้งเปิดหน้านี้ค้างไว้รอคำตอบจากช่าง จึงดึงซ้ำเป็นระยะแทนที่จะให้กด refresh เอง
@@ -905,15 +811,11 @@ function StatusTab({ onReport }: { onReport: () => void }) {
 
   async function sendMessage(message: string) {
     if (!detailAccess) throw new Error('ไม่พบข้อมูลสำหรับส่งข้อความ');
-    if (detailAccess.channel === 'line') {
-      await lineApiFetch(`/api/v1/line/tickets/${detailAccess.id}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
-    } else {
-      await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/conversation`, {
-        method: 'POST',
-        headers: { 'x-tracking-token': detailAccess.token ?? '' },
-        body: JSON.stringify({ message }),
-      });
-    }
+    await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/conversation`, {
+      method: 'POST',
+      headers: { 'x-tracking-token': detailAccess.token },
+      body: JSON.stringify({ message }),
+    });
     setDetail(await reloadDetail(detailAccess));
   }
 
@@ -923,15 +825,12 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     body.set('file', file);
     body.set('ratings', JSON.stringify(ratings));
     if (feedback) body.set('feedback', feedback);
-    if (detailAccess.channel === 'line') {
-      await lineApiFetch(`/api/v1/line/tickets/${detailAccess.id}/signoff`, { method: 'POST', body });
-      setDetail(await lineApiFetch<TrackedTicket>(`/api/v1/line/tickets/${detailAccess.id}`));
-      setLineTickets(await lineApiFetch<LineTicketSummary[]>('/api/v1/line/tickets'));
-    } else {
-      const headers = { 'x-tracking-token': detailAccess.token ?? '' };
-      await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/signoff`, { method: 'POST', headers, body });
-      setDetail(await publicTicketApiFetch<TrackedTicket>(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}`, { headers }));
-    }
+    await publicTicketApiFetch(`/api/v1/public/tickets/${encodeURIComponent(detailAccess.id)}/signoff`, {
+      method: 'POST',
+      headers: { 'x-tracking-token': detailAccess.token },
+      body,
+    });
+    setDetail(await reloadDetail(detailAccess));
   }
 
   if (detail) {
@@ -945,41 +844,8 @@ function StatusTab({ onReport }: { onReport: () => void }) {
     );
   }
 
-  if (lineCheckLoading) {
-    return (
-      <div className={`${CARD} flex items-center justify-center gap-2 p-10 text-sm text-slate-500`} role="status">
-        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-        กำลังโหลดรายการจากบัญชี LINE
-      </div>
-    );
-  }
-
-  const hasActiveLineAccount = Boolean(
-    lineBootstrap?.authenticated
-    && lineBootstrap.profile
-    && lineBootstrap.profile.linkStatus !== 'Suspended',
-  );
-
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      {hasActiveLineAccount && lineBootstrap?.profile && (
-        <LineTicketList
-          profileName={lineBootstrap.profile.fullName}
-          tickets={lineTickets}
-          loading={loading}
-          onOpen={openLineDetail}
-          onReport={onReport}
-        />
-      )}
-
-      {lineBootstrap?.authenticated && lineBootstrap.profile?.linkStatus === 'Suspended' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          บัญชี LINE นี้ถูกระงับ จึงยังแสดงรายการ Ticket อัตโนมัติไม่ได้
-          <Link to="/line" className="ml-1 font-semibold text-primary-700 hover:underline">ดูรายละเอียด</Link>
-        </div>
-      )}
-      {lineError && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{lineError}</div>}
-
       <GuestTicketLookup
         saved={saved}
         ticketId={ticketId}
@@ -989,6 +855,7 @@ function StatusTab({ onReport }: { onReport: () => void }) {
         onTicketIdChange={setTicketId}
         onTokenChange={setToken}
         onLookup={lookup}
+        onClearSaved={() => { clearSavedTickets(); setSaved([]); }}
       />
     </div>
   );
@@ -1147,6 +1014,18 @@ function TicketDetailView({
 
         <aside className="min-w-0 space-y-4" aria-label="ข้อมูลประกอบ Ticket">
           {ticket.status !== 'เสร็จสิ้น' && signoffCard}
+          <RequesterInfoCard
+            info={{
+              name: ticket.requester_name_snapshot ?? ticket.guest_name,
+              position: ticket.requester_position_snapshot,
+              department: ticket.guest_department,
+              phone: ticket.requester_phone,
+              incidentAt: ticket.incident_at,
+              erpModule: ticket.erp_module,
+              location: ticket.location,
+              assetName: ticket.asset_name_snapshot,
+            }}
+          />
           <TicketAttachments attachments={detail.attachments ?? []} />
         </aside>
       </div>
@@ -1438,80 +1317,6 @@ function TicketAttachments({ attachments }: { attachments: TrackedTicket['attach
   );
 }
 
-function LineTicketList({
-  profileName,
-  tickets,
-  loading,
-  onOpen,
-  onReport,
-}: {
-  profileName: string;
-  tickets: LineTicketSummary[] | null;
-  loading: boolean;
-  onOpen: (id: string) => Promise<void>;
-  onReport: () => void;
-}) {
-  return (
-    <section className={`${CARD} overflow-hidden`} aria-labelledby="line-ticket-list-title">
-      <div className="flex flex-col gap-3 border-b border-slate-200 bg-gradient-to-r from-white to-primary-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="public-line-button flex h-10 w-10 shrink-0 items-center justify-center">
-            <MessageCircle className="h-5 w-5 fill-current" aria-hidden="true" />
-          </span>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id="line-ticket-list-title" className="font-bold text-slate-900">รายการแจ้งซ่อมของฉัน</h2>
-              {tickets && <span className="rounded-full bg-primary-100 px-2.5 py-1 text-[10px] font-bold text-primary-700">{tickets.length} รายการ</span>}
-            </div>
-            <p className="mt-1 text-xs text-slate-500">เข้าสู่ระบบด้วย LINE · {profileName}</p>
-          </div>
-        </div>
-        <button type="button" onClick={onReport} className="public-line-button inline-flex min-h-11 items-center justify-center gap-2 px-4 text-xs font-bold">
-          <Wrench className="h-4 w-4" aria-hidden="true" /> แจ้งซ่อมใหม่
-        </button>
-      </div>
-
-      {tickets === null ? (
-        <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />กำลังโหลดรายการ</div>
-      ) : tickets.length === 0 ? (
-        <div className="p-10 text-center">
-          <TicketCheck className="mx-auto h-9 w-9 text-slate-300" aria-hidden="true" />
-          <p className="mt-3 text-sm font-semibold text-slate-600">ยังไม่มีรายการแจ้งซ่อมผ่านบัญชี LINE นี้</p>
-          <button type="button" onClick={onReport} className="mt-3 text-sm font-bold text-primary-700 hover:underline">เริ่มแจ้งปัญหา</button>
-        </div>
-      ) : (
-        <ul className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="รายการแจ้งซ่อม">
-          {tickets.map((ticket) => (
-            <li key={ticket.id}>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void onOpen(ticket.id)}
-                aria-label={`เปิดรายละเอียด ${ticket.ticket_no} ${ticket.title}`}
-                className="group flex min-h-[190px] w-full flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md disabled:cursor-wait disabled:opacity-60"
-              >
-                <div className="flex w-full items-start justify-between gap-3">
-                  <span className="font-mono text-[11px] font-bold text-primary-700">{ticket.ticket_no}</span>
-                  <Badge variant={ticketStatusTone[ticket.status]}>{ticketStatusLabel[ticket.status]}</Badge>
-                </div>
-                <p className="mt-3 line-clamp-2 text-sm font-bold leading-6 text-slate-800">{ticket.title}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1">{ticket.category?.name ?? 'ไม่ระบุประเภท'}</span>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1">เร่งด่วน {ticket.priority}</span>
-                </div>
-                <div className="mt-auto flex w-full items-center justify-between gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                  <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />{formatTicketDate(ticket.created_at)}</span>
-                  <ChevronRight className="h-4 w-4 text-primary-600 transition group-hover:translate-x-0.5" aria-hidden="true" />
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function GuestTicketLookup({
   saved,
   ticketId,
@@ -1521,6 +1326,7 @@ function GuestTicketLookup({
   onTicketIdChange,
   onTokenChange,
   onLookup,
+  onClearSaved,
 }: {
   saved: SavedTicket[];
   ticketId: string;
@@ -1530,6 +1336,7 @@ function GuestTicketLookup({
   onTicketIdChange: (value: string) => void;
   onTokenChange: (value: string) => void;
   onLookup: (id: string, token: string) => Promise<void>;
+  onClearSaved: () => void;
 }) {
   return (
     <section className={`${CARD} overflow-hidden`} aria-labelledby="ticket-lookup-title">
@@ -1567,8 +1374,13 @@ function GuestTicketLookup({
 
           {saved.length > 0 && (
             <div className="mt-5">
-              <p className="mb-2 text-xs font-bold text-slate-600">Ticket ที่บันทึกไว้ในเครื่องนี้</p>
-              <ul className="grid gap-2 sm:grid-cols-2" aria-label="Ticket ที่บันทึกในเครื่องนี้">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-xs font-bold text-slate-600">Ticket ที่บันทึกไว้ใน session นี้</p>
+                <button type="button" onClick={onClearSaved} className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:underline">
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> ล้างประวัติ
+                </button>
+              </div>
+              <ul className="grid gap-2 sm:grid-cols-2" aria-label="Ticket ที่บันทึกใน browser session นี้">
                 {saved.map((row) => (
                   <li key={row.id}>
                     <button
@@ -1596,7 +1408,7 @@ function GuestTicketLookup({
                 <input id="token" className={INPUT} value={token} onChange={(event) => onTokenChange(event.target.value)} required maxLength={64} placeholder="เช่น ABCD-EFGH-JKLM" autoComplete="off" />
               </div>
             </div>
-            <p className="text-[11px] leading-5 text-slate-500">รหัสติดตามแสดงหลังส่งแจ้งซ่อมสำเร็จ และระบบจะบันทึกไว้ในเครื่องที่ใช้แจ้งให้อัตโนมัติ</p>
+            <p className="text-[11px] leading-5 text-slate-500">รหัสติดตามแสดงหลังส่งแจ้งซ่อมสำเร็จ และเก็บไว้เฉพาะ browser session นี้จนกว่าจะปิดแท็บหรือล้างประวัติ</p>
             {error && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</div>}
             <button type="submit" disabled={loading} className={`${PRIMARY_BUTTON} w-full`}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}

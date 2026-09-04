@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context, MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { calculateTicketOverallRating } from '@itlife/shared';
 import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
@@ -38,6 +39,8 @@ import {
 export const lineRoute = new Hono<AppEnv>();
 
 const MAX_LINE_TICKET_ATTACHMENTS = 5;
+const LINE_OAUTH_BINDING_COOKIE = '__Host-line_oauth_binding';
+const LINE_OAUTH_BINDING_MAX_AGE = 1800;
 /** ใบที่เดินจบแล้วไม่รับข้อความเพิ่ม — ผู้แจ้งต้องเปิดใบใหม่แทนการต่อท้ายใบเดิม */
 const LINE_TICKET_MESSAGE_CLOSED_STATUSES = ['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'];
 const LINE_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
@@ -135,8 +138,35 @@ lineRoute.get(
   async (c) => {
     const reqId = c.get('requestId');
     try {
-      const url = await createLineLoginUrl(c.env, c.req.valid('query').returnMode);
-      return c.json(ok(reqId, { url }));
+      const url = new URL('/api/v1/line/login-start', c.req.url);
+      url.searchParams.set('returnMode', c.req.valid('query').returnMode ?? 'report');
+      c.header('Cache-Control', 'no-store');
+      return c.json(ok(reqId, { url: url.toString() }));
+    } catch (error) {
+      return dbFailJson(c, 'LINE_LOGIN_NOT_CONFIGURED', error instanceof Error ? error : { message: String(error) }, 'LINE Login ยังใช้งานไม่ได้');
+    }
+  },
+);
+
+/** Top-level navigation sets an HttpOnly browser binding before leaving for LINE. */
+lineRoute.get(
+  '/login-start',
+  edgeRateLimit({ keyFn: (c) => `line_login_start:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 20, keyFn: (c) => `line_login_start:${clientIp(c)}` }),
+  zValidator('query', lineLoginUrlQuerySchema, zodValidationHook),
+  async (c) => {
+    try {
+      const browserBinding = randomToken();
+      const url = await createLineLoginUrl(c.env, c.req.valid('query').returnMode, browserBinding);
+      setCookie(c, LINE_OAUTH_BINDING_COOKIE, browserBinding, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+        path: '/',
+        maxAge: LINE_OAUTH_BINDING_MAX_AGE,
+      });
+      c.header('Cache-Control', 'no-store');
+      return c.redirect(url, 302);
     } catch (error) {
       return dbFailJson(c, 'LINE_LOGIN_NOT_CONFIGURED', error instanceof Error ? error : { message: String(error) }, 'LINE Login ยังใช้งานไม่ได้');
     }
@@ -147,8 +177,11 @@ lineRoute.get(
 lineRoute.get('/callback', async (c) => {
   const query = c.req.query();
   const frontendBase = c.env.PUBLIC_APP_URL || new URL(c.req.url).origin;
+  const browserBinding = getCookie(c, LINE_OAUTH_BINDING_COOKIE);
+  deleteCookie(c, LINE_OAUTH_BINDING_COOKIE, { path: '/', secure: true, sameSite: 'Lax' });
+  c.header('Cache-Control', 'no-store');
   try {
-    const result = await completeLineLoginCallback(c.env, query);
+    const result = await completeLineLoginCallback(c.env, query, browserBinding);
     const admin = createAdminClient(c.env);
     const now = new Date().toISOString();
 

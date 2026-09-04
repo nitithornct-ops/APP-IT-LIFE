@@ -35,8 +35,21 @@ describe('form HTML utilities', () => {
     ]) {
       const safe = sanitizeFormHtml(`<img src="${hostile}" />`);
       expect(safe).not.toContain(hostile);
-      expect(safe).toContain('src="#"');
+      expect(safe).not.toContain(' src=');
     }
+  });
+
+  it('blocks foreign namespaces, encoded script URLs, and overlay CSS', () => {
+    const safe = sanitizeFormHtml(`
+      <svg><a xlink:href="javascript:alert(1)"><text>svg trap</text></a></svg>
+      <math><mtext><img src=x onerror=alert(1)></mtext></math>
+      <a href="&#106;avascript:alert(1)" target="_blank">link</a>
+      <img src="https://example.test/logo.png" style="position:fixed;inset:0;z-index:9999;width:160px;height:auto">
+    `);
+    expect(safe).not.toMatch(/svg|math|xlink|javascript|onerror|position|inset|z-index/i);
+    expect(safe).toContain('width:160px');
+    expect(safe).toContain('height:auto');
+    expect(safe).toContain('rel="noopener noreferrer"');
   });
 
   it('builds a Word-compatible download', () => {

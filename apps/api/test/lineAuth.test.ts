@@ -79,12 +79,12 @@ describe('normalizeReturnMode / sessionHours', () => {
 
 describe('createLineLoginUrl', () => {
   it('throws with the config-status message when LINE Login is not configured', async () => {
-    await expect(createLineLoginUrl({ ...configuredEnv, LINE_LOGIN_ENABLED: undefined }, 'report'))
+    await expect(createLineLoginUrl({ ...configuredEnv, LINE_LOGIN_ENABLED: undefined }, 'report', randomToken()))
       .rejects.toThrow('LINE Login ยังไม่เปิดใช้งาน');
   });
 
   it('builds an authorize URL with PKCE S256, the configured client_id, and openid+profile scope', async () => {
-    const url = new URL(await createLineLoginUrl(configuredEnv, 'status'));
+    const url = new URL(await createLineLoginUrl(configuredEnv, 'status', randomToken()));
     expect(url.origin + url.pathname).toBe('https://access.line.me/oauth2/v2.1/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('client_id')).toBe(configuredEnv.LINE_LOGIN_CHANNEL_ID);
@@ -187,21 +187,22 @@ describe('completeLineLoginCallback', () => {
   }
 
   it('rejects when LINE redirects back with an error param', async () => {
-    await expect(completeLineLoginCallback(configuredEnv, { error: 'access_denied', error_description: 'user cancelled' }))
+    await expect(completeLineLoginCallback(configuredEnv, { error: 'access_denied', error_description: 'user cancelled' }, randomToken()))
       .rejects.toThrow('LINE ปฏิเสธการเข้าสู่ระบบ');
   });
 
   it('rejects a forged/expired state (fails signature verification)', async () => {
-    await expect(completeLineLoginCallback(configuredEnv, { code: 'abc', state: 'not-a-real-signed-state' }))
+    await expect(completeLineLoginCallback(configuredEnv, { code: 'abc', state: 'not-a-real-signed-state' }, randomToken()))
       .rejects.toThrow('คำขอ LINE Login หมดอายุหรือไม่ถูกต้อง');
   });
 
   it('completes the flow end to end: builds a login URL, then resolves the callback with matching nonce', async () => {
-    const url = new URL(await createLineLoginUrl(configuredEnv, 'kb'));
+    const browserBinding = randomToken();
+    const url = new URL(await createLineLoginUrl(configuredEnv, 'kb', browserBinding));
     const state = url.searchParams.get('state')!;
     mockLineApis(url.searchParams.get('nonce')!, { sub: `U${'b'.repeat(32)}` });
 
-    const result = await completeLineLoginCallback(configuredEnv, { code: 'auth-code', state });
+    const result = await completeLineLoginCallback(configuredEnv, { code: 'auth-code', state }, browserBinding);
     expect(result.lineUserId).toBe(`U${'b'.repeat(32)}`);
     expect(result.displayName).toBe('ทดสอบ ผู้ใช้');
     expect(result.friendStatus).toBe('Friend');
@@ -212,10 +213,25 @@ describe('completeLineLoginCallback', () => {
   });
 
   it('rejects when the verified ID token aud does not match the configured channel (token issued for a different channel)', async () => {
-    const url = new URL(await createLineLoginUrl(configuredEnv, 'report'));
+    const browserBinding = randomToken();
+    const url = new URL(await createLineLoginUrl(configuredEnv, 'report', browserBinding));
     const state = url.searchParams.get('state')!;
     mockLineApis(url.searchParams.get('nonce')!, { aud: '999999999' });
-    await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state })).rejects.toThrow('ไม่ได้ออกให้ Channel นี้');
+    await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state }, browserBinding)).rejects.toThrow('ไม่ได้ออกให้ Channel นี้');
+  });
+
+  it('rejects a callback without the HttpOnly browser binding before calling LINE', async () => {
+    const url = new URL(await createLineLoginUrl(configuredEnv, 'report', randomToken()));
+    await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state: url.searchParams.get('state')! }, undefined))
+      .rejects.toThrow('ไม่ได้เริ่มจาก browser นี้');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a callback carrying a binding from a different browser', async () => {
+    const url = new URL(await createLineLoginUrl(configuredEnv, 'report', randomToken()));
+    await expect(completeLineLoginCallback(configuredEnv, { code: 'auth-code', state: url.searchParams.get('state')! }, randomToken()))
+      .rejects.toThrow('ไม่ได้เริ่มจาก browser นี้');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

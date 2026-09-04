@@ -39,7 +39,6 @@ jobs:
       VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
       TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
       UAT_ADMIN_EMAIL: ${{ secrets.UAT_ADMIN_EMAIL }}
-      UAT_ADMIN_PASSWORD: ${{ secrets.UAT_ADMIN_PASSWORD }}
       UAT_ADMIN_TOTP_SECRET: ${{ secrets.UAT_ADMIN_TOTP_SECRET }}
       UAT_REQUESTER_EMAIL: ${{ secrets.UAT_REQUESTER_EMAIL }}
       UAT_TECHNICIAN_EMAIL: ${{ secrets.UAT_TECHNICIAN_EMAIL }}
@@ -52,8 +51,8 @@ jobs:
       UAT_VENDOR_EMAIL: ${{ secrets.UAT_VENDOR_EMAIL }}
       UAT_VENDOR_PASSWORD: ${{ secrets.UAT_VENDOR_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -70,7 +69,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY TURNSTILE_SECRET UAT_ADMIN_EMAIL UAT_ADMIN_PASSWORD; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY TURNSTILE_SECRET UAT_ADMIN_EMAIL UAT_ADMIN_TOTP_SECRET UAT_REQUESTER_EMAIL UAT_TECHNICIAN_EMAIL UAT_TECHNICIAN_TOTP_SECRET UAT_APPROVER_EMAIL UAT_APPROVER_TOTP_SECRET UAT_MANAGER_EMAIL UAT_MANAGER_TOTP_SECRET UAT_VENDOR_CODE UAT_VENDOR_EMAIL UAT_VENDOR_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error title=Staging configuration missing::$name is required"
               missing=1
@@ -84,19 +83,6 @@ jobs:
         run: |
           node -e "const fs=require('fs'); fs.writeFileSync('apps/api/.dev.vars', ['SUPABASE_URL='+process.env.SUPABASE_URL,'SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'SUPABASE_SERVICE_ROLE_KEY='+process.env.SUPABASE_SERVICE_ROLE_KEY,'ALLOWED_ORIGINS=http://localhost:5173','ENVIRONMENT=staging','PUBLIC_APP_URL=http://localhost:5173','PUBLIC_TICKET_FORM_ENABLED=true','TURNSTILE_SECRET='+process.env.TURNSTILE_SECRET,'TURNSTILE_HOSTNAMES=localhost'].join('\n')+'\n')"
           node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'VITE_TURNSTILE_SITE_KEY='+process.env.VITE_TURNSTILE_SITE_KEY].join('\n')+'\n')"
-      - name: Enable external role UAT when credentials are complete
-        shell: bash
-        run: |
-          enabled=1
-          for name in UAT_ADMIN_TOTP_SECRET UAT_REQUESTER_EMAIL UAT_TECHNICIAN_EMAIL UAT_TECHNICIAN_TOTP_SECRET UAT_APPROVER_EMAIL UAT_APPROVER_TOTP_SECRET UAT_MANAGER_EMAIL UAT_MANAGER_TOTP_SECRET UAT_VENDOR_CODE UAT_VENDOR_EMAIL UAT_VENDOR_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              enabled=0
-            fi
-          done
-          echo "LIVE_EXTERNAL_UAT_E2E=$enabled" >> "$GITHUB_ENV"
-          if [ "$enabled" -eq 0 ]; then
-            echo "::notice title=External role UAT skipped::Configure the optional multi-role UAT secrets to enable this suite"
-          fi
       - name: Run all live browser and API flows
         env:
           LIVE_E2E: "1"
@@ -107,12 +93,15 @@ jobs:
           LIVE_TASKS_E2E: "1"
           LIVE_TICKET_ACTIONS_E2E: "1"
           LIVE_TICKET_FORM_E2E: "1"
+          LIVE_EXTERNAL_UAT_E2E: "1"
         # Live specs mutate one shared staging database. Serial execution keeps a
         # fixture cleanup in one spec from racing a create/read flow in another.
         run: npm run test:e2e --workspace apps/web -- --workers=1
+      - name: Reject skipped browser tests
+        run: node scripts/verify-playwright-no-skips.mjs apps/web/test-results/results.json
       - name: Upload browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: staging-e2e-evidence
           path: |

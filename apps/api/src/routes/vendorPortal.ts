@@ -148,16 +148,26 @@ vendorPortalRoute.post(
     }
     const validPassword = await verifyVendorPassword(body.password, account.password_hash);
     if (!validPassword) {
-      const failures = Number(account.failed_login_count ?? 0) + 1;
-      await admin.from('vendor_portal_accounts').update({
-        failed_login_count: failures,
-        locked_until: failures >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : null,
-      }).eq('id', account.id);
+      const { error: failureError } = await admin.rpc('register_vendor_portal_login_failure', {
+        account_id_input: account.id,
+        failed_at_input: new Date().toISOString(),
+      });
+      if (failureError) return dbFailJson(c, 'VENDOR_LOGIN_COUNTER_FAILED', failureError, 'ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ');
       return invalid();
     }
 
     const token = randomToken();
     const now = new Date();
+    // Re-check the lock atomically after password verification. A concurrent failed request may
+    // have crossed the threshold while PBKDF2 was running, in which case this login must not win.
+    const { data: loginAllowed, error: successError } = await admin.rpc('register_vendor_portal_login_success', {
+      account_id_input: account.id,
+      login_at_input: now.toISOString(),
+    });
+    if (successError) return dbFailJson(c, 'VENDOR_LOGIN_COUNTER_FAILED', successError, 'ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ');
+    if (loginAllowed !== true) {
+      return c.json(fail(reqId, 'VENDOR_ACCOUNT_LOCKED', 'บัญชีถูกล็อกชั่วคราว กรุณาลองใหม่ภายหลังหรือติดต่อเจ้าหน้าที่ IT'), 429);
+    }
     const { error: sessionError } = await admin.from('vendor_portal_sessions').insert({
       account_id: account.id,
       session_hash: await hashVendorSessionToken(token),
@@ -166,7 +176,6 @@ vendorPortalRoute.post(
       user_agent: (c.req.header('user-agent') ?? '').slice(0, 500) || null,
     });
     if (sessionError) return dbFailJson(c, 'VENDOR_SESSION_CREATE_FAILED', sessionError, 'เข้าสู่ระบบไม่สำเร็จ');
-    await admin.from('vendor_portal_accounts').update({ failed_login_count: 0, locked_until: null, last_login_at: now.toISOString() }).eq('id', account.id);
     const profile: VendorPortalProfile = {
       accountId: account.id,
       vendorId: vendor.id,

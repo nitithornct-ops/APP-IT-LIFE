@@ -1,6 +1,7 @@
 import { TICKET_RATING_CRITERIA, type TicketRatingDetails } from '@itlife/shared';
 import { AlertTriangle, FileText, Headset, Loader2, MessageCircle, Paperclip, Send, Star } from 'lucide-react';
 import { useState } from 'react';
+import { RequesterInfoCard } from '../../components/tickets/RequesterInfoCard';
 import { RequesterSignoffCard } from '../../components/tickets/RequesterSignoffCard';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -170,6 +171,19 @@ export function LineTicketDetail({ detail, onBack, onSign, onSendMessage }: {
             <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-6 text-slate-600 dark:text-slate-300">{ticket.resolution}</p>
           </section>
         )}
+
+        <RequesterInfoCard
+          info={{
+            name: ticket.requester_name_snapshot,
+            position: ticket.requester_position_snapshot,
+            department: ticket.department_name_snapshot,
+            phone: ticket.requester_phone,
+            incidentAt: ticket.incident_at,
+            erpModule: ticket.erp_module,
+            location: ticket.location,
+            assetName: ticket.asset_name_snapshot,
+          }}
+        />
 
         <RequesterSignoffCard
           status={ticket.status}

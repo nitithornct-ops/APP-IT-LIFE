@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, ClipboardList, Home, UserRound } from 'lucide-react';
+import { ArrowLeft, Bell, BookOpen, ClipboardList, Home, UserRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../../utils/cn';
 import type { LinePortalTab } from './types';
@@ -6,6 +6,7 @@ import type { LinePortalTab } from './types';
 const TABS: Array<{ key: LinePortalTab; label: string; icon: typeof Home }> = [
   { key: 'home', label: 'หน้าแรก', icon: Home },
   { key: 'tickets', label: 'งานของฉัน', icon: ClipboardList },
+  { key: 'knowledge', label: 'วิธีแก้', icon: BookOpen },
   { key: 'notifications', label: 'แจ้งเตือน', icon: Bell },
   { key: 'profile', label: 'โปรไฟล์', icon: UserRound },
 ];

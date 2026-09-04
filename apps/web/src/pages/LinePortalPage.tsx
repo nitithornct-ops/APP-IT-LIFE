@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { LineProfileNameForm } from '../components/LineProfileNameForm';
 import { PublicBrand } from '../components/PublicBrand';
 import { LineHomeTab } from '../features/linePortal/LineHomeTab';
+import { LineKnowledgeTab } from '../features/linePortal/LineKnowledgeTab';
 import { LineMyTicketsTab, type LineTicketFilter } from '../features/linePortal/LineMyTicketsTab';
 import { LineNewTicketForm } from '../features/linePortal/LineNewTicketForm';
 import { LineNotificationsTab } from '../features/linePortal/LineNotificationsTab';
@@ -87,7 +88,10 @@ export function LinePortalPage() {
 
   useEffect(() => {
     void loadBootstrap();
-    if (params.get('mode') === 'status') setTab('tickets');
+    // mode มาจาก returnMode ของ LINE Login — 'report' ใช้ค่าเริ่มต้น (หน้าแรก)
+    const mode = params.get('mode');
+    if (mode === 'status') setTab('tickets');
+    else if (mode === 'kb') setTab('knowledge');
     const callbackError = params.get('error');
     if (callbackError) setError(callbackError);
   }, [loadBootstrap, params]);
@@ -158,10 +162,10 @@ export function LinePortalPage() {
   }
 
   async function startLogin() {
+    const mode = params.get('mode');
+    const returnMode = mode === 'status' || mode === 'kb' ? mode : 'report';
     try {
-      const { url } = await lineApiFetch<{ url: string }>(
-        `/api/v1/line/login-url?returnMode=${params.get('mode') === 'status' ? 'status' : 'report'}`,
-      );
+      const { url } = await lineApiFetch<{ url: string }>(`/api/v1/line/login-url?returnMode=${returnMode}`);
       window.location.href = url;
     } catch (loginError) {
       setError(loginError instanceof ApiError ? loginError.message : 'เริ่ม LINE Login ไม่สำเร็จ');
@@ -226,6 +230,9 @@ export function LinePortalPage() {
               onSendMessage={sendMessage}
             />
           )
+        ) : tab === 'knowledge' ? (
+          // แท็บนี้อ่านคลังบทความสาธารณะ ไม่ต้องรอรายการ Ticket โหลดเสร็จ
+          <LineKnowledgeTab />
         ) : tickets === null ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />

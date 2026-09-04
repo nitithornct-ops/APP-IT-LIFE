@@ -71,8 +71,11 @@ const DETAIL = {
     description: 'กดปุ่มเปิดแล้วไฟสถานะติด แต่หน้าจอไม่ขึ้นภาพ ลองต่อจอนอกแล้วยังไม่ติด เริ่มเป็นเมื่อเช้าวันนี้',
     resolution: null,
     requester_name_snapshot: PROFILE.fullName,
+    requester_position_snapshot: 'เจ้าหน้าที่บัญชีอาวุโส',
     department_name_snapshot: PROFILE.department,
     requester_phone: 'ต่อ 1204',
+    incident_at: '2026-08-29T02:00:00.000Z',
+    erp_module: 'AP - เจ้าหนี้',
     source_channel: 'line',
     rating_details: null,
     rating_criteria_snapshot: null,
@@ -133,6 +136,32 @@ const CATEGORIES = [
   { id: 'cat-3', name: 'ระบบ ERP', default_priority: 'สูง', response_sla_hours: 1, resolution_sla_hours: 4, sla_hours: 4 },
 ];
 
+const KNOWLEDGE = {
+  articles: [
+    {
+      id: 'kb-1',
+      article_code: 'KB-0007',
+      title: 'เครื่องเชื่อม Wi-Fi ไม่ได้',
+      category: 'เครือข่าย',
+      symptom: 'ขึ้นว่าเชื่อมต่อแล้วแต่เปิดเว็บไม่ได้',
+      solution: 'ปิด-เปิด Wi-Fi แล้วลืมเครือข่ายเดิม จากนั้นเชื่อมต่อใหม่ด้วยรหัสผ่านล่าสุด',
+      tags: ['wifi'],
+      views: 42,
+      helpful: 12,
+    },
+  ],
+  categories: [{ id: 'kb-cat-1', name: 'เครือข่าย' }],
+};
+
+async function mockPublicKnowledge(page: Page) {
+  await page.route(/\/api\/v1\/public\/knowledge/, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: KNOWLEDGE, requestId: 'line-portal-e2e' }),
+    });
+  });
+}
+
 async function mockLineApi(page: Page) {
   await page.route(/\/api\/v1\/line\//, async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -175,6 +204,7 @@ test.describe('LINE service desk portal', () => {
 
   test.beforeEach(async ({ page }) => {
     await mockLineApi(page);
+    await mockPublicKnowledge(page);
     await page.addInitScript(() => localStorage.setItem('line_session_token', 'a'.repeat(64)));
   });
 
@@ -198,6 +228,11 @@ test.describe('LINE service desk portal', () => {
     await expect(page.getByText('ขั้นที่ 3 จาก 5 · กำลังแก้ไข')).toBeVisible();
     await expect(page.getByText('ช่างเข้าตรวจสอบหน้างาน')).toBeVisible();
     await expect(page.getByText('รับทราบครับ ขอบคุณครับ')).toBeVisible();
+
+    const requesterInfo = page.getByTestId('requester-info');
+    await expect(requesterInfo.getByText('เจ้าหน้าที่บัญชีอาวุโส')).toBeVisible();
+    await expect(requesterInfo.getByText('ต่อ 1204')).toBeVisible();
+    await expect(requesterInfo.getByText('AP - เจ้าหนี้')).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.screenshot({ path: testInfo.outputPath('line-portal-detail.png'), fullPage: true });
@@ -219,6 +254,23 @@ test.describe('LINE service desk portal', () => {
     await page.screenshot({ path: testInfo.outputPath('line-portal-profile.png'), fullPage: true });
 
     await expectNoHorizontalOverflow(page);
+  });
+
+  // คลังบทความเคยอยู่แค่ในหน้า /report — พอแยกช่องทาง ผู้ใช้ LINE ต้องอ่านได้จากพอร์ทัลนี้เอง
+  test('แท็บวิธีแก้เบื้องต้นอ่านคลังบทความสาธารณะได้', async ({ page }, testInfo) => {
+    await page.goto('/line');
+
+    await page.getByRole('button', { name: 'วิธีแก้' }).click();
+
+    await expect(page.getByRole('heading', { name: 'วิธีแก้เบื้องต้น' })).toBeVisible();
+    await expect(page.getByText('เครื่องเชื่อม Wi-Fi ไม่ได้')).toBeVisible();
+    await expect(page.getByText('KB-0007 · เครือข่าย')).toBeVisible();
+
+    await page.getByText('เครื่องเชื่อม Wi-Fi ไม่ได้').click();
+    await expect(page.getByText(/ปิด-เปิด Wi-Fi แล้วลืมเครือข่ายเดิม/)).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.screenshot({ path: testInfo.outputPath('line-portal-knowledge.png'), fullPage: true });
   });
 
   test('ฟอร์มแจ้งซ่อมใหม่แสดงหมวดหมู่ ความเร่งด่วน และไฟล์แนบ', async ({ page }, testInfo) => {

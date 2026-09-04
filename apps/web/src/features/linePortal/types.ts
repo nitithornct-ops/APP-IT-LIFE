@@ -75,8 +75,11 @@ export interface LineTicketDetail {
     description: string;
     resolution: string | null;
     requester_name_snapshot: string | null;
+    requester_position_snapshot: string | null;
     department_name_snapshot: string | null;
     requester_phone: string | null;
+    incident_at: string | null;
+    erp_module: string | null;
     source_channel: string | null;
     rating_details: TicketRatingDetails | null;
     rating_criteria_snapshot: TicketRatingSnapshotItem[] | null;
@@ -100,4 +103,19 @@ export interface LineNotification {
   created_at: string;
 }
 
-export type LinePortalTab = 'home' | 'tickets' | 'notifications' | 'profile';
+export interface LineKnowledgeData {
+  articles: Array<{
+    id: string;
+    article_code: string;
+    title: string;
+    category: string | null;
+    symptom: string | null;
+    solution: string;
+    tags: string[];
+    views: number;
+    helpful: number;
+  }>;
+  categories: Array<{ id: string; name: string }>;
+}
+
+export type LinePortalTab = 'home' | 'tickets' | 'knowledge' | 'notifications' | 'profile';

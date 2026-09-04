@@ -20,9 +20,20 @@ on:
       fresh_start_confirm:
         description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
         required: false
-      staging_e2e_run_ref:
-        description: Successful Staging Live E2E run URL/ID for this exact master commit
+      staging_e2e_mode:
+        description: verified = อ้างอิง run ที่ผ่านจริง / deferred = staging ยังตั้งค่าไม่เสร็จ ปล่อยโดยไม่มีหลักฐาน
         required: true
+        type: choice
+        options:
+          - verified
+          - deferred
+        default: verified
+      staging_e2e_run_ref:
+        description: "verified เท่านั้น: Successful Staging Live E2E run URL/ID for this exact master commit"
+        required: false
+      staging_e2e_defer_confirm:
+        description: "deferred เท่านั้น: พิมพ์ NO-STAGING-EVIDENCE เพื่อรับว่ารุ่นนี้ขึ้นโดยไม่มีหลักฐาน E2E"
+        required: false
       attachments_approved:
         description: All attachment migration exceptions were reviewed (ไม่มีผลในโหมด fresh-start)
         required: true
@@ -49,6 +60,8 @@ jobs:
       FRESH_START_CONFIRM: ${{ inputs.fresh_start_confirm }}
       STAGING_E2E_APPROVAL_REF: ${{ inputs.staging_e2e_run_ref }}
       STAGING_E2E_RUN_REF: ${{ inputs.staging_e2e_run_ref }}
+      STAGING_E2E_MODE: ${{ inputs.staging_e2e_mode }}
+      STAGING_E2E_DEFER_CONFIRM: ${{ inputs.staging_e2e_defer_confirm }}
       MIGRATION_ATTACHMENTS_APPROVED: ${{ inputs.attachments_approved }}
       PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
@@ -75,8 +88,8 @@ jobs:
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_DEFAULT_TO: ${{ secrets.LINE_DEFAULT_TO }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm

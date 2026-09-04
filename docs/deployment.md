@@ -12,6 +12,20 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
   ไว้เป็น `staging_e2e_run_ref` โดย run ต้องเป็น workflow `.github/workflows/staging-e2e.yml`, สำเร็จบน
   `master` commit SHA เดียวกับที่จะ deploy และอายุไม่เกิน 72 ชั่วโมง ระบบจะตรวจผ่าน GitHub API ก่อน deploy
 
+### 1.0 เลือก `staging_e2e_mode`
+
+**`verified`** (ค่าเริ่มต้น) — ตามเงื่อนไขข้างบนทุกข้อ ใช้กับทุกรุ่นตามปกติ
+
+**`deferred`** — ใช้ได้เฉพาะเมื่อ environment `staging` ยังตั้งค่าไม่ครบจน Staging Live E2E รันไม่ได้เลย
+
+- ต้องกรอก `staging_e2e_defer_confirm` เป็น `NO-STAGING-EVIDENCE` และยังบังคับ `migration_approval_ref`
+  เหมือนเดิม เพื่อให้ย้อนตรวจได้ว่าใครสั่งเลื่อนและอ้างอิงเอกสารใด
+- ปล่อย `staging_e2e_run_ref` ว่างไว้ — ด่าน `npm run predeploy` รับคำประกาศแทนเลข run ในโหมดนี้
+- ด่านจะพิมพ์ `::warning` ติดไว้ในหน้า run ว่า commit นี้ขึ้น Production โดยไม่มีหลักฐาน E2E
+- **สิ่งที่แลกไป:** ไม่มีอะไรยืนยันว่า flow จริง (login/MFA, ticket, vendor portal, report) ยังทำงาน
+  บนข้อมูลจริง — regression จะถูกพบที่ Production เท่านั้น ต้องเฝ้า smoke test ในข้อ 4 ให้ครบ
+- เมื่อตั้งค่า staging ครบแล้วให้กลับไปใช้ `verified` ทันที โหมดนี้ไม่ใช่ค่าปกติของโครงการ
+
 ### 1.1 เลือก `migration_mode` ให้ตรงกับรุ่นที่ปล่อย
 
 ด่าน `npm run migration:gate` มีสองโหมด และ **ทั้งสองโหมดบังคับ `migration_approval_ref` เสมอ** —
@@ -49,10 +63,14 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
 - LINE secrets ตาม feature ที่เปิด: `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`,
   `LINE_SESSION_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_DEFAULT_TO`
+- เมื่อเปิด `NOTIFY_LINE_ENABLED=true` การแจ้งเตือน in-app ทุกโมดูลจะส่งคู่ทาง LINE ให้ผู้ใช้ที่มี
+  บัญชี LINE สถานะ `Active`; เหตุการณ์ Ticket ที่มี Flex Message เฉพาะทางจะกันการส่งซ้ำไว้แล้ว
+  ข้อความตอบกลับของผู้ใช้ยังเข้าสู่ LINE OA Manager ตามการตั้งค่า Chat เดิม
 
-Environment `staging` ต้องมี `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-`UAT_ADMIN_EMAIL` และ `UAT_ADMIN_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ
-หากขาด credential หรือ secret ใด Staging Live E2E จะ fail ไม่ใช่ skip แล้วแสดงผลเขียว
+Environment `staging` ต้องมี Supabase keys, อีเมล UAT ของ Requester/Technician/Approver/Manager/Admin,
+TOTP secret ของ Technician/Approver/Manager/Admin และ `UAT_VENDOR_CODE`, `UAT_VENDOR_EMAIL`,
+`UAT_VENDOR_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ หากขาด
+credential/secret ใด หรือมี test ถูก skip แม้แต่รายการเดียว Staging Live E2E จะ fail แทนการแสดงผลเขียว
 
 Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
 ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์

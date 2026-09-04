@@ -419,7 +419,8 @@ publicTicketsRoute.get(
 
     let ticketQuery = admin
       .from('tickets')
-      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, guest_name, rating, rating_details, rating_criteria_snapshot, feedback, feedback_at, requester_signature_storage_path, requester_signature_uploaded_at, category:ticket_categories(name)')
+      // ข้อมูลผู้แจ้งเป็นสิ่งที่เจ้าของใบกรอกเอง จึงส่งคืนให้เจ้าของรหัสติดตามตรวจทานได้
+      .select('id, ticket_no, title, description, status, priority, resolution, created_at, resolved_at, closed_at, guest_name, guest_department, requester_position_snapshot, requester_phone, incident_at, erp_module, location, asset_name_snapshot, rating, rating_details, rating_criteria_snapshot, feedback, feedback_at, requester_signature_storage_path, requester_signature_uploaded_at, category:ticket_categories(name)')
       .eq('source_channel', 'guest')
       .eq('public_tracking_token_hash', tokenHash);
     const ticketRef = c.req.param('id')!;

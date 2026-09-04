@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asServiceRole, asUser, createTestDb } from './testDb';
+import { asAnon, asServiceRole, asUser, createTestDb } from './testDb';
 
 const USER_ID = '00000000-0000-0000-0000-000000010101';
 const OTHER_USER_ID = '00000000-0000-0000-0000-000000010102';
@@ -44,6 +44,39 @@ describe('Outsource company portal database controls', () => {
     const sessions = await asUser(db, USER_ID, async () => db.query('select id from public.vendor_portal_sessions'));
     expect(accounts.rows).toHaveLength(0);
     expect(sessions.rows).toHaveLength(0);
+  });
+
+  it('increments failed logins atomically, locks at five, and refuses a racing success', async () => {
+    const failedAt = '2026-09-02T10:00:00.000Z';
+    const attempts = await asServiceRole(db, async () => Promise.all(
+      Array.from({ length: 5 }, () => db.query<{ failed_login_count: number; locked_until: string | null }>(
+        'select * from public.register_vendor_portal_login_failure($1, $2)', [accountId, failedAt],
+      )),
+    ));
+    expect(attempts.map((result) => result.rows[0]!.failed_login_count).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+
+    const locked = await asServiceRole(db, async () => db.query<{ allowed: boolean }>(
+      'select public.register_vendor_portal_login_success($1, $2) as allowed', [accountId, '2026-09-02T10:01:00.000Z'],
+    ));
+    expect(locked.rows).toEqual([{ allowed: false }]);
+
+    const unlocked = await asServiceRole(db, async () => db.query<{ allowed: boolean }>(
+      'select public.register_vendor_portal_login_success($1, $2) as allowed', [accountId, '2026-09-02T10:16:00.000Z'],
+    ));
+    expect(unlocked.rows).toEqual([{ allowed: true }]);
+    const account = await asServiceRole(db, async () => db.query<{ failed_login_count: number; locked_until: string | null }>(
+      'select failed_login_count, locked_until from public.vendor_portal_accounts where id = $1', [accountId],
+    ));
+    expect(account.rows).toEqual([{ failed_login_count: 0, locked_until: null }]);
+  });
+
+  it('does not expose vendor lockout mutation functions to anon or authenticated roles', async () => {
+    await expect(asAnon(db, async () => db.query(
+      'select * from public.register_vendor_portal_login_failure($1, now())', [accountId],
+    ))).rejects.toThrow(/permission denied/i);
+    await expect(asUser(db, USER_ID, async () => db.query(
+      'select public.register_vendor_portal_login_success($1, now())', [accountId],
+    ))).rejects.toThrow(/permission denied/i);
   });
 
   it('accepts a signed response only from the company assigned to an outsourced Ticket', async () => {

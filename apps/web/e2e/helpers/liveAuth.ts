@@ -174,7 +174,7 @@ export async function installLiveSession(page: Page, email: string, totpSecret?:
   });
   if (!loginLog.ok) throw new Error(`Could not record live test login (${loginLog.status})`);
   await page.addInitScript(
-    ({ storageKey, serializedSession }) => localStorage.setItem(storageKey, serializedSession),
+    ({ storageKey, serializedSession }) => sessionStorage.setItem(storageKey, serializedSession),
     { storageKey: `sb-${projectRef}-auth-token`, serializedSession: JSON.stringify(session) },
   );
   await page.goto('/');
