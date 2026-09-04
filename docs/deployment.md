@@ -20,6 +20,7 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
 
 - ต้องกรอก `staging_e2e_defer_confirm` เป็น `NO-STAGING-EVIDENCE` และยังบังคับ `migration_approval_ref`
   เหมือนเดิม เพื่อให้ย้อนตรวจได้ว่าใครสั่งเลื่อนและอ้างอิงเอกสารใด
+- ปล่อย `staging_e2e_run_ref` ว่างไว้ — ด่าน `npm run predeploy` รับคำประกาศแทนเลข run ในโหมดนี้
 - ด่านจะพิมพ์ `::warning` ติดไว้ในหน้า run ว่า commit นี้ขึ้น Production โดยไม่มีหลักฐาน E2E
 - **สิ่งที่แลกไป:** ไม่มีอะไรยืนยันว่า flow จริง (login/MFA, ticket, vendor portal, report) ยังทำงาน
   บนข้อมูลจริง — regression จะถูกพบที่ Production เท่านั้น ต้องเฝ้า smoke test ในข้อ 4 ให้ครบ
