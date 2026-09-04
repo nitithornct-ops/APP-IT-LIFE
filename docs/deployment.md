@@ -12,6 +12,19 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
   ไว้เป็น `staging_e2e_run_ref` โดย run ต้องเป็น workflow `.github/workflows/staging-e2e.yml`, สำเร็จบน
   `master` commit SHA เดียวกับที่จะ deploy และอายุไม่เกิน 72 ชั่วโมง ระบบจะตรวจผ่าน GitHub API ก่อน deploy
 
+### 1.0 เลือก `staging_e2e_mode`
+
+**`verified`** (ค่าเริ่มต้น) — ตามเงื่อนไขข้างบนทุกข้อ ใช้กับทุกรุ่นตามปกติ
+
+**`deferred`** — ใช้ได้เฉพาะเมื่อ environment `staging` ยังตั้งค่าไม่ครบจน Staging Live E2E รันไม่ได้เลย
+
+- ต้องกรอก `staging_e2e_defer_confirm` เป็น `NO-STAGING-EVIDENCE` และยังบังคับ `migration_approval_ref`
+  เหมือนเดิม เพื่อให้ย้อนตรวจได้ว่าใครสั่งเลื่อนและอ้างอิงเอกสารใด
+- ด่านจะพิมพ์ `::warning` ติดไว้ในหน้า run ว่า commit นี้ขึ้น Production โดยไม่มีหลักฐาน E2E
+- **สิ่งที่แลกไป:** ไม่มีอะไรยืนยันว่า flow จริง (login/MFA, ticket, vendor portal, report) ยังทำงาน
+  บนข้อมูลจริง — regression จะถูกพบที่ Production เท่านั้น ต้องเฝ้า smoke test ในข้อ 4 ให้ครบ
+- เมื่อตั้งค่า staging ครบแล้วให้กลับไปใช้ `verified` ทันที โหมดนี้ไม่ใช่ค่าปกติของโครงการ
+
 ### 1.1 เลือก `migration_mode` ให้ตรงกับรุ่นที่ปล่อย
 
 ด่าน `npm run migration:gate` มีสองโหมด และ **ทั้งสองโหมดบังคับ `migration_approval_ref` เสมอ** —
