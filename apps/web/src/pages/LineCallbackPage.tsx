@@ -13,10 +13,7 @@ export function LineCallbackPage() {
     const mode = params.get('mode');
     const error = params.get('error');
     if (token) setLineSessionToken(token);
-    if (token && mode === 'report') {
-      navigate('/report', { replace: true });
-      return;
-    }
+    // ผู้ใช้ LINE จบที่พอร์ทัล LINE เสมอ — /report เป็นช่องทาง guest ล้วน ไม่รับ session นี้แล้ว
     const search = error ? `?error=${encodeURIComponent(error)}` : mode ? `?mode=${mode}` : '';
     navigate(`/line${search}`, { replace: true });
   }, [navigate]);

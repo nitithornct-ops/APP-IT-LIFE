@@ -3,15 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PublicTicketPortalPage } from './PublicTicketPortalPage';
 
-const { getLineSessionTokenMock, lineApiFetchMock, publicTicketApiFetchMock } = vi.hoisted(() => ({
-  getLineSessionTokenMock: vi.fn(),
-  lineApiFetchMock: vi.fn(),
+const { publicTicketApiFetchMock } = vi.hoisted(() => ({
   publicTicketApiFetchMock: vi.fn(),
-}));
-
-vi.mock('../services/lineApiClient', () => ({
-  getLineSessionToken: getLineSessionTokenMock,
-  lineApiFetch: lineApiFetchMock,
 }));
 
 vi.mock('../services/publicTicketApiClient', () => ({
@@ -28,31 +21,11 @@ beforeEach(() => {
     reset: vi.fn(),
     remove: vi.fn(),
   };
-  getLineSessionTokenMock.mockReturnValue('active-line-session');
   publicTicketApiFetchMock.mockResolvedValue({
     enabled: true,
     categories: [],
     priorities: [],
     privacy: { version: 'test', summary: '', dpoContact: '' },
-  });
-  lineApiFetchMock.mockImplementation((path: string) => {
-    if (path === '/api/v1/line/bootstrap') {
-      return Promise.resolve({ authenticated: true, profile: { fullName: 'สมชาย ใจดี', department: 'บัญชี', linkStatus: 'Active' } });
-    }
-    if (path === '/api/v1/line/tickets') {
-      return Promise.resolve([
-        {
-          id: 'ticket-1',
-          ticket_no: 'TCK-2026-0001',
-          title: 'เครื่องพิมพ์ใช้งานไม่ได้',
-          priority: 'ปานกลาง',
-          status: 'กำลังดำเนินการ',
-          created_at: '2026-08-13T03:00:00.000Z',
-          category: { name: 'อุปกรณ์สำนักงาน' },
-        },
-      ]);
-    }
-    return Promise.reject(new Error(`Unexpected LINE API path: ${path}`));
   });
 });
 
@@ -62,98 +35,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('PublicTicketPortalPage LINE status list', () => {
-  it('shows LINE tickets without waiting for an employee-link approval status', async () => {
+describe('PublicTicketPortalPage guest-only separation', () => {
+  // หน้านี้ไม่อ่าน LINE session อีกแล้ว — ผู้ใช้ LINE ต้องไปที่ /line
+  it('always renders the guest form with a bot check and a link out to the LINE portal', async () => {
     render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'ติดตามสถานะ' }));
-
-    expect(await screen.findByRole('list', { name: 'รายการแจ้งซ่อม' })).toBeVisible();
-    expect(screen.getByText('รายการแจ้งซ่อมของฉัน')).toBeVisible();
-    expect(screen.getByText('TCK-2026-0001')).toBeVisible();
-    expect(screen.getByText('เครื่องพิมพ์ใช้งานไม่ได้')).toBeVisible();
-    expect(screen.getByText('อุปกรณ์สำนักงาน')).toBeVisible();
-    expect(screen.getByText('กำลังดำเนินการ')).toBeVisible();
-    expect(screen.getByTestId('public-ticket-code-search')).toBeVisible();
-    expect(lineApiFetchMock).toHaveBeenCalledWith('/api/v1/line/tickets');
-  });
-});
-
-describe('PublicTicketPortalPage LINE report flow', () => {
-  it('asks for a manually entered name when LINE has not completed the requester profile', async () => {
-    lineApiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/v1/line/bootstrap') {
-        return Promise.resolve({ authenticated: true, profile: { fullName: '', department: '', linkStatus: 'Active' } });
-      }
-      if (path === '/api/v1/line/profile' && init?.method === 'PATCH') {
-        return Promise.resolve({ fullName: 'สมหญิง รักดี', department: '', linkStatus: 'Active' });
-      }
-      return Promise.reject(new Error(`Unexpected LINE API path: ${path}`));
-    });
-
-    render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
-
-    expect(await screen.findByText(/ระบบจะไม่ใช้ชื่อโปรไฟล์ LINE/)).toBeVisible();
-    const nameInput = screen.getByLabelText('ชื่อ–นามสกุล *');
-    expect(nameInput).toHaveValue('');
-
-    fireEvent.change(nameInput, { target: { value: 'สมหญิง รักดี' } });
-    fireEvent.click(screen.getByRole('button', { name: 'บันทึกและดำเนินการต่อ' }));
-
-    await waitFor(() => expect(lineApiFetchMock).toHaveBeenCalledWith('/api/v1/line/profile', {
-      method: 'PATCH',
-      body: JSON.stringify({ fullName: 'สมหญิง รักดี' }),
-    }));
-    expect(await screen.findByDisplayValue('สมหญิง รักดี')).toBeVisible();
+    expect(await screen.findByText('ข้อมูลผู้แจ้งและติดต่อกลับ')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'ไปหน้า LINE' })).toHaveAttribute('href', '/line');
+    expect(screen.getByLabelText(/ชื่อ–นามสกุล/)).toHaveValue('');
+    expect(screen.queryByText('เข้าสู่ระบบ LINE แล้ว')).not.toBeInTheDocument();
+    expect(publicTicketApiFetchMock.mock.calls.every(([path]) => path.startsWith('/api/v1/public/'))).toBe(true);
   });
 
-  it('uses the shared report form and creates a Ticket under the active LINE account', async () => {
-    publicTicketApiFetchMock.mockResolvedValue({
-      enabled: true,
-      categories: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Computer', response_sla_hours: 4, resolution_sla_hours: 24, sla_hours: 24 }],
-      priorities: ['ปานกลาง'],
-      privacy: { version: 'test', summary: 'privacy', dpoContact: 'IT' },
-    });
-    lineApiFetchMock.mockImplementation((path: string) => {
-      if (path === '/api/v1/line/bootstrap') {
-        return Promise.resolve({ authenticated: true, profile: { fullName: 'สมชาย ใจดี', department: 'บัญชี', linkStatus: 'Active' } });
-      }
-      if (path === '/api/v1/line/tickets') {
-        return Promise.resolve({ id: 'line-ticket-1', ticket_no: 'TCK-2026-0200' });
-      }
-      return Promise.reject(new Error(`Unexpected LINE API path: ${path}`));
-    });
-
-    render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
-
-    expect(await screen.findByText('เข้าสู่ระบบ LINE แล้ว')).toBeVisible();
-    expect(screen.getByLabelText(/ชื่อ–นามสกุล/)).toHaveValue('สมชาย ใจดี');
-    expect(screen.queryByRole('link', { name: 'LINE Login' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/เบอร์โทร/), { target: { value: '0812345678' } });
-    fireEvent.change(screen.getByLabelText(/ประเภทงานที่ขอรับบริการ/), { target: { value: '11111111-1111-4111-8111-111111111111' } });
-    fireEvent.change(screen.getByLabelText(/สรุปปัญหาสั้น/), { target: { value: 'เปิดเครื่องไม่ติด' } });
-    fireEvent.change(screen.getByLabelText(/รายละเอียดเพิ่มเติม/), { target: { value: 'กดปุ่มแล้วเครื่องไม่มีไฟ' } });
-    fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'ส่งแจ้งซ่อม' }));
-
-    expect(await screen.findByText('TCK-2026-0200')).toBeVisible();
-    expect(screen.getByText(/Ticket ผูกกับบัญชี LINE แล้ว/)).toBeVisible();
-    expect(screen.queryByTestId('public-tracking-code')).not.toBeInTheDocument();
-    const createCall = lineApiFetchMock.mock.calls.find(([path]) => path === '/api/v1/line/tickets');
-    expect(createCall?.[1]?.method).toBe('POST');
-    expect(JSON.parse(createCall?.[1]?.body as string)).toMatchObject({
-      requesterPhone: '0812345678',
-      categoryId: '11111111-1111-4111-8111-111111111111',
-      title: 'เปิดเครื่องไม่ติด',
-      description: 'กดปุ่มแล้วเครื่องไม่มีไฟ',
-      privacyConsent: true,
-      department: 'บัญชี',
-    });
-    expect(JSON.parse(createCall?.[1]?.body as string).incidentAt).toEqual(expect.any(String));
-  });
-
-  it('restores text fields saved before leaving for LINE Login', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
+  it('restores text fields saved on an earlier visit', async () => {
     sessionStorage.setItem('public_ticket_draft', JSON.stringify({
       guestName: 'ผู้แจ้งเดิม',
       requesterPhone: '0899999999',
@@ -173,7 +67,6 @@ describe('PublicTicketPortalPage LINE report flow', () => {
 
 describe('PublicTicketPortalPage report validation', () => {
   it('submits a guest Ticket without a phone number', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockImplementation((path: string) => {
       if (path === '/api/v1/public/tickets/form-data') {
         return Promise.resolve({
@@ -209,7 +102,6 @@ describe('PublicTicketPortalPage report validation', () => {
   });
 
   it('submits the shared report form with a short optional requester phone', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockImplementation((path: string) => {
       if (path === '/api/v1/public/tickets/form-data') {
         return Promise.resolve({
@@ -246,7 +138,6 @@ describe('PublicTicketPortalPage report validation', () => {
 
 describe('PublicTicketPortalPage guest status search', () => {
   it('requires the Ticket number and tracking token instead of name and phone', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     let signedOff = false;
     publicTicketApiFetchMock.mockImplementation((path: string) => {
       if (path === '/api/v1/public/tickets/form-data') {
@@ -258,7 +149,10 @@ describe('PublicTicketPortalPage guest status search', () => {
             id: 'guest-ticket-1', ticket_no: 'TCK-2026-0099', title: 'คอมพิวเตอร์เปิดไม่ติด', description: 'ไม่มีไฟเข้า',
             status: signedOff ? 'ปิดงาน' : 'เสร็จสิ้น', priority: 'ปานกลาง', resolution: 'เปลี่ยน Power Supply แล้ว', created_at: '2026-08-19T03:00:00.000Z',
             resolved_at: '2026-08-19T06:00:00.000Z', closed_at: signedOff ? '2026-08-19T07:00:00.000Z' : null,
-            guest_name: 'สมชาย ใจดี', rating: signedOff ? 5 : null, rating_details: signedOff ? { workQuality: 5 } : null,
+            guest_name: 'สมชาย ใจดี', guest_department: 'ฝ่ายบัญชี', requester_position_snapshot: 'เจ้าหน้าที่บัญชี',
+            requester_phone: '0812345678', incident_at: '2026-08-19T02:30:00.000Z', erp_module: 'AP - เจ้าหนี้',
+            location: 'อาคาร A ชั้น 3', asset_name_snapshot: 'NB-0042 Latitude 5440',
+            rating: signedOff ? 5 : null, rating_details: signedOff ? { workQuality: 5 } : null,
             rating_criteria_snapshot: signedOff ? [{ key: 'workQuality', label: 'คุณภาพงานซ่อม', score: 5 }] : null,
             feedback: null, feedback_at: signedOff ? '2026-08-19T07:00:00.000Z' : null,
             requester_signature_url: signedOff ? 'https://signed.test/requester.png' : null,
@@ -293,6 +187,16 @@ describe('PublicTicketPortalPage guest status search', () => {
       headers: { 'x-tracking-token': 'ABCD-EFGH-JKLM' },
     });
 
+    // ผู้แจ้งต้องตรวจทานสิ่งที่ตัวเองกรอกไว้ได้ โดยไม่ต้องถามทีม IT
+    const requesterInfo = within(screen.getByTestId('requester-info'));
+    expect(requesterInfo.getByText('สมชาย ใจดี')).toBeVisible();
+    expect(requesterInfo.getByText('เจ้าหน้าที่บัญชี')).toBeVisible();
+    expect(requesterInfo.getByText('ฝ่ายบัญชี')).toBeVisible();
+    expect(requesterInfo.getByText('0812345678')).toBeVisible();
+    expect(requesterInfo.getByText('AP - เจ้าหนี้')).toBeVisible();
+    expect(requesterInfo.getByText('อาคาร A ชั้น 3')).toBeVisible();
+    expect(requesterInfo.getByText('NB-0042 Latitude 5440')).toBeVisible();
+
     const signature = new File(['png'], 'requester.png', { type: 'image/png' });
     fireEvent.click(screen.getByRole('radio', { name: 'คุณภาพงานซ่อม 5 คะแนน ยอดเยี่ยม' }));
     fireEvent.change(screen.getByLabelText('ไฟล์ลายเซ็นผู้แจ้ง PNG'), { target: { files: [signature] } });
@@ -311,7 +215,6 @@ describe('PublicTicketPortalPage guest status search', () => {
   });
 
   it('lets the guest reply to the technician on the same ticket', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     const sent: string[] = [];
     publicTicketApiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
       if (path === '/api/v1/public/tickets/form-data') {
@@ -362,7 +265,6 @@ describe('PublicTicketPortalPage guest status search', () => {
   });
 
   it('shows a cancelled branch at the last normal flow step reached', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockImplementation((path: string) => {
       if (path === '/api/v1/public/tickets/form-data') {
         return Promise.resolve({ enabled: true, categories: [], priorities: [], privacy: { version: 'test', summary: '', dpoContact: '' } });
@@ -404,7 +306,6 @@ describe('PublicTicketPortalPage guest status search', () => {
 
 describe('PublicTicketPortalPage guest attachment upload', () => {
   it('keeps contact details in the problem card and uploads selected files after creating the Ticket', async () => {
-    getLineSessionTokenMock.mockReturnValue(null);
     publicTicketApiFetchMock.mockImplementation((path: string) => {
       if (path === '/api/v1/public/tickets/form-data') {
         return Promise.resolve({
@@ -425,7 +326,7 @@ describe('PublicTicketPortalPage guest attachment upload', () => {
 
     render(<MemoryRouter><PublicTicketPortalPage /></MemoryRouter>);
     expect(await screen.findByText('ข้อมูลผู้แจ้งและติดต่อกลับ')).toBeVisible();
-    expect(screen.getAllByRole('link', { name: 'LINE Login' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'ไปหน้า LINE' })).toHaveLength(1);
 
     fireEvent.change(screen.getByLabelText(/ชื่อ–นามสกุล/), { target: { value: 'สมชาย ใจดี' } });
     fireEvent.change(screen.getByLabelText(/เบอร์โทร/), { target: { value: '0812345678' } });

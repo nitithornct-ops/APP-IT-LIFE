@@ -20,6 +20,7 @@ const INTENTIONALLY_WITHOUT_PAGE_TITLE: Record<string, string> = {
   'pages/LinePortalPage.tsx': 'พอร์ทัลสาธารณะ design handoff 3a ใช้ top-nav คนละแบบ',
   'features/linePortal/LineHomeTab.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
   'features/linePortal/LineMyTicketsTab.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
+  'features/linePortal/LineKnowledgeTab.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
   'features/linePortal/LineNotificationsTab.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
   'features/linePortal/LineTicketDetail.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
   'pages/PublicTicketPortalPage.tsx': 'พอร์ทัลสาธารณะ design handoff 3a ใช้ top-nav คนละแบบ',
