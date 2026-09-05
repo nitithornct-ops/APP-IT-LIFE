@@ -91,13 +91,29 @@ function signatureHtml(signatureUrl: string | null | undefined): string {
   return `<img src="${escapeHtml(signatureUrl)}" alt="ลายเซ็นรับรอง Ticket" style="max-height:72px;max-width:180px;object-fit:contain">`;
 }
 
+/**
+ * โลโก้หัวเอกสารมาจากค่า ORG_LOGO_URL ในหน้าตั้งค่า ไม่ได้ฝังไว้ใน template
+ * เปลี่ยนโลโก้ที่เดียวแล้วแบบฟอร์มทุกใบเปลี่ยนตาม และเอกสารที่ยังไม่ตั้งโลโก้จะขึ้นหัวเรื่องเปล่า ๆ
+ * แทนที่จะเป็นขีด — เพราะรูปที่ไม่มีไม่ใช่ "ข้อมูลที่ยังไม่กรอก"
+ */
+function organizationLogoHtml(logoUrl: string | null | undefined): string {
+  if (!logoUrl || !/^https:\/\//i.test(logoUrl)) return '';
+  return `<img src="${escapeHtml(logoUrl)}" alt="โลโก้หน่วยงาน" style="max-height:96px;max-width:240px;object-fit:contain">`;
+}
+
+/** ไฟล์ภาพและลิงก์ที่ต้องเซ็นชื่อไว้ล่วงหน้า ผู้เรียกส่งมาเป็นชุดเดียว แทน argument เรียงยาวที่สลับกันได้ง่าย */
+export interface TicketFormAssets {
+  itSignatureUrl?: string | null;
+  requesterSignatureUrl?: string | null;
+  vendorSignatureUrl?: string | null;
+  organizationLogoUrl?: string | null;
+}
+
 export function renderTicketFormTemplate(
   templateHtml: string,
   ticket: TicketFormSource,
   issueForm?: TicketIssueFormSource | null,
-  itSignatureUrl?: string | null,
-  requesterSignatureUrl?: string | null,
-  vendorSignatureUrl?: string | null,
+  assets: TicketFormAssets = {},
 ): string {
   const response = issueForm?.vendor_response ?? {};
   const requesterName = ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name;
@@ -131,6 +147,7 @@ export function renderTicketFormTemplate(
     resolution_and_prevention: resolutionAndPrevention,
     vendor_assessor_name: vendorAssessor || ticket.outsource_name,
     vendor_signed_date: formatBangkokDate(submittedAt),
+    target_completion_date: formatBangkokDate(responseValue(response, 'targetCompletionDate')),
     credit_balance_before: responseValue(response, 'creditBalanceBefore'),
     manday_used: responseValue(response, 'mandayUsed'),
     credit_balance_after: responseValue(response, 'creditBalanceAfter'),
@@ -141,9 +158,10 @@ export function renderTicketFormTemplate(
     it_sign_date: formatBangkokDate(ticket.signature_uploaded_at),
   };
   const rawValues: Record<string, string> = {
-    requester_signature: signatureHtml(requesterSignatureUrl),
-    it_signature: signatureHtml(itSignatureUrl),
-    vendor_signature: signatureHtml(vendorSignatureUrl),
+    requester_signature: signatureHtml(assets.requesterSignatureUrl),
+    it_signature: signatureHtml(assets.itSignatureUrl),
+    vendor_signature: signatureHtml(assets.vendorSignatureUrl),
+    org_logo: organizationLogoHtml(assets.organizationLogoUrl),
   };
 
   return templateHtml.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key: string) => {

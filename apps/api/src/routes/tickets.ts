@@ -231,7 +231,12 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
   }
 
-  const [{ data: issueForm, error: issueError }, { data: worklogs, error: worklogError }, { data: outsourceSubmission, error: outsourceSubmissionError }] = await Promise.all([
+  const [
+    { data: issueForm, error: issueError },
+    { data: worklogs, error: worklogError },
+    { data: outsourceSubmission, error: outsourceSubmissionError },
+    { data: organizationLogo },
+  ] = await Promise.all([
     admin
       .from('issue_forms')
       .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
@@ -252,6 +257,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
       .order('revision', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    admin.from('system_settings').select('value').eq('key', 'ORG_LOGO_URL').maybeSingle(),
   ]);
   if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
 
@@ -293,7 +299,12 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     escalation_reason: outsourceLog?.detail ?? null,
   };
   const sourceHtml = issueForm?.content_html || template.content_html;
-  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, signatureUrl, requesterSignatureUrl, vendorSignatureUrl);
+  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, {
+    itSignatureUrl: signatureUrl,
+    requesterSignatureUrl,
+    vendorSignatureUrl,
+    organizationLogoUrl: organizationLogo?.value ?? null,
+  });
   const templateVersion = Number(issueForm?.template_version ?? template.current_version);
   const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;
   const checkmarks = savedCheckmarks
