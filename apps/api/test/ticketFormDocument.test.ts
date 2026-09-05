@@ -10,9 +10,7 @@ describe('Ticket Form Studio document', () => {
         root_cause: 'ข้อมูลเดิม', signature_uploaded_at: '2026-08-20T03:00:00.000Z',
       },
       { status: 'Vendor Replied', vendor_response: { rootCause: 'ERP validation ผิด' } },
-      'https://signed.test/ticket.png',
-      undefined,
-      'https://signed.test/vendor.png',
+      { itSignatureUrl: 'https://signed.test/ticket.png', vendorSignatureUrl: 'https://signed.test/vendor.png' },
     );
 
     expect(html).toContain('TCK-001');
@@ -37,8 +35,7 @@ describe('Ticket Form Studio document', () => {
         requester_signature_uploaded_at: '2026-08-26T02:35:00.000Z',
       },
       null,
-      null,
-      'https://signed.test/requester.png',
+      { requesterSignatureUrl: 'https://signed.test/requester.png' },
     );
 
     expect(html).toContain('นักบัญชี');
@@ -46,6 +43,31 @@ describe('Ticket Form Studio document', () => {
     expect(html).toContain('09:30');
     expect(html).toContain('https://signed.test/requester.png');
     expect(html).toMatch(/<p>—<\/p>$/);
+  });
+
+  it('takes the document logo from the organisation setting, not from the stored template', () => {
+    const html = renderTicketFormTemplate('<p>{{org_logo}}</p><h1>{{ticket_no}}</h1>', { ticket_no: 'TCK-002' }, null, {
+      organizationLogoUrl: 'https://cdn.test/logo.png',
+    });
+
+    expect(html).toContain('src="https://cdn.test/logo.png"');
+    expect(html).toContain('alt="โลโก้หน่วยงาน"');
+  });
+
+  // รูปที่ยังไม่ได้ตั้งค่าไม่ใช่ "ข้อมูลที่ยังไม่กรอก" หัวเอกสารจึงต้องว่าง ไม่ใช่ขีดกลางลอย ๆ
+  it('leaves the logo slot empty when no organisation logo is configured', () => {
+    expect(renderTicketFormTemplate('<p>{{org_logo}}</p>', {}, null, {})).toBe('<p></p>');
+    expect(renderTicketFormTemplate('<p>{{org_logo}}</p>', {}, null, { organizationLogoUrl: 'http://insecure.test/logo.png' })).toBe('<p></p>');
+  });
+
+  it('fills the completion date the company committed to in section 3', () => {
+    const html = renderTicketFormTemplate(
+      '<p>{{target_completion_date}}</p>',
+      {},
+      { vendor_response: { targetCompletionDate: '2026-09-12' } },
+    );
+
+    expect(html).toContain('12/09/2569');
   });
 
   it('marks Vendor sections not required for an internally resolved Ticket', () => {

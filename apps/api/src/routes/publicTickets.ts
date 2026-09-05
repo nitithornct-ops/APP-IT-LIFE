@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { calculateTicketOverallRating } from '@itlife/shared';
 import { Hono } from 'hono';
-import { buildTicketFlexMessage, notifyTicketTeam } from '../lib/lineMessaging';
+import { appUrl, buildTicketFlexMessage, formatThaiDateTime, notifyTicketTeam } from '../lib/lineMessaging';
 import { TICKET_PRIVACY_NOTICE, ticketConsentEvidence } from '../lib/privacyNotice';
 import { createAdminClient } from '../lib/supabase';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
@@ -187,7 +187,31 @@ publicTicketsRoute.post(
       actorEmail: `GUEST:${clientIp(c)}`, action: 'CREATE', module: 'ticket', targetTable: 'tickets',
       targetId: ticket.id, detail: { title: body.title, categoryId: body.categoryId, channel: 'guest', guestName: body.guestName }, requestId: reqId,
     });
-    await notifyTicketTeam(c.env, `Ticket ใหม่จากหน้าสาธารณะ: ${ticket.title} (${ticket.ticket_no})`);
+    await notifyTicketTeam(c.env, `Ticket ใหม่จากหน้าสาธารณะ: ${ticket.title} (${ticket.ticket_no})`, buildTicketFlexMessage({
+      eyebrow: 'มีรายการแจ้งซ่อมใหม่',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: ticket.status,
+      priority: ticket.priority,
+      requesterName: ticket.guest_name,
+      fields: [
+        { label: 'แผนก', value: ticket.guest_department },
+        { label: 'ตำแหน่ง', value: ticket.requester_position_snapshot },
+        { label: 'เบอร์ติดต่อ', value: ticket.requester_phone },
+        { label: 'หมวดหมู่', value: category.name },
+        { label: 'สถานที่', value: ticket.location },
+        { label: 'อุปกรณ์', value: ticket.asset_name_snapshot },
+        { label: 'โมดูล ERP', value: ticket.erp_module },
+        { label: 'เกิดเหตุเมื่อ', value: formatThaiDateTime(ticket.incident_at) },
+        { label: 'ต้องตอบรับภายใน', value: formatThaiDateTime(ticket.response_due_at) },
+        { label: 'กำหนดเสร็จ', value: formatThaiDateTime(ticket.due_at) },
+      ],
+      detail: ticket.description,
+      detailLabel: 'อาการที่แจ้ง',
+      footnote: `แจ้งผ่านหน้าสาธารณะเมื่อ ${formatThaiDateTime(ticket.created_at) ?? formatThaiDateTime(now)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
+      buttonLabel: 'เปิดรับเรื่อง',
+    }));
 
     return c.json(ok(reqId, { id: ticket.id, ticketNo: ticket.ticket_no, trackingToken }), 201);
   },
@@ -312,7 +336,7 @@ publicTicketsRoute.post(
     const tokenHash = await hashTrackingToken(tokenResult.data.token);
     const { data: ticket } = await admin
       .from('tickets')
-      .select('id, ticket_no, title, status, guest_name, requester_signature_storage_path')
+      .select('id, ticket_no, title, status, priority, guest_name, guest_department, assignee_name_snapshot, requester_signature_storage_path')
       .eq('id', c.req.param('id'))
       .eq('source_channel', 'guest')
       .eq('public_tracking_token_hash', tokenHash)
@@ -380,9 +404,24 @@ publicTicketsRoute.post(
     });
     const teamMessage = `ผู้แจ้งประเมิน ตรวจรับ และลงนามปิด ${ticket.ticket_no}: ${ticket.title}`;
     await notifyTicketTeam(c.env, teamMessage, buildTicketFlexMessage({
-      eyebrow: 'ผู้แจ้งตรวจรับและปิดงานแล้ว', title: ticket.title, ticketNo: ticket.ticket_no,
-      status: 'ปิดงาน', requesterName: ticket.guest_name, detail: `ผลประเมินรวม ${rating}/5 คะแนน`,
-      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      eyebrow: 'ผู้แจ้งตรวจรับและปิดงานแล้ว',
+      title: ticket.title,
+      ticketNo: ticket.ticket_no,
+      status: 'ปิดงาน',
+      previousStatus: 'เสร็จสิ้น',
+      priority: ticket.priority,
+      requesterName: ticket.guest_name,
+      rating,
+      fields: [
+        { label: 'แผนก', value: ticket.guest_department },
+        { label: 'ผู้รับผิดชอบ', value: ticket.assignee_name_snapshot },
+        ...ratingSnapshot.map((criterion) => ({ label: criterion.label, value: `${criterion.score}/5` })),
+      ],
+      detail: evaluation.data.feedback ?? null,
+      detailLabel: 'ความเห็นจากผู้แจ้ง',
+      footnote: `ตรวจรับเมื่อ ${formatThaiDateTime(saved.uploadedAt)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
+      buttonLabel: 'ดูใบงานที่ปิดแล้ว',
     }));
     return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน', rating }), 201);
   },
@@ -473,7 +512,7 @@ publicTicketsRoute.post(
     const ticketRef = c.req.param('id')!;
     let ticketQuery = admin
       .from('tickets')
-      .select('id, ticket_no, title, status, guest_name, assignee_id')
+      .select('id, ticket_no, title, status, priority, guest_name, guest_department, assignee_id, assignee_name_snapshot, due_at')
       .eq('source_channel', 'guest')
       .eq('public_tracking_token_hash', tokenHash);
     ticketQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketRef)
@@ -521,9 +560,17 @@ publicTicketsRoute.post(
       title: ticket.title,
       ticketNo: ticket.ticket_no,
       status: ticket.status,
+      priority: ticket.priority,
       requesterName: ticket.guest_name,
+      fields: [
+        { label: 'แผนก', value: ticket.guest_department },
+        { label: 'ผู้รับผิดชอบ', value: ticket.assignee_name_snapshot ?? 'ยังไม่มอบหมาย' },
+        { label: 'กำหนดเสร็จ', value: formatThaiDateTime(ticket.due_at) },
+      ],
       detail: message,
-      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      detailLabel: 'ข้อความจากผู้แจ้ง',
+      footnote: `ส่งเมื่อ ${formatThaiDateTime(worklog.created_at)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
       buttonLabel: 'ตอบกลับผู้แจ้ง',
     }));
 

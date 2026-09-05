@@ -5,10 +5,29 @@ const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ createAdminClient: () => ({ from: mocks.from }) }));
 
 import {
-  buildTicketFlexMessage, buildUserNotificationFlexMessage, resolveTicketRequesterLineTarget, resolveUserLineTarget, sendLinePush,
+  appUrl, buildTicketFlexMessage, buildUserNotificationFlexMessage, formatThaiDateTime,
+  resolveTicketRequesterLineTarget, resolveUserLineTarget, sendLinePush, type LineMessagePayload,
 } from '../src/lib/lineMessaging';
 
 const env = {} as Bindings;
+
+/** ข้อความทุกชิ้นในการ์ด ใช้ยืนยันว่าแถวที่ควรมีถูกวาด และแถวที่ไม่มีค่าถูกตัดทิ้งจริง */
+function flexTexts(message: LineMessagePayload): string[] {
+  const texts: string[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    if (record.type === 'text' && typeof record.text === 'string') texts.push(record.text);
+    Object.values(record).forEach(walk);
+  };
+  walk(message.contents);
+  return texts;
+}
+
+function flexFooterContents(message: LineMessagePayload): Record<string, unknown>[] {
+  return (message.contents as { footer?: { contents?: Record<string, unknown>[] } }).footer?.contents ?? [];
+}
 
 function mockLineRow(row: Record<string, unknown> | null) {
   const maybeSingle = vi.fn().mockResolvedValue({ data: row });
@@ -52,7 +71,114 @@ describe('resolveTicketRequesterLineTarget', () => {
   });
 });
 
+describe('appUrl', () => {
+  const appEnv = { PUBLIC_APP_URL: 'https://life-it.pages.dev/' } as Bindings;
+
+  it('builds an absolute in-app link for the card button', () => {
+    expect(appUrl(appEnv, '/tickets/abc')).toBe('https://life-it.pages.dev/tickets/abc');
+    expect(appUrl(appEnv, '/line?mode=status')).toBe('https://life-it.pages.dev/line?mode=status');
+  });
+
+  it('refuses to send the reader anywhere but this deployment', () => {
+    expect(appUrl(appEnv, 'https://evil.example/steal')).toBeNull();
+    expect(appUrl(appEnv, null)).toBeNull();
+    expect(appUrl({} as Bindings, '/tickets/abc')).toBeNull();
+  });
+});
+
+describe('formatThaiDateTime', () => {
+  it('renders Bangkok local time so the reader never converts a timezone', () => {
+    expect(formatThaiDateTime('2026-09-05T02:30:00.000Z')).toBe('5 ก.ย. 2569 09:30 น.');
+  });
+
+  it('drops a value that is not a real timestamp instead of printing Invalid Date', () => {
+    expect(formatThaiDateTime('not-a-date')).toBeNull();
+    expect(formatThaiDateTime(null)).toBeNull();
+  });
+});
+
+describe('buildTicketFlexMessage', () => {
+  const fullCard = () => buildTicketFlexMessage({
+    eyebrow: 'อัปเดตสถานะแจ้งซ่อม',
+    title: 'เครื่องพิมพ์ชั้น 3 ไม่ทำงาน',
+    ticketNo: 'TCK-001',
+    status: 'เสร็จสิ้น',
+    previousStatus: 'กำลังดำเนินการ',
+    priority: 'สูง',
+    requesterName: 'สมชาย ใจดี',
+    fields: [
+      { label: 'ผู้รับผิดชอบ', value: 'ช่างสมศักดิ์' },
+      { label: 'สถานที่', value: null },
+      { label: 'กำหนดเสร็จ', value: formatThaiDateTime('2026-09-05T02:30:00.000Z') },
+    ],
+    rating: 4,
+    detail: 'เปลี่ยนชุดดรัมและทดสอบพิมพ์แล้ว',
+    detailLabel: 'สรุปการแก้ไข',
+    footnote: 'อัปเดตเมื่อ 5 ก.ย. 2569 09:30 น.',
+    url: 'https://life-it.pages.dev/line?mode=status',
+    buttonLabel: 'ประเมินและตรวจรับงาน',
+  });
+
+  it('shows the ticket context the reader needs without opening the system', () => {
+    expect(flexTexts(fullCard())).toEqual(expect.arrayContaining([
+      'TCK-001',
+      'กำลังดำเนินการ → เสร็จสิ้น',
+      'ความเร่งด่วน', 'สูง',
+      'ผู้แจ้ง', 'สมชาย ใจดี',
+      'ผู้รับผิดชอบ', 'ช่างสมศักดิ์',
+      'กำหนดเสร็จ', '5 ก.ย. 2569 09:30 น.',
+      'ผลประเมิน', '★★★★☆  4.0/5',
+      'สรุปการแก้ไข', 'เปลี่ยนชุดดรัมและทดสอบพิมพ์แล้ว',
+      'อัปเดตเมื่อ 5 ก.ย. 2569 09:30 น.',
+    ]));
+  });
+
+  it('drops a field with no value instead of leaving the reader an empty label', () => {
+    expect(flexTexts(fullCard())).not.toContain('สถานที่');
+  });
+
+  it('summarises the event in altText, which is all a locked phone shows', () => {
+    expect(fullCard().altText).toBe('อัปเดตสถานะแจ้งซ่อม · [TCK-001] · เครื่องพิมพ์ชั้น 3 ไม่ทำงาน · สถานะ: เสร็จสิ้น');
+  });
+
+  it('puts the action button first in the footer with the caller\'s label', () => {
+    expect(flexFooterContents(fullCard())[0]).toMatchObject({
+      type: 'button',
+      action: { uri: 'https://life-it.pages.dev/line?mode=status', label: 'ประเมินและตรวจรับงาน' },
+    });
+  });
+
+  it('keeps a bare card renderable when the event knows almost nothing', () => {
+    const minimal = buildTicketFlexMessage({ eyebrow: 'มีรายการแจ้งซ่อมใหม่', title: 'ตรวจสอบเครื่องสำรองไฟ' });
+    expect(minimal.contents).toMatchObject({ type: 'bubble' });
+    expect(minimal.contents).not.toHaveProperty('footer');
+    expect(flexTexts(minimal)).toEqual(['LIFE IT SERVICE', 'มีรายการแจ้งซ่อมใหม่', 'ตรวจสอบเครื่องสำรองไฟ']);
+  });
+
+  it('stays inside the 10KB LINE bubble budget even with a long description', () => {
+    const long = buildTicketFlexMessage({
+      eyebrow: 'มีรายการแจ้งซ่อมใหม่', title: 'ก'.repeat(400), ticketNo: 'TCK-002', status: 'ใหม่',
+      detail: 'ข'.repeat(4000), fields: Array.from({ length: 30 }, (_, index) => ({ label: `หัวข้อ ${index}`, value: 'ค'.repeat(400) })),
+    });
+    expect(JSON.stringify(long.contents).length).toBeLessThan(10_000);
+  });
+});
+
 describe('buildUserNotificationFlexMessage', () => {
+  it('labels and colours the card by notification type so the event is clear at a glance', () => {
+    const message = buildUserNotificationFlexMessage({
+      type: 'resolution_breached', title: 'TCK-001 ผิด Resolution SLA แล้ว', body: 'เครื่องพิมพ์ชั้น 3 ไม่ทำงาน',
+    });
+    expect(flexTexts(message)).toEqual(expect.arrayContaining(['ผิด Resolution SLA แล้ว', 'TCK-001 ผิด Resolution SLA แล้ว']));
+    expect(message.altText).toBe('LIFE IT · ผิด Resolution SLA แล้ว: TCK-001 ผิด Resolution SLA แล้ว');
+    expect((message.contents as { header: { backgroundColor: string } }).header.backgroundColor).toBe('#DC2626');
+  });
+
+  it('falls back to a neutral label for a type it has no preset for', () => {
+    expect(flexTexts(buildUserNotificationFlexMessage({ type: 'brand_new_event', title: 'ทดสอบ' })))
+      .toContain('การแจ้งเตือน');
+  });
+
   it('creates a readable generic card with an optional application link', () => {
     expect(buildUserNotificationFlexMessage({
       title: 'รออนุมัติคำขอสิทธิ์', body: 'กรุณาตรวจสอบคำขอ AR-001', url: 'https://life.example/access-requests/1',

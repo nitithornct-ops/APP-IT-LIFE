@@ -1,5 +1,5 @@
 import { createAdminClient } from '../lib/supabase';
-import { buildUserNotificationFlexMessage, resolveUserLineTarget, sendLinePush } from '../lib/lineMessaging';
+import { appUrl, buildUserNotificationFlexMessage, formatThaiDateTime, resolveUserLineTarget, sendLinePush } from '../lib/lineMessaging';
 import type { Bindings } from '../types';
 
 export interface NotificationInput {
@@ -55,15 +55,6 @@ export async function sendNotification(env: Bindings, input: NotificationInput):
   }
 
   console.warn(JSON.stringify({ msg: 'notification_queued_for_retry', outboxId, error: deliveryError }));
-}
-
-function notificationUrl(env: Bindings, link: string | null | undefined): string | null {
-  if (!env.PUBLIC_APP_URL || !link?.startsWith('/')) return null;
-  try {
-    return new URL(link, `${env.PUBLIC_APP_URL.replace(/\/$/, '')}/`).toString();
-  } catch {
-    return null;
-  }
 }
 
 function notificationRow(input: NotificationInput) {
@@ -278,7 +269,9 @@ export async function dispatchLineNotificationOutbox(
       buildUserNotificationFlexMessage({
         title: payload.title,
         body: payload.body,
-        url: notificationUrl(env, payload.link),
+        type: payload.type,
+        footnote: `ส่งเมื่อ ${formatThaiDateTime(now)}`,
+        url: appUrl(env, payload.link),
       }),
     );
 

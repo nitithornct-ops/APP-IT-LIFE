@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
+import { LineNotificationCard } from '../features/profile/LineNotificationCard';
 import { TechnicianSkillPanel } from '../features/technicianSkills/TechnicianSkillPanel';
 import { apiFetch } from '../services/apiClient';
 import { useAuth } from '../stores/authContext';
@@ -155,6 +156,8 @@ export function ProfilePage() {
       </form>
           </CardBody>
         </Card>
+
+        <LineNotificationCard />
 
         <TechnicianSkillPanel />
 

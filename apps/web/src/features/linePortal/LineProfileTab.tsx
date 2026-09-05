@@ -118,10 +118,24 @@ export function LineProfileTab({ profile, onProfileSaved, onLogout }: {
             </div>
             <InfoRow label="ฝ่าย / แผนก" value={profile.department || '—'} />
             <InfoRow label="บัญชี LINE" value={profile.displayName || '—'} />
-            <InfoRow label="สถานะการเชื่อมบัญชี" value={profile.linkStatus === 'Suspended' ? 'ถูกระงับ' : 'เชื่อมบัญชีแล้ว'} />
+            <InfoRow label="สถานะบัญชี LINE" value={profile.linkStatus === 'Suspended' ? 'ถูกระงับ' : 'ใช้งานได้'} />
+            <InfoRow
+              label="เชื่อมกับบัญชีผู้ใช้ในระบบ"
+              value={profile.linkedToSystemAccount
+                ? ['เชื่อมแล้ว', profile.employeeCode].filter(Boolean).join(' · ')
+                : 'ยังไม่เชื่อม'}
+            />
           </>
         )}
       </section>
+
+      {!editing && !profile.linkedToSystemAccount && (
+        <p className="mx-4 rounded-card bg-amber-50 px-4 py-3 text-[11px] leading-5 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          ตอนนี้ท่านจะได้รับแจ้งเตือนเฉพาะใบงานที่แจ้งผ่าน LINE นี้เท่านั้น
+          หากต้องการรับงานที่ได้รับมอบหมาย การเตือน SLA และเอกสารที่รออนุมัติด้วย
+          ให้เข้าระบบ LIFE IT บนคอมพิวเตอร์ แล้วไปที่ “โปรไฟล์ของฉัน” เพื่อกดเชื่อมบัญชี LINE นี้เข้ากับบัญชีผู้ใช้ของท่าน
+        </p>
+      )}
 
       <p className="px-5 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
         {FRIEND_STATUS_TEXT[profile.friendStatus] ?? 'เพิ่มเพื่อนกับ LINE OA ของ LIFE IT เพื่อรับแจ้งเตือนความคืบหน้าทาง LINE'}

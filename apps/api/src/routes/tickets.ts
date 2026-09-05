@@ -2,8 +2,8 @@ import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { calculateTicketOverallRating, type TicketRatingDetails } from '@itlife/shared';
 import { Hono } from 'hono';
-import { buildTicketFlexMessage, resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
-import { createAdminClient } from '../lib/supabase';
+import { appUrl, buildTicketFlexMessage, formatThaiDateTime, resolveTicketRequesterLineTarget, sendLinePush } from '../lib/lineMessaging';
+import { createAdminClient, embeddedName } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
@@ -231,7 +231,12 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
   }
 
-  const [{ data: issueForm, error: issueError }, { data: worklogs, error: worklogError }, { data: outsourceSubmission, error: outsourceSubmissionError }] = await Promise.all([
+  const [
+    { data: issueForm, error: issueError },
+    { data: worklogs, error: worklogError },
+    { data: outsourceSubmission, error: outsourceSubmissionError },
+    { data: organizationLogo },
+  ] = await Promise.all([
     admin
       .from('issue_forms')
       .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
@@ -252,6 +257,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
       .order('revision', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    admin.from('system_settings').select('value').eq('key', 'ORG_LOGO_URL').maybeSingle(),
   ]);
   if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
 
@@ -293,7 +299,12 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     escalation_reason: outsourceLog?.detail ?? null,
   };
   const sourceHtml = issueForm?.content_html || template.content_html;
-  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, signatureUrl, requesterSignatureUrl, vendorSignatureUrl);
+  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, {
+    itSignatureUrl: signatureUrl,
+    requesterSignatureUrl,
+    vendorSignatureUrl,
+    organizationLogoUrl: organizationLogo?.value ?? null,
+  });
   const templateVersion = Number(issueForm?.template_version ?? template.current_version);
   const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;
   const checkmarks = savedCheckmarks
@@ -453,7 +464,7 @@ ticketsRoute.post(
     // RLS on tickets establishes that the caller is the requester, assignee or ticket.view_all staff.
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
-      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, assignee_id')
+      .select('id, ticket_no, title, status, priority, requester_id, requester_line_user_id, assignee_id, assignee_name_snapshot, due_at, category:ticket_categories(name)')
       .eq('id', id)
       .maybeSingle();
     if (ticketError || !ticket) {
@@ -540,8 +551,17 @@ ticketsRoute.post(
               title: ticket.title,
               ticketNo: ticket.ticket_no,
               status: String(ticket.status),
+              priority: ticket.priority,
+              fields: [
+                { label: 'หมวดหมู่', value: embeddedName(ticket.category) },
+                { label: 'ผู้ตอบกลับ', value: data.actor?.full_name ?? 'ทีม IT' },
+                { label: 'ผู้รับผิดชอบ', value: ticket.assignee_name_snapshot },
+                { label: 'กำหนดเสร็จ', value: formatThaiDateTime(ticket.due_at) },
+              ],
               detail: body.message,
-              url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+              detailLabel: 'ข้อความจากทีม IT',
+              footnote: `ตอบกลับเมื่อ ${formatThaiDateTime(data.created_at)}`,
+              url: appUrl(c.env, '/line?mode=status'),
               buttonLabel: 'เปิดดูและตอบกลับ',
             }),
           );
@@ -1083,11 +1103,24 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
           title: updated.title,
           ticketNo: updated.ticket_no,
           status: String(patch.status),
+          previousStatus: fromStatus,
+          priority: updated.priority,
           requesterName: updated.requester_name_snapshot,
+          fields: [
+            { label: 'ผู้รับผิดชอบ', value: updated.assignee_name_snapshot ?? 'ยังไม่มอบหมาย' },
+            { label: 'สถานที่', value: updated.location },
+            { label: 'อุปกรณ์', value: updated.asset_name_snapshot },
+            { label: 'กำหนดเสร็จ', value: formatThaiDateTime(updated.due_at) },
+          ],
+          // งานที่เสร็จแล้วต้องบอกทั้ง "ช่างทำอะไรไป" และ "ผู้แจ้งต้องทำอะไรต่อ" ในกล่องเดียว
+          // ไม่เช่นนั้นผู้แจ้งจะเห็นแต่คำสั่งให้ตรวจรับโดยไม่รู้ว่าซ่อมอะไรมา
           detail: patch.status === TICKET_STATUS.RESOLVED
-            ? 'งานซ่อมเสร็จแล้ว กรุณาทดสอบ ประเมินการบริการ และลงลายเซ็นตรวจรับ'
+            ? [updated.resolution, 'กรุณาทดสอบการใช้งาน ประเมินการบริการ และลงลายเซ็นตรวจรับงานในระบบ']
+              .filter((part): part is string => Boolean(part)).join('\n\n')
             : body.note ?? null,
-          url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+          detailLabel: patch.status === TICKET_STATUS.RESOLVED ? 'สรุปการแก้ไขและสิ่งที่ต้องทำต่อ' : 'บันทึกจากทีม IT',
+          footnote: `อัปเดตเมื่อ ${formatThaiDateTime(now)}`,
+          url: appUrl(c.env, '/line?mode=status'),
           buttonLabel: patch.status === TICKET_STATUS.RESOLVED ? 'ประเมินและตรวจรับงาน' : 'ดูสถานะของฉัน',
         }),
       );

@@ -22,3 +22,15 @@ export function createAdminClient(env: Bindings): SupabaseClient {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+/**
+ * ชื่อของความสัมพันธ์ที่ embed มากับ select เช่น `category:ticket_categories(name)`
+ * PostgREST คืน to-one เป็น object แต่ type ที่ supabase-js infer จาก select string เป็น array
+ * ตัวช่วยนี้จึงรับได้ทั้งสองรูปแบบ แทนที่จะ cast ซ้ำทุกจุดที่เรียกใช้
+ */
+export function embeddedName(relation: unknown): string | null {
+  const row = Array.isArray(relation) ? relation[0] : relation;
+  if (!row || typeof row !== 'object' || !('name' in row)) return null;
+  const name = (row as { name: unknown }).name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
+}

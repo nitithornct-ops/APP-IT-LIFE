@@ -65,6 +65,7 @@ describe('normalizeReturnMode / sessionHours', () => {
   it('falls back to "report" for anything not in the allowed set', () => {
     expect(normalizeReturnMode('status')).toBe('status');
     expect(normalizeReturnMode('kb')).toBe('kb');
+    expect(normalizeReturnMode('link')).toBe('link');
     expect(normalizeReturnMode('bogus')).toBe('report');
     expect(normalizeReturnMode(undefined)).toBe('report');
   });

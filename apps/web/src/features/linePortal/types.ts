@@ -8,6 +8,8 @@ export interface LinePortalProfile {
   department: string;
   linkStatus: string;
   friendStatus: string;
+  linkedToSystemAccount: boolean;
+  employeeCode: string | null;
 }
 
 export interface LineBootstrap {
