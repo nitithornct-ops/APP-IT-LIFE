@@ -2,7 +2,7 @@ import { ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const lineLoginUrlQuerySchema = z.object({
-  returnMode: z.enum(['report', 'status', 'kb']).optional(),
+  returnMode: z.enum(['report', 'status', 'kb', 'link']).optional(),
 });
 
 export const lineProfileSchema = z.object({

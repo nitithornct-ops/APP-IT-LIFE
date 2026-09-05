@@ -6,9 +6,10 @@ import { calculateTicketOverallRating } from '@itlife/shared';
 import {
   completeLineLoginCallback, createLineLoginUrl, getLineLoginConfigStatus, hashSessionToken, randomToken, sessionHours,
 } from '../lib/lineAuth';
-import { buildTicketFlexMessage, notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
+import { decideSelfLink } from '../services/lineLinkService';
+import { appUrl, buildTicketFlexMessage, formatThaiDateTime, notifyTicketTeam, sendLinePush } from '../lib/lineMessaging';
 import { ticketConsentEvidence } from '../lib/privacyNotice';
-import { createAdminClient } from '../lib/supabase';
+import { createAdminClient, embeddedName } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
@@ -46,6 +47,29 @@ const LINE_TICKET_MESSAGE_CLOSED_STATUSES = ['ปิดงาน', 'ยกเล
 const LINE_TICKET_ATTACHMENT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'] as const;
 
 type LineUserRecord = LineUserProfile;
+
+interface LineLinkedAccountRow {
+  id: string;
+  display_name: string | null;
+  picture_url: string | null;
+  full_name: string | null;
+  link_status: string | null;
+  friend_status: string | null;
+  updated_at: string | null;
+}
+
+/** สิ่งที่เจ้าของบัญชีควรเห็นเกี่ยวกับการเชื่อมของตัวเอง ไม่รวม line_user_id ที่เป็นรหัสภายใน */
+function selfLinkAccount(row: LineLinkedAccountRow) {
+  return {
+    id: row.id,
+    displayName: row.display_name ?? '',
+    pictureUrl: row.picture_url ?? '',
+    fullName: row.full_name ?? '',
+    linkStatus: row.link_status ?? 'Active',
+    friendStatus: row.friend_status ?? 'Unknown',
+    linkedAt: row.updated_at ?? null,
+  };
+}
 
 interface LineSessionContext {
   token: string;
@@ -100,6 +124,10 @@ function clientProfile(user: LineUserRecord) {
     department: user.department ?? '',
     linkStatus: user.link_status === 'Suspended' ? 'Suspended' : 'Active',
     friendStatus: user.friend_status ?? 'Unknown',
+    // คนละเรื่องกับ linkStatus ด้านบน ซึ่งบอกแค่ว่าบัญชี LINE ถูกระงับหรือไม่
+    // ช่องนี้คือตัวชี้ขาดว่าจะได้รับการแจ้งเตือนของงานในระบบ ไม่ใช่แค่ใบที่แจ้งผ่าน LINE เอง
+    linkedToSystemAccount: Boolean(user.linked_user_id),
+    employeeCode: user.employee_code ?? null,
   };
 }
 
@@ -370,9 +398,23 @@ lineRoute.post(
       title: ticket.title,
       ticketNo: ticket.ticket_no,
       status: ticket.status,
+      priority: ticket.priority,
       requesterName: user.full_name,
+      fields: [
+        { label: 'แผนก', value: ticket.department_name_snapshot },
+        { label: 'เบอร์ติดต่อ', value: ticket.requester_phone },
+        { label: 'หมวดหมู่', value: category.name },
+        { label: 'สถานที่', value: ticket.location },
+        { label: 'อุปกรณ์', value: ticket.asset_name_snapshot },
+        { label: 'โมดูล ERP', value: ticket.erp_module },
+        { label: 'เกิดเหตุเมื่อ', value: formatThaiDateTime(ticket.incident_at) },
+        { label: 'ต้องตอบรับภายใน', value: formatThaiDateTime(ticket.response_due_at) },
+        { label: 'กำหนดเสร็จ', value: formatThaiDateTime(ticket.due_at) },
+      ],
       detail: ticket.description,
-      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      detailLabel: 'อาการที่แจ้ง',
+      footnote: `แจ้งผ่าน LINE เมื่อ ${formatThaiDateTime(ticket.created_at) ?? formatThaiDateTime(now)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
       buttonLabel: 'เปิดรับเรื่อง',
     }));
 
@@ -592,7 +634,7 @@ lineRoute.post(
     const admin = createAdminClient(c.env);
     const { data: ticket } = await admin
       .from('tickets')
-      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, assignee_id')
+      .select('id, ticket_no, title, status, priority, requester_id, requester_line_user_id, assignee_id, assignee_name_snapshot, due_at, category:ticket_categories(name)')
       .eq('id', c.req.param('id'))
       .maybeSingle();
     const belongsToLineUser = ticket?.requester_line_user_id === user.id
@@ -640,9 +682,17 @@ lineRoute.post(
       title: ticket.title,
       ticketNo: ticket.ticket_no,
       status: ticket.status,
+      priority: ticket.priority,
       requesterName: user.full_name,
+      fields: [
+        { label: 'หมวดหมู่', value: embeddedName(ticket.category) },
+        { label: 'ผู้รับผิดชอบ', value: ticket.assignee_name_snapshot ?? 'ยังไม่มอบหมาย' },
+        { label: 'กำหนดเสร็จ', value: formatThaiDateTime(ticket.due_at) },
+      ],
       detail: message,
-      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      detailLabel: 'ข้อความจากผู้แจ้ง',
+      footnote: `ส่งเมื่อ ${formatThaiDateTime(worklog.created_at)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
       buttonLabel: 'ตอบกลับผู้แจ้ง',
     }));
     return c.json(ok(reqId, worklog), 201);
@@ -659,7 +709,7 @@ lineRoute.post(
     const admin = createAdminClient(c.env);
     const { data: ticket } = await admin
       .from('tickets')
-      .select('id, ticket_no, title, status, requester_id, requester_line_user_id, requester_signature_storage_path')
+      .select('id, ticket_no, title, status, priority, requester_id, requester_line_user_id, requester_signature_storage_path, assignee_name_snapshot, category:ticket_categories(name)')
       .eq('id', c.req.param('id'))
       .maybeSingle();
     const belongsToLineUser = ticket?.requester_line_user_id === user.id
@@ -739,9 +789,20 @@ lineRoute.post(
       title: ticket.title,
       ticketNo: ticket.ticket_no,
       status: 'ปิดงาน',
+      previousStatus: 'เสร็จสิ้น',
+      priority: ticket.priority,
       requesterName: user.full_name,
-      detail: `ผลประเมินรวม ${rating}/5 คะแนน`,
-      url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/tickets/${ticket.id}` : null,
+      rating,
+      fields: [
+        { label: 'หมวดหมู่', value: embeddedName(ticket.category) },
+        { label: 'ผู้รับผิดชอบ', value: ticket.assignee_name_snapshot },
+        ...ratingSnapshot.map((criterion) => ({ label: criterion.label, value: `${criterion.score}/5` })),
+      ],
+      detail: evaluation.data.comment ?? null,
+      detailLabel: 'ความเห็นจากผู้แจ้ง',
+      footnote: `ตรวจรับเมื่อ ${formatThaiDateTime(saved.uploadedAt)}`,
+      url: appUrl(c.env, `/tickets/${ticket.id}`),
+      buttonLabel: 'ดูใบงานที่ปิดแล้ว',
     }));
     return c.json(ok(reqId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: 'ปิดงาน', rating }), 201);
   },
@@ -782,6 +843,141 @@ lineRoute.post(
     const { error } = await admin.from('tickets').update({ rating, rating_details: ratings, rating_criteria_snapshot: ratingSnapshot, feedback: comment ?? null, feedback_at: new Date().toISOString() }).eq('id', ticket.id);
     if (error) return dbFailJson(c, 'LINE_TICKET_FEEDBACK_FAILED', error);
     return c.json(ok(reqId, { submitted: true }));
+  },
+);
+
+/**
+ * ผู้ใช้ในระบบเชื่อมบัญชี LINE ของตัวเอง โดยไม่ต้องรอผู้ดูแลกดให้
+ *
+ * คำขอเดียวต้องถือหลักฐานสองฝั่งพร้อมกัน: Supabase JWT พิสูจน์ว่าเป็นเจ้าของโปรไฟล์นี้จริง
+ * และ LINE session ที่เพิ่งผ่าน LINE Login มาพิสูจน์ว่าคุมบัญชี LINE นั้นจริง
+ * ขาดฝั่งใดฝั่งหนึ่งก็ผูกไม่ได้ จึงไม่มีทางที่ใครจะพาการแจ้งเตือนของคนอื่นมาเข้าบัญชี LINE ตัวเอง
+ */
+lineRoute.get('/my-link', requireAuth, async (c) => {
+  const reqId = c.get('requestId');
+  const status = getLineLoginConfigStatus(c.env);
+  const { data, error } = await createAdminClient(c.env)
+    .from('line_users')
+    .select('id, display_name, picture_url, full_name, link_status, friend_status, updated_at')
+    .eq('linked_user_id', c.get('userId')!)
+    .maybeSingle();
+  if (error) return dbFailJson(c, 'LINE_MY_LINK_LOAD_FAILED', error, 'ตรวจสอบการเชื่อมบัญชี LINE ไม่สำเร็จ');
+  return c.json(ok(reqId, {
+    available: status.configured && c.env.NOTIFY_LINE_ENABLED === 'true',
+    unavailableReason: status.configured
+      ? (c.env.NOTIFY_LINE_ENABLED === 'true' ? '' : 'ระบบยังไม่เปิดการแจ้งเตือนผ่าน LINE')
+      : status.message,
+    account: data ? selfLinkAccount(data as LineLinkedAccountRow) : null,
+  }));
+});
+
+lineRoute.post(
+  '/my-link', requireAuth, requireUsableLineSession,
+  rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `line_self_link:${c.get('userId')}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const userId = c.get('userId')!;
+    const { user: lineUser } = c.get('lineSession')!;
+    const admin = createAdminClient(c.env);
+
+    const { data: profile, error: profileError } = await admin
+      .from('profiles')
+      .select('id, employee_code, full_name, status')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profileError) return dbFailJson(c, 'LINE_SELF_LINK_PROFILE_LOAD_FAILED', profileError);
+    if (!profile) return c.json(fail(reqId, 'LINE_PROFILE_NOT_FOUND', 'ไม่พบบัญชีผู้ใช้ของท่านในระบบ'), 404);
+
+    const { data: duplicate, error: duplicateError } = await admin
+      .from('line_users')
+      .select('id')
+      .eq('linked_user_id', userId)
+      .neq('id', lineUser.id)
+      .maybeSingle();
+    if (duplicateError) return dbFailJson(c, 'LINE_SELF_LINK_DUPLICATE_CHECK_FAILED', duplicateError);
+
+    const decision = decideSelfLink({
+      userId,
+      profileStatus: profile.status,
+      lineLinkStatus: lineUser.link_status,
+      lineLinkedUserId: lineUser.linked_user_id,
+      otherLineAccountLinked: Boolean(duplicate),
+    });
+    if (decision.outcome === 'reject') return c.json(fail(reqId, decision.code, decision.message), 409);
+
+    const { data: updated, error } = await admin
+      .from('line_users')
+      .update({
+        linked_user_id: userId,
+        employee_code: profile.employee_code ?? null,
+        // โปรไฟล์ในระบบเป็นแหล่งชื่อจริงที่เชื่อถือได้ที่สุด ตรงกับที่หน้าผู้ดูแลทำอยู่แล้ว
+        full_name: profile.full_name ?? lineUser.full_name,
+        updated_by: userId,
+      })
+      .eq('id', lineUser.id)
+      // เขียนทับได้เฉพาะบัญชีที่ยังว่างหรือเป็นของผู้ขอเอง — กันกรณีผู้ดูแลเพิ่งผูกบัญชีนี้
+      // ให้คนอื่นในจังหวะเดียวกัน ซึ่งการอ่านตอนต้นคำขอยังไม่ทันเห็น
+      .or(`linked_user_id.is.null,linked_user_id.eq.${userId}`)
+      .select('id, display_name, picture_url, full_name, link_status, friend_status, updated_at')
+      .maybeSingle();
+    if (error) {
+      const message = error.code === '23505'
+        ? 'บัญชีผู้ใช้ของท่านเชื่อมกับ LINE อื่นอยู่แล้ว'
+        : 'เชื่อมบัญชี LINE ไม่สำเร็จ';
+      return dbFailJson(c, 'LINE_SELF_LINK_FAILED', error, message);
+    }
+    if (!updated) {
+      return c.json(fail(reqId, 'LINE_LINK_CHANGED', 'สถานะการเชื่อมบัญชี LINE เปลี่ยนไประหว่างดำเนินการ กรุณาลองใหม่อีกครั้ง'), 409);
+    }
+
+    if (profile.full_name) {
+      const { error: ticketNameError } = await admin
+        .from('tickets')
+        .update({ requester_name_snapshot: profile.full_name })
+        .eq('requester_line_user_id', lineUser.id)
+        .in('status', ['ใหม่', 'รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน', 'ส่งต่อ Outsource', 'เสร็จสิ้น']);
+      if (ticketNameError) return dbFailJson(c, 'LINE_TICKET_REQUESTER_NAME_UPDATE_FAILED', ticketNameError, 'อัปเดตชื่อผู้แจ้งใน Ticket ไม่สำเร็จ');
+    }
+
+    await writeAuditLog(c.env, {
+      actorId: userId, actorEmail: c.get('userEmail'), action: 'LINE_SELF_LINK_USER',
+      module: 'line', targetTable: 'line_users', targetId: lineUser.id,
+      detail: { lineUserId: lineUser.line_user_id, alreadyLinked: decision.outcome === 'already-linked' },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, { account: selfLinkAccount(updated as LineLinkedAccountRow) }));
+  },
+);
+
+lineRoute.delete(
+  '/my-link', requireAuth,
+  rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `line_self_unlink:${c.get('userId')}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const userId = c.get('userId')!;
+    const admin = createAdminClient(c.env);
+    const { data: current, error: currentError } = await admin
+      .from('line_users')
+      .select('*')
+      .eq('linked_user_id', userId)
+      .maybeSingle();
+    if (currentError) return dbFailJson(c, 'LINE_MY_LINK_LOAD_FAILED', currentError);
+    if (!current) return c.json(ok(reqId, { account: null }));
+
+    // ปล่อยเฉพาะการเชื่อมกับโปรไฟล์ ชื่อที่ยืนยันแล้วยังอยู่กับบัญชี LINE เพื่อให้ใบงานเดิมยังระบุตัวผู้แจ้งได้
+    const { error } = await admin
+      .from('line_users')
+      .update({ linked_user_id: null, updated_by: userId })
+      .eq('id', current.id)
+      .eq('linked_user_id', userId);
+    if (error) return dbFailJson(c, 'LINE_SELF_UNLINK_FAILED', error, 'ยกเลิกการเชื่อมบัญชี LINE ไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorId: userId, actorEmail: c.get('userEmail'), action: 'LINE_SELF_UNLINK_USER',
+      module: 'line', targetTable: 'line_users', targetId: current.id,
+      detail: { lineUserId: current.line_user_id }, requestId: reqId, before: current,
+    });
+    return c.json(ok(reqId, { account: null }));
   },
 );
 
@@ -940,9 +1136,15 @@ lineRoute.post(
       buildTicketFlexMessage({
         eyebrow: 'ทดสอบการแจ้งเตือนสำเร็จ',
         title: 'บัญชีนี้พร้อมรับข้อความจาก LIFE IT',
-        requesterName: account.full_name ?? account.display_name,
-        detail: `ส่งเมื่อ ${testTime}`,
-        url: c.env.PUBLIC_APP_URL ? `${c.env.PUBLIC_APP_URL.replace(/\/$/, '')}/line?mode=status` : null,
+        fields: [
+          { label: 'ชื่อในระบบ', value: account.full_name ?? account.display_name },
+          { label: 'ชื่อโปรไฟล์ LINE', value: account.display_name },
+          { label: 'สถานะการเชื่อม', value: account.link_status },
+        ],
+        detail: 'หากท่านเห็นข้อความนี้ แสดงว่าบัญชี LINE ของท่านพร้อมรับแจ้งเตือนงานแจ้งซ่อม สถานะ SLA และข้อความจากทีม IT แล้ว',
+        detailLabel: 'ผลการทดสอบ',
+        footnote: `ส่งเมื่อ ${testTime}`,
+        url: appUrl(c.env, '/line?mode=status'),
         buttonLabel: 'เปิด LINE Service Portal',
         accentColor: '#06A66A',
       }),

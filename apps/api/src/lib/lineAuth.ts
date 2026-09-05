@@ -14,10 +14,10 @@ const VERIFY_URL = 'https://api.line.me/oauth2/v2.1/verify';
 const FRIENDSHIP_STATUS_URL = 'https://api.line.me/friendship/v1/status';
 const STATE_TTL_SEC = 1800;
 
-export type LineReturnMode = 'report' | 'status' | 'kb';
+export type LineReturnMode = 'report' | 'status' | 'kb' | 'link';
 
 export function normalizeReturnMode(mode: string | undefined | null): LineReturnMode {
-  return mode === 'status' || mode === 'kb' ? mode : 'report';
+  return mode === 'status' || mode === 'kb' || mode === 'link' ? mode : 'report';
 }
 
 interface StatePayload {
@@ -107,7 +107,7 @@ function isValidStatePayload(value: unknown): value is StatePayload {
     && /^[A-Za-z0-9_-]{43}$/.test(payload.browserBindingHash ?? '')
     && typeof payload.redirectUri === 'string'
     && payload.redirectUri.length <= 1000
-    && ['report', 'status', 'kb'].includes(payload.returnMode ?? '')
+    && ['report', 'status', 'kb', 'link'].includes(payload.returnMode ?? '')
     && Number.isFinite(payload.createdAt)
     && age >= -60_000
     && age <= STATE_TTL_SEC * 1000;

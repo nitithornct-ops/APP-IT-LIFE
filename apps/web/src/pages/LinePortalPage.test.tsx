@@ -21,6 +21,8 @@ const PROFILE = {
   department: 'ฝ่ายบัญชีและการเงิน',
   linkStatus: 'Active',
   friendStatus: 'Friend',
+  linkedToSystemAccount: true,
+  employeeCode: 'EMP-0031',
 };
 
 const OPEN_TICKET = {
