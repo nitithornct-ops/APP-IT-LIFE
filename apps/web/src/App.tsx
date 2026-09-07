@@ -119,6 +119,8 @@ const LineLinksPage = lazy(() =>
 const FormManagementPage = lazy(() =>
   import('./features/forms/FormManagementPage').then((m) => ({ default: m.FormManagementPage })),
 );
+// เครื่องมือ PDF ลาก pdf-lib กับ pdf.js มาด้วย จึงต้องอยู่นอก bundle หลักเสมอ
+const PdfToolsPage = lazy(() => import('./features/pdfTools/PdfToolsPage').then((m) => ({ default: m.PdfToolsPage })));
 const VendorPortalPage = lazy(() => import('./pages/VendorPortalPage').then((m) => ({ default: m.VendorPortalPage })));
 
 function LazyPageFallback() {
@@ -162,6 +164,15 @@ export function App() {
         <Route path="/profile" element={<ProfilePage />} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
         <Route path="/system-status" element={<HealthPage standalone={false} />} />
+        {/* เครื่องมือช่วยงานเอกสารที่ทำงานในเบราว์เซอร์ล้วน ๆ ไม่อ่านหรือเขียนข้อมูลของระบบ */}
+        <Route
+          path="/pdf-tools"
+          element={
+            <Suspense fallback={<LazyPageFallback />}>
+              <PdfToolsPage />
+            </Suspense>
+          }
+        />
         <Route
           path="/my-work"
           element={
