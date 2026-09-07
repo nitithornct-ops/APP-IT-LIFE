@@ -716,6 +716,16 @@ textarea:focus-visible,
 .ticket-form-text-field:focus { border-bottom-color: #16a34a; background: #f0fdf4; box-shadow: 0 2px 0 #16a34a; }
 .ticket-form-text-field-readonly { min-width: auto; border-bottom: 0; padding: 0; }
 
+/* ตัวแบ่งหน้ากระดาษที่ผู้ใช้สั่งเอง — เห็นเป็นเส้นประตอนแก้ไข และบังคับขึ้นหน้าใหม่ตอนพิมพ์
+   ตอนดูแบบแบ่งหน้า ตัวจัดหน้า (formPagination.ts) ตัด element นี้ทิ้งไปแล้ว จึงไม่มีอะไรให้แสดง */
+.form-page-break { position: relative; height: 0; margin: 1.4rem 0; border-top: 2px dashed #94a3b8; break-after: page; }
+.form-page-break::after { position: absolute; top: -0.72rem; right: 0; border-radius: 3px; background: #fff; padding: 0 0.4rem; color: #64748b; font-size: 10px; font-weight: 700; content: 'ขึ้นหน้าใหม่'; }
+
+/* กระดาษหนึ่งแผ่นในมุมมองแบ่งหน้า ใช้สไตล์ตัวอักษรและตารางชุดเดียวกับ .form-document
+   ขนาดจริงถูกส่งมาเป็น CSS variable จาก pageGeometry() เพื่อให้รองรับทั้ง A4/Letter และแนวนอน */
+.form-page-sheet { width: var(--form-page-width, 210mm); min-height: var(--form-page-height, 297mm); padding: var(--form-page-margin, 20mm); }
+.form-page-sheet > *:first-child { margin-top: 0; }
+
 .form-image-selection { position: absolute; z-index: 20; border: 2px solid var(--life-green-600); pointer-events: none; }
 .form-image-context-toolbar { position: absolute; bottom: calc(100% + 8px); left: -2px; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-default); background: var(--color-surface); box-shadow: var(--shadow-elevated); pointer-events: auto; }
 .form-image-context-toolbar-below { top: calc(100% + 8px); bottom: auto; }
@@ -816,6 +826,15 @@ textarea:focus-visible,
   .form-image-selection,
   [data-print-hide],
   .ticket-form-actions { display: none !important; }
+  /* หนึ่งแผ่นบนจอ = หนึ่งหน้ากระดาษ ปล่อยให้ @page ด้านบนเป็นคนกำหนดขอบ ไม่ใช่ padding ของแผ่น
+     ตัวจัดหน้าเผื่อขอบไว้อย่างน้อยเท่ากับ @page อยู่แล้ว เนื้อหาจึงไม่มีทางล้นออกนอกหน้า
+
+     position ต้องกลับเป็น static ด้วย — กฎ .ticket-print-page ด้านบนตั้ง absolute/inset:0 ไว้
+     ตอนที่หน้าแบบฟอร์มยังมีแผ่นเดียว พอแบ่งเป็นหลายแผ่นแล้วทุกแผ่นจะไปทับกันที่มุมเดียว
+     และพิมพ์ออกมาได้หน้าเดียว (พบตอนตรวจด้วยการสั่งพิมพ์จริงในเบราว์เซอร์) */
+  .form-page-sheet { position: static !important; inset: auto !important; width: 100% !important; min-height: 0 !important; padding: 0 !important; box-shadow: none !important; break-after: page; }
+  .form-page-sheet:last-child { break-after: auto; }
+  .form-page-stack { display: block !important; gap: 0 !important; }
   #report-print-area > *,
   #report-print-area .rounded-2xl { break-inside: avoid; box-shadow: none !important; }
 }

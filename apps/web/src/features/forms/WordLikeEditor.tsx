@@ -15,6 +15,7 @@ import {
   Move,
   Printer,
   Redo2,
+  Scissors,
   Table2,
   Trash2,
   Underline,
@@ -35,6 +36,7 @@ import { apiFetch } from '../../services/apiClient';
 import type { BrandingSettings } from '../../types/settings';
 import { cn } from '../../utils/cn';
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
+import { PAGE_BREAK_HTML } from '../tickets/formPagination';
 
 interface WordLikeEditorProps {
   value: string;
@@ -407,6 +409,14 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     run('insertHTML', `<span class="form-variable" data-field="${safeField}">{{${escapeHtml(value)}}}</span>&nbsp;`);
   }
 
+  /**
+   * ตัวแบ่งหน้าเป็น element เปล่าใน content_html ไม่ใช่การจัดรูปแบบของข้อความ ผู้ใช้จึงกำหนดเองได้ว่า
+   * ให้ขึ้นหน้ากระดาษใหม่ตรงไหน แทนที่จะปล่อยให้ความสูงของเนื้อหาตัดสินให้ทั้งหมด
+   */
+  function insertPageBreak() {
+    run('insertHTML', `${PAGE_BREAK_HTML}<p><br></p>`);
+  }
+
   function insertTable() {
     run('insertHTML', '<table><thead><tr><th>หัวข้อ</th><th>รายละเอียด</th></tr></thead><tbody><tr><td>รายการ</td><td>กรอกข้อมูล</td></tr><tr><td>รายการ</td><td>กรอกข้อมูล</td></tr></tbody></table><p><br></p>');
   }
@@ -426,6 +436,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           <button type="button" title="แทรกรูปภาพ / โลโก้" aria-label="แทรกรูปภาพ / โลโก้" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => openPrompt('image')}><ImageIcon className="h-4 w-4" /></button>
           <button type="button" title="แทรกตัวแปรฟิลด์" aria-label="แทรกตัวแปรฟิลด์" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => openPrompt('field')}><Braces className="h-4 w-4" /></button>
           <button type="button" title="เส้นคั่น" aria-label="เส้นคั่น" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => run('insertHorizontalRule')}><Minus className="h-4 w-4" /></button>
+          <button type="button" title="แทรกตัวแบ่งหน้ากระดาษ" aria-label="แทรกตัวแบ่งหน้ากระดาษ" className="form-toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={insertPageBreak}><Scissors className="h-4 w-4" /></button>
         </>}
         <span className="ml-auto flex items-center gap-1">
           <button type="button" title="ดาวน์โหลดไปเปิดใน Word" aria-label="ดาวน์โหลดไปเปิดใน Word" className="form-toolbar-button" onClick={() => exportHtmlAsWord(editorRef.current?.innerHTML ?? value, fileName)}><Download className="h-4 w-4" /></button>
