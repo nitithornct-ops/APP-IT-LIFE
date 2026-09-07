@@ -52,6 +52,16 @@ describe('form HTML utilities', () => {
     expect(safe).toContain('rel="noopener noreferrer"');
   });
 
+  it('keeps a page-break marker so a saved form still splits where the user asked', () => {
+    const html = sanitizeFormHtml('<p>หน้าแรก</p><div class="form-page-break"></div><p>หน้าถัดไป</p>');
+    expect(html).toContain('class="form-page-break"');
+  });
+
+  it('drops any other class so a form cannot borrow styles from the app itself', () => {
+    const html = sanitizeFormHtml('<div class="fixed inset-0 z-50">ทับหน้าจอ</div><span class="ticket-form-checkbox">x</span>');
+    expect(html).not.toContain('class=');
+  });
+
   it('builds a Word-compatible download', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');

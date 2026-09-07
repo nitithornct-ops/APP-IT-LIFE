@@ -29,11 +29,12 @@ import { BulkItemError, runBulk } from '../utils/bulk';
 import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
+import { sanitizeFormHtml } from '../utils/formHtml';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormCheckmarksSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormCheckmarksSchema, ticketFormContentSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -299,7 +300,15 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     escalation_reason: outsourceLog?.detail ?? null,
   };
   const sourceHtml = issueForm?.content_html || template.content_html;
-  const contentHtml = renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, {
+  /**
+   * เอกสารที่เจ้าหน้าที่จัดรูปเองแล้วบันทึกไว้กับ Ticket ใบนี้ (tickets.form_content_html)
+   * มาก่อน Template เสมอ — และไม่ต้องผ่าน renderTicketFormTemplate ซ้ำ เพราะมันคือผลลัพธ์ที่
+   * แทนค่า {{field}} ไปแล้วตั้งแต่ตอนบันทึก การ render ทับจะไม่เปลี่ยนอะไรนอกจากเสียเวลา
+   */
+  const customContentHtml = typeof ticket.form_content_html === 'string' && ticket.form_content_html.trim()
+    ? ticket.form_content_html
+    : null;
+  const contentHtml = customContentHtml ?? renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, {
     itSignatureUrl: signatureUrl,
     requesterSignatureUrl,
     vendorSignatureUrl,
@@ -322,6 +331,11 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     ? Object.fromEntries(Object.entries(savedCheckmarks.textValues).filter(([key, value]) => /^(?:0|[1-9]\d{0,2})$/.test(key) && typeof value === 'string'))
     : {};
   const canEditCheckmarks = ticket.requester_id === c.get('userId') || await hasPerm(c, 'ticket.update');
+  /**
+   * การจัดรูปทั้งเอกสารกว้างกว่าการติ๊กช่องมาก จึงจำกัดไว้ที่ผู้มีสิทธิ์แก้ Ticket เท่านั้น
+   * ผู้แจ้งยังติ๊กช่องและกรอกช่องว่างของตัวเองได้เหมือนเดิม แต่เขียนทับเอกสารทั้งใบไม่ได้
+   */
+  const canEditContent = await hasPerm(c, 'ticket.update');
 
   return c.json(ok(reqId, {
     ticketId: ticket.id,
@@ -341,6 +355,8 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     checkmarks,
     textValues,
     canEditCheckmarks,
+    canEditContent,
+    isCustomized: customContentHtml !== null,
     flow: ticketFormFlow(String(ticket.status), effectiveIssueForm),
   }));
 });
@@ -384,6 +400,72 @@ ticketsRoute.patch(
     return c.json(ok(reqId, { indices: body.indices, textValues: body.textValues }));
   },
 );
+
+/**
+ * บันทึกเอกสารที่เจ้าหน้าที่จัดรูปเองไว้กับ Ticket ใบเดียว ไม่แตะ Template ใน Form Studio
+ * ต้องมีสิทธิ์ ticket.update — ผู้แจ้งยังติ๊กช่องได้ผ่าน form-checkmarks แต่เขียนทับทั้งเอกสารไม่ได้
+ */
+ticketsRoute.patch(
+  '/:id/form-content',
+  requirePermission('ticket.update'),
+  zValidator('json', ticketFormContentSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const id = c.req.param('id');
+    const supabase = c.get('supabase');
+    const { data: ticket, error: loadError } = await supabase
+      .from('tickets')
+      .select('id, ticket_no')
+      .eq('id', id)
+      .maybeSingle();
+    if (loadError) return dbFailJson(c, 'TICKET_FORM_CONTENT_LOAD_FAILED', loadError, 'ตรวจสอบแบบฟอร์ม Ticket ไม่สำเร็จ');
+    if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+
+    // API คือด่านความปลอดภัยจริง — ไม่เชื่อว่าหน้าเว็บ sanitize มาแล้ว
+    const contentHtml = sanitizeFormHtml(c.req.valid('json').contentHtml);
+    if (!contentHtml) return c.json(fail(reqId, 'TICKET_FORM_CONTENT_EMPTY', 'เนื้อหาแบบฟอร์มว่างเปล่าหลังตรวจความปลอดภัย'), 400);
+
+    const { error } = await createAdminClient(c.env)
+      .from('tickets')
+      .update({ form_content_html: contentHtml })
+      .eq('id', id);
+    if (error) return dbFailJson(c, 'TICKET_FORM_CONTENT_UPDATE_FAILED', error, 'บันทึกแบบฟอร์มที่แก้ไขไม่สำเร็จ');
+
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'ticket',
+      targetTable: 'tickets', targetId: id,
+      detail: { fields: ['form_content_html'], ticketNo: ticket.ticket_no, contentLength: contentHtml.length }, requestId: reqId,
+    });
+    return c.json(ok(reqId, { contentHtml, isCustomized: true }));
+  },
+);
+
+/** คืนแบบฟอร์มของ Ticket ใบนี้กลับไปใช้ Template ตามเดิม โดยทิ้งฉบับที่จัดรูปไว้ */
+ticketsRoute.delete('/:id/form-content', requirePermission('ticket.update'), async (c) => {
+  const reqId = c.get('requestId');
+  const id = c.req.param('id');
+  const supabase = c.get('supabase');
+  const { data: ticket, error: loadError } = await supabase
+    .from('tickets')
+    .select('id, ticket_no')
+    .eq('id', id)
+    .maybeSingle();
+  if (loadError) return dbFailJson(c, 'TICKET_FORM_CONTENT_LOAD_FAILED', loadError, 'ตรวจสอบแบบฟอร์ม Ticket ไม่สำเร็จ');
+  if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+
+  const { error } = await createAdminClient(c.env)
+    .from('tickets')
+    .update({ form_content_html: null })
+    .eq('id', id);
+  if (error) return dbFailJson(c, 'TICKET_FORM_CONTENT_RESET_FAILED', error, 'คืนค่าแบบฟอร์มจากแม่แบบไม่สำเร็จ');
+
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'ticket',
+    targetTable: 'tickets', targetId: id,
+    detail: { fields: ['form_content_html'], ticketNo: ticket.ticket_no, reset: true }, requestId: reqId,
+  });
+  return c.json(ok(reqId, { isCustomized: false }));
+});
 
 ticketsRoute.get('/:id', async (c) => {
   const supabase = c.get('supabase');

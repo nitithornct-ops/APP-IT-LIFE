@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema } from '../src/validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormContentSchema } from '../src/validators/tickets';
 import { ratingsMatchCriteria } from '../src/routes/tickets';
 
 const CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
@@ -119,5 +119,20 @@ describe('bulk ticket update', () => {
     expect(bulkUpdateTicketsSchema.safeParse({ ids: [], assigneeId: ID }).success).toBe(false);
     expect(bulkUpdateTicketsSchema.safeParse({ ids: Array.from({ length: 51 }, () => ID), assigneeId: ID }).success).toBe(false);
     expect(bulkUpdateTicketsSchema.safeParse({ ids: ['not-uuid'], assigneeId: ID }).success).toBe(false);
+  });
+});
+
+describe('ticket form content', () => {
+  it('รับเอกสารที่จัดรูปมาแล้วตามปกติ', () => {
+    expect(ticketFormContentSchema.safeParse({ contentHtml: '<h1>แบบฟอร์ม</h1>' }).success).toBe(true);
+  });
+
+  it('ปฏิเสธเอกสารว่าง เพราะการบันทึกทับด้วยของว่างคือการลบเอกสารโดยไม่ตั้งใจ', () => {
+    expect(ticketFormContentSchema.safeParse({ contentHtml: '   ' }).success).toBe(false);
+    expect(ticketFormContentSchema.safeParse({ contentHtml: '' }).success).toBe(false);
+  });
+
+  it('ปฏิเสธเอกสารที่ใหญ่เกินเพดานเดียวกับ Form Studio และ check constraint ของฐานข้อมูล', () => {
+    expect(ticketFormContentSchema.safeParse({ contentHtml: 'ก'.repeat(300_001) }).success).toBe(false);
   });
 });

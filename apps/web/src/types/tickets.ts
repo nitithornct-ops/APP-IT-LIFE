@@ -142,6 +142,10 @@ export interface TicketFormDocument {
   checkmarks: number[];
   textValues: Record<string, string>;
   canEditCheckmarks: boolean;
+  /** จัดรูปและเขียนทับเอกสารทั้งใบได้ไหม (ต้องมีสิทธิ์ ticket.update ไม่ใช่แค่เป็นผู้แจ้ง) */
+  canEditContent: boolean;
+  /** true เมื่อ Ticket ใบนี้ใช้เอกสารฉบับที่จัดรูปเองแล้ว ไม่ได้ตามแม่แบบอีกต่อไป */
+  isCustomized: boolean;
   flow: Array<{
     section: number;
     title: string;

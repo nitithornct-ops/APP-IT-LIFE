@@ -27,4 +27,10 @@ describe('API form HTML sanitizer', () => {
     expect(safe).toContain('class="form-variable"');
     expect(safe).toContain('data-field="requester_name"');
   });
+
+  it('keeps the page-break marker but no other class', () => {
+    const safe = sanitizeFormHtml('<p>หน้าแรก</p><div class="form-page-break"></div><div class="fixed inset-0">ทับหน้าจอ</div>');
+    expect(safe).toContain('class="form-page-break"');
+    expect(safe).not.toContain('fixed inset-0');
+  });
 });

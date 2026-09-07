@@ -27,6 +27,14 @@ export const ticketFormCheckmarksSchema = z.object({
   ),
 });
 
+/**
+ * เอกสารแบบฟอร์มที่ผู้ใช้จัดรูปเองแล้วบันทึกทับเฉพาะ Ticket ใบนั้น
+ * เพดาน 300k ตรงกับ contentHtml ของ Form Studio และตรงกับ check constraint ในฐานข้อมูล
+ */
+export const ticketFormContentSchema = z.object({
+  contentHtml: z.string().trim().min(1, 'แบบฟอร์มต้องมีเนื้อหา').max(300_000, 'เนื้อหาแบบฟอร์มมีขนาดใหญ่เกินไป'),
+});
+
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
 export const listTicketsQuerySchema = listQuerySchema.extend({

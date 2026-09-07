@@ -27,7 +27,7 @@ export function sanitizeFormHtml(input: string): string {
       a: ['href', 'title', 'target', 'rel'],
       img: ['src', 'alt', 'title', 'style', 'width', 'height', 'data-image-layout'],
       span: ['class', 'data-field', 'style'],
-      div: ['style'],
+      div: ['style', 'class'],
       p: ['style'],
       h1: ['style'],
       h2: ['style'],
@@ -38,7 +38,9 @@ export function sanitizeFormHtml(input: string): string {
       td: ['colspan', 'rowspan', 'style'],
       th: ['colspan', 'rowspan', 'style'],
     },
-    allowedClasses: { span: ['form-variable'] },
+    // อนุญาตเฉพาะ class ที่ระบบใช้จริง — span.form-variable คือตัวแปรฟิลด์
+    // ส่วน div.form-page-break คือจุดขึ้นหน้ากระดาษใหม่ที่ผู้ใช้สั่งไว้เอง
+    allowedClasses: { span: ['form-variable'], div: ['form-page-break'] },
     allowedSchemes: ['http', 'https', 'mailto'],
     allowedSchemesByTag: { img: ['https', 'data'] },
     allowProtocolRelative: false,
