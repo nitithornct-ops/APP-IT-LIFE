@@ -727,11 +727,21 @@ textarea:focus-visible,
 .form-page-sheet > *:first-child { margin-top: 0; }
 
 .form-image-selection { position: absolute; z-index: 20; border: 2px solid var(--life-green-600); pointer-events: none; }
-.form-image-context-toolbar { position: absolute; bottom: calc(100% + 8px); left: -2px; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-default); background: var(--color-surface); box-shadow: var(--shadow-elevated); pointer-events: auto; }
-.form-image-context-toolbar-below { top: calc(100% + 8px); bottom: auto; }
-.form-image-context-toolbar button { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--color-text-secondary); }
-.form-image-context-toolbar button:hover { background: var(--color-action-soft); color: var(--color-action-hover); }
+.form-image-context-toolbar,
+.form-block-rail { position: absolute; bottom: calc(100% + 8px); left: -2px; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-default); background: var(--color-surface); box-shadow: var(--shadow-elevated); pointer-events: auto; }
+.form-image-context-toolbar-below,
+.form-block-rail-below { top: calc(100% + 8px); bottom: auto; }
+.form-image-context-toolbar button,
+.form-block-rail button { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--color-text-secondary); }
+.form-image-context-toolbar button:hover,
+.form-block-rail button:hover { background: var(--color-action-soft); color: var(--color-action-hover); }
+.form-block-rail button:disabled { opacity: 0.35; cursor: not-allowed; }
+.form-block-rail button:disabled:hover { background: transparent; color: var(--color-text-secondary); }
 .form-image-resize-handle { position: absolute; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 999px; background: var(--life-green-600); box-shadow: 0 0 0 1px var(--life-green-700); pointer-events: auto; touch-action: none; }
+
+/* กรอบบล็อกที่กำลังแก้ไขอยู่ วาดทาบไว้เฉย ๆ ไม่แตะเนื้อหาจริง เพราะ class ใด ๆ ที่ใส่ลงในเอกสาร
+   จะถูกตัวกรอง HTML ตัดทิ้งตอนบันทึกอยู่ดี และไม่ควรมีร่องรอยของ UI ติดไปในเอกสารที่พิมพ์ */
+.form-block-selection { position: absolute; z-index: 19; border: 1px dashed var(--life-green-600); border-radius: var(--radius-sm); pointer-events: none; }
 
 .ticket-form-section-title { border-left: 4px solid var(--life-green-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--life-green-50); padding: 0.5rem 0.75rem; color: var(--life-green-900); font-size: 0.875rem; font-weight: 800; }
 .ticket-print-page table th,
@@ -824,6 +834,7 @@ textarea:focus-visible,
   #form-print-area .form-document { width: 100%; min-height: 0; padding: 0; box-shadow: none !important; }
   .ticket-print-page { padding: 0 !important; box-shadow: none !important; }
   .form-image-selection,
+  .form-block-selection,
   [data-print-hide],
   .ticket-form-actions { display: none !important; }
   /* หนึ่งแผ่นบนจอ = หนึ่งหน้ากระดาษ ปล่อยให้ @page ด้านบนเป็นคนกำหนดขอบ ไม่ใช่ padding ของแผ่น

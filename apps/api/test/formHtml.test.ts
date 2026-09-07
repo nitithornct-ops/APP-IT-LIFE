@@ -28,6 +28,34 @@ describe('API form HTML sanitizer', () => {
     expect(safe).toContain('data-field="requester_name"');
   });
 
+  /**
+   * The trust boundary has to let a dragged block keep its offset, or every position a user sets in
+   * the browser is thrown away by the save that follows it.
+   */
+  it('keeps a relative offset on a dragged block but refuses overlay positioning', () => {
+    const moved = sanitizeFormHtml('<p style="position:relative;left:-40px;top:120px;z-index:2">ย้ายแล้ว</p>');
+    expect(moved).toContain('position:relative');
+    expect(moved).toContain('left:-40px');
+    expect(moved).toContain('top:120px');
+    expect(moved).toContain('z-index:2');
+
+    for (const value of ['absolute', 'fixed', 'sticky']) {
+      const overlay = sanitizeFormHtml(`<div style="position:${value};left:0;top:0;z-index:9999">ทับหน้าจอ</div>`);
+      expect(overlay).not.toContain('position');
+      expect(overlay).not.toContain('z-index');
+    }
+
+    const runaway = sanitizeFormHtml('<p style="position:relative;left:-99999px;top:50vh">หนีออกนอกหน้า</p>');
+    expect(runaway).toContain('position:relative');
+    expect(runaway).not.toContain('left');
+    expect(runaway).not.toContain('top');
+  });
+
+  it('keeps only the image layout markers the editor writes', () => {
+    expect(sanitizeFormHtml('<img src="https://x.test/a.png" data-image-layout="free">')).toContain('data-image-layout="free"');
+    expect(sanitizeFormHtml('<img src="https://x.test/a.png" data-image-layout="overlay">')).not.toContain('data-image-layout');
+  });
+
   it('keeps the page-break marker but no other class', () => {
     const safe = sanitizeFormHtml('<p>หน้าแรก</p><div class="form-page-break"></div><div class="fixed inset-0">ทับหน้าจอ</div>');
     expect(safe).toContain('class="form-page-break"');

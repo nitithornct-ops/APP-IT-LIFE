@@ -36,11 +36,35 @@ function safeLength(value: string, allowAuto = false): string | null {
   return /^[1-9]\d{0,3}px$/.test(normalized) ? normalized : null;
 }
 
+/**
+ * ระยะเยื้องของบล็อกที่ผู้ใช้ลากย้าย รับเฉพาะจำนวนเต็มไม่เกินสี่หลัก (ติดลบได้)
+ * ค่าที่ยอมรับต้องตรงกับฝั่ง API เป๊ะ ๆ ไม่งั้นตำแหน่งจะรอดตอนแก้แต่หายตอนบันทึก
+ */
+function safeOffset(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '0') return '0px';
+  return /^-?\d{1,4}px$/.test(normalized) ? normalized : null;
+}
+
 function constrainStyle(element: Element): void {
   const input = (element as HTMLElement).style;
   const output: string[] = [];
   const textAlign = input.getPropertyValue('text-align').trim().toLowerCase();
   if (/^(left|right|center|justify)$/.test(textAlign)) output.push(`text-align:${textAlign}`);
+
+  // ตำแหน่งของบล็อกที่ถูกลากย้าย — อนุญาตเฉพาะ relative เท่านั้น เพราะมันเยื้องจากตำแหน่งเดิม
+  // โดยยังกินที่ในสายเนื้อหาเท่าเดิม ตัวแบ่งหน้ากระดาษ A4 จึงยังนับความสูงได้ถูก และผู้ใช้
+  // สร้างแผ่นทับทั้งหน้าจอแบบ absolute/fixed ไม่ได้ z-index จำกัดหลักเดียวไว้ให้ซ้อนรูปทับ
+  // ข้อความได้ แต่ดันขึ้นไปคลุม UI ของระบบไม่ได้
+  if (input.getPropertyValue('position').trim().toLowerCase() === 'relative') {
+    output.push('position:relative');
+    const left = safeOffset(input.getPropertyValue('left'));
+    const top = safeOffset(input.getPropertyValue('top'));
+    const zIndex = input.getPropertyValue('z-index').trim();
+    if (left) output.push(`left:${left}`);
+    if (top) output.push(`top:${top}`);
+    if (/^\d$/.test(zIndex)) output.push(`z-index:${zIndex}`);
+  }
 
   if (element.tagName.toLowerCase() === 'img') {
     const width = safeLength(input.getPropertyValue('width'));
@@ -82,6 +106,7 @@ export function sanitizeFormHtml(input: string): string {
     }
     if (element.hasAttribute('class') && element.getAttribute('class') !== ALLOWED_ELEMENT_CLASS[tag]) element.removeAttribute('class');
     if (element.hasAttribute('data-field') && !(tag === 'span' && SAFE_FIELD.test(element.getAttribute('data-field') ?? ''))) element.removeAttribute('data-field');
+    if (element.hasAttribute('data-image-layout') && !(tag === 'img' && /^(?:inline|free)$/.test(element.getAttribute('data-image-layout') ?? ''))) element.removeAttribute('data-image-layout');
     if (element.hasAttribute('style')) constrainStyle(element);
   });
   return documentNode.body.innerHTML.trim();

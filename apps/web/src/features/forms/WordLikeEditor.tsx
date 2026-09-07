@@ -3,9 +3,12 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  ArrowDown,
+  ArrowUp,
   Bold,
   Braces,
   Download,
+  GripVertical,
   Image as ImageIcon,
   Italic,
   Link2,
@@ -15,6 +18,7 @@ import {
   Move,
   Printer,
   Redo2,
+  RotateCcw,
   Scissors,
   Table2,
   Trash2,
@@ -37,6 +41,17 @@ import type { BrandingSettings } from '../../types/settings';
 import { cn } from '../../utils/cn';
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 import { PAGE_BREAK_HTML } from '../tickets/formPagination';
+import {
+  applyOffset,
+  blockFromNode,
+  canReorderBlock,
+  clearOffset,
+  hasOffset,
+  moveOffsetBy,
+  readOffset,
+  reorderBlock,
+  type BlockOffset,
+} from './blockLayout';
 
 interface WordLikeEditorProps {
   value: string;
@@ -46,11 +61,23 @@ interface WordLikeEditorProps {
   className?: string;
 }
 
-interface ImageSelectionBounds {
+interface SelectionBounds {
   left: number;
   top: number;
   width: number;
   height: number;
+}
+
+/** ขอบเขตที่ลากบล็อกไปได้ คิดครั้งเดียวตอนเริ่มลาก เพราะกล่องของบล็อกขยับตามระหว่างลาก */
+interface DragRange {
+  minLeft: number;
+  maxLeft: number;
+  minTop: number;
+  maxTop: number;
+}
+
+function between(minimum: number, value: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 const tools = [
@@ -100,7 +127,10 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   const [imageWidth, setImageWidth] = useState<string>(IMAGE_WIDTHS[0].value);
   const [imageError, setImageError] = useState('');
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
-  const [imageBounds, setImageBounds] = useState<ImageSelectionBounds | null>(null);
+  const [imageBounds, setImageBounds] = useState<SelectionBounds | null>(null);
+  const [activeBlock, setActiveBlock] = useState<HTMLElement | null>(null);
+  const [blockBounds, setBlockBounds] = useState<SelectionBounds | null>(null);
+  const [blockMoved, setBlockMoved] = useState(false);
 
   // หน้า Vendor เปิดแบบไม่ต้องล็อกอินและเป็นโหมดอ่านอย่างเดียว จึงต้องไม่ยิงคำขอที่ต้องยืนยันตัวตน
   const brandingQuery = useQuery({
@@ -111,22 +141,24 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   });
   const organizationLogoUrl = brandingQuery.data?.logoUrl ?? '';
 
-  const updateImageBounds = useCallback((image = selectedImage) => {
+  /** กล่องของ element เทียบกับพื้นที่เลื่อนดู ใช้วางกรอบเลือกและแถบเครื่องมือให้ทาบกับของจริง */
+  const boundsWithin = useCallback((element: HTMLElement | null): SelectionBounds | null => {
     const scrollArea = scrollAreaRef.current;
-    if (!image || !scrollArea || !image.isConnected) {
-      setImageBounds(null);
-      if (image && !image.isConnected) setSelectedImage(null);
-      return;
-    }
-    const imageRect = image.getBoundingClientRect();
+    if (!element || !scrollArea || !element.isConnected) return null;
+    const rect = element.getBoundingClientRect();
     const scrollRect = scrollArea.getBoundingClientRect();
-    setImageBounds({
-      left: imageRect.left - scrollRect.left + scrollArea.scrollLeft,
-      top: imageRect.top - scrollRect.top + scrollArea.scrollTop,
-      width: imageRect.width,
-      height: imageRect.height,
-    });
-  }, [selectedImage]);
+    return {
+      left: rect.left - scrollRect.left + scrollArea.scrollLeft,
+      top: rect.top - scrollRect.top + scrollArea.scrollTop,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, []);
+
+  const updateImageBounds = useCallback((image = selectedImage) => {
+    if (image && !image.isConnected) setSelectedImage(null);
+    setImageBounds(boundsWithin(image));
+  }, [boundsWithin, selectedImage]);
 
   const selectImage = useCallback((image: HTMLImageElement | null) => {
     setSelectedImage(image);
@@ -137,19 +169,41 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     window.requestAnimationFrame(() => updateImageBounds(image));
   }, [updateImageBounds]);
 
+  const showBlock = useCallback((block: HTMLElement | null) => {
+    const live = block?.isConnected ? block : null;
+    setActiveBlock(live);
+    setBlockBounds(boundsWithin(live));
+    setBlockMoved(Boolean(live && hasOffset(live)));
+  }, [boundsWithin]);
+
+  /**
+   * บล็อกที่กำลังทำงานอยู่มาจากตำแหน่งเคอร์เซอร์ ไม่ใช่จากการลากตัวข้อความเอง การพิมพ์และการเลือก
+   * ข้อความจึงทำงานตามปกติทุกอย่าง ส่วนการย้ายบล็อกทำผ่านที่จับด้านข้างซึ่งอยู่นอกเนื้อหา
+   */
+  const syncActiveBlock = useCallback(() => {
+    const root = editorRef.current;
+    if (readOnly || !root) return;
+    const selection = window.getSelection();
+    showBlock(blockFromNode(selection?.anchorNode ?? null, root));
+  }, [readOnly, showBlock]);
+
   useEffect(() => {
     if (!editorRef.current || value === lastEmitted.current) return;
     const safe = sanitizeFormHtml(value);
     editorRef.current.innerHTML = safe;
     lastEmitted.current = safe;
     selectImage(null);
-  }, [selectImage, value]);
+    showBlock(null);
+  }, [selectImage, showBlock, value]);
 
   useEffect(() => {
-    const update = () => updateImageBounds();
+    const update = () => {
+      updateImageBounds();
+      showBlock(activeBlock);
+    };
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
-  }, [updateImageBounds]);
+  }, [activeBlock, showBlock, updateImageBounds]);
 
   useEffect(() => () => pointerCleanup.current?.(), []);
 
@@ -164,6 +218,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     editorRef.current?.focus();
     document.execCommand(command, false, valueArg);
     emitChange();
+    syncActiveBlock();
   }
 
   /**
@@ -207,28 +262,26 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     return image instanceof HTMLImageElement && editorRef.current?.contains(image) ? image : null;
   }
 
+  /**
+   * เตรียมรูปให้พร้อมถูกย้าย ตำแหน่งจริงมาจาก applyOffset ตอนลาก ที่นี่แค่ตรึงขนาดไว้ก่อน
+   * ไม่งั้นรูปที่กว้าง 100% จะเปลี่ยนขนาดไปมาระหว่างลาก และเลิกใช้ margin auto ที่ดันรูปให้กึ่งกลาง
+   */
   function makeImageFree(image: HTMLImageElement) {
-    const editor = editorRef.current;
-    if (!editor || image.dataset.imageLayout === 'free') return;
+    if (image.dataset.imageLayout === 'free') return;
     const imageRect = image.getBoundingClientRect();
-    const editorRect = editor.getBoundingClientRect();
     image.dataset.imageLayout = 'free';
-    image.style.position = 'absolute';
-    image.style.left = `${Math.max(0, imageRect.left - editorRect.left)}px`;
-    image.style.top = `${Math.max(0, imageRect.top - editorRect.top)}px`;
-    image.style.width = `${imageRect.width}px`;
-    image.style.height = `${imageRect.height}px`;
-    image.style.margin = '0';
-    image.style.zIndex = '1';
+    if (imageRect.width > 0) {
+      image.style.width = `${Math.round(imageRect.width)}px`;
+      image.style.height = `${Math.round(imageRect.height)}px`;
+    }
+    image.style.marginLeft = '0';
+    image.style.marginRight = '0';
   }
 
   function setImageInline(alignment: 'left' | 'center' | 'right' = 'left') {
     if (!selectedImage) return;
     selectedImage.dataset.imageLayout = 'inline';
-    selectedImage.style.position = 'static';
-    selectedImage.style.removeProperty('left');
-    selectedImage.style.removeProperty('top');
-    selectedImage.style.removeProperty('z-index');
+    clearOffset(selectedImage);
     selectedImage.style.display = 'block';
     selectedImage.style.marginLeft = alignment === 'left' ? '0' : 'auto';
     selectedImage.style.marginRight = alignment === 'right' ? '0' : 'auto';
@@ -269,6 +322,31 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     };
   }
 
+  /**
+   * ช่วงที่ลากได้ วัดจาก "ตำแหน่งธรรมชาติ" ของ element คือที่ที่มันจะอยู่ถ้าไม่มีระยะเยื้องเลย
+   * ผลคือลากออกนอกกระดาษไม่ได้ แม้จะลากมาแล้วหลายรอบก็ตาม
+   */
+  function dragRangeFor(element: HTMLElement, origin: BlockOffset): DragRange | null {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    const rect = element.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    const naturalLeft = rect.left - editorRect.left - origin.left;
+    const naturalTop = rect.top - editorRect.top - origin.top;
+    return {
+      minLeft: -naturalLeft,
+      maxLeft: Math.max(-naturalLeft, editor.clientWidth - naturalLeft - rect.width),
+      minTop: -naturalTop,
+      maxTop: Math.max(-naturalTop, editor.scrollHeight - naturalTop - rect.height),
+    };
+  }
+
+  function dragWithin(element: HTMLElement, origin: BlockOffset, range: DragRange | null, deltaX: number, deltaY: number) {
+    applyOffset(element, range
+      ? { left: between(range.minLeft, origin.left + deltaX, range.maxLeft), top: between(range.minTop, origin.top + deltaY, range.maxTop) }
+      : { left: origin.left + deltaX, top: origin.top + deltaY });
+  }
+
   function handleImagePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (readOnly || event.button !== 0) return;
     const image = imageFromEventTarget(event.target);
@@ -280,10 +358,8 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     editor.focus({ preventScroll: true });
     const startX = event.clientX;
     const startY = event.clientY;
-    const initialRect = image.getBoundingClientRect();
-    const editorRect = editor.getBoundingClientRect();
-    const initialLeft = Math.max(0, initialRect.left - editorRect.left);
-    const initialTop = Math.max(0, initialRect.top - editorRect.top);
+    const origin = readOffset(image);
+    const range = dragRangeFor(image, origin);
     let didMove = false;
 
     startPointerTracking((pointerEvent) => {
@@ -294,15 +370,47 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
         makeImageFree(image);
         didMove = true;
       }
-      const maxLeft = Math.max(0, editor.clientWidth - image.offsetWidth);
-      const maxTop = Math.max(0, editor.scrollHeight - image.offsetHeight);
-      image.style.left = `${Math.min(maxLeft, Math.max(0, initialLeft + deltaX))}px`;
-      image.style.top = `${Math.min(maxTop, Math.max(0, initialTop + deltaY))}px`;
+      dragWithin(image, origin, range, deltaX, deltaY);
       updateImageBounds(image);
     }, () => {
       if (didMove) emitChange();
       updateImageBounds(image);
     });
+  }
+
+  function handleBlockDragStart(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (readOnly || !activeBlock || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const block = activeBlock;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = readOffset(block);
+    const range = dragRangeFor(block, origin);
+    let didMove = false;
+
+    startPointerTracking((pointerEvent) => {
+      didMove = true;
+      dragWithin(block, origin, range, pointerEvent.clientX - startX, pointerEvent.clientY - startY);
+      showBlock(block);
+    }, () => {
+      if (didMove) emitChange();
+      showBlock(block);
+    });
+  }
+
+  /** ย้ายลำดับจริงในสายเนื้อหา ไม่ใช่แค่เลื่อนภาพ บล็อกจึงถูกพิมพ์ตามลำดับใหม่ด้วย */
+  function reorderActiveBlock(direction: -1 | 1) {
+    if (!activeBlock || !reorderBlock(activeBlock, direction)) return;
+    emitChange();
+    window.requestAnimationFrame(() => showBlock(activeBlock));
+  }
+
+  function resetActiveBlock() {
+    if (!activeBlock) return;
+    clearOffset(activeBlock);
+    emitChange();
+    window.requestAnimationFrame(() => showBlock(activeBlock));
   }
 
   function handleResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>, horizontalDirection: -1 | 1) {
@@ -315,11 +423,9 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     const startRect = image.getBoundingClientRect();
     const startWidth = startRect.width;
     const aspectRatio = startRect.height > 0 ? startRect.width / startRect.height : 1;
-    const startLeft = Number.parseFloat(image.style.left) || image.offsetLeft || 0;
+    const startOffset = readOffset(image);
     const isFree = image.dataset.imageLayout === 'free';
-    const maxWidth = Math.max(40, horizontalDirection < 0 && isFree
-      ? startLeft + startWidth
-      : editor.clientWidth - startLeft);
+    const maxWidth = Math.max(40, editor.clientWidth);
 
     startPointerTracking((pointerEvent) => {
       const requestedWidth = startWidth + ((pointerEvent.clientX - startX) * horizontalDirection);
@@ -327,8 +433,9 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
       image.style.width = `${nextWidth}px`;
       image.style.maxWidth = '100%';
       image.style.height = `${nextWidth / aspectRatio}px`;
+      // ลากมุมซ้าย = ขอบขวาต้องอยู่ที่เดิม จึงต้องถอยระยะเยื้องเท่ากับความกว้างที่เพิ่มมา
       if (horizontalDirection < 0 && isFree) {
-        image.style.left = `${Math.max(0, startLeft - (nextWidth - startWidth))}px`;
+        applyOffset(image, { left: startOffset.left - (nextWidth - startWidth), top: startOffset.top });
       }
       updateImageBounds(image);
     }, () => {
@@ -338,7 +445,14 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   }
 
   function handleEditorKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (!selectedImage || readOnly) return;
+    if (readOnly) return;
+    // Alt + ลูกศรขึ้น/ลง สลับลำดับบล็อก เป็นทางเดียวกับปุ่มบนที่จับ สำหรับคนที่ใช้แป้นพิมพ์อย่างเดียว
+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && activeBlock) {
+      event.preventDefault();
+      reorderActiveBlock(event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+    if (!selectedImage) return;
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
       removeSelectedImage();
@@ -352,12 +466,11 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     event.preventDefault();
     makeImageFree(selectedImage);
     const step = event.shiftKey ? 10 : 1;
-    const currentLeft = Number.parseFloat(selectedImage.style.left) || 0;
-    const currentTop = Number.parseFloat(selectedImage.style.top) || 0;
-    const nextLeft = currentLeft + (event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0);
-    const nextTop = currentTop + (event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0);
-    selectedImage.style.left = `${Math.max(0, nextLeft)}px`;
-    selectedImage.style.top = `${Math.max(0, nextTop)}px`;
+    moveOffsetBy(
+      selectedImage,
+      event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
+      event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0,
+    );
     emitChange();
     updateImageBounds(selectedImage);
   }
@@ -446,7 +559,10 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
       <div
         id="form-print-area"
         ref={scrollAreaRef}
-        onScroll={() => updateImageBounds()}
+        onScroll={() => {
+          updateImageBounds();
+          showBlock(activeBlock);
+        }}
         className="relative max-h-[calc(100vh-260px)] overflow-auto px-3 py-5 md:px-8"
       >
         <div
@@ -457,8 +573,16 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           contentEditable={!readOnly}
           suppressContentEditableWarning
           spellCheck
-          onInput={emitChange}
-          onClick={(event) => selectImage(readOnly ? null : imageFromEventTarget(event.target))}
+          onInput={() => {
+            emitChange();
+            syncActiveBlock();
+          }}
+          onClick={(event) => {
+            selectImage(readOnly ? null : imageFromEventTarget(event.target));
+            syncActiveBlock();
+          }}
+          onKeyUp={syncActiveBlock}
+          onFocus={syncActiveBlock}
           onPointerDown={handleImagePointerDown}
           onDragStart={(event) => {
             if (imageFromEventTarget(event.target)) event.preventDefault();
@@ -466,6 +590,37 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
           onKeyDown={handleEditorKeyDown}
           className={cn('form-document mx-auto bg-white text-slate-900 shadow-xl outline-none', readOnly && 'cursor-default')}
         />
+        {/* ที่จับย้ายบล็อก อยู่นอกเนื้อหาเสมอ การพิมพ์และการเลือกข้อความในเอกสารจึงไม่ถูกรบกวน
+            ซ่อนตอนเลือกรูปอยู่ เพื่อไม่ให้มีแถบเครื่องมือสองชุดพร้อมกัน */}
+        {!readOnly && !selectedImage && activeBlock && blockBounds && (
+          <div
+            data-testid="editor-block-selection"
+            className="form-block-selection"
+            style={{ left: blockBounds.left, top: blockBounds.top, width: blockBounds.width, height: blockBounds.height }}
+          >
+            <div
+              role="toolbar"
+              aria-label="เครื่องมือย้ายบล็อก"
+              className={cn('form-block-rail', blockBounds.top < 52 && 'form-block-rail-below')}
+            >
+              <button
+                type="button"
+                title="ลากเพื่อย้ายตำแหน่งบล็อกนี้"
+                aria-label="ลากเพื่อย้ายตำแหน่งบล็อกนี้"
+                className="cursor-move touch-none"
+                onMouseDown={(event) => event.preventDefault()}
+                onPointerDown={handleBlockDragStart}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" title="ย้ายขึ้นก่อนบล็อกบน (Alt + ลูกศรขึ้น)" aria-label="ย้ายบล็อกขึ้น" disabled={!canReorderBlock(activeBlock, -1)} onMouseDown={(event) => event.preventDefault()} onClick={() => reorderActiveBlock(-1)}><ArrowUp className="h-3.5 w-3.5" /></button>
+              <button type="button" title="ย้ายลงหลังบล็อกล่าง (Alt + ลูกศรลง)" aria-label="ย้ายบล็อกลง" disabled={!canReorderBlock(activeBlock, 1)} onMouseDown={(event) => event.preventDefault()} onClick={() => reorderActiveBlock(1)}><ArrowDown className="h-3.5 w-3.5" /></button>
+              {blockMoved && (
+                <button type="button" title="คืนตำแหน่งเดิม" aria-label="คืนตำแหน่งเดิม" onMouseDown={(event) => event.preventDefault()} onClick={resetActiveBlock}><RotateCcw className="h-3.5 w-3.5" /></button>
+              )}
+            </div>
+          </div>
+        )}
         {!readOnly && selectedImage && imageBounds && (
           <div
             data-testid="editor-image-selection"

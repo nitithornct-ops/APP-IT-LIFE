@@ -17,7 +17,8 @@ import {
   Share2,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -75,6 +76,7 @@ export function FormManagementPage() {
   const canManage = hasPermission('form.manage');
   const canSendVendor = hasPermission('form.vendor_send');
   const canClose = hasPermission('form.close');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<'issues' | 'templates'>('issues');
   const [search, setSearch] = useState('');
   const [editor, setEditor] = useState<EditorState>();
@@ -92,6 +94,39 @@ export function FormManagementPage() {
 
   const filteredTemplates = useMemo(() => (templatesQuery.data ?? []).filter((item) => `${item.template_code} ${item.name} ${item.category}`.toLowerCase().includes(search.toLowerCase())), [search, templatesQuery.data]);
   const filteredIssues = useMemo(() => (issuesQuery.data ?? []).filter((item) => `${item.form_no} ${item.title} ${item.ticket?.ticket_no ?? ''} ${item.vendor?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [issuesQuery.data, search]);
+
+  const openTemplate = useCallback((template: FormTemplate) => {
+    setEditor({ kind: 'template', id: template.id, title: template.name, originalTitle: template.name, description: template.description ?? '', originalDescription: template.description ?? '', category: template.category, originalCategory: template.category, html: template.content_html, originalHtml: template.content_html, code: `${template.template_code} · v${template.current_version}` });
+  }, []);
+
+  const openIssue = useCallback((issue: IssueForm) => {
+    setEditor({ kind: 'issue', id: issue.id, title: issue.title, originalTitle: issue.title, description: issue.template?.name ?? '', originalDescription: issue.template?.name ?? '', category: '', originalCategory: '', html: issue.content_html, originalHtml: issue.content_html, status: issue.status, code: `${issue.form_no} · Template v${issue.template_version}`, vendorResponse: issue.vendor_response });
+  }, []);
+
+  const openTemplateById = useCallback((templateId: string) => {
+    const template = templatesQuery.data?.find((item) => item.id === templateId);
+    if (template) openTemplate(template);
+  }, [openTemplate, templatesQuery.data]);
+
+  /**
+   * Form Studio คือที่เดียวที่แม่แบบถูกแก้ หน้าแบบฟอร์มของ Ticket จึงลิงก์เข้ามาที่แม่แบบใบนั้นตรง ๆ
+   * ล้าง query ทิ้งทันทีที่เปิดได้ ไม่งั้นพอผู้ใช้ปิด editor จะถูกดีดกลับเข้าไปใหม่ไม่รู้จบ
+   */
+  useEffect(() => {
+    const templateId = searchParams.get('template');
+    const issueId = searchParams.get('issue');
+    if (!templateId && !issueId) return;
+    const template = templateId ? templatesQuery.data?.find((item) => item.id === templateId) : undefined;
+    const issue = issueId ? issuesQuery.data?.find((item) => item.id === issueId) : undefined;
+    if (!template && !issue) return;
+    if (template) {
+      setTab('templates');
+      openTemplate(template);
+    } else if (issue) {
+      openIssue(issue);
+    }
+    setSearchParams({}, { replace: true });
+  }, [issuesQuery.data, openIssue, openTemplate, searchParams, setSearchParams, templatesQuery.data]);
 
   const createTemplate = useMutation({
     mutationFn: () => apiFetch<FormTemplate>('/api/v1/forms/templates', { method: 'POST', body: JSON.stringify(newTemplate) }),
@@ -151,14 +186,6 @@ export function FormManagementPage() {
     },
   });
 
-  function openTemplate(template: FormTemplate) {
-    setEditor({ kind: 'template', id: template.id, title: template.name, originalTitle: template.name, description: template.description ?? '', originalDescription: template.description ?? '', category: template.category, originalCategory: template.category, html: template.content_html, originalHtml: template.content_html, code: `${template.template_code} · v${template.current_version}` });
-  }
-
-  function openIssue(issue: IssueForm) {
-    setEditor({ kind: 'issue', id: issue.id, title: issue.title, originalTitle: issue.title, description: issue.template?.name ?? '', originalDescription: issue.template?.name ?? '', category: '', originalCategory: '', html: issue.content_html, originalHtml: issue.content_html, status: issue.status, code: `${issue.form_no} · Template v${issue.template_version}`, vendorResponse: issue.vendor_response });
-  }
-
   const isDirty = editor ? editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory : false;
   const loading = templatesQuery.isLoading || issuesQuery.isLoading || referencesQuery.isLoading;
   const vendorReplyCount = (issuesQuery.data ?? []).filter((item) => item.status === 'Vendor Replied').length;
@@ -198,7 +225,7 @@ export function FormManagementPage() {
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / แบบฟอร์มงาน" title="Form Studio" description="สร้างแบบฟอร์มเหมือนเอกสาร Word จัดเวอร์ชัน และส่งให้ Vendor ตอบกลับในงานเดียวกัน" />{canManage && <div className="flex gap-2"><Button variant="outline" onClick={() => setShowNewTemplate(true)}><FilePlus2 className="h-4 w-4" />สร้าง Template</Button><Button onClick={() => setShowNewIssue(true)}><Plus className="h-4 w-4" />สร้างแบบฟอร์มงาน</Button></div>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Library className="h-5 w-5" />} label="Templates" value={templatesQuery.data?.length ?? 0} /><StatCard icon={<FileText className="h-5 w-5" />} label="แบบฟอร์มงานทั้งหมด" value={issuesQuery.data?.length ?? 0} tone="gray" /><StatCard icon={<Clock3 className="h-5 w-5" />} label="รอ Vendor ตอบ" value={waitingVendorCount} tone="amber" /><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Vendor ตอบแล้ว" value={vendorReplyCount} tone="teal" /></div>
     <Card><CardBody className="flex flex-wrap items-center gap-3"><div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-900"><button type="button" onClick={() => setTab('issues')} className={`rounded-md px-4 py-2 text-sm font-bold ${tab === 'issues' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-200' : 'text-slate-500'}`}>แบบฟอร์มงาน</button><button type="button" onClick={() => setTab('templates')} className={`rounded-md px-4 py-2 text-sm font-bold ${tab === 'templates' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-200' : 'text-slate-500'}`}>Template Library</button></div><label className="relative ml-auto min-w-[260px] flex-1 md:max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขที่ Ticket หรือ Vendor..." className={`${fieldClass} mt-0 pl-9`} /></label></CardBody></Card>
-    {loading ? <Card><CardBody className="py-16 text-center text-sm text-slate-500">กำลังโหลด Form Studio...</CardBody></Card> : tab === 'templates' ? <TemplateLibrary templates={filteredTemplates} canManage={canManage} onOpen={openTemplate} /> : <IssueLibrary issues={filteredIssues} canManage={canManage} onOpen={openIssue} />}
+    {loading ? <Card><CardBody className="py-16 text-center text-sm text-slate-500">กำลังโหลด Form Studio...</CardBody></Card> : tab === 'templates' ? <TemplateLibrary templates={filteredTemplates} canManage={canManage} onOpen={openTemplate} /> : <IssueLibrary issues={filteredIssues} canManage={canManage} onOpen={openIssue} onOpenTemplate={openTemplateById} />}
     {showNewTemplate && <FormModal title="สร้าง Template ใหม่" description="เริ่มจากเอกสารเปล่า แล้วจัดรูปแบบได้ใน Word-like Editor" size="lg" onClose={() => setShowNewTemplate(false)} footer={<><Button variant="ghost" onClick={() => setShowNewTemplate(false)}>ยกเลิก</Button><Button isLoading={createTemplate.isPending} disabled={!newTemplate.name.trim()} onClick={() => createTemplate.mutate()}><FilePlus2 className="h-4 w-4" />สร้างและเปิด Editor</Button></>}><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-semibold md:col-span-2">ชื่อแบบฟอร์ม<input value={newTemplate.name} onChange={(event) => setNewTemplate({ ...newTemplate, name: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">หมวดหมู่<input value={newTemplate.category} onChange={(event) => setNewTemplate({ ...newTemplate, category: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold md:col-span-2">คำอธิบาย<textarea rows={3} value={newTemplate.description} onChange={(event) => setNewTemplate({ ...newTemplate, description: event.target.value })} className={fieldClass} /></label></div></FormModal>}
     {showNewIssue && <FormModal title="สร้างแบบฟอร์มงาน" description="คัดลอก Template เวอร์ชันปัจจุบันมาเป็นเอกสารงานที่แก้ไขได้อิสระ" size="lg" onClose={() => setShowNewIssue(false)} footer={<><Button variant="ghost" onClick={() => setShowNewIssue(false)}>ยกเลิก</Button><Button isLoading={createIssue.isPending} disabled={!newIssue.title.trim() || !newIssue.templateId} onClick={() => createIssue.mutate()}><Plus className="h-4 w-4" />สร้างแบบฟอร์มงาน</Button></>}><div className="grid gap-4"><label className="text-sm font-semibold">ชื่อเรื่อง<input value={newIssue.title} onChange={(event) => setNewIssue({ ...newIssue, title: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">Template<select value={newIssue.templateId} onChange={(event) => setNewIssue({ ...newIssue, templateId: event.target.value })} className={fieldClass}><option value="">— เลือก Template —</option>{templatesQuery.data?.filter((item) => item.status !== 'Archived').map((template) => <option key={template.id} value={template.id}>{template.template_code} · {template.name} · v{template.current_version}</option>)}</select></label><label className="text-sm font-semibold">ผูกกับ Ticket (ไม่บังคับ)<select value={newIssue.ticketId} onChange={(event) => setNewIssue({ ...newIssue, ticketId: event.target.value })} className={fieldClass}><option value="">— ไม่ผูก Ticket —</option>{referencesQuery.data?.tickets.map((ticket) => <option key={ticket.id} value={ticket.id}>{ticket.ticket_no} · {ticket.title}</option>)}</select></label></div></FormModal>}
     {shareResult && <ShareLinkModal result={shareResult} subject="แบบฟอร์มประเมินงานจาก Form Studio" onClose={() => setShareResult(undefined)} />}
@@ -210,9 +237,31 @@ function TemplateLibrary({ templates, canManage, onOpen }: { templates: FormTemp
   return <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{templates.map((template) => <Card key={template.id} className="flex flex-col"><CardHeader className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-primary-700 dark:text-primary-300">{template.template_code} · v{template.current_version}</p><p className="mt-1 line-clamp-2">{template.name}</p></div><Badge variant={template.status === 'Published' ? 'success' : template.status === 'Archived' ? 'secondary' : 'warning'}>{template.status}</Badge></CardHeader><CardBody className="flex flex-1 flex-col"><p className="line-clamp-3 text-sm text-slate-500">{template.description || 'ไม่มีคำอธิบาย'}</p><div className="mt-4 flex items-center justify-between text-xs text-slate-400"><span>{template.category}</span><span>แก้ไข {formatThaiDate(template.updated_at, 'd MMM yyyy HH:mm')}</span></div><Button className="mt-4 w-full" variant={canManage ? 'outline' : 'ghost'} onClick={() => onOpen(template)}>{canManage ? <Edit3 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}{canManage ? 'เปิดใน Editor' : 'ดูแบบฟอร์ม'}</Button>{canManage && <RowActions className="mt-2" recordLabel={template.template_code} actions={[{ kind: 'delete', permission: 'form.manage', deleteEndpoint: `/api/v1/record-deletions/form-templates/${template.id}` }]} />}</CardBody></Card>)}</div>;
 }
 
-function IssueLibrary({ issues, canManage, onOpen }: { issues: IssueForm[]; canManage: boolean; onOpen: (item: IssueForm) => void }) {
+/**
+ * ช่อง Template / Ticket ของแต่ละแถว
+ *
+ * ชื่อ Template เปิดแม่แบบใน Form Studio ส่วนเลข Ticket ลิงก์ไปที่ตัว Ticket และแบบฟอร์มที่พิมพ์ได้
+ * ของ Ticket ใบนั้น เดิมทั้งสองอย่างเป็นข้อความเฉย ๆ ผู้ใช้จึงต้องคัดลอกเลขไปค้นเอาเองทุกครั้ง
+ */
+function IssueLinks({ issue, onOpenTemplate }: { issue: IssueForm; onOpenTemplate: (templateId: string) => void }) {
+  const template = issue.template;
+  const ticket = issue.ticket;
+  return <>
+    {template
+      ? <button type="button" className="text-left font-semibold hover:underline" onClick={() => onOpenTemplate(template.id)}>{template.name}</button>
+      : <p>—</p>}
+    {ticket
+      ? <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+          <Link to={`/tickets/${ticket.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{ticket.ticket_no} · {ticket.title}</Link>
+          <Link to={`/tickets/${ticket.id}/form`} className="inline-flex items-center gap-1 text-slate-500 hover:underline dark:text-slate-400" title={`เปิดแบบฟอร์มของ ${ticket.ticket_no}`}><ExternalLink className="h-3 w-3" aria-hidden="true" />แบบฟอร์ม</Link>
+        </span>
+      : <p className="mt-0.5 text-xs text-slate-400">ไม่ผูก Ticket</p>}
+  </>;
+}
+
+function IssueLibrary({ issues, canManage, onOpen, onOpenTemplate }: { issues: IssueForm[]; canManage: boolean; onOpen: (item: IssueForm) => void; onOpenTemplate: (templateId: string) => void }) {
   if (!issues.length) return <Card><EmptyState icon={<FileText className="h-10 w-10" />} title="ยังไม่มีแบบฟอร์มงาน" description="สร้างงานจาก Template แล้วผูก Ticket หรือส่งต่อ Vendor ได้ทันที" /></Card>;
-  return <Card><div className="overflow-x-auto"><DataTable toolbar={false} pagination={false} containerClassName="rounded-none border-0 shadow-none" className="w-full min-w-[920px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900/50"><tr><th className="px-4 py-3">เลขที่ / ชื่อเรื่อง</th><th className="px-4 py-3">Template / Ticket</th><th className="px-4 py-3">Vendor</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">อัปเดต</th><th className="px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700">{issues.map((issue) => <tr key={issue.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30"><td className="px-4 py-3"><p className="font-bold text-slate-800 dark:text-slate-100">{issue.form_no}</p><p className="max-w-sm truncate text-slate-500">{issue.title}</p></td><td className="px-4 py-3"><p>{issue.template?.name ?? '—'}</p><p className="text-xs text-primary-700 dark:text-primary-300">{issue.ticket ? `${issue.ticket.ticket_no} · ${issue.ticket.title}` : 'ไม่ผูก Ticket'}</p></td><td className="px-4 py-3">{issue.vendor?.name ?? '—'}</td><td className="px-4 py-3"><Badge variant={statusVariant(issue.status)}>{statusLabel[issue.status]}</Badge></td><td className="px-4 py-3 text-xs text-slate-500">{formatThaiDate(issue.updated_at, 'd MMM yyyy HH:mm')}</td><td className="px-4 py-3 text-right"><RowActions recordLabel={issue.form_no} actions={[{ kind: 'edit', label: 'เปิด', onClick: () => onOpen(issue) }, { kind: 'delete', permission: 'form.manage', hidden: !canManage, deleteEndpoint: `/api/v1/record-deletions/issue-forms/${issue.id}` }]} /></td></tr>)}</tbody></DataTable></div></Card>;
+  return <Card><div className="overflow-x-auto"><DataTable toolbar={false} pagination={false} containerClassName="rounded-none border-0 shadow-none" className="w-full min-w-[920px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900/50"><tr><th className="px-4 py-3">เลขที่ / ชื่อเรื่อง</th><th className="px-4 py-3">Template / Ticket</th><th className="px-4 py-3">Vendor</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">อัปเดต</th><th className="px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700">{issues.map((issue) => <tr key={issue.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30"><td className="px-4 py-3"><p className="font-bold text-slate-800 dark:text-slate-100">{issue.form_no}</p><p className="max-w-sm truncate text-slate-500">{issue.title}</p></td><td className="px-4 py-3"><IssueLinks issue={issue} onOpenTemplate={onOpenTemplate} /></td><td className="px-4 py-3">{issue.vendor?.name ?? '—'}</td><td className="px-4 py-3"><Badge variant={statusVariant(issue.status)}>{statusLabel[issue.status]}</Badge></td><td className="px-4 py-3 text-xs text-slate-500">{formatThaiDate(issue.updated_at, 'd MMM yyyy HH:mm')}</td><td className="px-4 py-3 text-right"><RowActions recordLabel={issue.form_no} actions={[{ kind: 'edit', label: 'เปิด', onClick: () => onOpen(issue) }, { kind: 'delete', permission: 'form.manage', hidden: !canManage, deleteEndpoint: `/api/v1/record-deletions/issue-forms/${issue.id}` }]} /></td></tr>)}</tbody></DataTable></div></Card>;
 }
 
 function VendorResponsePanel({ response }: { response: IssueForm['vendor_response'] }) {
