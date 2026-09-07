@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, typ
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { useAuth } from '../../stores/authContext';
 import { WordLikeEditor } from '../forms/WordLikeEditor';
 import { ApiError, apiFetch, showToast } from '../../services/apiClient';
 import type { TicketFormDocument, TicketFormFlowState } from '../../types/tickets';
@@ -107,6 +108,7 @@ type FormMode = 'view' | 'edit';
 export function TicketFormPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const { hasPermission } = useAuth();
   /**
    * เครื่องหมายและข้อความที่ผู้ใช้เพิ่งแก้ เก็บคู่กับ documentKey แทนที่จะ sync ผ่าน useEffect
    * ค่าเริ่มต้นจึงมาจากเอกสารตั้งแต่ render แรก ไม่มีจังหวะที่ช่องติ๊กกะพริบเป็นว่างก่อนแล้วค่อยเติม
@@ -299,6 +301,7 @@ export function TicketFormPage() {
     '--form-page-margin': `${geometry.marginPx}px`,
   } as React.CSSProperties;
   const isBusy = saveContent.isPending || resetContent.isPending;
+  const canOpenFormStudio = hasPermission('form.view');
 
   return <div className="ticket-form-screen space-y-4">
     <div className="ticket-form-actions flex flex-wrap items-center justify-between gap-3">
@@ -321,9 +324,17 @@ export function TicketFormPage() {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-extrabold text-slate-900 dark:text-white">Flow ตามส่วนของแบบฟอร์ม</p>
-          <p className="mt-1 text-xs text-slate-500">{formDocument.template.code} · {formDocument.template.name} · v{formDocument.template.version}</p>
+          {/* แม่แบบอยู่ที่ Form Studio ที่เดียว การแก้ที่นี่มีผลเฉพาะ Ticket ใบนี้ ลิงก์นี้จึงพาไปแก้ที่ต้นทาง */}
+          <p className="mt-1 text-xs text-slate-500">
+            {canOpenFormStudio
+              ? <Link to={`/forms?template=${formDocument.template.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{formDocument.template.code} · {formDocument.template.name} · v{formDocument.template.version}</Link>
+              : <span>{formDocument.template.code} · {formDocument.template.name} · v{formDocument.template.version}</span>}
+            <span className="ml-1">· แม่แบบหลักอยู่ใน Form Studio</span>
+          </p>
         </div>
-        {formDocument.issueForm && <Badge variant="info">{formDocument.issueForm.formNo}</Badge>}
+        {formDocument.issueForm && (canOpenFormStudio
+          ? <Link to={`/forms?issue=${formDocument.issueForm.id}`} title="เปิดแบบฟอร์มงานใบนี้ใน Form Studio"><Badge variant="info">{formDocument.issueForm.formNo}</Badge></Link>
+          : <Badge variant="info">{formDocument.issueForm.formNo}</Badge>)}
       </div>
       <ol className="mt-4 grid gap-2 md:grid-cols-5">
         {formDocument.flow.map((step) => {

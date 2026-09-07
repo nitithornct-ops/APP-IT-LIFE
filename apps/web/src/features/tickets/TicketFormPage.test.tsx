@@ -5,11 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TicketFormPage } from './TicketFormPage';
 import type { TicketFormDocument } from '../../types/tickets';
 
-const { apiFetchMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn() }));
+const { apiFetchMock, permissionsMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn(), permissionsMock: { keys: ['form.view'] } }));
 vi.mock('../../services/apiClient', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../services/apiClient')>();
   return { ...original, apiFetch: apiFetchMock };
 });
+vi.mock('../../stores/authContext', () => ({
+  useAuth: () => ({ hasPermission: (permission: string) => permissionsMock.keys.includes(permission) }),
+}));
 
 const CONTENT_HTML = '<h1>แบบฟอร์มการแจ้งปัญหา IT Support และระบบ ERP</h1><h2>ส่วนที่ 1: ข้อมูลผู้แจ้ง</h2><p>TCK-001 · สมชาย ใจดี</p><p>☐ คอมพิวเตอร์ ☐ เครื่องพิมพ์</p><p>หมายเหตุ —</p><h2>ส่วนที่ 2: การประเมินโดย IT</h2><p>เจ้าหน้าที่ IT</p><h2>ส่วนที่ 3: การแก้ไขโดย Vendor</h2><p>รอตอบกลับ</p><h2>ส่วนที่ 4: Manday / Credit</h2><h2>ส่วนที่ 5: ปิดงาน</h2><img src="https://signed.test/ticket-1.png" alt="ลายเซ็นรับรอง Ticket">';
 
@@ -51,7 +54,7 @@ function stubBlockHeight(heightPx: number) {
   } as DOMRect);
 }
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); apiFetchMock.mockReset(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); apiFetchMock.mockReset(); permissionsMock.keys = ['form.view']; });
 
 describe('TicketFormPage', () => {
   it('renders the Form Studio template and its five-section flow for the Ticket', async () => {
@@ -111,6 +114,29 @@ describe('TicketFormPage', () => {
     await waitFor(() => expect(screen.getAllByTestId('ticket-form-sheet').length).toBeGreaterThan(1));
     const sheets = screen.getAllByTestId('ticket-form-sheet');
     expect(sheets[0]).toHaveAttribute('aria-label', `หน้า 1 จาก ${sheets.length}`);
+  });
+
+  /**
+   * แม่แบบถูกแก้ที่ Form Studio ที่เดียว การแก้ในหน้านี้มีผลเฉพาะ Ticket ใบนี้ ลิงก์จึงต้องพากลับไป
+   * ที่ต้นทางได้ ไม่ใช่ปล่อยให้ผู้ใช้จำรหัสแม่แบบไปค้นเอง
+   */
+  it('ลิงก์แม่แบบและแบบฟอร์มงานกลับไปที่ Form Studio ซึ่งเป็นแบบฟอร์มหลัก', async () => {
+    apiFetchMock.mockResolvedValue(formDocument());
+    renderPage();
+    await screen.findByTestId('ticket-form-page');
+
+    expect(screen.getByRole('link', { name: /IT-ERP-ISSUE/ })).toHaveAttribute('href', '/forms?template=template-1');
+    expect(screen.getByRole('link', { name: 'FRM-001' })).toHaveAttribute('href', '/forms?issue=form-1');
+  });
+
+  it('ไม่ชวนไป Form Studio เมื่อผู้ใช้ไม่มีสิทธิ์เข้าโมดูลแบบฟอร์มงาน', async () => {
+    permissionsMock.keys = [];
+    apiFetchMock.mockResolvedValue(formDocument());
+    renderPage();
+    await screen.findByTestId('ticket-form-page');
+
+    expect(screen.queryByRole('link', { name: /IT-ERP-ISSUE/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/IT-ERP-ISSUE/)).toBeVisible();
   });
 
   it('ซ่อนปุ่มแก้ไขจากผู้ที่ไม่มีสิทธิ์แก้ Ticket', async () => {

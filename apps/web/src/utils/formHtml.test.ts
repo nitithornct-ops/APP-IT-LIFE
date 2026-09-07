@@ -52,6 +52,45 @@ describe('form HTML utilities', () => {
     expect(safe).toContain('rel="noopener noreferrer"');
   });
 
+  /**
+   * ก่อนหน้านี้ตัวกรองตัด position/left/top ทิ้งทั้งหมด รูปหรือข้อความที่ผู้ใช้ลากย้ายจึงเด้งกลับ
+   * ที่เดิมทุกครั้งที่บันทึกแล้วเปิดใหม่ ซึ่งทำให้ปุ่ม "ลากย้ายอิสระ" ใช้งานจริงไม่ได้เลย
+   */
+  it('keeps the offset of a block the user dragged, so it stays where it was put', () => {
+    const html = sanitizeFormHtml('<p style="position:relative;left:-40px;top:120px;z-index:2">ย้ายแล้ว</p><img src="https://x.test/a.png" data-image-layout="free" style="position:relative;left:96px;top:0;width:160px;height:90px">');
+    expect(html).toContain('position:relative');
+    expect(html).toContain('left:-40px');
+    expect(html).toContain('top:120px');
+    expect(html).toContain('z-index:2');
+    expect(html).toContain('left:96px');
+    expect(html).toContain('top:0px');
+    expect(html).toContain('data-image-layout="free"');
+  });
+
+  it('refuses offsets that would fling content out of the document', () => {
+    const html = sanitizeFormHtml('<p style="position:relative;left:-99999px;top:50vh">หนีออกนอกหน้า</p>');
+    expect(html).toContain('position:relative');
+    expect(html).not.toContain('left');
+    expect(html).not.toContain('top');
+  });
+
+  /**
+   * position:relative ปลอดภัยเพราะบล็อกยังกินที่เดิมในสายเนื้อหา ส่วน absolute/fixed สร้างแผ่นทับ
+   * ทั้งหน้าจอได้ และยังทำให้ตัวแบ่งหน้ากระดาษนับความสูงผิดด้วย จึงต้องไม่รอดออกไป
+   */
+  it('still refuses the positioning that could cover the screen', () => {
+    for (const value of ['absolute', 'fixed', 'sticky']) {
+      const html = sanitizeFormHtml(`<div style="position:${value};left:0;top:0;z-index:9">ทับหน้าจอ</div>`);
+      expect(html).not.toContain('position');
+      expect(html).not.toContain('z-index');
+    }
+  });
+
+  it('drops an image layout marker it does not recognise', () => {
+    const html = sanitizeFormHtml('<img src="https://x.test/a.png" data-image-layout="overlay"><p data-image-layout="free">ข้อความ</p>');
+    expect(html).not.toContain('data-image-layout');
+  });
+
   it('keeps a page-break marker so a saved form still splits where the user asked', () => {
     const html = sanitizeFormHtml('<p>หน้าแรก</p><div class="form-page-break"></div><p>หน้าถัดไป</p>');
     expect(html).toContain('class="form-page-break"');
