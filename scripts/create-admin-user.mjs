@@ -14,15 +14,32 @@
  *   node scripts/create-admin-user.mjs --email=admin2@company.com --name="ผู้ดูแลระบบสำรอง"
  *   node scripts/create-admin-user.mjs --email=admin2@company.com --password='รหัสผ่าน' --role=super_admin
  *
+ * ไม่ใส่ --password สคริปต์จะสุ่มรหัสผ่านให้และพิมพ์ออกมาครั้งเดียวตอนจบ ให้คัดลอกเก็บทันที
+ * เพราะไม่มีที่ไหนเก็บค่านั้นไว้อีก ถ้าทำหาย ให้รันซ้ำด้วยอีเมลเดิมเพื่อตั้งรหัสใหม่ทับ
+ *
  * ถ้ามีบัญชีอีเมลนี้อยู่แล้ว สคริปต์จะตั้งรหัสผ่านใหม่ทับและมอบบทบาทให้ (idempotent รันซ้ำได้)
  *
  * ต้องตั้งค่า SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (อ่านจาก apps/api/.dev.vars อัตโนมัติถ้ามีไฟล์)
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { randomInt } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_PASSWORD = '12345678';
 const DEFAULT_ROLE = 'it_admin';
+
+/**
+ * สุ่มรหัสผ่านตั้งต้นเมื่อผู้เรียกไม่ได้ส่ง --password มา
+ *
+ * เดิมค่าตั้งต้นเป็น '12345678' คงที่ ซึ่งแปลว่าบัญชีผู้ดูแลทุกใบที่สร้างด้วยสคริปต์นี้มีรหัสผ่าน
+ * เดียวกันและเดาได้ทันที บัญชีเหล่านี้เป็น it_admin/super_admin และสคริปต์ยัง confirm อีเมลให้เสร็จ
+ * จึงล็อกอินได้เลย MFA กันได้แค่ชั้นเดียวและกันไม่ได้ถ้าคนร้ายไปถึงหน้าผูก Authenticator ก่อนเจ้าตัว
+ */
+function generatePassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+  let out = '';
+  for (let i = 0; i < 24; i += 1) out += alphabet[randomInt(alphabet.length)];
+  return out;
+}
 
 function loadDevVars(path) {
   if (!existsSync(path)) return {};
@@ -51,7 +68,8 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const email = args.email;
-  const password = args.password ?? DEFAULT_PASSWORD;
+  const generatedPassword = args.password ? null : generatePassword();
+  const password = args.password ?? generatedPassword;
   const fullName = args.name ?? email;
   const roleKey = args.role ?? DEFAULT_ROLE;
 
@@ -151,7 +169,11 @@ async function main() {
   console.log('');
   console.log('สำเร็จ');
   console.log(`  อีเมล    : ${email}`);
-  console.log(`  รหัสผ่าน : ${password}`);
+  // พิมพ์เฉพาะรหัสที่สคริปต์สุ่มเอง เพราะผู้เรียกไม่มีทางรู้ค่านั้นจากที่อื่น ส่วนรหัสที่ส่งมาทาง
+  // --password ผู้เรียกถืออยู่แล้ว การพิมพ์ซ้ำมีแต่จะทิ้งความลับไว้ใน log/scrollback โดยไม่ได้อะไรเพิ่ม
+  console.log(generatedPassword
+    ? `  รหัสผ่าน : ${generatedPassword}   ← สุ่มให้ เก็บทันที ระบบจะไม่แสดงอีก`
+    : '  รหัสผ่าน : (ตามที่ส่งมาทาง --password)');
   console.log(`  บทบาท    : ${roleKey} (${role.name_th})`);
   console.log(`  user id  : ${userId}`);
   console.log('');

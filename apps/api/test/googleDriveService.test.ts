@@ -8,6 +8,19 @@ import {
 } from '../src/services/googleDriveService';
 import type { Bindings } from '../src/types';
 
+/**
+ * เทียบ host แบบเต็มค่า ไม่ใช่ substring — `includes('oauth2.googleapis.com')` จะจริงกับ URL อย่าง
+ * `https://oauth2.googleapis.com.attacker.test/` ด้วย การนับ call ผิดตัวทำให้เทสต์ที่ควรจับ
+ * พฤติกรรม token cache ผิดพลาดกลายเป็นผ่านไปเงียบ ๆ
+ */
+function isTokenCall(url: unknown): boolean {
+  try {
+    return new URL(String(url)).hostname === 'oauth2.googleapis.com';
+  } catch {
+    return false;
+  }
+}
+
 /** กุญแจจริงสำหรับเซ็น JWT — เทสต์ต้องพิสูจน์ว่า importKey/sign ทำงานกับ PEM รูปแบบที่ Google ให้มาจริง */
 async function generatePrivateKeyPem(): Promise<string> {
   // workers-types ประกาศ generateKey/exportKey แบบกว้างกว่า lib.dom จึงต้องระบุชนิดที่ใช้จริงเอง
@@ -113,7 +126,7 @@ describe('uploadCsvAsGoogleSheet', () => {
       file: { id: 'sheet-1', name: 'tickets-2026-09-09', webViewLink: 'https://docs.google.com/spreadsheets/d/sheet-1/edit' },
     });
 
-    const tokenCall = fetchMock.mock.calls.find(([url]) => String(url).includes('oauth2.googleapis.com'))!;
+    const tokenCall = fetchMock.mock.calls.find(([url]) => isTokenCall(url))!;
     const assertion = (tokenCall[1]?.body as URLSearchParams).get('assertion')!;
     const [header, payload] = assertion.split('.');
     expect(JSON.parse(atob(header!))).toEqual({ alg: 'RS256', typ: 'JWT' });
@@ -143,7 +156,7 @@ describe('uploadCsvAsGoogleSheet', () => {
     await uploadCsvAsGoogleSheet(env, { name: 'a.csv', csv: 'a' }, fetchMock);
     await uploadCsvAsGoogleSheet(env, { name: 'b.csv', csv: 'b' }, fetchMock);
 
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('oauth2.googleapis.com'))).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(1);
     // โฟลเดอร์ปีถูก cache ไว้แล้ว ครั้งที่สองจึงไม่ต้องค้นหาซ้ำ
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/drive/v3/files?q='))).toHaveLength(1);
   });
@@ -173,7 +186,7 @@ describe('uploadCsvAsGoogleSheet', () => {
     const fetchMock = driveFetchMock({ upload: jsonResponse({ error: 'unauthorized' }, 401) });
     await uploadCsvAsGoogleSheet(env, { name: 'a.csv', csv: 'a' }, fetchMock);
     await uploadCsvAsGoogleSheet(env, { name: 'b.csv', csv: 'b' }, fetchMock);
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('oauth2.googleapis.com'))).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(2);
   });
 
   it('คืนสาเหตุเครือข่ายเมื่อยิงออกไปไม่ถึง Google', async () => {

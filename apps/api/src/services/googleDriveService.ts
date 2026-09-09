@@ -187,7 +187,10 @@ async function ensureSubFolder(
   const headers = { Authorization: `Bearer ${token}` };
   const sharedDriveParams = 'supportsAllDrives=true&includeItemsFromAllDrives=true';
   try {
-    const escapedName = name.replace(/'/g, "\\'");
+    // ต้อง escape backslash ก่อน single quote เสมอ ถ้าสลับลำดับ backslash ที่เพิ่งใส่ให้ ' จะถูก
+    // escape ซ้ำจนกลายเป็น \\' ซึ่งปิด escape ตัวเอง แล้วเครื่องหมายคำพูดจะหลุดออกจาก string ใน
+    // query ของ Drive ทำให้ชื่อโฟลเดอร์ที่มี \ หรือ ' แก้ความหมายของ query ทั้งก้อนได้
+    const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const query = `name='${escapedName}' and '${parentId}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`;
     const listResponse = await fetchImpl(
       `${FILES_URL}?q=${encodeURIComponent(query)}&fields=files(id)&pageSize=1&${sharedDriveParams}`,

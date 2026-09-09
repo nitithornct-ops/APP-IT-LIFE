@@ -142,9 +142,12 @@ async function main() {
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     const { appendFile } = await import('node:fs/promises');
+    // `verified.name` มาจาก response ของ Drive ไม่ใช่ค่าที่เราคุมเอง ถ้าเขียนดิบ ๆ ลง step summary
+    // ขึ้นบรรทัดใหม่หรือ backtick ในชื่อไฟล์จะแทรก markdown ปลอมเข้าไปในรายงานของ run ได้
+    const safeName = String(verified.name).replace(/[`\r\n]+/g, ' ').slice(0, 200);
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
-      `- สำเนานอก R2: Google Drive \`${verified.name}\` (ตรวจขนาดตรงกับต้นฉบับแล้ว)\n`,
+      `- สำเนานอก R2: Google Drive \`${safeName}\` (ตรวจขนาดตรงกับต้นฉบับแล้ว)\n`,
     );
   }
 }
