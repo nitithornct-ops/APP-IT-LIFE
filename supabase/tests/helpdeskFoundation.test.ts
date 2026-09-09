@@ -108,8 +108,25 @@ describe('Help Desk Phase 2 foundation', () => {
       { legacy_id: 'TCAT-005', name: 'Software', default_priority: 'ปานกลาง', response_sla_hours: 4, resolution_sla_hours: 16, is_security_default: false },
       { legacy_id: 'TCAT-006', name: 'Email', default_priority: 'สูง', response_sla_hours: 2, resolution_sla_hours: 8, is_security_default: false },
       { legacy_id: 'TCAT-007', name: 'ขอรับบริการ IT', default_priority: 'ปานกลาง', response_sla_hours: 4, resolution_sla_hours: 24, is_security_default: false },
+      // หมวดหมู่ท้ายสุดไม่มี legacy_id เพราะเพิ่มใหม่หลังย้ายระบบ ไม่ได้มาจาก GAS เดิม
+      { legacy_id: null, name: 'อื่น ๆ', default_priority: 'ปานกลาง', response_sla_hours: 4, resolution_sla_hours: 24, is_security_default: false },
     ]);
     expect(slaPolicies.rows[0]).toEqual({ count: 0 });
+  });
+
+  /**
+   * หน้าแจ้งซ่อมของ LINE และของสาธารณะดึงหมวดหมู่ด้วยเงื่อนไขนี้ตรง ๆ (status active เรียงตามชื่อ)
+   * ปุ่ม "อื่น ๆ" ต้องอยู่ท้ายสุดเสมอ ไม่ใช่แทรกกลางชุดหมวดหมู่ที่เจาะจงอาการ
+   */
+  it('offers an "other" category last on the request forms so no reporter is stuck without a match', async () => {
+    const chips = await asServiceRole(db, async () => db.query<{ name: string; default_priority: string }>(
+      `select name, default_priority from public.ticket_categories where status = 'active' order by name`,
+    ));
+
+    expect(chips.rows.map((row) => row.name)).toEqual([
+      'Computer', 'Email', 'Network', 'Notebook', 'Printer', 'Software', 'ขอรับบริการ IT', 'อื่น ๆ',
+    ]);
+    expect(chips.rows.at(-1)).toEqual({ name: 'อื่น ๆ', default_priority: 'ปานกลาง' });
   });
 
   it('allocates unique Legacy-compatible TCK date/random numbers at the database layer', async () => {

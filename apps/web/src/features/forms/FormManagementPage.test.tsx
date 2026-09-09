@@ -47,11 +47,18 @@ function renderPage(initialPath = '/forms') {
 afterEach(() => { cleanup(); apiFetchMock.mockReset(); });
 
 describe('Form Studio เป็นแบบฟอร์มหลักที่ผูกกับ Ticket', () => {
+  it('เริ่มที่แม่แบบหลักของ Ticket พร้อมปุ่ม Word และไม่มีคำสั่งลบแม่แบบหลัก', async () => {
+    renderPage();
+    expect(await screen.findByText('แบบฟอร์มหลัก · งานแจ้งซ่อม / Ticket ทั้งหมด')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'ดาวน์โหลดแม่แบบ Word' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /ลบ/ })).not.toBeInTheDocument();
+  });
   /**
    * เดิมเลข Ticket ในตารางเป็นข้อความเฉย ๆ ผู้ใช้ต้องคัดลอกไปค้นเองทุกครั้งที่อยากดูงานต้นเรื่อง
    */
   it('ลิงก์ทุกรายการไปที่ Ticket และแบบฟอร์มที่พิมพ์ได้ของ Ticket ใบนั้น', async () => {
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'แบบฟอร์มงาน' }));
 
     const ticketLink = await screen.findByRole('link', { name: /TCK-009/ });
     expect(ticketLink).toHaveAttribute('href', '/tickets/ticket-9');
@@ -60,6 +67,7 @@ describe('Form Studio เป็นแบบฟอร์มหลักที่�
 
   it('เปิดแม่แบบของรายการนั้นได้จากชื่อ Template ในตาราง', async () => {
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'แบบฟอร์มงาน' }));
 
     fireEvent.click(await screen.findByRole('button', { name: 'แบบฟอร์มการแจ้งปัญหา IT Support' }));
 

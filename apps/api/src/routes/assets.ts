@@ -1,6 +1,8 @@
 import { zValidator } from '@hono/zod-validator';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
+import { createAdminClient } from '../lib/supabase';
+import { renderAssetBorrowForm } from '../services/assetBorrowForm';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission, requireAnyPermission, requirePermission } from '../middleware/permission';
 import {
@@ -46,6 +48,27 @@ import {
  */
 export const assetsRoute = new Hono<AppEnv>();
 assetsRoute.use('*', requireAuth);
+
+assetsRoute.get('/:id/borrow-form', requirePermission('asset.view'), async (c) => {
+  const reqId = c.get('requestId');
+  const { data: asset, error } = await c.get('supabase').from('assets')
+    .select('asset_code, name, loan_date, loan_due_date, location, owner:employees(first_name_th, last_name_th, employee_code), department:departments(name_th)')
+    .eq('id', c.req.param('id')).maybeSingle();
+  if (error) return dbFailJson(c, 'BORROW_FORM_LOAD_FAILED', error);
+  if (!asset) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้ หรือไม่มีสิทธิ์เข้าถึง'), 404);
+  const { data: template, error: templateError } = await createAdminClient(c.env).from('form_templates')
+    .select('id, name, content_html, current_version').eq('template_code', 'ASSET-BORROW').eq('status', 'Published').maybeSingle();
+  if (templateError) return dbFailJson(c, 'BORROW_TEMPLATE_LOAD_FAILED', templateError);
+  if (!template) return c.json(fail(reqId, 'BORROW_TEMPLATE_NOT_FOUND', 'ยังไม่มีแม่แบบขอยืมทรัพย์สินที่เผยแพร่ใน Form Studio'), 409);
+  return c.json(ok(reqId, {
+    templateId: template.id, title: template.name, version: template.current_version, assetCode: asset.asset_code,
+    contentHtml: renderAssetBorrowForm(template.content_html, {
+      ...asset,
+      owner: Array.isArray(asset.owner) ? asset.owner[0] ?? null : asset.owner,
+      department: Array.isArray(asset.department) ? asset.department[0] ?? null : asset.department,
+    }),
+  }));
+});
 
 const ASSET_SELECT =
   'id, asset_code, name, asset_type, category_id, brand, model, serial_number, vendor_name, vendor_id, contract_id, ' +

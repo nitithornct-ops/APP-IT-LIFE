@@ -85,4 +85,51 @@ describe('Form Studio database controls', () => {
     expect(created.rows[0].template_version).toBe(3);
     expect(hidden.rows).toHaveLength(0);
   });
+
+  // งานยืมทรัพย์สินต้องมีแม่แบบหลักของตัวเอง และ API เติมข้อมูลผ่าน placeholder ชุดนี้
+  it('publishes the asset-borrowing master with the placeholders the borrow form fills', async () => {
+    const template = await asUser(db, TECHNICIAN_ID, async () => db.query<{ status: string; current_version: number; content_html: string }>(
+      "select status, current_version, content_html from public.form_templates where template_code = 'ASSET-BORROW'",
+    ));
+    const versions = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `select version from public.form_template_versions
+       where template_id = (select id from public.form_templates where template_code = 'ASSET-BORROW')`,
+    ));
+    const html = template.rows[0]!.content_html;
+
+    expect(template.rows[0]!.status).toBe('Published');
+    expect(versions.rows).toEqual([{ version: template.rows[0]!.current_version }]);
+    for (const placeholder of ['{{asset_code}}', '{{asset_name}}', '{{borrower_name}}', '{{employee_code}}', '{{department}}', '{{location}}', '{{loan_date}}', '{{due_date}}']) {
+      expect(html).toContain(placeholder);
+    }
+  });
+
+  /**
+   * Ticket และหน้ายืมทรัพย์สินค้นแม่แบบด้วย template_code ถ้าลบหรือเก็บถาวรได้ หน้าจอทั้งสองจะพังทันที
+   */
+  it('refuses to delete or archive a master form while other templates stay removable', async () => {
+    await expect(asServiceRole(db, async () => db.query(
+      "delete from public.form_templates where template_code = 'ASSET-BORROW'",
+    ))).rejects.toThrow(/แม่แบบหลัก/);
+    await expect(asServiceRole(db, async () => db.query(
+      "update public.form_templates set status = 'Archived' where template_code = 'IT-ERP-ISSUE'",
+    ))).rejects.toThrow(/แม่แบบหลัก/);
+
+    const removed = await asServiceRole(db, async () => {
+      await db.query(
+        `insert into public.form_templates(template_code, name, category, status, content_html)
+         values ('TMP-REMOVABLE', 'แบบฟอร์มชั่วคราว', 'ทดสอบ', 'Draft', '<p>ทดสอบ</p>')`,
+      );
+      return db.query("delete from public.form_templates where template_code = 'TMP-REMOVABLE' returning id");
+    });
+    const survivors = await asUser(db, TECHNICIAN_ID, async () => db.query<{ template_code: string; status: string }>(
+      "select template_code, status from public.form_templates where template_code in ('IT-ERP-ISSUE','ASSET-BORROW') order by template_code",
+    ));
+
+    expect(removed.rows).toHaveLength(1);
+    expect(survivors.rows).toEqual([
+      { template_code: 'ASSET-BORROW', status: 'Published' },
+      { template_code: 'IT-ERP-ISSUE', status: 'Published' },
+    ]);
+  });
 });
