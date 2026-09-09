@@ -587,16 +587,23 @@ async function copyReportPdfToDrive(
     subFolder: buddhistYearFolder(),
   });
 
-  await writeAuditLog(c.env, {
-    actorId: c.get('userId'),
-    actorEmail: c.get('userEmail'),
-    action: 'EXPORT_GOOGLE_DRIVE',
-    module: 'google_drive',
-    targetId: result.ok ? result.file.id : null,
-    detail: { filename, bytes: pdfBytes.byteLength, reason: result.ok ? null : result.reason },
-    result: result.ok ? 'success' : 'fail',
-    requestId,
-  });
+  // ถ้าปล่อยให้ writeAuditLog โยนทะลุออกไป ฟังก์ชันนี้จะผิดสัญญาที่เขียนไว้ข้างบนว่า "คืน error เป็น
+  // ข้อความแทนการโยน" — ปลายทาง PDF จะตอบ error ทั้งที่ไฟล์ถูกสร้างและอัปโหลดขึ้น Drive ไปแล้ว
+  // ผู้ใช้กดซ้ำก็ได้สำเนาซ้ำใน Drive จึงกลืน error ไว้แล้วรายงานผ่าน console แทน
+  try {
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'),
+      actorEmail: c.get('userEmail'),
+      action: 'EXPORT_GOOGLE_DRIVE',
+      module: 'google_drive',
+      targetId: result.ok ? result.file.id : null,
+      detail: { filename, bytes: pdfBytes.byteLength, reason: result.ok ? null : result.reason },
+      result: result.ok ? 'success' : 'fail',
+      requestId,
+    });
+  } catch (error) {
+    console.error('EXPORT_GOOGLE_DRIVE audit write failed', { requestId, error });
+  }
 
   return result.ok ? { file: result.file, error: null } : { file: null, error: result.message };
 }
