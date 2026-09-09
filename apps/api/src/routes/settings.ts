@@ -23,17 +23,13 @@ const LOGO_EXTENSIONS: Record<string, string> = {
 
 const BOOLEAN_KEYS = new Set([
   'NOTIFY_LINE_ENABLED', 'ADMIN_MFA_ENABLED', 'LINE_LOGIN_ENABLED',
-  'PUBLIC_TICKET_ENABLED', 'PUBLIC_TICKET_REQUIRE_LINE',
-  'PUBLIC_TICKET_EMAIL_OTP_ENABLED', 'PUBLIC_TICKET_CONSENT_REQUIRED', 'AUTO_BACKUP_ENABLED',
-  'AUTO_RESTORE_DRILL_ENABLED', 'RETENTION_TRASH_EVIDENCE',
+  'AUTO_BACKUP_ENABLED', 'AUTO_RESTORE_DRILL_ENABLED', 'RETENTION_TRASH_EVIDENCE',
 ]);
 
 const NUMBER_RANGES: Record<string, [number, number]> = {
   NOTIFY_LEAD_DAYS: [1, 365], LINE_QUEUE_MAX_ATTEMPTS: [1, 10], REVIEW_CYCLE_DAYS: [1, 1095],
   INCIDENT_DPO_ESCALATION_HOURS: [1, 24], LOGIN_MAX_FAILS_5MIN: [5, 30], PASSWORD_HASH_ITERATIONS: [1000, 20000],
-  LINE_SESSION_HOURS: [1, 720], PUBLIC_TICKET_MAX_FILES: [1, 5], PUBLIC_TICKET_MAX_FILE_MB: [1, 15],
-  PUBLIC_TICKET_MAX_TOTAL_MB: [1, 50], PUBLIC_TICKET_MAX_PER_HOUR: [1, 20], PUBLIC_TICKET_MAX_PER_DAY: [1, 50],
-  PUBLIC_TICKET_GLOBAL_MAX_PER_HOUR: [10, 1000], PUBLIC_TICKET_GLOBAL_MAX_PER_DAY: [20, 5000],
+  LINE_SESSION_HOURS: [1, 720],
   BACKUP_RETENTION_DAYS: [7, 3650], RESTORE_SANDBOX_RETENTION_DAYS: [7, 3650], BACKUP_HEALTH_MAX_HOURS: [1, 168],
   LINE_SESSION_RETENTION_DAYS: [1, 3650], NOTIFICATION_LOG_RETENTION_DAYS: [30, 3650],
   NOTIFICATION_QUEUE_RETENTION_DAYS: [7, 3650], TICKET_PII_RETENTION_DAYS: [30, 36500],
@@ -42,7 +38,7 @@ const NUMBER_RANGES: Record<string, [number, number]> = {
   ATTACHMENT_DOWNLOAD_MAX_MB: [1, 15], SOFT_DELETE_RETENTION_DAYS: [30, 36500],
 };
 
-const UNSUPPORTED_ENABLE_KEYS = new Set(['NOTIFY_LINE_ENABLED', 'LINE_LOGIN_ENABLED', 'PUBLIC_TICKET_ENABLED', 'AUTO_BACKUP_ENABLED', 'AUTO_RESTORE_DRILL_ENABLED']);
+const UNSUPPORTED_ENABLE_KEYS = new Set(['NOTIFY_LINE_ENABLED', 'LINE_LOGIN_ENABLED', 'AUTO_BACKUP_ENABLED', 'AUTO_RESTORE_DRILL_ENABLED']);
 
 export function brandingStoragePath(url: string): string | null {
   if (!url) return null;
@@ -98,7 +94,6 @@ export function normalizeSettingValue(key: string, input: string): { value?: str
   }
   if (key === 'PUBLIC_PRIVACY_NOTICE_URL' || key === 'LIVE_HEALTH_PUBLIC_URL') return !raw || /^https:\/\//i.test(raw) ? { value: raw } : { error: `${key} ต้องเป็น HTTPS หรือเว้นว่าง` };
   if (key === 'PUBLIC_PRIVACY_NOTICE_VERSION') return /^[0-9A-Za-z_.-]{4,40}$/.test(raw) ? { value: raw } : { error: 'เวอร์ชันใช้ได้เฉพาะตัวเลข ตัวอักษร จุด ขีดกลาง และขีดล่าง' };
-  if (key === 'PUBLIC_TICKET_ALLOWED_EMAIL_DOMAINS') return { value: raw.split(',').map((domain) => domain.trim().toLowerCase()).filter(Boolean).join(',') };
   return { value: raw };
 }
 

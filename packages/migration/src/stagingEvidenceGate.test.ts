@@ -131,8 +131,6 @@ describe('predeploy — staging evidence and CSP origin', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'service',
       SUPABASE_DB_URL: 'postgresql://example',
       VITE_TURNSTILE_SITE_KEY: '0x4AAAAAAAexample',
-      TURNSTILE_SECRET: 'secret',
-      TURNSTILE_HOSTNAMES: 'life-it.pages.dev',
       ALLOWED_ORIGINS: 'https://life-it.pages.dev',
       PUBLIC_APP_URL: 'https://life-it.pages.dev',
       CLOUDFLARE_API_TOKEN: 'token',

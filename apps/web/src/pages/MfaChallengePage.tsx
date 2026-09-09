@@ -76,7 +76,7 @@ export function MfaChallengePage() {
     try {
       await apiFetch('/api/v1/auth/login-log', {
         method: 'POST',
-        body: JSON.stringify({ email: session?.user.email ?? '', success: true }),
+        body: JSON.stringify({ identifier: session?.user.email ?? '', success: true }),
       }, { silent: true });
     } catch {
       // An audit-log outage must not strand a user after successful MFA verification.

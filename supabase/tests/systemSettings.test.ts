@@ -34,7 +34,9 @@ describe('Module 22 System Settings database controls', () => {
               count(*) filter (where key in ('LINE_REQUIRE_EMPLOYEE_LINK', 'LINE_AUTO_APPROVE_EMPLOYEE_LINK'))::int as employee_link_settings
        from public.system_settings`,
     ));
-    expect(result.rows).toEqual([{ total: 53, secret_keys: 0, deferred: 6, employee_link_settings: 0 }]);
+    // 12 คีย์ PUBLIC_TICKET_* ถูกลบทิ้งพร้อมหน้าแจ้งซ่อมสาธารณะ (migration 20261012100000)
+    // หนึ่งในนั้น (PUBLIC_TICKET_ENABLED) เคยเป็น deferred จำนวน deferred จึงลดจาก 6 เหลือ 5
+    expect(result.rows).toEqual([{ total: 41, secret_keys: 0, deferred: 5, employee_link_settings: 0 }]);
   });
 
   it('grants Settings only to administrators while retaining Audit access for auditors', async () => {
@@ -46,7 +48,7 @@ describe('Module 22 System Settings database controls', () => {
 
   it('enforces row policies for viewing, editing and read-only integrations', async () => {
     const settings = await asUser(db, ADMIN_ID, async () => db.query(`select count(*)::int as count from public.system_settings`));
-    expect(settings.rows).toEqual([{ count: 53 }]);
+    expect(settings.rows).toEqual([{ count: 41 }]);
     const update = await asUser(db, ADMIN_ID, async () => db.query(`update public.system_settings set value = 'LIFE Test' where key = 'ORG_NAME' returning value`));
     expect(update.rows).toEqual([{ value: 'LIFE Test' }]);
     const readOnlyUpdate = await asUser(db, ADMIN_ID, async () => db.query(`update public.system_settings set value = 'true' where key = 'NOTIFY_LINE_ENABLED' returning key`));
@@ -58,6 +60,8 @@ describe('Module 22 System Settings database controls', () => {
   it('can be applied again safely without overwriting a configured value', async () => {
     const migration = readFileSync(resolve(process.cwd(), 'migrations/20260827100000_system_settings.sql'), 'utf8');
     await db.exec(migration);
+    // การ apply ซ้ำจะพาคีย์ที่ migration รุ่นหลังลบไปแล้วกลับมา (2 คีย์ LINE employee link
+    // และ 12 คีย์ PUBLIC_TICKET_*) — 41 + 14 = 55 แต่ค่าที่ตั้งไว้แล้วต้องไม่ถูกเขียนทับ
     const result = await asServiceRole(db, async () => db.query(`select count(*)::int as count, max(value) filter (where key = 'ORG_NAME') as org_name from public.system_settings`));
     expect(result.rows).toEqual([{ count: 55, org_name: 'LIFE Test' }]);
   });

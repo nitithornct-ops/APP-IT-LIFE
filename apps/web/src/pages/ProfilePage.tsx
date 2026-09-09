@@ -92,14 +92,14 @@ export function ProfilePage() {
       <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <div className="rounded-[10px] bg-[#0B1B36] p-5 text-white shadow-card">
-            <div className="flex items-center gap-3"><span className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-primary-600 text-lg font-extrabold">{initials}</span><div className="min-w-0"><p className="truncate text-base font-bold">{me.profile.full_name}</p><p className="mt-0.5 truncate font-mono text-[10px] text-white/50">{me.profile.employee_code ?? me.profile.email}</p></div></div>
+            <div className="flex items-center gap-3"><span className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-primary-600 text-lg font-extrabold">{initials}</span><div className="min-w-0"><p className="truncate text-base font-bold">{me.profile.full_name}</p><p className="mt-0.5 truncate font-mono text-[10px] text-white/50">{me.profile.employee_code ?? me.profile.username ?? me.profile.email}</p></div></div>
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs"><span className={`h-2 w-2 rounded-full ${me.profile.status === 'active' ? 'bg-green-400' : 'bg-slate-400'}`} /><span>{me.profile.status === 'active' ? 'บัญชีพร้อมใช้งาน' : 'บัญชีถูกระงับ'}</span></div>
             <div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[10px] text-white/45">บทบาท</p><p className="mt-1 font-mono text-xl font-bold">{me.roles.length}</p></div><div><p className="text-[10px] text-white/45">สิทธิ์</p><p className="mt-1 font-mono text-xl font-bold">{me.permissions.length}</p></div><div><p className="text-[10px] text-white/45">โมดูล</p><p className="mt-1 font-mono text-xl font-bold">{permissionModules}</p></div></div>
           </div>
 
           <Card>
             <CardHeader className="flex items-center gap-2"><UserRound className="h-4 w-4 text-primary-600" />ข้อมูลติดต่อ</CardHeader>
-            <CardBody className="space-y-3 text-sm"><p className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Mail className="h-4 w-4 text-slate-400" /><span className="min-w-0 truncate">{me.profile.email}</span></p><p className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Phone className="h-4 w-4 text-slate-400" />{me.profile.phone || 'ยังไม่ระบุเบอร์โทรศัพท์'}</p></CardBody>
+            <CardBody className="space-y-3 text-sm">{me.profile.username ? <p className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><KeyRound className="h-4 w-4 text-slate-400" /><span className="min-w-0 truncate">{me.profile.username}<span className="ml-1 text-xs text-slate-400">(ชื่อผู้ใช้เข้าสู่ระบบ)</span></span></p> : <p className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Mail className="h-4 w-4 text-slate-400" /><span className="min-w-0 truncate">{me.profile.email}</span></p>}<p className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Phone className="h-4 w-4 text-slate-400" />{me.profile.phone || 'ยังไม่ระบุเบอร์โทรศัพท์'}</p></CardBody>
           </Card>
 
           {hasPermission('technician_skill.view') && (
@@ -113,8 +113,11 @@ export function ProfilePage() {
           <CardBody>
       <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid gap-4 sm:grid-cols-2" noValidate>
         <div className="sm:col-span-2">
-          <span className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">อีเมล</span>
-          <p className="text-sm text-slate-800 dark:text-slate-200">{me.profile.email}</p>
+          {/* บัญชีที่ไม่มีอีเมลจริงถูกผูกกับอีเมลภายในที่ผู้ใช้ไม่เคยรู้ค่า จึงแสดงชื่อผู้ใช้แทนเพื่อไม่ให้เข้าใจผิดว่าติดต่อได้ */}
+          <span className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">
+            {me.profile.username ? 'ชื่อผู้ใช้เข้าสู่ระบบ' : 'อีเมล'}
+          </span>
+          <p className="text-sm text-slate-800 dark:text-slate-200">{me.profile.username ?? me.profile.email}</p>
         </div>
 
         <div>

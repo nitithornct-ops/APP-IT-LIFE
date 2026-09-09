@@ -1,7 +1,11 @@
 # Legacy GAS → APP_LIFE1 Helpdesk Migration Mapping
 
 > สถานะเอกสาร: Analysis Gate — อ้างอิงจากการอ่าน `legacy-gas/` ทั้งชุดก่อนแก้ระบบใหม่  
-> Source of Truth: `legacy-gas/`  
+> Source of Truth: ระบบ GAS ที่รันอยู่จริงบน Google Workspace  
+>
+> **โฟลเดอร์ `legacy-gas/` ถูกลบออกจาก repository แล้ว** หลังพอร์ตครบทุกโมดูล เส้นทางไฟล์ `.gs`/`.html`
+> ที่อ้างถึงในเอกสารนี้จึงเป็นชื่อไฟล์ของระบบเดิม ไม่ใช่ path ที่เปิดได้ใน repo — ถ้าต้องย้อนดู source
+> ให้ใช้ git history (`git log --diff-filter=D -- legacy-gas/` แล้ว `git show <commit>^:legacy-gas/<ไฟล์>`)
 > เป้าหมาย: ย้ายพฤติกรรมและข้อมูลเดิมเข้าสู่ React/Hono/Supabase โดยไม่พึ่งพา GAS runtime หรือ Google Sheets
 
 ## 1. ขอบเขตและหลักฐานที่ตรวจสอบ
@@ -494,7 +498,7 @@ Security boundaries:
 
 ## 20. Data migration execution plan
 
-1. Freeze/export production sheets and Drive registry with timestamp/checksum; do not modify `legacy-gas/`
+1. Freeze/export production sheets and Drive registry with timestamp/checksum; do not modify the live GAS system
 2. Load exact exports into restricted staging tables/object storage
 3. Validate headers against `Config.gs` schemas; fail closed on missing/renamed columns
 4. Migrate masters first: roles/users/departments/assets/vendors/categories/KB
@@ -537,7 +541,7 @@ Implementation order:
 
 ## 22. Acceptance checklist
 
-- [ ] `legacy-gas/` remains unchanged and operational
+- [ ] the live GAS system remains unchanged and operational until cutover
 - [ ] exact Legacy Ticket number, labels, fields, categories, priorities and transitions preserved
 - [ ] all mapping exceptions are explicit; no silently discarded data
 - [ ] category-based business-hour SLA matches legacy, including pause semantics

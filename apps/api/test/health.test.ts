@@ -50,9 +50,9 @@ describe('public edge rate limiting', () => {
       ...testEnv,
       PUBLIC_RATE_LIMITER: { limit: async () => ({ success: false }) },
     };
-    const res = await app.request('/api/v1/public/tickets/not-a-ticket', {
-      headers: { 'x-tracking-token': '12345678901234567890123456789012' },
-    }, env);
+    // ยิงที่ public knowledge เพราะเป็น endpoint สาธารณะที่ยังใช้ edgeRateLimit อยู่ (หน้าแจ้งซ่อม
+    // สาธารณะถูกถอดออกแล้ว) ตัวจำกัดต้องตอบ 429 ตั้งแต่ middleware ก่อนถึง handler และก่อน validate query
+    const res = await app.request('/api/v1/public/knowledge', {}, env);
     expect(res.status).toBe(429);
     const body = (await res.json()) as ApiResponse<never>;
     expect(body.success).toBe(false);

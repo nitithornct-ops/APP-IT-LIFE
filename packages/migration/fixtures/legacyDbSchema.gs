@@ -1,134 +1,14 @@
-﻿/**
- * Config.gs
- * ศูนย์รวมค่าคงที่ของระบบ: บทบาท (Roles), นิยามโครงสร้างฐานข้อมูล (DB Schema),
- * และเมทริกซ์สิทธิ์การเข้าถึงโมดูล (Module Access Matrix)
- *
- * หมายเหตุด้านความปลอดภัย: ค่าลับ/LINE connection เก็บใน Script Properties
- * ส่วนค่าทั่วไป เช่น SLA, retention, โดเมนอีเมล เก็บในชีต Settings ผ่าน Utils.gs > getConfig_()
- */
-
-// ===== บทบาทผู้ใช้งาน (Roles) =====
-const ROLES = {
-  USER: 'User',           // ผู้ใช้งานทั่วไป
-  APPROVER: 'Approver',   // หัวหน้างาน/ผู้บังคับบัญชา
-  IT_ADMIN: 'ITAdmin',    // ส่วนงานเทคโนโลยีและสารสนเทศ
-  EXECUTIVE: 'Executive', // ผู้จัดการกองทุนฯ/ผู้บริหาร
-  DPO: 'DPO'              // ผู้รับผิดชอบข้อมูลส่วนบุคคล
-};
-
-const ROLE_LABELS = {
-  User: 'ผู้ใช้งานทั่วไป',
-  Approver: 'หัวหน้างาน/ผู้บังคับบัญชา',
-  ITAdmin: 'ส่วนงานเทคโนโลยีและสารสนเทศ',
-  Executive: 'ผู้จัดการกองทุนฯ/ผู้บริหาร',
-  DPO: 'ผู้รับผิดชอบข้อมูลส่วนบุคคล (DPO)'
-};
-
-// ===== ชื่อ Sheet (คงที่) =====
-const SHEETS = {
-  USERS: 'Users',
-  EMPLOYEES: 'Employees',
-  EMPLOYEE_ASSIGNMENTS: 'EmployeeAssignments',
-  LINE_USERS: 'LineUsers',
-  LINE_SESSIONS: 'LineSessions',
-  AUDIT_TRAIL: 'AuditTrail',
-  PERSONAL_TASK: 'PersonalTasks',
-  TASK_SUBTASK: 'TaskSubtasks',
-  TASK_PROGRESS: 'TaskProgressLogs',
-  TASK_LINK: 'TaskLinks',
-  TASK_ATTACHMENT: 'TaskAttachments',
-  TASK_REMINDER: 'TaskReminders',
-  TICKET: 'Tickets',
-  TICKET_CATEGORY: 'TicketCategories',
-  TICKET_WORKLOG: 'Ticket_Worklogs',
-  KB: 'KnowledgeBase',
-  ASSET: 'AssetRegister',
-  ASSET_CATEGORY: 'AssetCategories',
-  ASSET_MOVEMENT: 'Asset_History',
-  MAINTENANCE: 'MaintenancePlans',
-  PM_TEMPLATE: 'PMChecklistTemplates',
-  PM_SCHEDULE: 'PMSchedules',
-  PM_WORK_ORDER: 'PMWorkOrders',
-  PM_CHECK_RESULT: 'PMChecklistResults',
-  PM_FINDING: 'PMFindings',
-  PM_STATUS_HISTORY: 'PMStatusHistory',
-  INVENTORY: 'Inventory',
-  INVENTORY_TX: 'InventoryTransactions',
-  SOFTWARE_LICENSE: 'SoftwareLicenses',
-  DATA_CLASS: 'DataClassification',
-  DATA_DESTROY: 'DataDestructionRequests',
-  PRIVACY_ROPA: 'PrivacyROPA',
-  PRIVACY_CONSENT: 'PrivacyConsents',
-  PRIVACY_DSR: 'PrivacyDSR',
-  PROBLEM: 'Problems',
-  KNOWN_ERROR: 'KnownErrors',
-  VULNERABILITY: 'VulnerabilityFindings',
-  AUDIT_ENGAGEMENT: 'AuditEngagements',
-  AUDIT_FINDING: 'AuditFindings',
-  CONFIG_ITEM: 'ConfigurationItems',
-  CI_RELATIONSHIP: 'CIRelationships',
-  SERVICE_CATALOG: 'ServiceCatalog',
-  SERVICE_REQUEST: 'ServiceRequests',
-  SERVICE_REQUEST_TASK: 'ServiceRequestTasks',
-  SERVICE_REQUEST_HISTORY: 'ServiceRequestHistory',
-  WORKFLOW_DEFINITION: 'WorkflowDefinitions',
-  WORKFLOW_STEP: 'WorkflowSteps',
-  WORKFLOW_INSTANCE: 'WorkflowInstances',
-  WORKFLOW_APPROVAL: 'WorkflowApprovals',
-  WORKFLOW_HISTORY: 'WorkflowHistory',
-  WORKFLOW_DELEGATION: 'WorkflowDelegations',
-  ATTACHMENT_REGISTRY: 'AttachmentRegistry',
-  ATTACHMENT_LINK: 'AttachmentLinks',
-  ATTACHMENT_ACCESS_LOG: 'AttachmentAccessLog',
-  RECORD_LINK: 'RecordLinks',
-  INTEGRATION_OUTBOX: 'IntegrationOutbox',
-  ACTION_PERMISSION: 'ActionPermissions',
-  ROLE_ACTION_PERMISSION: 'RoleActionPermissions',
-  USER_PERMISSION_OVERRIDE: 'UserPermissionOverrides',
-  APPROVAL_GROUP: 'ApprovalGroups',
-  APPROVAL_GROUP_MEMBER: 'ApprovalGroupMembers',
-  ACCESS_REQ: 'AccessRequests',
-  ACCESS_REGISTRY: 'UserAccessRegistry',
-  CHANGE: 'ChangeRequests',
-  BACKUP: 'BackupLog',
-  RECOVERY: 'RecoveryTests',
-  BCP: 'BCPPlans',
-  LOG_REGISTER: 'LoggingRegister',
-  LOG_REVIEW: 'LogReviews',
-  INCIDENT: 'Incidents',
-  REGULATORY_NOTIFICATION: 'RegulatoryNotifications',
-  RISK: 'RiskRegister',
-  LEGAL_REGISTER: 'LegalRegister',
-  COMPLIANCE_OBLIGATION: 'ComplianceObligations',
-  COMPLIANCE_ASSESSMENT: 'ComplianceAssessments',
-  CORRECTIVE_ACTION: 'CorrectiveActions',
-  VENDOR: 'VendorRegister',
-  AI: 'AIRegister',
-  CLOUD: 'CloudRegister',
-  TRAIN_PLAN: 'TrainingPlans',
-  TRAIN_REC: 'TrainingRecords',
-  POLICY_ACK: 'PolicyAcknowledgements',
-  NOTIFY_LOG: 'NotificationLog',
-  NOTIFY_QUEUE: 'NotificationQueue',
-  RETENTION_LOG: 'RetentionLog',
-  RATE_LIMIT: 'RateLimits',
-  EMPLOYEE_LIFECYCLE: 'EmployeeLifecycle',
-  SETTINGS: 'Settings',
-  FIELD_DEFINITIONS: 'FieldDefinitions',
-  QA_TEST: 'QATestCases',
-  POLICY_MAP: 'PolicyMapping'
-  ,GOVERNANCE_DOCUMENT: 'GovernanceDocuments'
-  ,PDF_DESIGN_TEMPLATE: 'PDFDesignTemplates'
-};
-
-// คอลัมน์มาตรฐานที่ทุก Sheet (ยกเว้น AuditTrail) ต้องมีท้ายตาราง
-const STD_COLS = ['Timestamp', 'CreatedBy', 'LastUpdatedBy', 'LastUpdatedAt'];
-
 /**
- * นิยามโครงสร้างฐานข้อมูลทั้งหมด (Single Source of Truth)
- * ใช้โดย Setup.gs ในการสร้าง Sheet และเป็นเอกสาร Schema ในตัว
- * รูปแบบ: ชื่อ Sheet -> array ของหัวคอลัมน์ (ตามลำดับ)
+ * DB_SCHEMA ของระบบเดิม (Google Apps Script) — คัดลอกมาจาก legacy-gas/Config.gs ก่อนที่โฟลเดอร์
+ * legacy-gas/ จะถูกลบออกจาก repository (ยังดูย้อนหลังได้จาก git history)
+ *
+ * เก็บไว้เพราะ packages/migration ต้องใช้รายชื่อ Sheet และหัวคอลัมน์ของระบบเดิมเป็น input ของ
+ * dry-run report / reconciliation report จนกว่าการย้ายข้อมูลจะ cutover เสร็จ ไฟล์นี้เป็น "ข้อมูล"
+ * ไม่ใช่โค้ดที่รันได้ — parseLegacySchema() อ่านด้วย regex ไม่ได้ execute
+ *
+ * ห้ามแก้ด้วยมือ ค่าต้องตรงกับ Google Sheet ของระบบเดิมเป๊ะ ๆ ไม่งั้น reconciliation จะเพี้ยน
  */
+
 const DB_SCHEMA = {
   GovernanceDocuments: ['DocumentID', 'Title', 'DocumentType', 'ModuleKey', 'RelatedID', 'Version',
     'FileName', 'MimeType', 'FileURL', 'FileID', 'ReviewDate', 'Status', 'Notes',
@@ -625,51 +505,4 @@ const DB_SCHEMA = {
 
   // ตารางอ้างอิง Feature ↔ Policy (ใช้ใน Audit Evidence Center)
   PolicyMapping: ['MapID', 'Module', 'Feature', 'PolicyDocument', 'PolicyClause', 'Description']
-};
-
-/**
- * เมทริกซ์สิทธิ์การเข้าถึงโมดูล: moduleKey -> { label, roles[], readOnlyRoles[] }
- * ใช้ทั้งฝั่ง UI (แสดงเมนู) และฝั่ง Server (requireModule) — ตรวจซ้ำที่ Server เสมอ
- */
-const MODULE_ACCESS = {
-  dashboard:      { label: 'Dashboard',                  group: 'งานหลัก', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  task:           { label: 'Task / งานของฉัน',           group: 'งานหลัก', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  workflow:       { label: 'Workflow / งานอนุมัติ',       group: 'งานหลัก', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  calendar:       { label: 'ปฏิทินรวม',                  group: 'งานหลัก', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  ticket:         { label: 'Ticket แจ้งซ่อม',             group: 'งานหลัก', roles: ['User','Approver','ITAdmin'], readOnlyRoles: ['Executive'] },
-  serviceCatalog: { label: 'Service Catalog / คำขอบริการ', group: 'งานหลัก', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  kb:             { label: 'ฐานความรู้ (KB)',             group: 'งานหลัก', roles: ['ITAdmin'], readOnlyRoles: ['User','Approver','Executive','DPO'] },
-  asset:          { label: 'IT Asset',                    group: 'งานหลัก', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  borrow:         { label: 'ยืม / คืน Asset',             group: 'งานหลัก', roles: ['ITAdmin'], readOnlyRoles: ['Approver','Executive'] },
-  maintenance:    { label: 'PM / บำรุงรักษา',             group: 'งานหลัก', roles: ['ITAdmin'], readOnlyRoles: ['Approver','Executive'] },
-
-  inventory:      { label: 'Inventory',                   group: 'ข้อมูลและรายงาน', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  employees:      { label: 'พนักงานและทรัพย์สิน',          group: 'ข้อมูลและรายงาน', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  license:        { label: 'Software License',            group: 'ข้อมูลและรายงาน', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  vendor:         { label: 'Vendor / Contract',           group: 'ข้อมูลและรายงาน', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  cmdb:           { label: 'CMDB / Relationship Map',      group: 'ข้อมูลและรายงาน', roles: ['ITAdmin'], readOnlyRoles: ['Approver','Executive','DPO'] },
-  reports:        { label: 'Reports',                     group: 'ข้อมูลและรายงาน', roles: ['ITAdmin','Executive','DPO'] },
-
-  users:          { label: 'Users',                       group: 'ระบบ', roles: ['ITAdmin'] },
-  settings:       { label: 'Settings',                    group: 'ระบบ', roles: ['ITAdmin'] },
-  auditTrail:     { label: 'Audit Log',                   group: 'ระบบ', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  tester:         { label: 'Tester / QA',                 group: 'ระบบ', roles: ['ITAdmin'] },
-  notification:   { label: 'ตั้งค่าการแจ้งเตือน',          group: 'ระบบ', roles: ['ITAdmin'] },
-
-  dataClass:      { label: 'การจัดประเภทและคุ้มครองข้อมูล',     group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['Executive','DPO'] },
-  privacy:        { label: 'Privacy / PDPA',                   group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin','DPO'], readOnlyRoles: ['Executive'] },
-  problem:        { label: 'Problem / Known Error',            group: 'งานหลัก', roles: ['ITAdmin'], readOnlyRoles: ['Approver','Executive'] },
-  vulnerability:  { label: 'Vulnerability / Patch',            group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['Executive','DPO'] },
-  audit:          { label: 'Audit Management',                 group: 'ตรวจสอบและตั้งค่า', roles: ['ITAdmin'], readOnlyRoles: ['Executive','DPO'] },
-  access:         { label: 'การบริหารสิทธิ์การเข้าถึง',         group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['User','Approver','ITAdmin'], readOnlyRoles: ['Executive'] },
-  change:         { label: 'การควบคุมการเปลี่ยนแปลงระบบงาน',    group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin','Approver'], readOnlyRoles: ['Executive'] },
-  backup:         { label: 'การสำรองข้อมูลและแผนฉุกเฉิน',       group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  logging:        { label: 'Logging & Monitoring',            group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['Executive'] },
-  incident:       { label: 'การบริหารจัดการเหตุการณ์',          group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['User','Approver','ITAdmin','DPO'], readOnlyRoles: ['Executive'] },
-  risk:           { label: 'ทะเบียนความเสี่ยง (Risk Register)',  group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin','Approver'], readOnlyRoles: ['Executive','DPO'] },
-  compliance:     { label: 'กฎหมายและการปฏิบัติตาม',             group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin','DPO'], readOnlyRoles: ['Executive','Approver'] },
-  ai:             { label: 'ทะเบียนเครื่องมือ AI',             group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['User','Approver','Executive','DPO'] },
-  cloud:          { label: 'ทะเบียนระบบ Cloud',               group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['ITAdmin'], readOnlyRoles: ['User','Approver','Executive','DPO'] },
-  awareness:      { label: 'การสร้างความตระหนัก/อบรม',          group: 'ธรรมาภิบาล กฎหมาย และ ISMS', roles: ['User','Approver','ITAdmin','Executive','DPO'] },
-  evidence:       { label: 'ศูนย์รวมหลักฐานตรวจสอบ',           group: 'ตรวจสอบและตั้งค่า', roles: ['ITAdmin','Executive'] }
 };

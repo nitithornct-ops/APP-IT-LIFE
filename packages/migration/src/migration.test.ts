@@ -8,7 +8,7 @@ import { buildReconciliationReport } from './reconciliation.js';
 import { collectAttachmentCandidates, summarizeAttachmentCandidates } from './attachments.js';
 
 const repositoryRoot = join(import.meta.dirname, '..', '..', '..');
-const configSource = readFileSync(join(repositoryRoot, 'legacy-gas', 'Config.gs'), 'utf8');
+const configSource = readFileSync(join(import.meta.dirname, '..', 'fixtures', 'legacyDbSchema.gs'), 'utf8');
 const profile = JSON.parse(
   readFileSync(join(repositoryRoot, 'docs', 'migration', 'phase7-source-profile.json'), 'utf8'),
 ) as SourceProfile;

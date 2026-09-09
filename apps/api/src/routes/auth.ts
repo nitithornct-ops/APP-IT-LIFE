@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { createUserScopedClient } from '../lib/supabase';
+import { createAdminClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth, requireSession } from '../middleware/auth';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
@@ -11,7 +11,13 @@ import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { zodValidationHook } from '../utils/validation';
-import { loginLogSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
+import { loginLogSchema, resolveLoginSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
+
+/**
+ * อีเมลปลอมคงที่ที่คืนให้เมื่อค้นหาตัวระบุที่ผู้ใช้พิมพ์แล้วไม่พบบัญชี — ไม่มีทางตรงกับบัญชีจริง
+ * เพราะ .invalid เป็น TLD สงวนตาม RFC 2606 ที่จดโดเมนจริงไม่ได้
+ */
+const UNRESOLVED_LOGIN_EMAIL = 'no-such-account@no-email.invalid';
 
 export const authRoute = new Hono<AppEnv>();
 
@@ -128,13 +134,58 @@ authRoute.patch('/profile', requireAuth, zValidator('json', updateOwnProfileSche
 });
 
 /**
+ * แปลงสิ่งที่ผู้ใช้พิมพ์ในช่อง login (อีเมล หรือ ชื่อผู้ใช้) เป็นอีเมลที่ Supabase Auth รู้จัก
+ *
+ * จำเป็นเพราะ Supabase Auth รับตัวระบุได้แค่ email/phone ไม่มี username ส่วนบัญชีที่ผู้ดูแลสร้างให้
+ * พนักงานที่ไม่มีอีเมลองค์กรนั้นถูกผูกไว้กับอีเมลปลอมที่ผู้ใช้ไม่เคยรู้ค่า จึงต้องถามฝั่ง Server ก่อนเสมอ
+ * หน้า Login ยังเรียก signInWithPassword ตรงไปที่ Supabase เหมือนเดิม (ตามสถาปัตยกรรมใน
+ * docs/architecture.md) — endpoint นี้เพิ่มแค่การ "ค้นหา" ไว้ข้างหน้า ไม่ได้ย้ายการตรวจรหัสผ่านมาที่ Worker
+ *
+ * กติกาที่ห้ามแก้:
+ *  - คืน 200 รูปแบบเดียวเสมอ ไม่ว่าจะพบบัญชีหรือไม่ ถ้าไม่พบให้คืนอีเมลปลอมคงที่ เพื่อให้ signInWithPassword
+ *    ที่ตามมาล้มด้วยข้อความเดียวกันทั้งกรณี "ไม่มีบัญชีนี้" และ "รหัสผ่านผิด" — ไม่มีสัญญาณให้ไล่เดาว่า
+ *    ชื่อผู้ใช้ใดมีอยู่จริง (การคืน 404 หรือข้อความต่างกันจะทำให้ endpoint นี้กลายเป็นเครื่องมือรวบรวมรายชื่อ
+ *    บัญชีของทั้งองค์กรให้คนที่ยังไม่ได้ login)
+ *  - ต้องเรียก RPC ทุกครั้ง ห้าม return ก่อนคิวรีเมื่อเดาได้ว่าไม่พบ มิฉะนั้นเวลาตอบที่ต่างกันจะบอกได้เองว่า
+ *    บัญชีมีจริงหรือไม่
+ *  - ค้นผ่าน resolve_login_email() ซึ่งเทียบด้วย = แบบ parameterized เท่านั้น ห้ามเปลี่ยนไปต่อสตริง
+ *    ตัวกรองของ PostgREST (.or()/.ilike()) กับค่าที่ผู้ใช้พิมพ์เอง เพราะ % และ , เป็นไวลด์การ์ด/ไวยากรณ์
+ *    ตัวกรอง ผู้ไม่หวังดีส่ง "%" เข้ามาจะได้อีเมลจริงของผู้ใช้คนอื่นกลับไป (บั๊กชนิดเดียวกับที่ utils/search.ts แก้ไว้)
+ *  - ตั้งใจไม่ใส่ edgeRateLimit ต่างจาก /login-log ด้านล่าง เพราะ binding PUBLIC_RATE_LIMITER ถูกล็อกไว้ที่
+ *    10 ครั้ง/60 วินาทีต่อ key และ endpoint นี้อยู่บนเส้นทางหลักของการเข้าสู่ระบบ สำนักงานที่ออกอินเทอร์เน็ต
+ *    ด้วย IP เดียวกันจะมีคน login เกิน 10 คนต่อนาทีในช่วงเช้าได้ง่าย ซึ่งจะกลายเป็น "เข้าระบบไม่ได้ทั้งสำนักงาน"
+ *    การจำกัดระดับ isolate ที่ 60 ครั้ง/นาที/IP จึงพอสำหรับกันสคริปต์ยิงรัว ส่วนการกัน brute force ตัวจริง
+ *    ยังเป็นหน้าที่ของ Supabase Auth ที่ปลายทาง
+ */
+authRoute.post(
+  '/resolve-login',
+  rateLimit({ windowMs: 60_000, max: 60, keyFn: (c) => `resolve-login:${clientIp(c)}` }),
+  zValidator('json', resolveLoginSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { identifier } = c.req.valid('json');
+
+    const { data, error } = await createAdminClient(c.env).rpc('resolve_login_email', {
+      identifier_input: identifier,
+    });
+
+    if (error) {
+      return c.json(fail(reqId, 'LOGIN_RESOLVE_FAILED', 'ตรวจสอบข้อมูลเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
+    }
+
+    return c.json(ok(reqId, { email: typeof data === 'string' && data ? data : UNRESOLVED_LOGIN_EMAIL }));
+  },
+);
+
+/**
  * บันทึกความพยายาม Login (Frontend เรียกหลัง signInWithPassword ไม่ว่าสำเร็จหรือไม่)
  *
  * Login Log ใช้เป็นหลักฐานตรวจสอบย้อนหลัง จึงห้ามเชื่อคำกล่าวอ้างของ Client:
  *  - success = true  ต้องแนบ JWT ที่ใช้ได้จริงมาด้วย และระบบจะบันทึก "อีเมลจาก JWT" เท่านั้น
- *               (ไม่ใช้ค่า email ที่ Client ส่งมา) มิฉะนั้นใครก็ปลอมว่าอีเมลใดล็อกอินสำเร็จได้
+ *               (ไม่ใช้ค่า identifier ที่ Client ส่งมา) มิฉะนั้นใครก็ปลอมว่าอีเมลใดล็อกอินสำเร็จได้
  *  - success = false ยังไม่มี Session จึงยอมให้เรียกโดยไม่ต้อง Login แต่บันทึกเป็น
- *               "ความพยายามที่ Client รายงาน" เท่านั้น (user_id เป็น null เสมอ)
+ *               "ความพยายามที่ Client รายงาน" เท่านั้น (user_id เป็น null เสมอ) และค่าที่บันทึกคือสิ่งที่
+ *               ผู้ใช้พิมพ์จริง ซึ่งเป็นชื่อผู้ใช้ก็ได้ ไม่ใช่อีเมลเสมอไป
  * ทั้งสองกรณีจำกัดด้วย Rate Limit ต่อ IP (edge + isolate)
  */
 authRoute.post(
@@ -186,7 +237,7 @@ authRoute.post(
 
     await writeLoginLog(c.env, {
       userId: body.success ? verifiedUserId : null,
-      emailAttempted: body.success ? (verifiedEmail ?? body.email) : body.email,
+      emailAttempted: body.success ? (verifiedEmail ?? body.identifier) : body.identifier,
       success: body.success,
       failureReason: body.success ? null : body.failureReason,
       mfaUsed: verifiedMfaUsed,

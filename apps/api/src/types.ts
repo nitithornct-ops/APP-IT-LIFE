@@ -22,13 +22,7 @@ export interface Bindings {
   LINE_DEFAULT_TO?: string;
   /** Cloudflare Browser Rendering — declared in wrangler.toml's [browser] block, not a secret. Used for PDF report exports (R-13). */
   MYBROWSER?: BrowserWorker;
-  /** Kill switch for the public no-login ticket report page (routes/publicTickets.ts) — unset/anything but 'false' means enabled. */
-  PUBLIC_TICKET_FORM_ENABLED?: string;
-  /** Existing Turnstile widget secret. Store only as a Worker secret; never commit a value. */
-  TURNSTILE_SECRET?: string;
-  /** Deployment-specific frontend hostnames accepted from Siteverify, comma separated. */
-  TURNSTILE_HOSTNAMES?: string;
-  /** Cloudflare edge rate limiter for unauthenticated endpoints. Local tests may omit it. */
+  /** Cloudflare edge rate limiter for the remaining unauthenticated endpoints (LINE portal, public KB, vendor forms). Local tests may omit it. */
   PUBLIC_RATE_LIMITER?: RateLimit;
   /**
    * ส่งออกไป Google Drive/Sheets (services/googleDriveService.ts) — ปิดเป็นค่าเริ่มต้น

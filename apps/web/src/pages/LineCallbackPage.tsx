@@ -35,7 +35,7 @@ export function LineCallbackPage() {
       return;
     }
 
-    // ผู้ใช้ LINE จบที่พอร์ทัล LINE เสมอ — /report เป็นช่องทาง guest ล้วน ไม่รับ session นี้แล้ว
+    // ผู้ใช้ LINE จบที่พอร์ทัล LINE เสมอ (mode=report เป็นลิงก์เก่าที่ยังเด้งกลับมาได้)
     const search = error ? `?error=${encodeURIComponent(error)}` : mode ? `?mode=${mode}` : '';
     navigate(`/line${search}`, { replace: true });
   }, [navigate]);

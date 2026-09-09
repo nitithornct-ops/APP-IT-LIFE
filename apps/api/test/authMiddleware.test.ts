@@ -100,7 +100,7 @@ describe('POST /api/v1/auth/login-log validation', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'someone.else@example.com', success: true }),
+        body: JSON.stringify({ identifier: 'someone.else@example.com', success: true }),
       },
       testEnv,
     );
@@ -118,7 +118,7 @@ describe('POST /api/v1/auth/login-log validation', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'not-a-bearer-token' },
-        body: JSON.stringify({ email: 'someone.else@example.com', success: true }),
+        body: JSON.stringify({ identifier: 'someone.else@example.com', success: true }),
       },
       testEnv,
     );

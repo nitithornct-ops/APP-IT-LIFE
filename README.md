@@ -1,7 +1,7 @@
 # LIFE IT Smart Service Center
 
 ระบบ IT Service Management ใหม่ของกองทุนประกันชีวิต — ย้ายจากระบบเดิมบน Google Apps Script
-(เก็บไว้ครบที่ [`legacy-gas/`](legacy-gas/)) มาเป็น Web Application แบบ Full Stack ที่แยก Frontend/Backend/Database
+มาเป็น Web Application แบบ Full Stack ที่แยก Frontend/Backend/Database
 ออกจากกันชัดเจน ปลอดภัย และดูแลรักษาง่ายกว่าเดิม
 
 ## สถาปัตยกรรม
@@ -28,7 +28,6 @@ Supabase (PostgreSQL + Auth + Storage + RLS)
 │   └── shared/           Types, Zod schemas, ค่าคงที่ Role/Permission ที่ใช้ร่วมกัน
 ├── supabase/              Database migration / RLS policy (เริ่มสร้างใน Phase 2)
 ├── migration/             เครื่องมือย้ายข้อมูลจาก Google Sheets (เริ่มสร้างใน Phase 7)
-├── legacy-gas/            Source Code ระบบเดิม (Google Apps Script) — เก็บไว้อ้างอิง ห้ามใช้ต่อยอด
 ├── docs/                  เอกสารสถาปัตยกรรม/ฐานข้อมูล/API/สิทธิ์/deploy ของระบบใหม่
 └── .github/workflows/     CI (typecheck, lint, test, build)
 ```

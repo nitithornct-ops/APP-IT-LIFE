@@ -31,7 +31,6 @@ import { notificationsRoute } from './routes/notifications';
 import { permissionOverridesRoute } from './routes/permissionOverrides';
 import { permissionsRoute, rolesRoute } from './routes/roles';
 import { problemsRoute } from './routes/problems';
-import { publicTicketsRoute } from './routes/publicTickets';
 import { recordDeletionsRoute } from './routes/recordDeletions';
 import { reportsRoute } from './routes/reports';
 import { serviceCatalogRoute } from './routes/serviceCatalog';
@@ -125,7 +124,6 @@ app.route('/api/v1/public/forms', publicFormsRoute);
 app.route('/api/v1/vendor-portal', vendorPortalRoute);
 app.route('/api/v1/outsource-submissions', outsourceAdminRoute);
 app.route('/api/v1/line', lineRoute);
-app.route('/api/v1/public/tickets', publicTicketsRoute);
 app.route('/api/v1/record-deletions', recordDeletionsRoute);
 app.route('/api/v1/google-drive', googleDriveRoute);
 

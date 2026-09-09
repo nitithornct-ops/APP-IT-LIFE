@@ -171,7 +171,7 @@ allowlist ตรวจ reconciliation report, unresolved attachments และ e
 - หน้า `/tickets` แสดง KPI, filter, category และเลข `TCK-YYYYMMDD-16HEX`
 - เปิด Ticket แล้วเกิด worklog `เปิด Ticket`
 - ทดสอบรับเรื่อง, มอบหมาย, pause/resume SLA, ปิดงาน และเปิดงานซ้ำตาม role
-- ทดสอบ `/report` ทั้ง แจ้งซ่อม, วิธีแก้เบื้องต้น และติดตามสถานะ
+- ทดสอบ `/line` ทั้ง แจ้งซ่อม, วิธีแก้เบื้องต้น และติดตามสถานะ (หน้าแจ้งซ่อมสาธารณะ `/report` ถูกถอดออกแล้ว)
 - ตรวจ RLS ด้วย user/approver/technician/ITAdmin อย่างน้อยหนึ่งบัญชีต่อ role
 - ตรวจ private attachment signed URL, notification และ audit log
 - สำรองฐานและเตรียม rollback ก่อน cutover จริง

@@ -13,7 +13,6 @@ import { LoginPage } from './pages/LoginPage';
 import { MfaChallengePage } from './pages/MfaChallengePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { PublicTicketPortalPage } from './pages/PublicTicketPortalPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { VendorFormPortalPage } from './pages/VendorFormPortalPage';
 
@@ -146,7 +145,6 @@ export function App() {
       <Route path="/health" element={<HealthPage />} />
       <Route path="/line" element={<LinePortalPage />} />
       <Route path="/line/callback" element={<LineCallbackPage />} />
-      <Route path="/report" element={<PublicTicketPortalPage />} />
       <Route path="/vendor/forms" element={<VendorFormPortalPage />} />
       {/* Compatibility only for links issued before token fragments were introduced. New links never use this route. */}
       <Route path="/vendor/forms/:token" element={<VendorFormPortalPage />} />

@@ -25,6 +25,11 @@ Frontend: React + TS + Vite    ───────▶  Backend API: TypeScript
 Frontend เรียกข้อมูลของระบบทั้งหมดผ่าน Cloudflare Workers API เท่านั้น — ยกเว้นการ login/logout/refresh session
 ที่ใช้ Supabase Auth SDK โดยตรงจาก Frontend (ตามสถาปัตยกรรมมาตรฐานของ Supabase Auth)
 
+ข้อยกเว้นเล็ก ๆ ที่เพิ่มเข้ามาพร้อมบัญชีแบบ username: หน้า Login เรียก `POST /api/v1/auth/resolve-login` ที่ Worker
+หนึ่งครั้งก่อน เพื่อแปลงสิ่งที่ผู้ใช้พิมพ์ (อีเมล **หรือ** ชื่อผู้ใช้) เป็นอีเมลที่ Supabase Auth รู้จัก เพราะ Supabase
+รับตัวระบุได้แค่ email/phone ส่วนบัญชีที่ไม่มีอีเมลจริงถูกผูกไว้กับอีเมลภายในที่ผู้ใช้ไม่รู้ค่า — การตรวจรหัสผ่านยังคง
+เกิดที่ Supabase Auth ตรงจาก Frontend เหมือนเดิมทุกประการ Worker เป็นแค่ขั้นตอนค้นหาที่วางไว้ข้างหน้า
+
 ## หลักการสำคัญที่ต้องยึดตลอดทุก Phase
 
 1. **ห้าม Frontend เรียกฐานข้อมูลตรง** ยกเว้น Supabase Auth
@@ -107,9 +112,14 @@ Phase 1 (จะสร้างพร้อมเนื้อหาจริง�
 
 ## ระบบเดิมที่กำลังย้าย
 
-ระบบเดิม (Google Apps Script — เก็บไว้ที่ [`../legacy-gas/`](../legacy-gas/)) คือ **ISMS Governance System** ของ
-กองทุนประกันชีวิต ครอบคลุมทั้ง ITSM และ GRC/ISMS/PDPA ในระบบเดียว รายละเอียดการวิเคราะห์ระบบเดิมทั้งหมดอยู่ที่
-[`migration.md`](migration.md)
+ระบบเดิม (Google Apps Script) คือ **ISMS Governance System** ของกองทุนประกันชีวิต ครอบคลุมทั้ง ITSM และ
+GRC/ISMS/PDPA ในระบบเดียว รายละเอียดการวิเคราะห์ระบบเดิมทั้งหมดอยู่ที่ [`migration.md`](migration.md)
+
+**Source Code ของระบบเดิมไม่ได้อยู่ใน repository นี้แล้ว** เคยเก็บไว้ที่ `legacy-gas/` เพื่ออ้างอิงระหว่างพอร์ต
+และถูกลบออกเมื่อพอร์ตครบทุกโมดูลแล้ว — ดูย้อนหลังได้จาก git history (`git show <commit>:legacy-gas/<ไฟล์>`)
+ส่วนที่ยังต้องใช้ต่อคือ `DB_SCHEMA` ของ Google Sheet เดิม ซึ่งคัดลอกไว้ที่
+[`packages/migration/fixtures/legacyDbSchema.gs`](../packages/migration/fixtures/legacyDbSchema.gs)
+เพราะเครื่องมือย้ายข้อมูลยังต้องอ่านเป็น input จนกว่าจะ cutover เสร็จ
 
 ## Environment Variables
 

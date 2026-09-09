@@ -110,7 +110,7 @@ const REQUIRED_COLUMNS = {
   ],
   ticket_categories: ['name', 'default_priority', 'response_sla_hours', 'resolution_sla_hours', 'sla_hours', 'is_security_default'],
   ticket_worklogs: ['ticket_id', 'entry_type', 'action', 'status_to', 'detail', 'is_public', 'actor_label', 'actor_line_user_id'],
-  profiles: ['email', 'full_name', 'status', 'department_id', 'position_id', 'supervisor_id'],
+  profiles: ['email', 'username', 'full_name', 'status', 'department_id', 'position_id', 'supervisor_id'],
   employees: ['employee_code', 'first_name_th', 'last_name_th', 'email', 'status'],
   assets: ['asset_code', 'name', 'status', 'warranty_expire'],
   personal_tasks: ['title', 'status', 'priority', 'due_date', 'recurrence_rule'],
@@ -160,6 +160,7 @@ for (const [fn, body] of [
   ['my_permissions', {}],
   ['has_permission', { permission_key_input: 'dashboard.view' }],
   ['update_my_profile', { full_name_input: null, phone_input: null }],
+  ['resolve_login_email', { identifier_input: 'runtime-gate@invalid.local' }],
   ['record_inventory_transaction', {
     item_id_input: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     transaction_type_input: 'IN',

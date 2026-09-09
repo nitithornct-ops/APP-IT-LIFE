@@ -28,6 +28,14 @@ backup-*.sql
 coverage/
 playwright-report/
 test-results/
+# wrangler ที่ staging-e2e ติดตั้งแยกไว้รัน dev server (ลบทิ้งได้ ติดตั้งใหม่ได้ตลอด)
+.e2e-tools/
+
+# Scratch ของเครื่องมือ agent / งานชั่วคราว — ไม่ใช่ส่วนหนึ่งของโปรเจกต์
+.tmp/
+.tmp-*/
+.codex-*-tmp/
+.codex-python-shim/
 
 # Editor / OS
 .DS_Store

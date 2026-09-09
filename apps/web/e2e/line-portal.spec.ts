@@ -256,7 +256,7 @@ test.describe('LINE service desk portal', () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  // คลังบทความเคยอยู่แค่ในหน้า /report — พอแยกช่องทาง ผู้ใช้ LINE ต้องอ่านได้จากพอร์ทัลนี้เอง
+  // คลังบทความต้องอ่านได้จากพอร์ทัล LINE เอง โดยไม่ต้องพาผู้ใช้ออกไปหน้าอื่น
   test('แท็บวิธีแก้เบื้องต้นอ่านคลังบทความสาธารณะได้', async ({ page }, testInfo) => {
     await page.goto('/line');
 

@@ -34,7 +34,6 @@ function renderCallback(hash: string) {
       <Routes>
         <Route path="/line/callback" element={<LineCallbackPage />} />
         <Route path="/line" element={<p>line portal</p>} />
-        <Route path="/report" element={<p>shared report form</p>} />
         <Route path="/profile" element={<ProfileProbe />} />
       </Routes>
     </MemoryRouter>,
@@ -42,12 +41,11 @@ function renderCallback(hash: string) {
 }
 
 describe('LineCallbackPage', () => {
-  // /report เป็นช่องทาง guest ล้วน — ผู้ใช้ LINE ต้องจบที่พอร์ทัล LINE ไม่ว่า returnMode จะเป็นอะไร
-  it('returns a successful report login to the LINE portal, not the guest form', async () => {
+  // mode=report มาจากลิงก์รุ่นเก่าที่ยังค้างอยู่ — ต้องจบที่พอร์ทัล LINE ไม่ใช่ค้างหน้าเปล่า
+  it('returns a legacy report-mode login to the LINE portal', async () => {
     renderCallback('#token=session-token&mode=report');
 
     expect(await screen.findByText('line portal')).toBeVisible();
-    expect(screen.queryByText('shared report form')).not.toBeInTheDocument();
     await waitFor(() => expect(setLineSessionTokenMock).toHaveBeenCalledWith('session-token'));
   });
 

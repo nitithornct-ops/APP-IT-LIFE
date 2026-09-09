@@ -20,6 +20,8 @@ export interface UserListItem {
   employee_code: string | null;
   full_name: string;
   email: string;
+  /** มีค่าเฉพาะบัญชีที่ login ด้วยชื่อผู้ใช้ (ไม่มีอีเมลจริง) — บัญชีที่เชิญด้วยอีเมลเป็น null */
+  username: string | null;
   phone: string | null;
   department_id: string | null;
   position_id: string | null;

@@ -5,9 +5,9 @@ ALLOWED_ORIGINS=http://localhost:5173
 ENVIRONMENT=development
 PUBLIC_APP_URL=http://localhost:5173
 
-# LINE Login public ticket portal — optional. Leave LINE_LOGIN_ENABLED unset/false to keep it
+# LINE ticket portal for linked employees — optional. Leave LINE_LOGIN_ENABLED unset/false to keep it
 # off. Get these from LINE Developers Console + LINE Official Account Manager; see
-# docs/migration/phase7-migration-runbook.md and legacy-gas/docs/06_SETUP_LINE_OA_TICKET.md.
+# docs/migration/phase7-migration-runbook.md.
 LINE_LOGIN_ENABLED=false
 LINE_LOGIN_CHANNEL_ID=
 LINE_LOGIN_CHANNEL_SECRET=
@@ -18,15 +18,6 @@ NOTIFY_LINE_ENABLED=false
 LINE_CHANNEL_ACCESS_TOKEN=
 # เมื่อเปิดใช้งาน การแจ้งเตือน in-app จะส่งคู่ไปยังบัญชี LINE สถานะ Active ที่เชื่อมกับผู้ใช้
 LINE_DEFAULT_TO=
-
-# Public no-login ticket report page (routes/publicTickets.ts) — always enabled unless set to
-# "false" (ops kill switch to pause public intake without a redeploy, e.g. legacy's limits.enabled).
-PUBLIC_TICKET_FORM_ENABLED=true
-
-# Existing Cloudflare Turnstile widget. Never commit the real secret. The hostname list is
-# deployment-specific; production must not contain localhost or 127.0.0.1.
-TURNSTILE_SECRET=
-TURNSTILE_HOSTNAMES=localhost,127.0.0.1
 
 # ส่งออกไป Google Drive / Google Sheets (services/googleDriveService.ts) — ปิดเป็นค่าเริ่มต้น
 # ต้องครบทั้งสามค่าและ GOOGLE_DRIVE_ENABLED=true จึงจะเปิดใช้งาน
