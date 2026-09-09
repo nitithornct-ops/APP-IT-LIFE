@@ -1,12 +1,13 @@
 import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Activity, BarChart3, Download, FileDown, FileText, Loader2, Printer, RefreshCw, Search } from 'lucide-react';
+import { Activity, BarChart3, Download, ExternalLink, FileDown, FileText, Loader2, Printer, RefreshCw, Search, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
-import { ApiError, apiFetch } from '../../services/apiClient';
+import { useGoogleDriveEnabled } from '../../hooks/useGoogleDriveEnabled';
+import { ApiError, apiFetch, showToast } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { ReportDataset, ReportKey, ReportOverview } from '../../types/reports';
 import { formatThaiDateTime } from '../../utils/date';
@@ -44,8 +45,17 @@ function downloadPdf(filename: string, pdfBase64: string) {
   URL.revokeObjectURL(url);
 }
 
+interface ReportPdfResult {
+  filename: string;
+  pdfBase64: string;
+  drive: { id: string; name: string; webViewLink: string } | null;
+  driveError: string | null;
+}
+
 export function ReportCenterPage() {
   const { hasPermission } = useAuth();
+  const driveEnabled = useGoogleDriveEnabled();
+  const [driveLink, setDriveLink] = useState<string | null>(null);
   const [rangeDays, setRangeDays] = useState(30);
   const [activeKey, setActiveKey] = useState<ReportKey>('service-desk');
   const [search, setSearch] = useState('');
@@ -87,10 +97,25 @@ export function ReportCenterPage() {
     onSuccess: () => window.print(),
   });
   const pdfMutation = useMutation({
-    mutationFn: () => apiFetch<{ filename: string; pdfBase64: string }>(`/api/v1/reports/${activeKey}/exports/pdf`, {
+    mutationFn: () => apiFetch<ReportPdfResult>(`/api/v1/reports/${activeKey}/exports/pdf`, {
       method: 'POST', body: JSON.stringify({ rangeDays }),
     }),
     onSuccess: ({ filename, pdfBase64 }) => downloadPdf(filename, pdfBase64),
+  });
+  /**
+   * เก็บสำเนาไว้ใน Drive อย่างเดียว ไม่ดาวน์โหลดซ้ำ — ปุ่มนี้มีไว้ให้ทีมเปิดรายงานย้อนหลังจาก
+   * โฟลเดอร์เดียวกันได้โดยไม่ต้องล็อกอินเข้าระบบ ไม่ใช่ทางเลือกที่สองของการดาวน์โหลด
+   */
+  const driveMutation = useMutation({
+    mutationFn: () => apiFetch<ReportPdfResult>(`/api/v1/reports/${activeKey}/exports/pdf`, {
+      method: 'POST', body: JSON.stringify({ rangeDays, saveToDrive: true }),
+    }, { silent: true }),
+    onSuccess: ({ drive, driveError }) => {
+      setDriveLink(drive?.webViewLink ?? null);
+      if (drive) showToast('success', `เก็บสำเนา "${drive.name}" ไว้ใน Google Drive แล้ว`);
+      else showToast('error', driveError ?? 'เก็บสำเนาลง Google Drive ไม่สำเร็จ');
+    },
+    onError: (error) => { setDriveLink(null); showToast('error', errorText(error)); },
   });
 
   return (
@@ -156,7 +181,15 @@ export function ReportCenterPage() {
                         <Button size="sm" variant="outline" isLoading={csvMutation.isPending} onClick={() => csvMutation.mutate()}><Download className="h-4 w-4" />CSV</Button>
                         <Button size="sm" variant="outline" data-testid="report-print" isLoading={printMutation.isPending} onClick={() => printMutation.mutate()}><Printer className="h-4 w-4" />พิมพ์</Button>
                         <Button size="sm" variant="outline" data-testid="report-pdf" isLoading={pdfMutation.isPending} onClick={() => pdfMutation.mutate()}><FileDown className="h-4 w-4" />ดาวน์โหลด PDF</Button>
+                        {driveEnabled && (
+                          <Button size="sm" variant="outline" data-testid="report-pdf-drive" isLoading={driveMutation.isPending} onClick={() => { setDriveLink(null); driveMutation.mutate(); }}><UploadCloud className="h-4 w-4" />เก็บสำเนาลง Drive</Button>
+                        )}
                       </div>
+                      {driveLink && (
+                        <a href={driveLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-primary-700 underline dark:text-primary-300">
+                          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />เปิดสำเนาใน Google Drive
+                        </a>
+                      )}
                       {pdfMutation.isError && <p className="text-xs text-red-600">{errorText(pdfMutation.error)}</p>}
                     </div>
                   )}

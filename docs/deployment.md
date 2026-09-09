@@ -75,6 +75,34 @@ credential/secret ใด หรือมี test ถูก skip แม้แต�
 Supabase Auth ต้องปิด public sign-up, ตั้ง Site URL/redirect URL เป็น Production, ตั้ง SMTP และสร้าง
 ผู้ดูแลระบบคนแรกด้วย `scripts/bootstrap-admin.mjs` ผ่านช่องทางที่ควบคุมสิทธิ์
 
+### 2.0 ส่งออกไป Google Sheets (ไม่บังคับ)
+
+ปิดอยู่เป็นค่าเริ่มต้น ถ้าไม่ตั้งค่า ปุ่ม "ส่งไป Google Sheets" จะไม่ขึ้นให้ผู้ใช้เห็นเลย ระบบยังทำงาน
+ครบทุกอย่างเหมือนเดิม — Supabase Storage ยังเป็นที่เก็บไฟล์หลักของระบบ ส่วน Drive เป็นปลายทาง
+ส่งออกอย่างเดียว
+
+ขั้นตอนตั้งค่าฝั่ง Google:
+
+1. สร้าง Service Account ใน Google Cloud แล้วเปิดใช้งาน **Google Drive API** ในโปรเจกต์เดียวกัน
+   จากนั้นสร้าง key ชนิด JSON เก็บไว้
+2. สร้าง **Shared Drive** (หรือโฟลเดอร์ในนั้น) แล้วเชิญอีเมลของ Service Account เป็น *Content manager*
+   — Service Account ไม่มีพื้นที่เก็บของตัวเอง การอัปโหลดลง My Drive จะได้ `storageQuotaExceeded`
+   ทันที ปลายทางจึงต้องเป็น Shared Drive เท่านั้น
+3. เก็บรหัสโฟลเดอร์ปลายทางจาก URL ของโฟลเดอร์นั้น
+
+ตั้งค่าใน GitHub Environment `production`:
+
+- Variables: `GOOGLE_DRIVE_ENABLED` = `true` เมื่อทดสอบผ่านแล้วเท่านั้น
+- Secrets: `GOOGLE_SA_CLIENT_EMAIL` (ค่า `client_email` ในไฟล์ JSON), `GOOGLE_SA_PRIVATE_KEY`
+  (ค่า `private_key` ทั้งก้อนรวมบรรทัด BEGIN/END), `GOOGLE_DRIVE_FOLDER_ID`
+
+Worker ถือ credential ไว้ฝั่งเดียว หน้าเว็บไม่เคยคุยกับ Google โดยตรง จึงไม่ต้องแก้ `connect-src`
+ใน CSP และไฟล์ที่ส่งออกจะถูกจัดเก็บเป็นโฟลเดอร์รายปี พ.ศ. ใต้โฟลเดอร์ปลายทาง แบบเดียวกับระบบเดิม
+
+ทุกครั้งที่มีการส่งออกจะถูกบันทึกลง audit log (`module = google_drive`) ทั้งครั้งที่สำเร็จและครั้งที่ล้ม
+เพราะเป็นการนำข้อมูลออกนอกระบบ ถ้าต้องการปิดฟีเจอร์นี้ทันทีโดยไม่ deploy ใหม่ ใช้
+`npx wrangler secret put GOOGLE_DRIVE_ENABLED --env production` แล้วใส่ค่า `false`
+
 ### 2.1 Environment `backup` (แยกจาก `production`)
 
 Workflow `Backup` ทำงาน **เมื่อกดสั่งเท่านั้น** (Actions → Backup → Run workflow) ไม่มี schedule
@@ -94,6 +122,24 @@ Workflow `Backup` ทำงาน **เมื่อกดสั่งเท่�
 
 ไฟล์สำรองมีข้อมูลส่วนบุคคลและ hash รหัสผ่านจาก `auth.users` — bucket ต้องเป็น private และ R2 API
 token ต้องจำกัดสิทธิ์ไว้ที่ bucket นี้ bucket เดียว
+
+#### สำเนาที่สองบน Google Drive (ไม่บังคับ)
+
+R2 ยังเป็นที่เก็บสำเนาหลัก ขั้นตอนนี้เพิ่มสำเนาไว้คนละผู้ให้บริการเท่านั้น เพราะเหตุที่ทำให้เข้าถึง R2
+ไม่ได้ (บัญชีถูกระงับ, token ถูกเพิกถอน, ลบผิดชุด) มักไม่ใช่เหตุเดียวกับที่ทำให้เข้าถึง Drive ไม่ได้พร้อมกัน
+
+- Variables: `BACKUP_TO_DRIVE_ENABLED` = `true` เพื่อเปิด (ไม่ตั้ง = ข้ามขั้นตอนนี้ไปเงียบ ๆ ตามตั้งใจ)
+- Secrets: `GOOGLE_SA_CLIENT_EMAIL`, `GOOGLE_SA_PRIVATE_KEY` (ชุดเดียวกับ §2.0 ได้),
+  `GOOGLE_DRIVE_BACKUP_FOLDER_ID`
+
+**`GOOGLE_DRIVE_BACKUP_FOLDER_ID` ต้องเป็นคนละโฟลเดอร์กับ `GOOGLE_DRIVE_FOLDER_ID` ของ §2.0**
+— โฟลเดอร์ส่งออกรายงานเปิดให้คนในทีมเข้าดู แต่ไฟล์สำรองมีข้อมูลส่วนบุคคลและ hash รหัสผ่าน
+`scripts/backup-to-drive.mjs` จะหยุดงานทันทีถ้าพบว่าสองค่านี้ชี้ไปที่โฟลเดอร์เดียวกัน โฟลเดอร์สำรอง
+ข้อมูลควรแชร์ให้เฉพาะผู้ดูแลระบบเท่านั้น
+
+เมื่อเปิดใช้งานแล้ว ถ้าตั้ง secret ไม่ครบ ขั้นตอนตรวจค่าตั้งต้นจะ fail พร้อมบอกชื่อที่ขาด ไม่ใช่รันจนจบ
+แล้วได้สำเนาเดียว ไฟล์ที่อัปโหลดจะถูกอ่านขนาดกลับมาเทียบกับต้นฉบับทุกครั้ง และยังไม่มีการลบชุดเก่า
+อัตโนมัติเหมือนฝั่ง R2 — ต้องดูพื้นที่ของ Shared Drive เป็นระยะ
 
 ## 3. ลำดับ deploy
 

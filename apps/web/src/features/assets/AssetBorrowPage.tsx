@@ -19,6 +19,8 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Department, EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { ActiveAssetLoan, AssetBorrowMovement, AssetBorrowSummary, AssetOption } from '../../types/assets';
+import { WordLikeEditor } from '../forms/WordLikeEditor';
+import { exportHtmlAsWord } from '../../utils/formHtml';
 import { formatThaiDate } from '../../utils/date';
 
 type BorrowView = 'active' | 'history';
@@ -193,6 +195,12 @@ export function AssetBorrowPage() {
   const { search, departmentId } = table.filters;
   const view: BorrowView = table.filters.view === 'history' ? 'history' : 'active';
   const [showMovement, setShowMovement] = useState(false);
+  const [formAssetId, setFormAssetId] = useState<string>();
+  const borrowForm = useQuery({
+    queryKey: ['asset-borrow-form', formAssetId],
+    queryFn: () => apiFetch<{ title: string; assetCode: string; contentHtml: string }>(`/api/v1/assets/${formAssetId}/borrow-form`),
+    enabled: Boolean(formAssetId),
+  });
   const debouncedSearch = useDebouncedValue(search);
 
   const overviewQuery = useQuery({
@@ -281,7 +289,7 @@ export function AssetBorrowPage() {
           {records && records.items.length === 0 && <EmptyState icon={view === 'active' ? <ArrowLeftRight className="h-10 w-10" /> : <History className="h-10 w-10" />} title={view === 'active' ? 'ไม่มีทรัพย์สินที่ถูกยืมหรือถือครองอยู่' : 'ยังไม่มีประวัติการเคลื่อนไหว'} />}
 
           {view === 'active' && activeRecords.length > 0 && (
-            <DataTable mode="server" toolbar={false} pagination={false} currentPageExport={false} tableId="asset-borrow-active" rowNumberStart={(page - 1) * pageSize + 1} containerClassName="rounded-none border-x-0 shadow-none" className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">จัดการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }, { kind: 'delete', permission: 'asset.dispose', deleteEndpoint: `/api/v1/record-deletions/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable>
+            <DataTable mode="server" toolbar={false} pagination={false} currentPageExport={false} tableId="asset-borrow-active" rowNumberStart={(page - 1) * pageSize + 1} containerClassName="rounded-none border-x-0 shadow-none" className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40"><tr><th className="px-3 py-3">Asset</th><th className="px-3 py-3">ผู้ถือครอง</th><th className="px-3 py-3">แผนก / สถานที่</th><th className="px-3 py-3">ยืมเมื่อ</th><th className="px-3 py-3">กำหนดคืน</th><th className="px-3 py-3 text-right">จัดการ</th></tr></thead><tbody>{activeRecords.map((item) => { const due = dueState(item.loan_due_date); return <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-3"><Link to={`/assets/${item.id}`} className="font-semibold text-primary-700 hover:underline dark:text-primary-300">{item.name}</Link><p className="font-mono text-xs text-slate-400">{item.asset_code}</p></td><td className="px-3 py-3">{fullName(item.owner)}{item.owner?.employee_code && <p className="text-xs text-slate-400">{item.owner.employee_code}</p>}</td><td className="px-3 py-3 text-slate-500">{item.department?.name_th ?? '—'}<p className="text-xs">{item.location ?? ''}</p></td><td className="px-3 py-3 text-slate-500">{item.loan_date ? formatThaiDate(item.loan_date, 'd MMM yyyy') : '—'}</td><td className="px-3 py-3"><Badge variant={due.variant}>{due.label}</Badge></td><td className="px-3 py-3 text-right"><Button size="sm" variant="outline" onClick={() => setFormAssetId(item.id)}>แบบฟอร์ม / Word</Button><RowActions recordLabel={item.asset_code} actions={[{ kind: 'view', to: `/assets/${item.id}` }, { kind: 'delete', permission: 'asset.dispose', deleteEndpoint: `/api/v1/record-deletions/assets/${item.id}` }]} /></td></tr>; })}</tbody></DataTable>
           )}
 
           {view === 'history' && historyRecords.length > 0 && (
@@ -290,6 +298,13 @@ export function AssetBorrowPage() {
           {records && <div className="px-4 pb-4"><TablePagination page={records.pagination.page} pageSize={pageSize} totalItems={records.pagination.totalItems} totalPages={records.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>}
       </Card>
 
+      {formAssetId && <Modal title={borrowForm.data?.title ?? 'แบบฟอร์มการขอยืมทรัพย์สิน'} size="xl" onClose={() => setFormAssetId(undefined)}>
+        <div className="p-4">
+          {borrowForm.isLoading && <p role="status">กำลังโหลดแบบฟอร์ม...</p>}
+          {borrowForm.error && <p role="alert" className="text-red-600">{borrowForm.error.message}</p>}
+          {borrowForm.data && <><Button className="mb-3" onClick={() => exportHtmlAsWord(borrowForm.data!.contentHtml, `${borrowForm.data!.assetCode}-borrow`)}>ดาวน์โหลด Word</Button><WordLikeEditor value={borrowForm.data.contentHtml} onChange={() => undefined} fileName={`${borrowForm.data.assetCode}-borrow`} readOnly /></>}
+        </div>
+      </Modal>}
       {showMovement && (
         <Modal title="บันทึกการเคลื่อนไหว Asset" size="lg" onClose={() => setShowMovement(false)} testId="asset-borrow-dialog">
           <MovementModal assets={assetsQuery.data ?? []} employees={employeesQuery.data ?? []} departments={departmentsQuery.data ?? []} onClose={() => setShowMovement(false)} />

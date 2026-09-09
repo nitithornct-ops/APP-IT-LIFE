@@ -87,6 +87,10 @@ jobs:
       NOTIFY_LINE_ENABLED: ${{ vars.NOTIFY_LINE_ENABLED }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_DEFAULT_TO: ${{ secrets.LINE_DEFAULT_TO }}
+      GOOGLE_DRIVE_ENABLED: ${{ vars.GOOGLE_DRIVE_ENABLED }}
+      GOOGLE_SA_CLIENT_EMAIL: ${{ secrets.GOOGLE_SA_CLIENT_EMAIL }}
+      GOOGLE_SA_PRIVATE_KEY: ${{ secrets.GOOGLE_SA_PRIVATE_KEY }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -152,6 +156,12 @@ jobs:
           if [ "${NOTIFY_LINE_ENABLED:-false}" = "true" ]; then
             printf '%s' "$LINE_CHANNEL_ACCESS_TOKEN" | npx wrangler secret put LINE_CHANNEL_ACCESS_TOKEN --env production --cwd apps/api
             printf '%s' "$LINE_DEFAULT_TO" | npx wrangler secret put LINE_DEFAULT_TO --env production --cwd apps/api
+          fi
+          printf '%s' "${GOOGLE_DRIVE_ENABLED:-false}" | npx wrangler secret put GOOGLE_DRIVE_ENABLED --env production --cwd apps/api
+          if [ "${GOOGLE_DRIVE_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$GOOGLE_SA_CLIENT_EMAIL" | npx wrangler secret put GOOGLE_SA_CLIENT_EMAIL --env production --cwd apps/api
+            printf '%s' "$GOOGLE_SA_PRIVATE_KEY" | npx wrangler secret put GOOGLE_SA_PRIVATE_KEY --env production --cwd apps/api
+            printf '%s' "$GOOGLE_DRIVE_FOLDER_ID" | npx wrangler secret put GOOGLE_DRIVE_FOLDER_ID --env production --cwd apps/api
           fi
       - name: Deploy API
         run: npx wrangler deploy --env production --cwd apps/api

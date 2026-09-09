@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, CircleDot, Clock3, Eye, Loader2, MinusCircle, PenLine, Printer, RotateCcw, Save, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CircleDot, Clock3, Download, Eye, Loader2, MinusCircle, PenLine, Printer, RotateCcw, Save, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
@@ -8,7 +8,7 @@ import { useAuth } from '../../stores/authContext';
 import { WordLikeEditor } from '../forms/WordLikeEditor';
 import { ApiError, apiFetch, showToast } from '../../services/apiClient';
 import type { TicketFormDocument, TicketFormFlowState } from '../../types/tickets';
-import { sanitizeFormHtml } from '../../utils/formHtml';
+import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 import { effectiveMarginMm, pageGeometry, paginateElement } from './formPagination';
 
 const flowAppearance: Record<TicketFormFlowState, { icon: typeof CheckCircle2; className: string; label: string }> = {
@@ -311,7 +311,7 @@ export function TicketFormPage() {
         {formDocument.isCustomized && <Badge variant="warning">แก้ไขเฉพาะใบนี้</Badge>}
         {mode === 'view' ? <>
           {formDocument.canEditContent && <Button variant="outline" onClick={startEditing}><PenLine className="h-4 w-4" />แก้ไขและจัดรูป</Button>}
-          <Button onClick={() => window.print()}><Printer className="h-4 w-4" />พิมพ์ / บันทึก PDF</Button>
+          <Button variant="outline" disabled={saveFormState.isPending} onClick={() => exportHtmlAsWord(interactiveFormHtml, `${formDocument.ticketNo}-form`)}><Download className="h-4 w-4" />ดาวน์โหลด Word</Button><Button onClick={() => window.print()}><Printer className="h-4 w-4" />พิมพ์ / บันทึก PDF</Button>
         </> : <>
           <Button variant="ghost" onClick={() => setMode('view')} disabled={isBusy}><X className="h-4 w-4" />ยกเลิก</Button>
           {formDocument.isCustomized && <Button variant="outline" onClick={() => resetContent.mutate()} isLoading={resetContent.isPending} disabled={isBusy}><RotateCcw className="h-4 w-4" />คืนค่าจากแม่แบบ</Button>}

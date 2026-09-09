@@ -8,11 +8,12 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
+import { buddhistYearFolder, googleDriveConfig, safeDriveName, uploadToDrive } from '../services/googleDriveService';
 import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
-import { reportExportSchema, reportRangeQuerySchema } from '../validators/reports';
+import { reportExportSchema, reportPdfExportSchema, reportRangeQuerySchema } from '../validators/reports';
 
 type Row = Record<string, unknown>;
 type ReportKey = 'service-desk' | 'requests-workflows' | 'assets-operations' | 'asset-custody' | 'security-resilience' | 'governance-compliance';
@@ -563,11 +564,56 @@ reportsRoute.post('/:key/exports/print', requirePermission('report.export'), zVa
 });
 
 /**
+ * เก็บสำเนารายงาน PDF ไว้ในโฟลเดอร์ Drive ขององค์กร (โครงสร้างรายปี พ.ศ. เหมือนระบบเดิม)
+ * เพื่อให้คนที่ไม่ได้ล็อกอินเข้าระบบเปิดดูรายงานย้อนหลังได้จากที่เดียว
+ *
+ * คืน error เป็นข้อความแทนการโยน เพราะไฟล์ที่ผู้ใช้ขอสร้างสำเร็จไปแล้ว การล้มของปลายทางเสริม
+ * ไม่ควรกลืนผลงานที่เพิ่งใช้ Browser Rendering สร้างมาทั้งชุด
+ */
+async function copyReportPdfToDrive(
+  c: Context<AppEnv>,
+  filename: string,
+  pdfBytes: Uint8Array,
+): Promise<{ file: { id: string; name: string; webViewLink: string } | null; error: string | null }> {
+  const requestId = c.get('requestId');
+  if (!googleDriveConfig(c.env)) {
+    return { file: null, error: 'ยังไม่ได้เปิดใช้งานการเชื่อมต่อ Google Drive' };
+  }
+
+  const result = await uploadToDrive(c.env, {
+    name: safeDriveName(filename, 'report.pdf'),
+    contentType: 'application/pdf',
+    content: pdfBytes,
+    subFolder: buddhistYearFolder(),
+  });
+
+  // ถ้าปล่อยให้ writeAuditLog โยนทะลุออกไป ฟังก์ชันนี้จะผิดสัญญาที่เขียนไว้ข้างบนว่า "คืน error เป็น
+  // ข้อความแทนการโยน" — ปลายทาง PDF จะตอบ error ทั้งที่ไฟล์ถูกสร้างและอัปโหลดขึ้น Drive ไปแล้ว
+  // ผู้ใช้กดซ้ำก็ได้สำเนาซ้ำใน Drive จึงกลืน error ไว้แล้วรายงานผ่าน console แทน
+  try {
+    await writeAuditLog(c.env, {
+      actorId: c.get('userId'),
+      actorEmail: c.get('userEmail'),
+      action: 'EXPORT_GOOGLE_DRIVE',
+      module: 'google_drive',
+      targetId: result.ok ? result.file.id : null,
+      detail: { filename, bytes: pdfBytes.byteLength, reason: result.ok ? null : result.reason },
+      result: result.ok ? 'success' : 'fail',
+      requestId,
+    });
+  } catch (error) {
+    console.error('EXPORT_GOOGLE_DRIVE audit write failed', { requestId, error });
+  }
+
+  return result.ok ? { file: result.file, error: null } : { file: null, error: result.message };
+}
+
+/**
  * Real server-rendered PDF (R-13: Cloudflare Browser Rendering), distinct from /exports/print's
  * browser print dialog. Not locally testable — see lib/pdf.ts's header comment.
  */
-reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zValidator('json', reportExportSchema, zodValidationHook), async (c) => {
-  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays } = c.req.valid('json');
+reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zValidator('json', reportPdfExportSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays, saveToDrive } = c.req.valid('json');
   if (!c.env.MYBROWSER) return c.json(fail(requestId, 'PDF_EXPORT_NOT_CONFIGURED', 'ยังไม่ได้ตั้งค่า Browser Rendering สำหรับสร้าง PDF'), 503);
   const result = await datasetFor(c, key, rangeDays);
   if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_EXPORT_FAILED', result.error), result.status);
@@ -584,5 +630,15 @@ reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zVali
   if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
 
   const stamp = new Date().toISOString().slice(0, 10);
-  return c.json(ok(requestId, { filename: `${key}-${stamp}.pdf`, pdfBase64: Buffer.from(pdfBytes).toString('base64') }));
+  const filename = `${key}-${stamp}.pdf`;
+  const drive = saveToDrive ? await copyReportPdfToDrive(c, filename, pdfBytes) : null;
+
+  // ผู้ใช้ยังได้ไฟล์เสมอแม้สำเนาใน Drive จะล้ม — ส่ง driveError กลับไปให้หน้าเว็บบอกตรง ๆ
+  // ว่าดาวน์โหลดสำเร็จแต่สำเนาไม่สำเร็จ ดีกว่าล้มทั้งการส่งออกเพราะปลายทางเสริมมีปัญหา
+  return c.json(ok(requestId, {
+    filename,
+    pdfBase64: Buffer.from(pdfBytes).toString('base64'),
+    drive: drive?.file ?? null,
+    driveError: drive?.error ?? null,
+  }));
 });
