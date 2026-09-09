@@ -60,8 +60,10 @@ describe('ExportAllButton', () => {
     renderButton('/api/v1/assets/export?status=%E0%B8%8B%E0%B9%88%E0%B8%AD%E0%B8%A1%E0%B8%9A%E0%B8%B3%E0%B8%A3%E0%B8%B8%E0%B8%87');
     fireEvent.click(screen.getByRole('button', { name: /ส่งออกทั้งหมด/ }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/v1/assets/export?status=');
+    // ปุ่มถามสถานะ Google Drive ตอน mount ด้วย จึงต้องหาคำขอส่งออกจริง ไม่ใช่ยึดว่าเป็นคำขอแรก
+    await waitFor(() => expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/assets/export?status=')),
+    ).toBe(true));
   });
 
   it('บอกจำนวนจริงเมื่อเกินเพดาน แทนที่จะเงียบหรือส่งไฟล์ที่ขาดหาย', async () => {

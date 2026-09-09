@@ -27,3 +27,15 @@ PUBLIC_TICKET_FORM_ENABLED=true
 # deployment-specific; production must not contain localhost or 127.0.0.1.
 TURNSTILE_SECRET=
 TURNSTILE_HOSTNAMES=localhost,127.0.0.1
+
+# ส่งออกไป Google Drive / Google Sheets (services/googleDriveService.ts) — ปิดเป็นค่าเริ่มต้น
+# ต้องครบทั้งสามค่าและ GOOGLE_DRIVE_ENABLED=true จึงจะเปิดใช้งาน
+# 1) สร้าง Service Account ใน Google Cloud แล้วเปิด Google Drive API ในโปรเจกต์นั้น
+# 2) สร้าง Shared Drive (หรือโฟลเดอร์ในนั้น) แล้วเชิญอีเมลของ Service Account เป็น Content manager
+#    — Service Account ไม่มีพื้นที่เก็บของตัวเอง อัปโหลดลง My Drive จะได้ storageQuotaExceeded
+# 3) GOOGLE_DRIVE_FOLDER_ID คือรหัสในลิงก์ของโฟลเดอร์ปลายทาง
+# ห้าม commit ค่าจริง — บน production ตั้งผ่าน `wrangler secret put` เท่านั้น
+GOOGLE_DRIVE_ENABLED=false
+GOOGLE_SA_CLIENT_EMAIL=
+GOOGLE_SA_PRIVATE_KEY=
+GOOGLE_DRIVE_FOLDER_ID=

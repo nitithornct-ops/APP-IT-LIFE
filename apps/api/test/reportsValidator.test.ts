@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reportExportSchema, reportRangeQuerySchema } from '../src/validators/reports';
+import { reportExportSchema, reportPdfExportSchema, reportRangeQuerySchema } from '../src/validators/reports';
 import { csvCell } from '../src/routes/reports';
 
 describe('report validators', () => {
@@ -14,6 +14,12 @@ describe('report validators', () => {
   it('rejects negative and excessively broad export ranges', () => {
     expect(reportExportSchema.safeParse({ rangeDays: -1 }).success).toBe(false);
     expect(reportExportSchema.safeParse({ rangeDays: 3651 }).success).toBe(false);
+  });
+
+  it('ไม่เก็บสำเนาลง Drive จนกว่าจะสั่งมาในคำขอ', () => {
+    expect(reportPdfExportSchema.parse({ rangeDays: 30 }).saveToDrive).toBe(false);
+    expect(reportPdfExportSchema.parse({ rangeDays: 30, saveToDrive: true }).saveToDrive).toBe(true);
+    expect(reportPdfExportSchema.safeParse({ rangeDays: 30, saveToDrive: 'yes' }).success).toBe(false);
   });
 
   it('neutralizes spreadsheet formulas in CSV exports', () => {

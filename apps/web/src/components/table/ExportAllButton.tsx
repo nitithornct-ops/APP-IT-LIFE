@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { downloadCsvText } from '../../utils/csv';
 import { Button } from '../ui/Button';
+import { ExportSheetsButton } from './ExportSheetsButton';
 
 interface ListExportResult {
   filename: string;
@@ -43,17 +44,27 @@ export function ExportAllButton({ url, label = 'ส่งออกทั้ง�
 
   return (
     <span className={className}>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={disabled}
-        isLoading={mutation.isPending}
-        onClick={() => { setError(null); mutation.mutate(); }}
-      >
-        <Download className="h-4 w-4" aria-hidden="true" />
-        {label}
-      </Button>
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          isLoading={mutation.isPending}
+          onClick={() => { setError(null); mutation.mutate(); }}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+          {label}
+        </Button>
+        {/* ใช้ endpoint ส่งออกตัวเดียวกัน ไฟล์ใน Drive จึงเป็นชุดเดียวกับที่ดาวน์โหลดได้เป๊ะ */}
+        <ExportSheetsButton
+          disabled={disabled}
+          getExport={async () => {
+            const result = await apiFetch<ListExportResult>(url);
+            return { csv: result.csv, fileName: result.filename };
+          }}
+        />
+      </span>
       {error && <p className="mt-1 max-w-xs text-xs font-semibold text-red-600 dark:text-red-300" role="alert">{error}</p>}
     </span>
   );

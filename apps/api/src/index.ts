@@ -17,6 +17,7 @@ import { employeesRoute } from './routes/employees';
 import { filesRoute } from './routes/files';
 import { formsRoute, publicFormsRoute } from './routes/forms';
 import { healthRoute } from './routes/health';
+import { googleDriveRoute } from './routes/googleDrive';
 import { governanceRoute } from './routes/governance';
 import { incidentsRoute } from './routes/incidents';
 import { integrationsRoute } from './routes/integrations';
@@ -126,6 +127,7 @@ app.route('/api/v1/outsource-submissions', outsourceAdminRoute);
 app.route('/api/v1/line', lineRoute);
 app.route('/api/v1/public/tickets', publicTicketsRoute);
 app.route('/api/v1/record-deletions', recordDeletionsRoute);
+app.route('/api/v1/google-drive', googleDriveRoute);
 
 app.notFound((c) => c.json(fail(c.get('requestId'), 'NOT_FOUND', 'ไม่พบ endpoint ที่ร้องขอ'), 404));
 

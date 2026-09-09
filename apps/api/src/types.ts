@@ -30,6 +30,15 @@ export interface Bindings {
   TURNSTILE_HOSTNAMES?: string;
   /** Cloudflare edge rate limiter for unauthenticated endpoints. Local tests may omit it. */
   PUBLIC_RATE_LIMITER?: RateLimit;
+  /**
+   * ส่งออกไป Google Drive/Sheets (services/googleDriveService.ts) — ปิดเป็นค่าเริ่มต้น
+   * ต้องเป็น 'true' และมี credential ครบทั้งสามตัวจึงจะเปิดใช้งาน เก็บกุญแจเป็น Worker secret เท่านั้น
+   */
+  GOOGLE_DRIVE_ENABLED?: string;
+  GOOGLE_SA_CLIENT_EMAIL?: string;
+  GOOGLE_SA_PRIVATE_KEY?: string;
+  /** โฟลเดอร์ปลายทางใน Shared Drive ที่ Service Account เป็นสมาชิก */
+  GOOGLE_DRIVE_FOLDER_ID?: string;
 }
 
 export interface LineUserProfile {
