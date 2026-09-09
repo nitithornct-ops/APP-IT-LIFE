@@ -136,18 +136,19 @@ async function main() {
 
   const token = await getAccessToken(clientEmail, privateKey);
   const uploaded = await uploadResumable(token, archivePath, folderId);
-  const verified = await verifyUploadedSize(token, uploaded.id, uploaded.size);
+  // เรียกเพื่อผลข้างเคียงล้วน ๆ — ฟังก์ชันนี้โยน error เมื่อขนาดบน Drive ไม่ตรงกับต้นฉบับ
+  await verifyUploadedSize(token, uploaded.id, uploaded.size);
 
-  console.log(`backup-to-drive: อัปโหลด ${verified.name} (${uploaded.size} ไบต์) และตรวจขนาดตรงกับต้นฉบับแล้ว`);
+  // รายงานด้วย `uploaded.name` ซึ่งเป็น basename ของไฟล์ที่เราส่งขึ้นไปเอง ไม่ใช่ชื่อที่ Drive
+  // ส่งกลับมา ชื่อจาก response เป็นข้อมูลนอกระบบ ถ้าเขียนลง step summary ตรง ๆ การขึ้นบรรทัดใหม่
+  // หรือ backtick ในชื่อจะแทรก markdown ปลอมเข้าไปในรายงานของ run ได้
+  console.log(`backup-to-drive: อัปโหลด ${uploaded.name} (${uploaded.size} ไบต์) และตรวจขนาดตรงกับต้นฉบับแล้ว`);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     const { appendFile } = await import('node:fs/promises');
-    // `verified.name` มาจาก response ของ Drive ไม่ใช่ค่าที่เราคุมเอง ถ้าเขียนดิบ ๆ ลง step summary
-    // ขึ้นบรรทัดใหม่หรือ backtick ในชื่อไฟล์จะแทรก markdown ปลอมเข้าไปในรายงานของ run ได้
-    const safeName = String(verified.name).replace(/[`\r\n]+/g, ' ').slice(0, 200);
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
-      `- สำเนานอก R2: Google Drive \`${safeName}\` (ตรวจขนาดตรงกับต้นฉบับแล้ว)\n`,
+      `- สำเนานอก R2: Google Drive \`${uploaded.name}\` (ตรวจขนาดตรงกับต้นฉบับแล้ว)\n`,
     );
   }
 }

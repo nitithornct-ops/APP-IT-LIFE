@@ -21,7 +21,8 @@ function envelope(data: unknown) {
 function renderButton(ui: ReactElement, { driveEnabled = false } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
-    if (url.includes('/api/v1/google-drive/status')) return envelope({ enabled: driveEnabled });
+    // ปุ่มขึ้นเมื่อปลายทางถูกตั้งค่าไว้ "และ" ผู้ใช้มีสิทธิ์ report.export — เทสต์ชุดนี้จำลองผู้ใช้ที่มีสิทธิ์
+    if (url.includes('/api/v1/google-drive/status')) return envelope({ enabled: driveEnabled, canExport: driveEnabled });
     if (url.includes('/api/v1/google-drive/sheets')) {
       return envelope({ id: 'sheet-1', name: 'assets-page-1', webViewLink: 'https://docs.google.com/spreadsheets/d/sheet-1/edit' });
     }

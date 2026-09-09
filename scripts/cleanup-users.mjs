@@ -16,9 +16,15 @@
  *
  * ต้องตั้งค่า SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (อ่านจาก apps/api/.dev.vars อัตโนมัติถ้ามีไฟล์)
  *
- * ก่อนลบจริง สคริปต์จะ dump ทุกแถวที่กำลังจะหายลง backups/user-cleanup-<timestamp>.json เสมอ
- * (โฟลเดอร์ backups/ ถูก gitignore ไว้แล้ว) — เป็นตาข่ายรองชั้นเดียวที่มี เพราะ workflow Backup
- * ของโปรเจกต์นี้ยังไม่เคยรัน จึงไม่มี restore point อื่นให้ย้อนกลับ
+ * **การลบบัญชีลบงานของบัญชีนั้นไปด้วย** ตารางใน CASCADE_TABLES ผูกกับ profiles(id) แบบ
+ * on delete cascade ฐานข้อมูลจึงลบ Ticket, Service Request, งานที่มอบหมาย และไฟล์แนบของผู้ใช้
+ * คนนั้นให้เองตอนลบบัญชี Auth โดยไม่ผ่านโค้ดในไฟล์นี้ ถ้าเจอกรณีแบบนี้สคริปต์จะหยุดและให้ย้าย
+ * เจ้าของงานไปบัญชีอื่นก่อน ยืนยันว่าจะลบทิ้งจริงได้ด้วย --allow-cascade-delete
+ *
+ * ก่อนลบจริง สคริปต์จะ dump แถวจากทั้ง ROW_BLOCKERS และ CASCADE_TABLES ลง
+ * backups/user-cleanup-<timestamp>.json (โฟลเดอร์ backups/ ถูก gitignore ไว้แล้ว) และหยุดทันที
+ * ถ้าอ่านตารางใดไม่ได้ — เป็นตาข่ายรองชั้นเดียวที่มี เพราะ workflow Backup ของโปรเจกต์นี้ยังไม่เคย
+ * รัน จึงไม่มี restore point อื่นให้ย้อนกลับ
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
@@ -55,6 +61,45 @@ const ROW_BLOCKERS = [
   ['bcp_plans', 'owner_id'],
   ['vulnerability_findings', 'owner_id'],
 ];
+
+/**
+ * ตารางที่ FK ชี้มาที่ profiles(id) แบบ on delete cascade — ฐานข้อมูลลบแถวเหล่านี้ให้เองตอนลบบัญชี
+ * Auth โดยไม่ผ่านโค้ดในไฟล์นี้เลย จึงไม่เคยโผล่ในรายการ blocker ข้างบนและไม่เคยถูกเก็บลง snapshot
+ * ทั้งที่หลายตารางเป็นงานจริงของหน่วยงาน — Ticket และ worklog, Service Request, งานที่มอบหมาย
+ * และไฟล์แนบ การลบผู้ใช้หนึ่งคนจึงลบประวัติงานที่คนนั้นแจ้งไว้ทั้งหมดไปด้วยอย่างเงียบ ๆ
+ *
+ * รายการนี้ได้จากการไล่ FK ในไฟล์ migration ทั้งหมด ถ้าเพิ่มตารางใหม่ที่ cascade มาที่ profiles
+ * ต้องเพิ่มที่นี่ด้วย ไม่อย่างนั้น snapshot จะไม่ครบอีก
+ */
+const CASCADE_TABLES = [
+  ['tickets', 'requester_id'],
+  ['ticket_worklogs', 'actor_id'],
+  ['service_requests', 'requester_id'],
+  ['service_request_history', 'actor_id'],
+  ['access_requests', 'requester_id'],
+  ['file_attachments', 'uploaded_by'],
+  ['personal_tasks', 'owner_id'],
+  ['task_subtasks', 'owner_id'],
+  ['task_links', 'owner_id'],
+  ['task_progress_logs', 'owner_id'],
+  ['task_reminders', 'owner_id'],
+  ['notifications', 'recipient_id'],
+  ['knowledge_article_feedback', 'user_id'],
+  ['approval_group_members', 'user_id'],
+  ['workflow_delegations', 'delegator_id'],
+  ['workflow_delegations', 'delegate_id'],
+  ['technician_skills', 'technician_id'],
+  ['user_access_registry', 'user_id'],
+  ['user_permission_overrides', 'user_id'],
+  ['user_roles', 'user_id'],
+];
+
+/** ตารางที่ถือ "งานจริง" ของหน่วยงาน การลบทิ้งคือการสูญเสียประวัติ ไม่ใช่แค่ล้างสิทธิ์ผู้ใช้ */
+const OPERATIONAL_TABLES = new Set([
+  'tickets', 'ticket_worklogs', 'service_requests', 'service_request_history',
+  'access_requests', 'file_attachments', 'personal_tasks', 'task_subtasks',
+  'task_links', 'task_progress_logs',
+]);
 
 function loadDevVars(path) {
   if (!existsSync(path)) return {};
@@ -179,18 +224,56 @@ async function main() {
   if (blockingTotal === 0) console.log('  (ไม่มี — ลบได้ตรง ๆ)');
   console.log('');
 
+  // แถวที่ฐานข้อมูลลบให้เองแบบ cascade ต้องนับและแสดงด้วย ไม่อย่างนั้นผู้ใช้สคริปต์จะเห็นแค่รายการ
+  // blocker แล้วเข้าใจว่านั่นคือทั้งหมดที่จะหายไป
+  console.log('แถวที่ฐานข้อมูลจะลบตามให้เองด้วย FK แบบ cascade:');
+  let cascadeTotal = 0;
+  let operationalTotal = 0;
+  for (const [table, column] of CASCADE_TABLES) {
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true }).in(column, doomedIds);
+    if (error) {
+      console.log(`  ? ${table}.${column} — อ่านไม่ได้: ${error.message}`);
+      continue;
+    }
+    if (count) {
+      const mark = OPERATIONAL_TABLES.has(table) ? ' ← งานจริง' : '';
+      console.log(`  • ${table}.${column} = ${count} แถว${mark}`);
+      cascadeTotal += count;
+      if (OPERATIONAL_TABLES.has(table)) operationalTotal += count;
+    }
+  }
+  if (cascadeTotal === 0) console.log('  (ไม่มี)');
+  console.log('');
+
   if (!apply) {
     console.log('นี่คือ dry run เท่านั้น ยังไม่มีอะไรถูกแก้ไข');
     console.log('รันจริงด้วย: node scripts/cleanup-users.mjs --apply --yes');
     return;
   }
 
+  // ระบบนี้ไม่มี restore point เลย (workflow Backup ยังไม่เคยรัน) การลบประวัติงานจริงทิ้งจึงกู้คืน
+  // ไม่ได้ ต้องให้คนสั่งยืนยันเจตนาอีกชั้นว่ารู้ตัวว่ากำลังลบอะไร ไม่ใช่ลบเพราะไม่รู้ว่ามันจะหายไปด้วย
+  if (operationalTotal > 0 && args['allow-cascade-delete'] !== true) {
+    console.error(`หยุด: ผู้ใช้ที่จะลบมีงานจริงผูกอยู่ ${operationalTotal} แถว (Ticket / Service Request / งาน / ไฟล์แนบ)`);
+    console.error('การลบบัญชีจะลบประวัติเหล่านี้ไปด้วยและกู้คืนไม่ได้ เพราะระบบยังไม่มีชุดสำรองใด ๆ');
+    console.error('ถ้าต้องการเก็บงานไว้ ให้ย้ายเจ้าของงานไปบัญชีอื่นก่อนแล้วค่อยรันสคริปต์นี้');
+    console.error('ถ้ายืนยันว่าจะลบทิ้งทั้งหมดจริง ให้เพิ่ม --allow-cascade-delete');
+    process.exit(1);
+  }
+
   // ------------------------------------------------------------------ สำรองก่อนลบ
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const snapshot = { takenAt: new Date().toISOString(), supabaseUrl: SUPABASE_URL, deletedProfiles: doomed, tables: {} };
-  for (const [table, column] of ROW_BLOCKERS) {
+  const snapshotGaps = [];
+  // เก็บทั้งแถวที่สคริปต์ลบเอง (ROW_BLOCKERS) และแถวที่ฐานข้อมูลลบให้แบบ cascade (CASCADE_TABLES)
+  // เดิมเก็บแค่ชุดแรก snapshot จึงไม่มี Ticket หรืองานของผู้ใช้อยู่เลย ทั้งที่ไฟล์นี้ประกาศว่าสำรอง
+  // "ทุกแถวที่กำลังจะหาย" ตารางไหนอ่านไม่ได้ต้องบันทึกไว้แล้วหยุด ไม่ใช่ข้ามไปเงียบ ๆ
+  for (const [table, column] of [...ROW_BLOCKERS, ...CASCADE_TABLES]) {
     const { data, error } = await supabase.from(table).select('*').in(column, doomedIds);
-    if (error) continue;
+    if (error) {
+      snapshotGaps.push(`${table}.${column}: ${error.message}`);
+      continue;
+    }
     if (data?.length) snapshot.tables[`${table}.${column}`] = data;
   }
   const { data: doomedIncidents } = await supabase.from('incidents').select('id').in('reported_by', doomedIds);
@@ -202,6 +285,14 @@ async function main() {
   mkdirSync(new URL('../backups/', import.meta.url), { recursive: true });
   writeFileSync(new URL(`../backups/user-cleanup-${stamp}.json`, import.meta.url), JSON.stringify(snapshot, null, 2), 'utf-8');
   console.log(`สำรองข้อมูลที่กำลังจะลบไว้ที่ backups/user-cleanup-${stamp}.json แล้ว\n`);
+
+  // สำรองไม่ครบแล้วเดินหน้าลบ = ลบของที่กู้กลับไม่ได้ทั้งที่บอกผู้ใช้ว่าสำรองแล้ว ต้องหยุดตรงนี้
+  if (snapshotGaps.length) {
+    console.error('หยุด: อ่านข้อมูลบางตารางเพื่อสำรองไม่สำเร็จ ไฟล์สำรองจึงไม่ครบ');
+    for (const gap of snapshotGaps) console.error(`  ! ${gap}`);
+    console.error('ยังไม่มีอะไรถูกลบ แก้สิทธิ์หรือชื่อตารางให้อ่านได้ครบก่อนแล้วรันใหม่');
+    process.exit(1);
+  }
 
   // ------------------------------------------------------------------ เคลียร์คอลัมน์ nullable
   for (const [table, column] of NULLABLE_BLOCKERS) {
