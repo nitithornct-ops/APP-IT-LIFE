@@ -68,13 +68,23 @@ function CreateTicketCategoryForm({ category, onClose }: { category?: TicketCate
   });
 
   const mutation = useMutation({
-    mutationFn: (values: TicketCategoryForm) =>
-      apiFetch(category ? `/api/v1/ticket-categories/${category.id}` : '/api/v1/ticket-categories', {
+    mutationFn: (values: TicketCategoryForm) => {
+      const body = category
+        ? {
+            ...values,
+            responseSlaHours: values.responseSlaHours ?? null,
+            resolutionSlaHours: values.resolutionSlaHours ?? null,
+          }
+        : values;
+      return apiFetch(category ? `/api/v1/ticket-categories/${category.id}` : '/api/v1/ticket-categories', {
         method: category ? 'PATCH' : 'POST',
-        body: JSON.stringify(values),
-      }),
+        body: JSON.stringify(body),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'ticket-categories'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'cause-codes'] });
+      void queryClient.invalidateQueries({ queryKey: ['cause-codes'] });
       onClose();
     },
     onError: (error) => setServerError(error instanceof ApiError ? error.message : 'สร้างหมวดหมู่ไม่สำเร็จ'),
