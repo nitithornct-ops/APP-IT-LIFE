@@ -44,6 +44,9 @@ export const createTicketCategorySchema = z.object({
 export type CreateTicketCategoryInput = z.infer<typeof createTicketCategorySchema>;
 
 export const updateTicketCategorySchema = createTicketCategorySchema.partial().extend({
+  responseSlaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
+  resolutionSlaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
+  slaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
   status: z.enum(['active', 'inactive']).optional(),
 });
 

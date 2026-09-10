@@ -26,32 +26,34 @@ import type { TicketCategory } from '../../types/admin';
 const fieldClass =
   'mt-1 h-10 w-full rounded-[7px] border border-hairline-control px-3 text-[13px] outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100';
 
-function CreateCauseCodeForm({ categories, onClose }: { categories: TicketCategory[]; onClose: () => void }) {
+function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode; categories: TicketCategory[]; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [categoryId, setCategoryId] = useState('');
+  const [code, setCode] = useState(cause?.code ?? '');
+  const [name, setName] = useState(cause?.name ?? '');
+  const [description, setDescription] = useState(cause?.description ?? '');
+  const [categoryId, setCategoryId] = useState(cause?.category_id ?? '');
   const [error, setError] = useState<string | null>(null);
 
-  const create = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/v1/cause-codes', {
-        method: 'POST',
-        body: JSON.stringify({
-          code: code.trim().toUpperCase(),
-          name: name.trim(),
-          description: description.trim() || null,
-          categoryId: categoryId || null,
-        }),
-      }),
+  const mutation = useMutation({
+    mutationFn: () => {
+      const body = {
+        ...(cause ? {} : { code: code.trim().toUpperCase() }),
+        name: name.trim(),
+        description: description.trim() || null,
+        categoryId: categoryId || null,
+      };
+      return apiFetch(cause ? `/api/v1/cause-codes/${cause.id}` : '/api/v1/cause-codes', {
+        method: cause ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'cause-codes'] });
       void queryClient.invalidateQueries({ queryKey: ['cause-codes'] });
       onClose();
     },
     onError: (reason: unknown) =>
-      setError(reason instanceof ApiError || reason instanceof Error ? reason.message : 'เพิ่มรหัสสาเหตุไม่สำเร็จ'),
+      setError(reason instanceof ApiError || reason instanceof Error ? reason.message : `${cause ? 'แก้ไข' : 'เพิ่ม'}รหัสสาเหตุไม่สำเร็จ`),
   });
 
   return (
@@ -60,7 +62,7 @@ function CreateCauseCodeForm({ categories, onClose }: { categories: TicketCatego
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
-        create.mutate();
+        mutation.mutate();
       }}
     >
       <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -69,12 +71,13 @@ function CreateCauseCodeForm({ categories, onClose }: { categories: TicketCatego
           required
           value={code}
           onChange={(event) => setCode(event.target.value.toUpperCase())}
+          disabled={Boolean(cause)}
           placeholder="NET_CABLE"
           maxLength={32}
           className={`${fieldClass} font-mono`}
         />
         <span className="mt-1 block text-[10.5px] font-normal text-slate-400">
-          ตัวพิมพ์ใหญ่ ตัวเลข ขีดกลางหรือขีดล่าง — แก้ไม่ได้หลังสร้าง
+          ตัวพิมพ์ใหญ่ ตัวเลข ขีดกลางหรือขีดล่าง — แก้รหัสไม่ได้หลังสร้าง
         </span>
       </label>
 
@@ -102,9 +105,9 @@ function CreateCauseCodeForm({ categories, onClose }: { categories: TicketCatego
 
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" size="sm" variant="outline" onClick={onClose}>ยกเลิก</Button>
-        <Button type="submit" size="sm" disabled={create.isPending}>
-          {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-          บันทึก
+        <Button type="submit" size="sm" disabled={mutation.isPending}>
+          {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+          {cause ? 'บันทึกการแก้ไข' : 'บันทึก'}
         </Button>
       </div>
     </form>
@@ -114,6 +117,7 @@ function CreateCauseCodeForm({ categories, onClose }: { categories: TicketCatego
 export function CauseCodesSection() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCause, setEditingCause] = useState<CauseCode | null>(null);
 
   const query = useQuery({
     queryKey: ['admin', 'cause-codes'],
@@ -152,6 +156,11 @@ export function CauseCodesSection() {
         {showCreate && (
           <Modal title="เพิ่มรหัสสาเหตุ" size="md" onClose={() => setShowCreate(false)}>
             <CreateCauseCodeForm categories={categoriesQuery.data ?? []} onClose={() => setShowCreate(false)} />
+          </Modal>
+        )}
+        {editingCause && (
+          <Modal title="แก้ไขรหัสสาเหตุ" size="md" onClose={() => setEditingCause(null)}>
+            <CreateCauseCodeForm cause={editingCause} categories={categoriesQuery.data ?? []} onClose={() => setEditingCause(null)} />
           </Modal>
         )}
 
@@ -201,6 +210,7 @@ export function CauseCodesSection() {
                     </td>
                     <td className="px-2 py-2 text-right">
                       <RowActions recordLabel={cause.code} actions={[
+                        { kind: 'edit', permission: 'cause_code.manage', onClick: () => setEditingCause(cause) },
                         { kind: 'custom', label: cause.is_active ? 'ปิดใช้' : 'เปิดใช้', permission: 'cause_code.manage', disabled: toggle.isPending, onClick: () => toggle.mutate(cause) },
                         { kind: 'delete', permission: 'cause_code.manage', deleteEndpoint: `/api/v1/record-deletions/cause-codes/${cause.id}` },
                       ]} />

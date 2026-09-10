@@ -23,8 +23,8 @@ beforeAll(async () => {
     vendorId = vendors.rows[0]!.id;
     otherVendorId = vendors.rows[1]!.id;
     const account = await db.query<{ id: string }>(
-      `insert into public.vendor_portal_accounts(vendor_id,email,full_name,password_hash)
-       values ($1,'contact@vendor.test','Vendor Contact','test-hash') returning id`, [vendorId],
+      `insert into public.vendor_portal_accounts(vendor_id,username,email,full_name,password_hash)
+       values ($1,'vendorcontact','contact@vendor.test','Vendor Contact','test-hash') returning id`, [vendorId],
     );
     accountId = account.rows[0]!.id;
     const ticket = await db.query<{ id: string }>(
