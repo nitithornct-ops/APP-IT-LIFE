@@ -34,8 +34,6 @@ describe('Module 22 System Settings database controls', () => {
               count(*) filter (where key in ('LINE_REQUIRE_EMPLOYEE_LINK', 'LINE_AUTO_APPROVE_EMPLOYEE_LINK'))::int as employee_link_settings
        from public.system_settings`,
     ));
-    // 12 คีย์ PUBLIC_TICKET_* ถูกลบทิ้งพร้อมหน้าแจ้งซ่อมสาธารณะ (migration 20261012100000)
-    // หนึ่งในนั้น (PUBLIC_TICKET_ENABLED) เคยเป็น deferred จำนวน deferred จึงลดจาก 6 เหลือ 5
     expect(result.rows).toEqual([{ total: 41, secret_keys: 0, deferred: 5, employee_link_settings: 0 }]);
   });
 

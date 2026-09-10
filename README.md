@@ -1,74 +1,114 @@
 # LIFE IT Smart Service Center
 
-ระบบ IT Service Management ใหม่ของกองทุนประกันชีวิต — ย้ายจากระบบเดิมบน Google Apps Script
-มาเป็น Web Application แบบ Full Stack ที่แยก Frontend/Backend/Database
-ออกจากกันชัดเจน ปลอดภัย และดูแลรักษาง่ายกว่าเดิม
+ระบบ Web Application สำหรับบริหารงานบริการเทคโนโลยีสารสนเทศ (ITSM) และงานกำกับดูแลด้านเทคโนโลยีขององค์กร โดยรวมงานรับแจ้งปัญหา การให้บริการ งานปฏิบัติการไอที ทรัพย์สิน โครงสร้างพื้นฐาน รายงาน และ Governance ไว้ในระบบเดียว
+
+> **สถานะโครงการ:** Pre-production / migration rehearsal
+> Repository นี้เป็น **public repository** สำหรับ source code และเอกสารทางเทคนิคเท่านั้น ห้ามใช้เป็นที่เก็บข้อมูลจริงของผู้ใช้งาน ข้อมูล Ticket ไฟล์แนบ credentials หรือ secrets ดูแนวทางได้ที่ [SECURITY.md](SECURITY.md)
+
+## ระบบนี้ทำอะไรได้บ้าง
+
+### 1. ศูนย์บริการและกระบวนการ IT
+
+- Dashboard, War Room, ศูนย์งานของฉัน, งานส่วนตัว, checklist และมุมมองปฏิทิน
+- Ticket/Help Desk: รับแจ้งปัญหา มอบหมายงาน ติดตามสถานะ SLA, worklog, ความคิดเห็น, บันทึกภายใน, ไฟล์แนบ และประเมินความพึงพอใจ
+- Public Ticket Portal: แจ้งซ่อมและติดตามสถานะโดยไม่ต้องมีบัญชีภายใน โดยใช้รหัสติดตามที่ระบบออกให้
+- Service Catalog และ Service Request สำหรับคำขอบริการ
+- Access Request และทะเบียนสิทธิ์สำหรับคำขอเข้าถึงระบบ
+- Incident, Problem / Known Error และ Change Management
+- Workflow/Approval สำหรับกระบวนการอนุมัติ
+- Knowledge Base สำหรับบทความช่วยเหลือและ self-service
+- แบบฟอร์มงานและ Form Studio สำหรับสร้าง/จัดการแบบฟอร์ม
+
+### 2. ทรัพย์สินและการปฏิบัติการไอที
+
+- ทะเบียนทรัพย์สิน การยืม/คืน และการเบิกจ่ายให้บุคลากร
+- Inventory และ Software License
+- PM / Maintenance และการจัดตารางงานช่าง
+- Mobile Field Workflow และการสแกนทรัพย์สินหน้างาน
+- CMDB และแผนผังความสัมพันธ์ของ Configuration Items
+- Backup & Monitoring
+- Vulnerability & Patch Management
+- Vendor และ Contract Management
+- รายงานและ Audit Log
+
+### 3. Governance และการควบคุมภายใน
+
+Governance Center รองรับงานที่เกี่ยวข้องกับ Data Classification, Compliance, Privacy/PDPA, Risk, AI/Cloud Register, Awareness, Evidence/Audit, Governance Documents, Operational Health และ Integration Outbox โดยการเข้าถึงขึ้นอยู่กับบทบาทและ permission ที่ผู้ดูแลกำหนด
+
+ระบบรองรับ Configurable RBAC เช่น ผู้ดูแลระบบ เจ้าหน้าที่ไอที ช่าง ผู้อนุมัติ ผู้บริหาร ผู้ตรวจสอบ เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล และผู้ใช้งานทั่วไป ทั้งนี้บทบาทจริงและสิทธิ์จริงต้องตรวจสอบจากฐานข้อมูลและการตั้งค่าของแต่ละ deployment
+
+### 4. เครื่องมือที่ทำงานภายในเบราว์เซอร์
+
+PDF Tools สามารถรวม แยก จัดเรียง หมุน ลบหน้า แปลงรูปเป็น PDF และใส่ลายน้ำ/เลขหน้า โดยประมวลผลในเบราว์เซอร์และไม่ส่งไฟล์ไปยัง API หรือ Storage ของระบบ
+
+การเชื่อมต่อ LINE, Google Drive และ Cloudflare Turnstile เป็นความสามารถเสริมที่เปิดใช้ตามการตั้งค่าของสภาพแวดล้อมนั้น ๆ
 
 ## สถาปัตยกรรม
 
 ```
-Cloudflare Pages (React + TypeScript + Vite)
-        │  HTTPS REST API / Bearer JWT
-        ▼
-Cloudflare Workers (TypeScript + Hono)
-        │  Supabase JWT + Service Role (เฉพาะ Admin function)
-        ▼
-Supabase (PostgreSQL + Auth + Storage + RLS)
+React + TypeScript + Vite
+          │ HTTPS API / authentication
+          ▼
+Cloudflare Workers + Hono
+          │ validation / RBAC / business logic
+          ▼
+Supabase Auth + PostgreSQL + RLS + Storage
 ```
 
-รายละเอียดเต็มอยู่ที่ [`docs/architecture.md`](docs/architecture.md)
+องค์ประกอบหลัก:
+
+- **Frontend:** React, TypeScript, Vite, React Router, TanStack Query, Tailwind CSS
+- **Backend:** Cloudflare Workers, Hono, Zod และ Supabase JS Client
+- **Database/Auth:** Supabase PostgreSQL, Auth, Row Level Security และ Private Storage
+- **CI/CD:** GitHub Actions สำหรับตรวจ typecheck, lint, test, build และ deployment ตาม environment
+
+หลักการสำคัญคือ Frontend ไม่ควรเชื่อมต่อฐานข้อมูลโดยตรงเพื่ออ่าน/เขียนข้อมูลธุรกิจ, Backend ต้องตรวจสิทธิ์ซ้ำทุก request, Service Role ต้องอยู่ฝั่ง server เท่านั้น และไฟล์ใน Storage ต้องเข้าผ่านสิทธิ์หรือ signed URL ที่เหมาะสม
 
 ## โครงสร้าง Repository
 
 ```
-├── apps/
-│   ├── web/            React + TypeScript + Vite (Frontend)
-│   └── api/             Cloudflare Workers + Hono (Backend API)
-├── packages/
-│   └── shared/           Types, Zod schemas, ค่าคงที่ Role/Permission ที่ใช้ร่วมกัน
-├── supabase/              Database migration / RLS policy (เริ่มสร้างใน Phase 2)
-├── migration/             เครื่องมือย้ายข้อมูลจาก Google Sheets (เริ่มสร้างใน Phase 7)
-├── docs/                  เอกสารสถาปัตยกรรม/ฐานข้อมูล/API/สิทธิ์/deploy ของระบบใหม่
-└── .github/workflows/     CI (typecheck, lint, test, build)
+├── apps/web/                Frontend ของระบบ
+├── apps/api/                Backend API และ business logic
+├── packages/shared/         Types, schemas, roles และ permissions ที่ใช้ร่วมกัน
+├── packages/migration/      เครื่องมือเตรียมและซ้อมย้ายข้อมูล
+├── supabase/                Database migrations และ tests
+├── legacy-gas/              Source ระบบ Google Apps Script เดิมสำหรับอ้างอิงการย้ายระบบ
+├── docs/                    เอกสารสถาปัตยกรรมและเอกสาร migration
+└── .github/workflows/       CI/CD และ quality gates
 ```
 
-## เริ่มต้นใช้งาน (Local Development)
+โฟลเดอร์ `docs/`, `legacy-gas/` และ workflow บางส่วนอาจมีรายละเอียดภายในหรือข้อมูลสำหรับการปฏิบัติงาน ไม่ควรถือว่าเป็นเอกสาร public ที่อนุมัติให้เผยแพร่ทั้งหมด โปรดตรวจตาม [SECURITY.md](SECURITY.md) ก่อนเปิด repository ต่อสาธารณะ
+
+## เริ่มต้นใช้งานสำหรับนักพัฒนา
 
 **ข้อกำหนดเบื้องต้น:** Node.js 20+ และ npm 10+
 
 ```bash
-npm install                       # ติดตั้ง dependency ทุก workspace (web, api, shared)
-```
+npm install
 
-ตั้งค่า Environment ก่อนรัน (ดูรายละเอียดค่าทั้งหมดที่ `.env.example`):
-
-```bash
 cp apps/web/.env.example apps/web/.env.local
 cp apps/api/.dev.vars.example apps/api/.dev.vars
-# แก้ไขค่าในสองไฟล์นี้ตามสภาพแวดล้อมจริง (ค่า Supabase จะได้ตั้งแต่ Phase 2 เป็นต้นไป)
+# เติมค่าเฉพาะของสภาพแวดล้อมทดสอบในไฟล์ local เท่านั้น
+
+npm run dev:api     # API ที่ http://localhost:8787
+npm run dev:web     # Web ที่ http://localhost:5173
 ```
 
-รันระหว่างพัฒนา (เปิดสองหน้าต่าง terminal):
+คำสั่งตรวจสอบที่ใช้บ่อย:
 
 ```bash
-npm run dev:api     # Cloudflare Workers dev server ที่ http://localhost:8787
-npm run dev:web     # Vite dev server ที่ http://localhost:5173
+npm run typecheck
+npm run lint
+npm run test
+npm run test:e2e
+npm run build
 ```
 
-เปิด `http://localhost:5173/health` เพื่อตรวจว่า Frontend เรียก Backend API สำเร็จ
+ห้ามนำค่าจริงจาก production, ข้อมูลผู้ใช้งาน, ข้อมูล Ticket, ไฟล์แนบ หรือ secret มาใช้ในตัวอย่างและชุดทดสอบที่ commit เข้าสู่ repository
 
-## คำสั่งที่ใช้บ่อย
+## ขอบเขตการเข้าถึงข้อมูล
 
-| คำสั่ง | ผลกระทบ |
-|---|---|
-| `npm run typecheck` | ตรวจ TypeScript ทุก workspace โดยไม่สร้างไฟล์ output |
-| `npm run lint` | ตรวจ ESLint ทุก workspace |
-| `npm run test` | รัน Unit Test (Vitest) ทุก workspace |
-| `npm run test:e2e` | รัน End-to-End Test (Playwright) ของ `apps/web` — ต้องรัน `npx playwright install` ก่อนครั้งแรก |
-| `npm run build` | Build ทุก workspace (Vite build สำหรับ web, `wrangler deploy --dry-run` สำหรับ api เพื่อตรวจ bundle โดยไม่ deploy จริง) |
-
-## สถานะโครงการ
-
-ระบบอยู่ในช่วง **Pre-production hardening / migration rehearsal** โค้ดต้องผ่าน CI, Staging Live E2E,
-migration rehearsal, UAT และ owner approval ก่อน Production ดูขั้นตอนที่
-[`docs/deployment.md`](docs/deployment.md) และแผนกู้คืนที่ [`docs/rollback.md`](docs/rollback.md)
+- โมดูลภายในต้องผ่านการ login และ permission ตามบทบาท
+- Public Ticket Portal เป็น endpoint ที่เปิดรับจากอินเทอร์เน็ต จึงต้องใช้ validation, rate limiting, anti-bot และการจำกัดไฟล์แนบตามการตั้งค่าของ deployment
+- ข้อมูลจริงและไฟล์แนบต้องอยู่ในระบบที่ควบคุมสิทธิ์แยกจาก source repository
+- ความปลอดภัยของระบบจริงขึ้นอยู่กับการตั้งค่า secrets, Auth, RLS, Storage, CORS, Cloudflare และการตรวจสอบ deployment อย่างถูกต้อง ไม่ควรสรุปจาก README เพียงอย่างเดียว

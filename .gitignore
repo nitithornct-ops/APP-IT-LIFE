@@ -23,6 +23,18 @@ supabase/.temp/
 backups/
 *.sql.gz
 backup-*.sql
+*.dump
+*.dump.gz
+*.sqlite
+*.sqlite3
+
+# Local-only migration inputs, exports and evidence
+private/
+internal/
+migration-input/
+migration-output/
+evidence-local/
+production-evidence/
 
 # Test artifacts
 coverage/
