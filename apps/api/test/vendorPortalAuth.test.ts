@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../src/lib/vendorPortalAuth';
-import { createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalLoginSchema } from '../src/validators/vendorPortal';
+import { constantTimeEqualText, hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../src/lib/vendorPortalAuth';
+import { changeVendorPortalPasswordSchema, createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalLoginSchema } from '../src/validators/vendorPortal';
 
 describe('vendor portal authentication', () => {
   it('hashes passwords with a random salt and verifies without storing plaintext', async () => {
@@ -21,10 +21,22 @@ describe('vendor portal authentication', () => {
     await expect(hashVendorSessionToken(token)).resolves.toBe(hash);
   });
 
-  it('normalizes the company login and enforces strong admin-created passwords', () => {
-    expect(vendorPortalLoginSchema.parse({ vendorCode: 'vnd-001', email: 'Contact@Example.com', password: 'x' })).toMatchObject({ vendorCode: 'VND-001', email: 'contact@example.com' });
-    expect(createVendorPortalAccountSchema.safeParse({ email: 'a@example.com', fullName: 'A', password: 'weakpassword' }).success).toBe(false);
-    expect(createVendorPortalAccountSchema.safeParse({ email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(true);
+  it('compares CSRF tokens without leaking whether an equal-length value differs early', () => {
+    expect(constantTimeEqualText('a'.repeat(64), 'a'.repeat(64))).toBe(true);
+    expect(constantTimeEqualText('a'.repeat(64), 'b'.repeat(64))).toBe(false);
+    expect(constantTimeEqualText('a'.repeat(64), 'a'.repeat(63))).toBe(false);
+  });
+
+  it('normalizes the company login username and enforces strong admin-created passwords', () => {
+    expect(vendorPortalLoginSchema.parse({ vendorCode: 'vnd-001', username: 'Vendor.Contact', password: 'x' })).toMatchObject({ vendorCode: 'VND-001', username: 'vendor.contact' });
+    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'weakpassword' }).success).toBe(false);
+    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(true);
+    expect(createVendorPortalAccountSchema.safeParse({ username: 'ชื่อบริษัท', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
+  });
+
+  it('requires a strong, different password when changing the temporary password', () => {
+    expect(changeVendorPortalPasswordSchema.safeParse({ currentPassword: 'StrongPassword123', newPassword: 'StrongPassword123' }).success).toBe(false);
+    expect(changeVendorPortalPasswordSchema.safeParse({ currentPassword: 'StrongPassword123', newPassword: 'NewStrongPassword456' }).success).toBe(true);
   });
 
   it('requires the signed company section to contain cause, resolution and test result', () => {

@@ -41,10 +41,12 @@ export interface Vendor {
 export interface VendorPortalAccount {
   id: string;
   vendor_id: string;
+  username: string;
   email: string;
   full_name: string;
   position: string | null;
   status: 'Active' | 'Inactive';
+  must_change_password: boolean;
   failed_login_count: number;
   locked_until: string | null;
   last_login_at: string | null;

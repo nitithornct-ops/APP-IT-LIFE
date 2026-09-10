@@ -1,29 +1,37 @@
 import { ApiError, requestApiData } from './apiClient';
 
-const STORAGE_KEY = 'vendor_portal_session_token';
+let csrfToken: string | null = null;
+let bootstrapPromise: Promise<void> | null = null;
 
-export function getVendorSessionToken(): string | null {
-  return sessionStorage.getItem(STORAGE_KEY);
-}
-
-export function setVendorSessionToken(token: string): void {
-  sessionStorage.setItem(STORAGE_KEY, token);
+export function setVendorPortalCsrfToken(token: string): void {
+  csrfToken = token;
 }
 
 export function clearVendorSessionToken(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
+  csrfToken = null;
+  bootstrapPromise = null;
 }
 
 export async function vendorPortalApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getVendorSessionToken();
+  if (!path.endsWith('/bootstrap') && !csrfToken) await bootstrapVendorPortal();
   const headers = new Headers(init?.headers);
   if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('x-vendor-session', token);
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) headers.set('x-vendor-csrf', csrfToken);
   try {
-    return await requestApiData<T>(path, { ...init, headers });
+    return await requestApiData<T>(path, { ...init, credentials: 'include', headers });
   } catch (error) {
     if (error instanceof ApiError && error.code === 'VENDOR_SESSION_REQUIRED') clearVendorSessionToken();
     throw error;
   }
+}
+
+export async function bootstrapVendorPortal(): Promise<void> {
+  if (csrfToken) return;
+  if (!bootstrapPromise) {
+    bootstrapPromise = requestApiData<{ enabled: boolean; csrfToken: string }>('/api/v1/vendor-portal/bootstrap', { credentials: 'include' })
+      .then((result) => setVendorPortalCsrfToken(result.csrfToken));
+  }
+  await bootstrapPromise;
 }
 

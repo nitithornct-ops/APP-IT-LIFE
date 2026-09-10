@@ -1,5 +1,11 @@
 export type FormTemplateStatus = 'Draft' | 'Published' | 'Archived';
 export type IssueFormStatus = 'Draft' | 'Internal Review' | 'Sent to Vendor' | 'Vendor Replied' | 'Approved' | 'Closed' | 'Cancelled';
+export type FormModuleKey = 'ticket' | 'asset_borrow';
+
+export const FORM_MODULES: ReadonlyArray<{ key: FormModuleKey; label: string; description: string }> = [
+  { key: 'ticket', label: 'Ticket / งานแจ้งซ่อม', description: 'แบบฟอร์มหลักที่เติมข้อมูลจาก Ticket และใช้พิมพ์เอกสารงาน' },
+  { key: 'asset_borrow', label: 'ยืม / คืน Asset', description: 'แบบฟอร์มหลักสำหรับรายการยืมทรัพย์สิน' },
+];
 
 export interface FormTemplate {
   id: string;
@@ -7,6 +13,7 @@ export interface FormTemplate {
   name: string;
   description: string | null;
   category: string;
+  module_key?: FormModuleKey | null;
   status: FormTemplateStatus;
   current_version: number;
   content_html: string;

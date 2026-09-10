@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { renderAssetBorrowForm } from '../services/assetBorrowForm';
+import { resolveFormModuleTemplate } from '../services/formModuleService';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission, requireAnyPermission, requirePermission } from '../middleware/permission';
 import {
@@ -56,8 +57,12 @@ assetsRoute.get('/:id/borrow-form', requirePermission('asset.view'), async (c) =
     .eq('id', c.req.param('id')).maybeSingle();
   if (error) return dbFailJson(c, 'BORROW_FORM_LOAD_FAILED', error);
   if (!asset) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้ หรือไม่มีสิทธิ์เข้าถึง'), 404);
-  const { data: template, error: templateError } = await createAdminClient(c.env).from('form_templates')
-    .select('id, name, content_html, current_version').eq('template_code', 'ASSET-BORROW').eq('status', 'Published').maybeSingle();
+  const { data: template, error: templateError } = await resolveFormModuleTemplate<{ id: string; name: string; content_html: string; current_version: number }>(
+    createAdminClient(c.env),
+    'asset_borrow',
+    'id, name, content_html, current_version',
+    true,
+  );
   if (templateError) return dbFailJson(c, 'BORROW_TEMPLATE_LOAD_FAILED', templateError);
   if (!template) return c.json(fail(reqId, 'BORROW_TEMPLATE_NOT_FOUND', 'ยังไม่มีแม่แบบขอยืมทรัพย์สินที่เผยแพร่ใน Form Studio'), 409);
   return c.json(ok(reqId, {

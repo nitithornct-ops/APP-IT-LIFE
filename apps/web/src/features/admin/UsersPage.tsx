@@ -10,6 +10,7 @@ import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { RequirePermission } from '../../components/RequirePermission';
 import { StatCard } from '../../components/ui/Card';
 import { PageTitle } from '../../components/ui/PageTitle';
@@ -814,8 +815,10 @@ export function UsersPage() {
   const [showCreateLocal, setShowCreateLocal] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [pendingStatusChange, setPendingStatusChange] = useState<UserListItem | null>(null);
+  const [pendingMfaChange, setPendingMfaChange] = useState<UserListItem | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<UserListItem | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [mfaError, setMfaError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const usersQuery = useQuery({
@@ -863,6 +866,17 @@ export function UsersPage() {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
     },
     onError: (error) => setStatusError(error instanceof ApiError ? error.message : 'เปลี่ยนสถานะบัญชีไม่สำเร็จ'),
+  });
+
+  const mfaMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      apiFetch(`/api/v1/users/${id}/mfa`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+    onSuccess: () => {
+      setPendingMfaChange(null);
+      setMfaError(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+    onError: (error) => setMfaError(error instanceof ApiError ? error.message : 'เปลี่ยนสถานะ 2FA ไม่สำเร็จ'),
   });
 
   return (
@@ -926,6 +940,23 @@ export function UsersPage() {
         </ConfirmModal>
       )}
 
+      {pendingMfaChange && (
+        <ConfirmModal
+          title={pendingMfaChange.mfa_enabled ? 'ยืนยันการปิด 2FA' : 'ยืนยันการเปิด 2FA'}
+          description={pendingMfaChange.mfa_enabled
+            ? `${pendingMfaChange.full_name} จะไม่ต้องยืนยันตัวตนสองขั้นตอนในการเข้าสู่ระบบครั้งถัดไป และอุปกรณ์ Authenticator ที่ผูกไว้จะถูกลบ`
+            : `${pendingMfaChange.full_name} จะต้องตั้งค่า Authenticator ในการเข้าสู่ระบบครั้งถัดไป โดยระบบจะแสดง QR ให้สแกน`}
+          tone={pendingMfaChange.mfa_enabled ? 'danger' : 'primary'}
+          confirmLabel={pendingMfaChange.mfa_enabled ? 'ปิด 2FA' : 'เปิด 2FA'}
+          cancelLabel="ยกเลิก"
+          isPending={mfaMutation.isPending}
+          onConfirm={() => mfaMutation.mutate({ id: pendingMfaChange.id, enabled: !pendingMfaChange.mfa_enabled })}
+          onClose={() => { setPendingMfaChange(null); setMfaError(null); }}
+        >
+          {mfaError && <p role="alert" className="text-sm text-red-600">{mfaError}</p>}
+        </ConfirmModal>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           type="search"
@@ -940,8 +971,8 @@ export function UsersPage() {
           disabled={!visibleUsers.length}
           fileName={`users-page-${page}.csv`}
           getRows={() => [
-            ['ชื่อ-สกุล', 'อีเมล / ชื่อผู้ใช้', 'สถานะ', 'เข้าร่วมเมื่อ'],
-            ...visibleUsers.map((user) => [user.full_name, loginIdentityOf(user), user.status, formatThaiDate(user.created_at)]),
+            ['ชื่อ-สกุล', 'อีเมล / ชื่อผู้ใช้', 'สถานะ', '2FA', 'เข้าร่วมเมื่อ'],
+            ...visibleUsers.map((user) => [user.full_name, loginIdentityOf(user), user.status, user.mfa_enabled ? 'เปิด' : 'ปิด', formatThaiDate(user.created_at)]),
           ]}
         />
       </div>
@@ -970,6 +1001,7 @@ export function UsersPage() {
                 <th className="px-4 py-2" data-sort-key="full_name">ชื่อ-สกุล</th>
                 <th className="px-4 py-2" data-sort-key="email">อีเมล / ชื่อผู้ใช้</th>
                 <th className="px-4 py-2" data-sort-key="status">สถานะ</th>
+                <th className="px-4 py-2">2FA</th>
                 <th className="px-4 py-2" data-sort-key="created_at">เข้าร่วมเมื่อ</th>
                 <th className="px-4 py-2" />
               </tr>
@@ -987,6 +1019,20 @@ export function UsersPage() {
                     </td>
                     <td className="px-4 py-2">
                       <StatusBadge status={user.status} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={user.mfa_enabled ? 'success' : 'secondary'}>{user.mfa_enabled ? 'เปิด' : 'ปิด'}</Badge>
+                        <Button
+                          size="sm"
+                          variant={user.mfa_enabled ? 'danger' : 'outline'}
+                          aria-label={`${user.mfa_enabled ? 'ปิด' : 'เปิด'} 2FA ${loginIdentityOf(user)}`}
+                          data-testid={`mfa-toggle-${user.id}`}
+                          onClick={() => { setMfaError(null); setPendingMfaChange(user); }}
+                        >
+                          {user.mfa_enabled ? 'ปิด 2FA' : 'เปิด 2FA'}
+                        </Button>
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(user.created_at)}</td>
                     <td className="px-4 py-2 text-right">
@@ -1017,7 +1063,7 @@ export function UsersPage() {
                   </tr>
                   {expandedUserId === user.id && (
                     <tr>
-                      <td colSpan={5} className="p-0">
+                      <td colSpan={6} className="p-0">
                         <UserRolesPanel userId={user.id} allRoles={rolesQuery.data ?? []} />
                         <SupervisorPanel user={user} allUsers={allUsersQuery.data?.items ?? []} />
                         <RequirePermission permission="role.manage">

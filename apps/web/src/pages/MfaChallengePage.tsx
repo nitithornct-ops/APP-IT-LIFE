@@ -17,9 +17,13 @@ export function MfaChallengePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
+  // ผูกกับตัวผู้ใช้ ไม่ใช่ object session — auth-js parse session ใหม่จาก storage ทุกครั้งที่แท็บกลับมามองเห็น
+  // ได้ object คนละใบแต่ผู้ใช้คนเดิม ถ้าใช้ session เป็น dependency effect ด้านล่างจะรันซ้ำแล้วไป
+  // unenroll/enroll factor ใหม่ ทำให้ QR เปลี่ยนไปเรื่อย ๆ ระหว่างที่ผู้ใช้กำลังสแกนอยู่
+  const userId = session?.user.id ?? null;
 
   useEffect(() => {
-    if (!session) return;
+    if (!userId) return;
     let cancelled = false;
     void (async () => {
       const { data, error: factorsError } = await supabase.auth.mfa.listFactors();
@@ -52,7 +56,7 @@ export function MfaChallengePage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [session]);
+  }, [userId]);
 
   if (!isSessionLoading && !session) return <Navigate to="/login" replace />;
   if (!isSessionLoading && session && !mfaRequired && !loading) return <Navigate to={redirectTo} replace />;

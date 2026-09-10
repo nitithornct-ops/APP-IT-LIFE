@@ -85,9 +85,18 @@ function generatedPortalPassword(): string {
   return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('') + '9aA';
 }
 
+function generatedPortalUsername(email: string | null): string {
+  const candidate = (email?.split('@')[0] ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[^a-z0-9]+|[^a-z0-9._-]+$/g, '')
+    .slice(0, 32);
+  return candidate.length >= 3 ? candidate : 'vendor';
+}
+
 function VendorPortalAccounts({ vendor, onClose }: { vendor: Vendor; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ email: vendor.email ?? '', fullName: vendor.contact_person ?? '', position: '', password: generatedPortalPassword() });
+  const [form, setForm] = useState({ username: generatedPortalUsername(vendor.email), email: vendor.email ?? '', fullName: vendor.contact_person ?? '', position: '', password: generatedPortalPassword() });
   const [resetting, setResetting] = useState<VendorPortalAccount | null>(null);
   const [resetPassword, setResetPassword] = useState(generatedPortalPassword());
   const [error, setError] = useState('');
@@ -95,7 +104,7 @@ function VendorPortalAccounts({ vendor, onClose }: { vendor: Vendor; onClose: ()
   const accountsQuery = useQuery({ queryKey, queryFn: () => apiFetch<VendorPortalAccount[]>(`/api/v1/vendors/${vendor.id}/portal-accounts`) });
   const createMutation = useMutation({
     mutationFn: () => apiFetch<VendorPortalAccount>(`/api/v1/vendors/${vendor.id}/portal-accounts`, { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey }); setForm({ email: '', fullName: '', position: '', password: generatedPortalPassword() }); setError(''); },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey }); setForm({ username: '', email: '', fullName: '', position: '', password: generatedPortalPassword() }); setError(''); },
     onError: (reason) => setError(errorText(reason, 'สร้างบัญชีบริษัทไม่สำเร็จ')),
   });
   const statusMutation = useMutation({
@@ -110,16 +119,17 @@ function VendorPortalAccounts({ vendor, onClose }: { vendor: Vendor; onClose: ()
   });
 
   return <Card><CardHeader className="flex items-center justify-between"><span>บัญชี Outsource Portal · {vendor.name}</span><button type="button" aria-label="ปิด" onClick={onClose}><X className="h-4 w-4" /></button></CardHeader><CardBody>
-    <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><strong>รหัสบริษัทสำหรับเข้าสู่ระบบ:</strong> <span className="font-mono font-bold text-primary-700">{vendor.vendor_code}</span><br />บริษัทเข้าสู่ระบบที่ <span className="font-mono">/vendor/portal</span> โดยใช้รหัสบริษัท อีเมล และรหัสผ่าน</div>
+    <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><strong>รหัสบริษัทสำหรับเข้าสู่ระบบ:</strong> <span className="font-mono font-bold text-primary-700">{vendor.vendor_code}</span><br />บริษัทเข้าสู่ระบบที่ <span className="font-mono">/vendor/portal</span> โดยใช้รหัสบริษัท Username และรหัสผ่าน ส่วนอีเมลใช้สำหรับติดต่อ</div>
     <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setError(''); createMutation.mutate(); }}>
       <label className="text-xs font-semibold">ชื่อ–นามสกุล<input required maxLength={160} value={form.fullName} onChange={(e) => setForm((v) => ({ ...v, fullName: e.target.value }))} className={fieldClass} /></label>
       <label className="text-xs font-semibold">ตำแหน่ง<input maxLength={160} value={form.position} onChange={(e) => setForm((v) => ({ ...v, position: e.target.value }))} className={fieldClass} /></label>
-      <label className="text-xs font-semibold">อีเมลเข้าสู่ระบบ<input required type="email" maxLength={254} value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} className={fieldClass} /></label>
+      <label className="text-xs font-semibold">Username สำหรับเข้าสู่ระบบ<input required maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" autoComplete="username" value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
+      <label className="text-xs font-semibold">อีเมลติดต่อ<input required type="email" maxLength={254} value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} className={fieldClass} /></label>
       <label className="text-xs font-semibold">รหัสผ่านเริ่มต้น<div className="flex gap-2"><input required minLength={12} value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} className={fieldClass} /><Button type="button" size="sm" variant="outline" className="mt-1" onClick={() => setForm((v) => ({ ...v, password: generatedPortalPassword() }))}><RefreshCw className="h-4 w-4" /></Button></div></label>
       {error && <p className="text-sm font-semibold text-red-600 sm:col-span-2">{error}</p>}
       <div className="sm:col-span-2"><Button type="submit" size="sm" isLoading={createMutation.isPending}><UserPlus className="h-4 w-4" />สร้างบัญชีบริษัท</Button></div>
     </form>
-    <div className="mt-5 border-t pt-4"><p className="mb-3 text-sm font-bold">บัญชีที่สร้างแล้ว</p>{accountsQuery.isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (accountsQuery.data?.length ?? 0) === 0 ? <p className="text-sm text-slate-400">ยังไม่มีบัญชี Portal</p> : <div className="space-y-2">{accountsQuery.data?.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div><p className="text-sm font-bold">{account.full_name}</p><p className="text-xs text-slate-500">{account.email}{account.position ? ` · ${account.position}` : ''}</p><p className="mt-1 text-[11px] text-slate-400">เข้าใช้ล่าสุด {account.last_login_at ? formatThaiDate(account.last_login_at, 'd MMM yyyy HH:mm') : 'ยังไม่เคยเข้าใช้'}</p></div><div className="flex items-center gap-2"><Badge variant={account.status === 'Active' ? 'success' : 'neutral'}>{account.status}</Badge><Button size="sm" variant="outline" onClick={() => { setResetting(account); setResetPassword(generatedPortalPassword()); }}><KeyRound className="h-4 w-4" />ตั้งรหัสใหม่</Button><Button size="sm" variant="outline" onClick={() => statusMutation.mutate({ account, status: account.status === 'Active' ? 'Inactive' : 'Active' })}>{account.status === 'Active' ? 'ปิดใช้' : 'เปิดใช้'}</Button></div></div>)}</div>}</div>
+    <div className="mt-5 border-t pt-4"><p className="mb-3 text-sm font-bold">บัญชีที่สร้างแล้ว</p>{accountsQuery.isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (accountsQuery.data?.length ?? 0) === 0 ? <p className="text-sm text-slate-400">ยังไม่มีบัญชี Portal</p> : <div className="space-y-2">{accountsQuery.data?.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div><p className="text-sm font-bold">{account.full_name}</p><p className="text-xs text-slate-500"><span className="font-mono font-semibold text-primary-700">Username: {account.username}</span> · อีเมล: {account.email}{account.position ? ` · ${account.position}` : ''}</p><p className="mt-1 text-[11px] text-slate-400">เข้าใช้ล่าสุด {account.last_login_at ? formatThaiDate(account.last_login_at, 'd MMM yyyy HH:mm') : 'ยังไม่เคยเข้าใช้'}</p></div><div className="flex items-center gap-2"><Badge variant={account.status === 'Active' ? 'success' : 'neutral'}>{account.status}</Badge><Button size="sm" variant="outline" onClick={() => { setResetting(account); setResetPassword(generatedPortalPassword()); }}><KeyRound className="h-4 w-4" />ตั้งรหัสใหม่</Button><Button size="sm" variant="outline" onClick={() => statusMutation.mutate({ account, status: account.status === 'Active' ? 'Inactive' : 'Active' })}>{account.status === 'Active' ? 'ปิดใช้' : 'เปิดใช้'}</Button></div></div>)}</div>}</div>
     {resetting && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm font-bold">ตั้งรหัสผ่านใหม่: {resetting.full_name}</p><div className="mt-2 flex flex-wrap gap-2"><input minLength={12} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} className={`${fieldClass} mt-0 flex-1`} /><Button size="sm" isLoading={resetMutation.isPending} onClick={() => resetMutation.mutate()}>ยืนยันและออกจากระบบทุกอุปกรณ์</Button><Button size="sm" variant="outline" onClick={() => setResetting(null)}>ยกเลิก</Button></div></div>}
   </CardBody></Card>;
 }

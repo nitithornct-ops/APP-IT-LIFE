@@ -27,6 +27,7 @@ export interface UserListItem {
   position_id: string | null;
   supervisor_id: string | null;
   status: 'active' | 'inactive';
+  mfa_enabled: boolean;
   created_at: string;
 }
 

@@ -67,6 +67,12 @@ export const updateUserSchema = z.object({
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
+export const updateMfaSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export type UpdateMfaInput = z.infer<typeof updateMfaSchema>;
+
 export const assignRoleSchema = z.object({
   roleId: z.string().uuid(),
 });

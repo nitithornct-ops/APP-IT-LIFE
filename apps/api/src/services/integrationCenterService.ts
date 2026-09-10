@@ -1,4 +1,5 @@
 import type { Bindings } from '../types';
+import { INTEGRATION_RETENTION_DAYS } from './integrationRetentionService';
 
 export type IntegrationStatus = 'active' | 'disabled' | 'incomplete' | 'unavailable' | 'degraded';
 
@@ -146,6 +147,10 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
   return {
     generatedAt: (input.now ?? new Date()).toISOString(),
     canManage: input.canManage,
+    retention: {
+      days: INTEGRATION_RETENTION_DAYS,
+      scope: 'ลบอัตโนมัติเฉพาะเหตุการณ์ที่จบงานแล้ว ไม่รวม Audit Log และข้อมูลธุรกิจ',
+    },
     summary: {
       activeChannels: channels.filter((channel) => channel.status === 'active').length,
       delivered24h: input.notifications24h + input.lineSuccess24h,

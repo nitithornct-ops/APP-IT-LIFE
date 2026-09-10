@@ -4,7 +4,7 @@ import { PublicBrand } from '../components/PublicBrand';
 import { Button } from '../components/ui/Button';
 import { RequesterSignatureInput } from '../features/tickets/RequesterSignatureInput';
 import { ApiError } from '../services/apiClient';
-import { clearVendorSessionToken, getVendorSessionToken, setVendorSessionToken, vendorPortalApiFetch } from '../services/vendorPortalApiClient';
+import { clearVendorSessionToken, vendorPortalApiFetch } from '../services/vendorPortalApiClient';
 import type { VendorPortalProfile, VendorPortalTicket, VendorPortalTicketDetail } from '../types/vendorPortal';
 import { formatThaiDate } from '../utils/date';
 
@@ -31,11 +31,13 @@ export function VendorPortalPage() {
   const [profile, setProfile] = useState<VendorPortalProfile | null>(null);
   const [tickets, setTickets] = useState<VendorPortalTicket[]>([]);
   const [detail, setDetail] = useState<VendorPortalTicketDetail | null>(null);
-  const [loading, setLoading] = useState(Boolean(getVendorSessionToken()));
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [login, setLogin] = useState({ vendorCode: '', email: '', password: '' });
+  const [login, setLogin] = useState({ vendorCode: '', username: '', password: '' });
   const [loggingIn, setLoggingIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordChange, setPasswordChange] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [work, setWork] = useState(emptyWorkForm);
   const [signature, setSignature] = useState<File | null>(null);
 
@@ -45,7 +47,6 @@ export function VendorPortalPage() {
   }
 
   useEffect(() => {
-    if (!getVendorSessionToken()) { setLoading(false); return; }
     let cancelled = false;
     Promise.all([
       vendorPortalApiFetch<VendorPortalProfile>('/api/v1/vendor-portal/me'),
@@ -57,6 +58,7 @@ export function VendorPortalPage() {
     }).catch((reason) => {
       if (cancelled) return;
       clearVendorSessionToken();
+      if (reason instanceof ApiError && reason.code === 'VENDOR_SESSION_REQUIRED') return;
       setError(errorMessage(reason, 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่'));
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -65,15 +67,33 @@ export function VendorPortalPage() {
   async function submitLogin() {
     setLoggingIn(true); setError('');
     try {
-      const result = await vendorPortalApiFetch<{ token: string; profile: VendorPortalProfile }>('/api/v1/vendor-portal/login', {
+      const result = await vendorPortalApiFetch<{ profile: VendorPortalProfile }>('/api/v1/vendor-portal/login', {
         method: 'POST', body: JSON.stringify(login),
       });
-      setVendorSessionToken(result.token);
       setProfile(result.profile);
-      await loadTickets();
+      if (!result.profile.mustChangePassword) await loadTickets();
     } catch (reason) {
       setError(errorMessage(reason, 'เข้าสู่ระบบไม่สำเร็จ'));
     } finally { setLoggingIn(false); }
+  }
+
+  async function submitPasswordChange() {
+    if (passwordChange.newPassword !== passwordChange.confirmPassword) {
+      setError('รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน');
+      return;
+    }
+    setChangingPassword(true); setError('');
+    try {
+      const nextProfile = await vendorPortalApiFetch<VendorPortalProfile>('/api/v1/vendor-portal/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: passwordChange.currentPassword, newPassword: passwordChange.newPassword }),
+      });
+      setProfile(nextProfile);
+      setPasswordChange({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      await loadTickets();
+    } catch (reason) {
+      setError(errorMessage(reason, 'เปลี่ยนรหัสผ่านไม่สำเร็จ'));
+    } finally { setChangingPassword(false); }
   }
 
   async function openTicket(ticketId: string) {
@@ -119,11 +139,26 @@ export function VendorPortalPage() {
       <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบเพื่อดูเฉพาะงานแจ้งซ่อมที่ส่งต่อให้บริษัทของท่าน</p>
       <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
         <label className="block text-sm font-semibold">รหัสบริษัท<input required autoComplete="organization" value={login.vendorCode} onChange={(e) => setLogin((current) => ({ ...current, vendorCode: e.target.value.toUpperCase() }))} className={fieldClass} placeholder="VND-..." /></label>
-        <label className="block text-sm font-semibold">อีเมลผู้ติดต่อ<input required type="email" autoComplete="username" value={login.email} onChange={(e) => setLogin((current) => ({ ...current, email: e.target.value }))} className={fieldClass} /></label>
+        <label className="block text-sm font-semibold">Username<input required autoComplete="username" maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" value={login.username} onChange={(e) => setLogin((current) => ({ ...current, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่าน<input required type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin((current) => ({ ...current, password: e.target.value }))} className={fieldClass} /></label>
         {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
         <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>
       </form>
+    </section>
+  </div></main>;
+
+  if (profile.mustChangePassword) return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
+    <section className="mt-6 rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
+      <h1 className="text-xl font-extrabold text-slate-900">กรุณาเปลี่ยนรหัสผ่าน</h1>
+      <p className="mt-2 text-sm text-slate-600">เพื่อความปลอดภัย กรุณาเปลี่ยนรหัสผ่านเริ่มต้นก่อนใช้งาน Outsource Portal</p>
+      <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void submitPasswordChange(); }}>
+        <label className="block text-sm font-semibold">รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={passwordChange.currentPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, currentPassword: e.target.value }))} className={fieldClass} /></label>
+        <label className="block text-sm font-semibold">รหัสผ่านใหม่<input required type="password" minLength={12} autoComplete="new-password" value={passwordChange.newPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, newPassword: e.target.value }))} className={fieldClass} /></label>
+        <label className="block text-sm font-semibold">ยืนยันรหัสผ่านใหม่<input required type="password" minLength={12} autoComplete="new-password" value={passwordChange.confirmPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, confirmPassword: e.target.value }))} className={fieldClass} /></label>
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        <Button type="submit" className="w-full" isLoading={changingPassword}>บันทึกรหัสผ่านใหม่</Button>
+      </form>
+      <button type="button" onClick={() => void logout()} className="mt-4 w-full text-sm font-semibold text-slate-500">ออกจากระบบ</button>
     </section>
   </div></main>;
 

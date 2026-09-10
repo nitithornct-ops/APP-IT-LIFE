@@ -7,12 +7,12 @@ import { createAdminClient, embeddedName } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { resolveFormModuleTemplate } from '../services/formModuleService';
 import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
 import { saveRequesterSignature } from '../services/ticketSignatureService';
 import {
   renderTicketFormTemplate,
-  TICKET_FORM_TEMPLATE_CODE,
   ticketFormFlow,
 } from '../services/ticketFormDocument';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
@@ -221,15 +221,23 @@ ticketsRoute.get('/:id/form-document', async (c) => {
   if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
 
   const admin = createAdminClient(c.env);
-  const { data: template, error: templateError } = await admin
-    .from('form_templates')
-    .select('id, template_code, name, current_version, content_html, page_settings, status, updated_at')
-    .eq('template_code', TICKET_FORM_TEMPLATE_CODE)
-    .neq('status', 'Archived')
-    .maybeSingle();
+  const { data: defaultTemplate, error: templateError } = await resolveFormModuleTemplate<{
+    id: string;
+    template_code: string;
+    name: string;
+    current_version: number;
+    content_html: string;
+    page_settings: Record<string, unknown>;
+    status: string;
+    updated_at: string;
+  }>(
+    admin,
+    'ticket',
+    'id, template_code, name, current_version, content_html, page_settings, status, updated_at',
+  );
   if (templateError) return dbFailJson(c, 'TICKET_FORM_TEMPLATE_LOAD_FAILED', templateError, 'โหลด Template จาก Form Studio ไม่สำเร็จ');
-  if (!template) {
-    return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
+  if (!defaultTemplate) {
+    return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', 'ไม่พบ Template ที่กำหนดให้โมดูล Ticket ใน Form Studio'), 409);
   }
 
   const [
@@ -240,9 +248,8 @@ ticketsRoute.get('/:id/form-document', async (c) => {
   ] = await Promise.all([
     admin
       .from('issue_forms')
-      .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
+      .select('id, form_no, status, content_html, template_id, template_version, vendor_response, updated_at')
       .eq('ticket_id', id)
-      .eq('template_id', template.id)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -261,6 +268,20 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     admin.from('system_settings').select('value').eq('key', 'ORG_LOGO_URL').maybeSingle(),
   ]);
   if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
+
+  // A module re-assignment changes the default for new work. Keep an existing
+  // Ticket issue form pinned to the template it was created from.
+  let template = defaultTemplate;
+  if (issueForm?.template_id && issueForm.template_id !== defaultTemplate.id) {
+    const issueTemplateResult = await admin
+      .from('form_templates')
+      .select('id, template_code, name, current_version, content_html, page_settings, status, updated_at')
+      .eq('id', issueForm.template_id)
+      .maybeSingle();
+    if (issueTemplateResult.error) return dbFailJson(c, 'TICKET_FORM_TEMPLATE_LOAD_FAILED', issueTemplateResult.error, 'โหลด Template ของแบบฟอร์มงานเดิมไม่สำเร็จ');
+    const issueTemplate = issueTemplateResult.data as typeof defaultTemplate | null;
+    if (issueTemplate) template = issueTemplate;
+  }
 
   let signatureUrl: string | null = null;
   let requesterSignatureUrl: string | null = null;

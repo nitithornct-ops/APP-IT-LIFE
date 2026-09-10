@@ -28,7 +28,7 @@ export const authRoute = new Hono<AppEnv>();
  */
 authRoute.get('/mfa-policy', requireSession, async (c) => {
   try {
-    const policy = await loadMfaPolicy(c.get('supabase'), c.get('hasVerifiedMfa'));
+    const policy = await loadMfaPolicy(c.get('supabase'), c.get('hasVerifiedMfa'), c.get('mfaEnabled'));
     return c.json(ok(c.get('requestId'), {
       ...policy,
       enrolled: c.get('hasVerifiedMfa'),

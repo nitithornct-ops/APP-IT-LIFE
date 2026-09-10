@@ -122,7 +122,8 @@ export function IntegrationCenterPanel({ data, onAction, actionPending = false }
       </div>
 
       <Card className="overflow-hidden">
-        <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary-600" />เหตุการณ์ล่าสุด</span><span className="font-mono text-[10px] font-normal text-slate-400">อัปเดต {formatThaiDateTime(data.generatedAt)}</span></CardHeader>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary-600" />เหตุการณ์ล่าสุด</span><div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] font-normal text-slate-400"><span>เก็บ {data.retention.days} วัน · ลบงานที่จบแล้วอัตโนมัติ</span><span>อัปเดต {formatThaiDateTime(data.generatedAt)}</span></div></CardHeader>
+        <div className="border-b border-blue-100 bg-blue-50 px-4 py-2 text-[11px] leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">{data.retention.scope}</div>
         {data.recentEvents.length ? <div>{data.recentEvents.map((event) => <RecentEventRow key={`${event.source}-${event.id}`} event={event} pending={actionPending} onAction={(row, action) => onAction?.(row, action)} />)}</div> : <EmptyState icon={<CheckCircle2 className="h-9 w-9" />} title="ยังไม่มีประวัติการส่ง" message="เมื่อระบบส่งแจ้งเตือนหรือมีรายการใน Integration Outbox ประวัติจะแสดงที่นี่" />}
       </Card>
     </div>

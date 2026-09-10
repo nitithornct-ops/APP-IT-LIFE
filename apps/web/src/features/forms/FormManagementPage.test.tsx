@@ -53,6 +53,15 @@ describe('Form Studio เป็นแบบฟอร์มหลักที่�
     expect(screen.getByRole('button', { name: 'ดาวน์โหลดแม่แบบ Word' })).toBeVisible();
     expect(screen.queryByRole('button', { name: /ลบ/ })).not.toBeInTheDocument();
   });
+
+  it('ให้เลือกโมดูลตอนสร้างแบบฟอร์มหลักเพื่อใช้ร่วมกันทั้งโมดูล', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'สร้างแบบฟอร์มหลัก' }));
+
+    expect(screen.getByLabelText('ใช้เป็นแบบฟอร์มของโมดูล')).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Ticket / งานแจ้งซ่อม' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'ยืม / คืน Asset' })).toBeVisible();
+  });
   /**
    * เดิมเลข Ticket ในตารางเป็นข้อความเฉย ๆ ผู้ใช้ต้องคัดลอกไปค้นเองทุกครั้งที่อยากดูงานต้นเรื่อง
    */

@@ -53,9 +53,11 @@ export interface VendorPortalProfile {
   vendorId: string;
   vendorCode: string;
   vendorName: string;
+  username: string;
   email: string;
   fullName: string;
   position: string | null;
+  mustChangePassword: boolean;
 }
 
 /** ค่าที่ middleware แนบไว้บน Hono Context ระหว่างการประมวลผล request */
@@ -69,10 +71,12 @@ export interface Variables {
   authAal: string | null;
   /** Whether Supabase reports at least one verified MFA factor for this user. */
   hasVerifiedMfa: boolean;
+  /** Per-account MFA switch resolved from the caller's profile. */
+  mfaEnabled: boolean;
   /** LINE session — ตั้งค่าโดย requireLineSession/requireUsableLineSession ใน routes/line.ts เท่านั้น */
   lineSession?: { token: string; user: LineUserProfile };
   /** Company session — never shares the internal Supabase JWT/RBAC context. */
-  vendorSession?: { token: string; profile: VendorPortalProfile };
+  vendorSession?: { token: string; sessionId: string; profile: VendorPortalProfile };
 }
 
 export interface AppEnv {

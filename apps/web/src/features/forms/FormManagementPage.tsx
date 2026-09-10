@@ -30,7 +30,7 @@ import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
-import type { FormReferences, FormTemplate, IssueForm, IssueFormStatus } from '../../types/forms';
+import { FORM_MODULES, type FormModuleKey, type FormReferences, type FormTemplate, type IssueForm, type IssueFormStatus } from '../../types/forms';
 import { exportHtmlAsWord } from '../../utils/formHtml';
 import { formatThaiDate } from '../../utils/date';
 import { WordLikeEditor } from './WordLikeEditor';
@@ -65,6 +65,8 @@ interface EditorState {
   originalDescription: string;
   category: string;
   originalCategory: string;
+  moduleKey: FormModuleKey | '';
+  originalModuleKey: FormModuleKey | '';
   html: string;
   originalHtml: string;
   status?: IssueFormStatus;
@@ -86,7 +88,7 @@ export function FormManagementPage() {
   const [showNewIssue, setShowNewIssue] = useState(false);
   const [showSendVendor, setShowSendVendor] = useState(false);
   const [shareResult, setShareResult] = useState<{ link: string; email: string | null; vendorName: string }>();
-  const [newTemplate, setNewTemplate] = useState({ name: '', description: '', category: 'IT Support', contentHtml: blankTemplate });
+  const [newTemplate, setNewTemplate] = useState({ name: '', description: '', category: 'IT Support', moduleKey: '' as FormModuleKey | '', contentHtml: blankTemplate });
   const [newIssue, setNewIssue] = useState({ title: '', templateId: '', ticketId: '' });
   const [vendorSend, setVendorSend] = useState({ vendorId: '', dueDate: '', expiresInDays: 14 });
 
@@ -94,15 +96,15 @@ export function FormManagementPage() {
   const issuesQuery = useQuery({ queryKey: ['issue-forms'], queryFn: () => apiFetch<IssueForm[]>('/api/v1/forms/issues') });
   const referencesQuery = useQuery({ queryKey: ['form-references'], queryFn: () => apiFetch<FormReferences>('/api/v1/forms/references') });
 
-  const filteredTemplates = useMemo(() => (templatesQuery.data ?? []).filter((item) => `${item.template_code} ${item.name} ${item.category}`.toLowerCase().includes(search.toLowerCase())), [search, templatesQuery.data]);
+  const filteredTemplates = useMemo(() => (templatesQuery.data ?? []).filter((item) => `${item.template_code} ${item.name} ${item.category} ${FORM_MODULES.find((module) => module.key === item.module_key)?.label ?? ''}`.toLowerCase().includes(search.toLowerCase())), [search, templatesQuery.data]);
   const filteredIssues = useMemo(() => (issuesQuery.data ?? []).filter((item) => `${item.form_no} ${item.title} ${item.ticket?.ticket_no ?? ''} ${item.vendor?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [issuesQuery.data, search]);
 
   const openTemplate = useCallback((template: FormTemplate) => {
-    setEditor({ kind: 'template', id: template.id, title: template.name, originalTitle: template.name, description: template.description ?? '', originalDescription: template.description ?? '', category: template.category, originalCategory: template.category, html: template.content_html, originalHtml: template.content_html, code: `${template.template_code} · v${template.current_version}` });
+    setEditor({ kind: 'template', id: template.id, title: template.name, originalTitle: template.name, description: template.description ?? '', originalDescription: template.description ?? '', category: template.category, originalCategory: template.category, moduleKey: template.module_key ?? '', originalModuleKey: template.module_key ?? '', html: template.content_html, originalHtml: template.content_html, code: `${template.template_code} · v${template.current_version}` });
   }, []);
 
   const openIssue = useCallback((issue: IssueForm) => {
-    setEditor({ kind: 'issue', id: issue.id, title: issue.title, originalTitle: issue.title, description: issue.template?.name ?? '', originalDescription: issue.template?.name ?? '', category: '', originalCategory: '', html: issue.content_html, originalHtml: issue.content_html, status: issue.status, code: `${issue.form_no} · Template v${issue.template_version}`, vendorResponse: issue.vendor_response });
+    setEditor({ kind: 'issue', id: issue.id, title: issue.title, originalTitle: issue.title, description: issue.template?.name ?? '', originalDescription: issue.template?.name ?? '', category: '', originalCategory: '', moduleKey: '', originalModuleKey: '', html: issue.content_html, originalHtml: issue.content_html, status: issue.status, code: `${issue.form_no} · Template v${issue.template_version}`, vendorResponse: issue.vendor_response });
   }, []);
 
   const openTemplateById = useCallback((templateId: string) => {
@@ -132,7 +134,7 @@ export function FormManagementPage() {
   }, [issuesQuery.data, openIssue, openTemplate, searchParams, setSearchParams, templatesQuery.data]);
 
   const createTemplate = useMutation({
-    mutationFn: () => apiFetch<FormTemplate>('/api/v1/forms/templates', { method: 'POST', body: JSON.stringify(newTemplate) }),
+    mutationFn: () => apiFetch<FormTemplate>('/api/v1/forms/templates', { method: 'POST', body: JSON.stringify({ ...newTemplate, moduleKey: newTemplate.moduleKey || null }) }),
     onSuccess: (template) => {
       void queryClient.invalidateQueries({ queryKey: ['form-templates'] });
       setShowNewTemplate(false);
@@ -151,25 +153,25 @@ export function FormManagementPage() {
     mutationFn: async () => {
       if (!editor) throw new Error('ไม่ได้เลือกแบบฟอร์ม');
       return editor.kind === 'template'
-        ? apiFetch<FormTemplate>(`/api/v1/forms/templates/${editor.id}`, { method: 'PATCH', body: JSON.stringify({ name: editor.title, description: editor.description, category: editor.category, contentHtml: editor.html }) })
+        ? apiFetch<FormTemplate>(`/api/v1/forms/templates/${editor.id}`, { method: 'PATCH', body: JSON.stringify({ name: editor.title, description: editor.description, category: editor.category, contentHtml: editor.html, moduleKey: editor.moduleKey || null }) })
         : apiFetch<IssueForm>(`/api/v1/forms/issues/${editor.id}`, { method: 'PATCH', body: JSON.stringify({ title: editor.title, contentHtml: editor.html }) });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: editor?.kind === 'template' ? ['form-templates'] : ['issue-forms'] });
-      setEditor((current) => current ? { ...current, originalHtml: current.html, originalTitle: current.title, originalDescription: current.description, originalCategory: current.category } : current);
+      setEditor((current) => current ? { ...current, originalHtml: current.html, originalTitle: current.title, originalDescription: current.description, originalCategory: current.category, originalModuleKey: current.moduleKey } : current);
     },
   });
   const publishTemplate = useMutation({
     mutationFn: async () => {
       if (!editor || editor.kind !== 'template') throw new Error('ไม่ได้เลือก Template');
-      if (editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory) {
-        await apiFetch<FormTemplate>(`/api/v1/forms/templates/${editor.id}`, { method: 'PATCH', body: JSON.stringify({ name: editor.title, description: editor.description, category: editor.category, contentHtml: editor.html }) });
+      if (editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory || editor.moduleKey !== editor.originalModuleKey) {
+        await apiFetch<FormTemplate>(`/api/v1/forms/templates/${editor.id}`, { method: 'PATCH', body: JSON.stringify({ name: editor.title, description: editor.description, category: editor.category, contentHtml: editor.html, moduleKey: editor.moduleKey || null }) });
       }
       return apiFetch<FormTemplate>(`/api/v1/forms/templates/${editor.id}/publish`, { method: 'POST', body: JSON.stringify({ changeNote: 'เผยแพร่จาก Form Studio' }) });
     },
     onSuccess: (template) => {
       void queryClient.invalidateQueries({ queryKey: ['form-templates'] });
-      setEditor((current) => current ? { ...current, code: `${template.template_code} · v${template.current_version}`, originalHtml: current.html, originalTitle: current.title, originalDescription: current.description, originalCategory: current.category } : current);
+      setEditor((current) => current ? { ...current, code: `${template.template_code} · v${template.current_version}`, originalHtml: current.html, originalTitle: current.title, originalDescription: current.description, originalCategory: current.category, originalModuleKey: current.moduleKey } : current);
     },
   });
   const sendVendor = useMutation({
@@ -189,7 +191,7 @@ export function FormManagementPage() {
     },
   });
 
-  const isDirty = editor ? editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory : false;
+  const isDirty = editor ? editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory || editor.moduleKey !== editor.originalModuleKey : false;
   const loading = templatesQuery.isLoading || issuesQuery.isLoading || referencesQuery.isLoading;
   const vendorReplyCount = (issuesQuery.data ?? []).filter((item) => item.status === 'Vendor Replied').length;
   const waitingVendorCount = (issuesQuery.data ?? []).filter((item) => item.status === 'Sent to Vendor').length;
@@ -212,7 +214,7 @@ export function FormManagementPage() {
           {editor.kind === 'issue' && canClose && editor.status === 'Vendor Replied' && <Button size="sm" variant="secondary" isLoading={closeIssue.isPending} onClick={() => closeIssue.mutate()}><CheckCircle2 className="h-4 w-4" />ตรวจรับและปิดงาน</Button>}
         </div>
       </div>
-      {editor.kind === 'template' && <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-2 dark:border-slate-700 dark:bg-slate-800"><label className="text-xs font-semibold">คำอธิบาย<input value={editor.description} disabled={!canManage} onChange={(event) => setEditor({ ...editor, description: event.target.value })} className={fieldClass} /></label><label className="text-xs font-semibold">หมวดหมู่<input value={editor.category} disabled={!canManage} onChange={(event) => setEditor({ ...editor, category: event.target.value })} className={fieldClass} /></label></div>}
+      {editor.kind === 'template' && <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-3 dark:border-slate-700 dark:bg-slate-800"><label className="text-xs font-semibold">คำอธิบาย<input value={editor.description} disabled={!canManage} onChange={(event) => setEditor({ ...editor, description: event.target.value })} className={fieldClass} /></label><label className="text-xs font-semibold">หมวดหมู่<input value={editor.category} disabled={!canManage} onChange={(event) => setEditor({ ...editor, category: event.target.value })} className={fieldClass} /></label><label className="text-xs font-semibold">ใช้เป็นแบบฟอร์มของโมดูล<select value={editor.moduleKey} disabled={!canManage} onChange={(event) => setEditor({ ...editor, moduleKey: event.target.value as FormModuleKey | '' })} className={fieldClass}><option value="">— Template กลาง / ยังไม่ผูกโมดูล —</option>{FORM_MODULES.map((module) => <option key={module.key} value={module.key}>{module.label}</option>)}</select></label></div>}
       <div className={editor.kind === 'issue' && editor.vendorResponse?.submittedAt ? 'grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]' : ''}>
         <WordLikeEditor value={editor.html} onChange={(html) => setEditor((current) => current ? { ...current, html } : current)} fileName={`${editor.code}-${editor.title}`} readOnly={!canManage || editor.status === 'Closed'} />
         {editor.kind === 'issue' && editor.vendorResponse?.submittedAt && <VendorResponsePanel response={editor.vendorResponse} />}
@@ -225,11 +227,11 @@ export function FormManagementPage() {
   }
 
   return <div className="space-y-5" data-testid="form-studio-page">
-    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / แบบฟอร์มงาน" title="Form Studio" description="จัดการแบบฟอร์มหลักตามประเภทงาน ใช้ร่วมกับ Ticket และรายการยืมทรัพย์สิน พร้อมดาวน์โหลด Word" />{canManage && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setShowNewTemplate(true)}><FilePlus2 className="h-4 w-4" />สร้าง Template</Button><Button onClick={() => setShowNewIssue(true)}><Plus className="h-4 w-4" />สร้างแบบฟอร์มงาน</Button></div>}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / แบบฟอร์มงาน" title="Form Studio" description="จัดการแบบฟอร์มหลักตามประเภทงาน เลือกโมดูลให้ระบบนำไปใช้กับรายการใหม่อัตโนมัติ พร้อมดาวน์โหลด Word" />{canManage && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setShowNewTemplate(true)}><FilePlus2 className="h-4 w-4" />สร้างแบบฟอร์มหลัก</Button><Button onClick={() => setShowNewIssue(true)}><Plus className="h-4 w-4" />สร้างแบบฟอร์มงาน</Button></div>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Library className="h-5 w-5" />} label="แม่แบบทั้งหมด" value={templatesQuery.data?.length ?? 0} /><StatCard icon={<FileText className="h-5 w-5" />} label="แบบฟอร์มงานทั้งหมด" value={issuesQuery.data?.length ?? 0} tone="gray" /><StatCard icon={<Clock3 className="h-5 w-5" />} label="รอ Vendor ตอบ" value={waitingVendorCount} tone="amber" /><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Vendor ตอบแล้ว" value={vendorReplyCount} tone="teal" /></div>
     <Card><CardBody className="flex flex-wrap items-center gap-3"><div className="flex flex-wrap rounded-lg bg-slate-100 p-1 dark:bg-slate-900"><button type="button" onClick={() => setTab('issues')} className={`rounded-md px-4 py-2 text-sm font-bold ${tab === 'issues' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-200' : 'text-slate-500'}`}>แบบฟอร์มงาน</button><button type="button" onClick={() => setTab('templates')} className={`rounded-md px-4 py-2 text-sm font-bold ${tab === 'templates' ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-200' : 'text-slate-500'}`}>แบบฟอร์มหลัก</button></div><label className="relative ml-auto min-w-0 w-full md:flex-1 md:max-w-md"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขที่ Ticket หรือ Vendor..." className={`${fieldClass} mt-0 pl-9`} /></label></CardBody></Card>
     {loading ? <Card><CardBody className="py-16 text-center text-sm text-slate-500">กำลังโหลด Form Studio...</CardBody></Card> : tab === 'templates' ? <TemplateLibrary templates={filteredTemplates} canManage={canManage} onOpen={openTemplate} /> : <IssueLibrary issues={filteredIssues} canManage={canManage} onOpen={openIssue} onOpenTemplate={openTemplateById} />}
-    {showNewTemplate && <FormModal title="สร้าง Template ใหม่" description="เริ่มจากเอกสารเปล่า แล้วจัดรูปแบบได้ใน Word-like Editor" size="lg" onClose={() => setShowNewTemplate(false)} footer={<><Button variant="ghost" onClick={() => setShowNewTemplate(false)}>ยกเลิก</Button><Button isLoading={createTemplate.isPending} disabled={!newTemplate.name.trim()} onClick={() => createTemplate.mutate()}><FilePlus2 className="h-4 w-4" />สร้างและเปิด Editor</Button></>}><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-semibold md:col-span-2">ชื่อแบบฟอร์ม<input value={newTemplate.name} onChange={(event) => setNewTemplate({ ...newTemplate, name: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">หมวดหมู่<input value={newTemplate.category} onChange={(event) => setNewTemplate({ ...newTemplate, category: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold md:col-span-2">คำอธิบาย<textarea rows={3} value={newTemplate.description} onChange={(event) => setNewTemplate({ ...newTemplate, description: event.target.value })} className={fieldClass} /></label></div></FormModal>}
+    {showNewTemplate && <FormModal title="สร้างแบบฟอร์มหลักใหม่" description="เลือกโมดูลครั้งเดียว แล้วโมดูลนั้นจะใช้แบบฟอร์มนี้อัตโนมัติทุกใบ" size="lg" onClose={() => setShowNewTemplate(false)} footer={<><Button variant="ghost" onClick={() => setShowNewTemplate(false)}>ยกเลิก</Button><Button isLoading={createTemplate.isPending} disabled={!newTemplate.name.trim()} onClick={() => createTemplate.mutate()}><FilePlus2 className="h-4 w-4" />สร้างและเปิด Editor</Button></>}><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-semibold md:col-span-2">ชื่อแบบฟอร์ม<input value={newTemplate.name} onChange={(event) => setNewTemplate({ ...newTemplate, name: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">หมวดหมู่<input value={newTemplate.category} onChange={(event) => setNewTemplate({ ...newTemplate, category: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">ใช้เป็นแบบฟอร์มของโมดูล<select value={newTemplate.moduleKey} onChange={(event) => setNewTemplate({ ...newTemplate, moduleKey: event.target.value as FormModuleKey | '' })} className={fieldClass}><option value="">— Template กลาง / ยังไม่ผูกโมดูล —</option>{FORM_MODULES.map((module) => <option key={module.key} value={module.key}>{module.label}</option>)}</select></label><label className="text-sm font-semibold md:col-span-2">คำอธิบาย<textarea rows={3} value={newTemplate.description} onChange={(event) => setNewTemplate({ ...newTemplate, description: event.target.value })} className={fieldClass} /></label></div></FormModal>}
     {showNewIssue && <FormModal title="สร้างแบบฟอร์มงาน" description="คัดลอก Template เวอร์ชันปัจจุบันมาเป็นเอกสารงานที่แก้ไขได้อิสระ" size="lg" onClose={() => setShowNewIssue(false)} footer={<><Button variant="ghost" onClick={() => setShowNewIssue(false)}>ยกเลิก</Button><Button isLoading={createIssue.isPending} disabled={!newIssue.title.trim() || !newIssue.templateId} onClick={() => createIssue.mutate()}><Plus className="h-4 w-4" />สร้างแบบฟอร์มงาน</Button></>}><div className="grid gap-4"><label className="text-sm font-semibold">ชื่อเรื่อง<input value={newIssue.title} onChange={(event) => setNewIssue({ ...newIssue, title: event.target.value })} className={fieldClass} /></label><label className="text-sm font-semibold">Template<select value={newIssue.templateId} onChange={(event) => setNewIssue({ ...newIssue, templateId: event.target.value })} className={fieldClass}><option value="">— เลือก Template —</option>{templatesQuery.data?.filter((item) => item.status !== 'Archived').map((template) => <option key={template.id} value={template.id}>{template.template_code} · {template.name} · v{template.current_version}</option>)}</select></label><label className="text-sm font-semibold">ผูกกับ Ticket (ไม่บังคับ)<select value={newIssue.ticketId} onChange={(event) => setNewIssue({ ...newIssue, ticketId: event.target.value })} className={fieldClass}><option value="">— ไม่ผูก Ticket —</option>{referencesQuery.data?.tickets.map((ticket) => <option key={ticket.id} value={ticket.id}>{ticket.ticket_no} · {ticket.title}</option>)}</select></label></div></FormModal>}
     {shareResult && <ShareLinkModal result={shareResult} subject="แบบฟอร์มประเมินงานจาก Form Studio" onClose={() => setShareResult(undefined)} />}
   </div>;
@@ -237,7 +239,7 @@ export function FormManagementPage() {
 
 function TemplateLibrary({ templates, canManage, onOpen }: { templates: FormTemplate[]; canManage: boolean; onOpen: (item: FormTemplate) => void }) {
   if (!templates.length) return <Card><EmptyState icon={<Library className="h-10 w-10" />} title="ยังไม่มี Template" description="สร้างแบบฟอร์มใหม่เพื่อเริ่มใช้งาน Form Studio" /></Card>;
-  return <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{templates.map((template) => <Card key={template.id} className="flex flex-col"><CardHeader className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-primary-700 dark:text-primary-300">{template.template_code} · v{template.current_version}</p><p className="mt-1 line-clamp-2">{template.name}</p></div><Badge variant={template.status === 'Published' ? 'success' : template.status === 'Archived' ? 'secondary' : 'warning'}>{template.status}</Badge></CardHeader><CardBody className="flex flex-1 flex-col">{['IT-ERP-ISSUE', 'ASSET-BORROW'].includes(template.template_code) && <div className="mb-3 rounded-lg bg-primary-50 p-3 text-sm text-primary-800 dark:bg-primary-950 dark:text-primary-200"><p className="font-bold">แบบฟอร์มหลัก · {template.template_code === 'IT-ERP-ISSUE' ? 'งานแจ้งซ่อม / Ticket ทั้งหมด' : 'การขอยืมทรัพย์สิน'}</p><p className="mt-1 text-xs">{template.template_code === 'IT-ERP-ISSUE' ? 'เติมข้อมูลจาก Ticket อัตโนมัติ เปิดเอกสารและดาวน์โหลด Word ได้จากแต่ละ Ticket' : 'เติมข้อมูลจากรายการยืม เปิดเอกสารและดาวน์โหลด Word ได้จากหน้ายืม / คืน Asset'}</p></div>}<p className="line-clamp-3 text-sm text-slate-500">{template.description || 'ไม่มีคำอธิบาย'}</p><div className="mt-4 flex items-center justify-between text-xs text-slate-400"><span>{template.category}</span><span>แก้ไข {formatThaiDate(template.updated_at, 'd MMM yyyy HH:mm')}</span></div><Button className="mt-4 w-full" variant={canManage ? 'outline' : 'ghost'} onClick={() => onOpen(template)}>{canManage ? <Edit3 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}{canManage ? 'เปิดใน Editor' : 'ดูแบบฟอร์ม'}</Button><Button className="mt-2 w-full" variant="ghost" onClick={() => exportHtmlAsWord(template.content_html.replace(/{{\s*[a-zA-Z0-9_]+\s*}}/g, '................................'), template.template_code)}><Download className="h-4 w-4" />ดาวน์โหลดแม่แบบ Word</Button>{canManage && !['IT-ERP-ISSUE', 'ASSET-BORROW'].includes(template.template_code) && <RowActions className="mt-2" recordLabel={template.template_code} actions={[{ kind: 'delete', permission: 'form.manage', deleteEndpoint: `/api/v1/record-deletions/form-templates/${template.id}` }]} />}</CardBody></Card>)}</div>;
+  return <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{templates.map((template) => <Card key={template.id} className="flex flex-col"><CardHeader className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-primary-700 dark:text-primary-300">{template.template_code} · v{template.current_version}</p><p className="mt-1 line-clamp-2">{template.name}</p></div><Badge variant={template.status === 'Published' ? 'success' : template.status === 'Archived' ? 'secondary' : 'warning'}>{template.status}</Badge></CardHeader><CardBody className="flex flex-1 flex-col">{template.module_key && <div className="mb-3 rounded-lg bg-primary-50 p-3 text-sm text-primary-800 dark:bg-primary-950 dark:text-primary-200"><p className="font-bold">ใช้เป็นแบบฟอร์มของโมดูล</p><p className="mt-1 text-xs">{FORM_MODULES.find((module) => module.key === template.module_key)?.label ?? template.module_key}</p></div>}{['IT-ERP-ISSUE', 'ASSET-BORROW'].includes(template.template_code) && <div className="mb-3 rounded-lg bg-primary-50 p-3 text-sm text-primary-800 dark:bg-primary-950 dark:text-primary-200"><p className="font-bold">แบบฟอร์มหลัก · {template.template_code === 'IT-ERP-ISSUE' ? 'งานแจ้งซ่อม / Ticket ทั้งหมด' : 'การขอยืมทรัพย์สิน'}</p><p className="mt-1 text-xs">{template.template_code === 'IT-ERP-ISSUE' ? 'เติมข้อมูลจาก Ticket อัตโนมัติ เปิดเอกสารและดาวน์โหลด Word ได้จากแต่ละ Ticket' : 'เติมข้อมูลจากรายการยืม เปิดเอกสารและดาวน์โหลด Word ได้จากหน้ายืม / คืน Asset'}</p></div>}<p className="line-clamp-3 text-sm text-slate-500">{template.description || 'ไม่มีคำอธิบาย'}</p><div className="mt-4 flex items-center justify-between text-xs text-slate-400"><span>{template.category}</span><span>แก้ไข {formatThaiDate(template.updated_at, 'd MMM yyyy HH:mm')}</span></div><Button className="mt-4 w-full" variant={canManage ? 'outline' : 'ghost'} onClick={() => onOpen(template)}>{canManage ? <Edit3 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}{canManage ? 'เปิดใน Editor' : 'ดูแบบฟอร์ม'}</Button><Button className="mt-2 w-full" variant="ghost" onClick={() => exportHtmlAsWord(template.content_html.replace(/{{\s*[a-zA-Z0-9_]+\s*}}/g, '................................'), template.template_code)}><Download className="h-4 w-4" />ดาวน์โหลดแม่แบบ Word</Button>{canManage && !['IT-ERP-ISSUE', 'ASSET-BORROW'].includes(template.template_code) && <RowActions className="mt-2" recordLabel={template.template_code} actions={[{ kind: 'delete', permission: 'form.manage', deleteEndpoint: `/api/v1/record-deletions/form-templates/${template.id}` }]} />}</CardBody></Card>)}</div>;
 }
 
 /**

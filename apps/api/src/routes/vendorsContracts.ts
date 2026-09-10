@@ -66,7 +66,7 @@ vendorsRoute.get('/references', requirePermission('vendor.manage'), async (c) =>
 });
 
 const VENDOR_PORTAL_ACCOUNT_SELECT =
-  'id, vendor_id, email, full_name, position, status, failed_login_count, locked_until, last_login_at, created_at, updated_at';
+  'id, vendor_id, username, email, full_name, position, status, must_change_password, failed_login_count, locked_until, last_login_at, created_at, updated_at';
 
 vendorsRoute.get('/:id/portal-accounts', requirePermission('vendor.manage'), async (c) => {
   const reqId = c.get('requestId');
@@ -88,15 +88,17 @@ vendorsRoute.post('/:id/portal-accounts', requirePermission('vendor.manage'), zV
   if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'ต้องเปิดใช้งานบริษัทก่อนสร้างบัญชี Portal'), 409);
   const { data, error } = await admin.from('vendor_portal_accounts').insert({
     vendor_id: vendor.id,
+    username: body.username,
     email: body.email,
     full_name: body.fullName,
     position: body.position || null,
     password_hash: await hashVendorPassword(body.password),
+    must_change_password: true,
     created_by: actorId,
     updated_by: actorId,
   }).select(VENDOR_PORTAL_ACCOUNT_SELECT).single();
-  if (error || !data) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_CREATE_FAILED', error, error?.code === '23505' ? 'อีเมลนี้มีบัญชีของบริษัทแล้ว' : 'สร้างบัญชีบริษัทไม่สำเร็จ');
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code, email: body.email }, requestId: reqId });
+  if (error || !data) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_CREATE_FAILED', error, error?.code === '23505' ? 'Username นี้มีบัญชีของบริษัทแล้ว' : 'สร้างบัญชีบริษัทไม่สำเร็จ');
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code, username: body.username, email: body.email }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
 
@@ -127,6 +129,7 @@ vendorsRoute.post('/:id/portal-accounts/:accountId/reset-password', requirePermi
   const admin = createAdminClient(c.env);
   const { data, error } = await admin.from('vendor_portal_accounts').update({
     password_hash: await hashVendorPassword(c.req.valid('json').password),
+    must_change_password: true,
     failed_login_count: 0,
     locked_until: null,
     updated_by: actorId,

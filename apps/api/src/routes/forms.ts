@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { FORM_MODULES } from '../services/formModuleService';
 import type { AppEnv } from '../types';
 import { sanitizeFormHtml } from '../utils/formHtml';
 import { dbFailJson } from '../utils/dbError';
@@ -31,8 +32,7 @@ export const publicFormsRoute = new Hono<AppEnv>();
 
 const TEMPLATE_SELECT =
   '*, creator:profiles!form_templates_created_by_fkey(id, full_name), updater:profiles!form_templates_updated_by_fkey(id, full_name)';
-const ISSUE_SELECT =
-  '*, template:form_templates(id, template_code, name), vendor:vendors(id, vendor_code, name, email, contact_person), ticket:tickets(id, ticket_no, title), creator:profiles!issue_forms_created_by_fkey(id, full_name)';
+const ISSUE_SELECT = 'id, form_no, title, template_id, template_version, ticket_id, vendor_id, status, content_html, form_data, vendor_response, vendor_access_expires_at, vendor_sent_at, vendor_due_at, vendor_responded_at, closed_at, created_by, updated_by, created_at, updated_at, template:form_templates(id, template_code, name), vendor:vendors(id, vendor_code, name, email, contact_person), ticket:tickets(id, ticket_no, title), creator:profiles!issue_forms_created_by_fkey(id, full_name)';
 
 async function hashToken(token: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
@@ -63,9 +63,34 @@ async function addActivity(
 
 formsRoute.get('/templates', async (c) => {
   const reqId = c.get('requestId');
-  const { data, error } = await c.get('supabase').from('form_templates').select(TEMPLATE_SELECT).order('updated_at', { ascending: false });
+  const supabase = c.get('supabase');
+  const [{ data, error }, { data: bindings, error: bindingsError }] = await Promise.all([
+    supabase.from('form_templates').select(TEMPLATE_SELECT).order('updated_at', { ascending: false }),
+    supabase.from('form_module_bindings').select('module_key, template_id'),
+  ]);
   if (error) return c.json(fail(reqId, 'FORM_TEMPLATE_LIST_FAILED', 'ดึงคลังแบบฟอร์มไม่สำเร็จ'), 400);
-  return c.json(ok(reqId, data ?? []));
+  if (bindingsError) return dbFailJson(c, 'FORM_MODULE_BINDING_LIST_FAILED', bindingsError, 'ดึงการใช้งานแบบฟอร์มตามโมดูลไม่สำเร็จ');
+  const moduleByTemplateId = new Map((bindings ?? []).map((binding) => [binding.template_id, binding.module_key]));
+  return c.json(ok(reqId, (data ?? []).map((template) => ({ ...template, module_key: moduleByTemplateId.get(template.id) ?? null }))));
+});
+
+formsRoute.get('/modules', async (c) => {
+  const reqId = c.get('requestId');
+  const supabase = c.get('supabase');
+  const { data: bindings, error: bindingsError } = await supabase.from('form_module_bindings').select('module_key, template_id');
+  if (bindingsError) return dbFailJson(c, 'FORM_MODULE_LIST_FAILED', bindingsError, 'ดึงรายการโมดูลของ Form Studio ไม่สำเร็จ');
+  const templateIds = (bindings ?? []).map((binding) => binding.template_id);
+  const { data: templates, error: templatesError } = templateIds.length
+    ? await supabase.from('form_templates').select('id, template_code, name, status, current_version, updated_at').in('id', templateIds)
+    : { data: [], error: null };
+  if (templatesError) return dbFailJson(c, 'FORM_MODULE_TEMPLATE_LIST_FAILED', templatesError, 'ดึง Template ของโมดูลไม่สำเร็จ');
+  const templateById = new Map((templates ?? []).map((template) => [template.id, template]));
+  return c.json(ok(reqId, FORM_MODULES.map((module) => ({
+    key: module.key,
+    label: module.label,
+    description: module.description,
+    template: templateById.get((bindings ?? []).find((binding) => binding.module_key === module.key)?.template_id ?? '') ?? null,
+  }))));
 });
 
 formsRoute.get('/templates/:id/versions', async (c) => {
@@ -92,12 +117,21 @@ formsRoute.post('/templates', requirePermission('form.manage'), zValidator('json
   };
   const { data, error } = await admin.from('form_templates').insert(payload).select(TEMPLATE_SELECT).single();
   if (error || !data) return dbFailJson(c, 'FORM_TEMPLATE_CREATE_FAILED', error, 'สร้างแบบฟอร์มไม่สำเร็จ');
-  await admin.from('form_template_versions').insert({
+  const { error: versionError } = await admin.from('form_template_versions').insert({
     template_id: data.id, version: 1, name: data.name, description: data.description,
     content_html: data.content_html, page_settings: data.page_settings, change_note: 'สร้างแบบฟอร์ม', created_by: actorId,
   });
+  if (versionError) return dbFailJson(c, 'FORM_TEMPLATE_CREATE_FAILED', versionError, 'สร้างเวอร์ชันเริ่มต้นของแบบฟอร์มไม่สำเร็จ');
+  if (body.moduleKey) {
+    const { error: bindingError } = await admin.rpc('assign_form_module_template', {
+      module_key_input: body.moduleKey,
+      template_id_input: data.id,
+      updated_by_input: actorId,
+    });
+    if (bindingError) return dbFailJson(c, 'FORM_MODULE_BINDING_FAILED', bindingError, 'กำหนดแบบฟอร์มให้โมดูลไม่สำเร็จ');
+  }
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'form', targetTable: 'form_templates', targetId: data.id, detail: { templateCode: data.template_code }, requestId: reqId });
-  return c.json(ok(reqId, data), 201);
+  return c.json(ok(reqId, { ...data, module_key: body.moduleKey ?? null }), 201);
 });
 
 formsRoute.patch('/templates/:id', requirePermission('form.manage'), zValidator('json', updateFormTemplateSchema, zodValidationHook), async (c) => {
@@ -114,6 +148,16 @@ formsRoute.patch('/templates/:id', requirePermission('form.manage'), zValidator(
   const { data, error } = await createAdminClient(c.env).from('form_templates').update(patch).eq('id', c.req.param('id')!).select(TEMPLATE_SELECT).maybeSingle();
   if (error) return dbFailJson(c, 'FORM_TEMPLATE_UPDATE_FAILED', error);
   if (!data) return c.json(fail(reqId, 'FORM_TEMPLATE_NOT_FOUND', 'ไม่พบ Template นี้'), 404);
+  if (body.moduleKey !== undefined) {
+    const bindingResult = body.moduleKey
+      ? await createAdminClient(c.env).rpc('assign_form_module_template', {
+        module_key_input: body.moduleKey,
+        template_id_input: data.id,
+        updated_by_input: actorId,
+      })
+      : await createAdminClient(c.env).from('form_module_bindings').delete().eq('template_id', data.id);
+    if (bindingResult.error) return dbFailJson(c, 'FORM_MODULE_BINDING_FAILED', bindingResult.error, 'อัปเดตการใช้งานแบบฟอร์มของโมดูลไม่สำเร็จ');
+  }
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'form', targetTable: 'form_templates', targetId: data.id, detail: { fields: Object.keys(body) }, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });

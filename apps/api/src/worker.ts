@@ -1,4 +1,5 @@
 import app from './index';
+import { dispatchIntegrationRetention } from './services/integrationRetentionService';
 import { dispatchLineNotificationOutbox, dispatchNotificationOutbox } from './services/notificationService';
 import { dispatchPrivacyRetention } from './services/privacyRetentionService';
 import { dispatchDueTaskReminders } from './services/taskReminderService';
@@ -9,10 +10,11 @@ export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Bindings, _ctx: ExecutionContext): Promise<void> {
     const scheduledAt = new Date(controller.scheduledTime);
-    const [delivered, ticketSla, privacyRetention] = await Promise.all([
+    const [delivered, ticketSla, privacyRetention, integrationRetention] = await Promise.all([
       dispatchDueTaskReminders(env, scheduledAt),
       dispatchTicketSlaEscalations(env, scheduledAt),
       dispatchPrivacyRetention(env, scheduledAt),
+      dispatchIntegrationRetention(env, scheduledAt),
     ]);
     // Reminder/SLA RPCs insert notifications transactionally. Dispatch both outboxes only after
     // those producers finish so their in-app and LINE jobs can be delivered in this cron run.
@@ -27,6 +29,7 @@ export default {
       lineNotifications,
       ticketSla,
       privacyRetention,
+      integrationRetention,
       scheduledTime: controller.scheduledTime,
     }));
   },

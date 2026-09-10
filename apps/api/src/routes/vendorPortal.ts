@@ -1,8 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { randomToken } from '../lib/lineAuth';
 import { createAdminClient } from '../lib/supabase';
-import { hashVendorSessionToken, verifyVendorPassword } from '../lib/vendorPortalAuth';
+import { constantTimeEqualText, hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../lib/vendorPortalAuth';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
@@ -14,12 +15,16 @@ import { verifyFileSignature } from '../utils/fileSignature';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
+  changeVendorPortalPasswordSchema,
   reviewOutsourceSubmissionSchema,
   submitOutsourceWorkSchema,
   vendorPortalLoginSchema,
 } from '../validators/vendorPortal';
 
 const VENDOR_SESSION_HOURS = 12;
+const VENDOR_SESSION_COOKIE = 'vendor_portal_session';
+const VENDOR_CSRF_COOKIE = 'vendor_portal_csrf';
+const VENDOR_CSRF_HEADER = 'x-vendor-csrf';
 const VENDOR_SIGNATURE_BUCKET = 'ticket-outsource-signatures';
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 const SAFE_TICKET_SELECT =
@@ -28,7 +33,26 @@ const SAFE_TICKET_SELECT =
 
 interface VendorSessionContext {
   token: string;
+  sessionId: string;
   profile: VendorPortalProfile;
+}
+
+function vendorCookieOptions(env: AppEnv['Bindings'], httpOnly: boolean, maxAge: number) {
+  return {
+    httpOnly,
+    maxAge,
+    path: '/',
+    secure: env.ENVIRONMENT === 'production',
+    sameSite: env.ENVIRONMENT === 'production' ? 'None' as const : 'Lax' as const,
+  };
+}
+
+function issueVendorCsrfCookie(c: Context<AppEnv>): string {
+  const existing = getCookie(c, VENDOR_CSRF_COOKIE);
+  if (existing && /^[0-9a-f]{64}$/i.test(existing)) return existing;
+  const token = randomToken();
+  setCookie(c, VENDOR_CSRF_COOKIE, token, vendorCookieOptions(c.env, false, VENDOR_SESSION_HOURS * 3600));
+  return token;
 }
 
 interface SafeVendorTicketRow {
@@ -51,7 +75,7 @@ async function sha256(value: string): Promise<string> {
 }
 
 async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionContext | null> {
-  const token = c.req.header('x-vendor-session') ?? '';
+  const token = getCookie(c, VENDOR_SESSION_COOKIE) ?? '';
   if (!/^[0-9a-f]{64}$/i.test(token)) return null;
   const admin = createAdminClient(c.env);
   const sessionHash = await hashVendorSessionToken(token);
@@ -64,7 +88,7 @@ async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionConte
 
   const { data: account } = await admin
     .from('vendor_portal_accounts')
-    .select('id, vendor_id, email, full_name, position, status')
+    .select('id, vendor_id, username, email, full_name, position, status, must_change_password')
     .eq('id', session.account_id)
     .eq('status', 'Active')
     .maybeSingle();
@@ -83,14 +107,17 @@ async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionConte
   }
   return {
     token,
+    sessionId: session.id,
     profile: {
       accountId: account.id,
       vendorId: vendor.id,
       vendorCode: vendor.vendor_code,
       vendorName: vendor.name,
+      username: account.username,
       email: account.email,
       fullName: account.full_name,
       position: account.position,
+      mustChangePassword: account.must_change_password === true,
     },
   };
 }
@@ -99,6 +126,29 @@ const requireVendorSession: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await loadVendorSession(c);
   if (!session) return c.json(fail(c.get('requestId'), 'VENDOR_SESSION_REQUIRED', 'Session บริษัทหมดอายุ กรุณาเข้าสู่ระบบใหม่'), 401);
   c.set('vendorSession', session);
+  await next();
+};
+
+const requireVendorCsrf: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
+    await next();
+    return;
+  }
+  const cookieToken = getCookie(c, VENDOR_CSRF_COOKIE) ?? '';
+  const headerToken = c.req.header(VENDOR_CSRF_HEADER) ?? '';
+  if (!/^[0-9a-f]{64}$/i.test(cookieToken) || !/^[0-9a-f]{64}$/i.test(headerToken) || !constantTimeEqualText(cookieToken, headerToken)) {
+    return c.json(fail(c.get('requestId'), 'VENDOR_CSRF_REQUIRED', 'คำขอไม่ผ่านการตรวจสอบความปลอดภัย กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง'), 403);
+  }
+  await next();
+};
+
+const requireVendorPasswordChange: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (c.get('vendorSession')?.profile.mustChangePassword) {
+    if (c.req.method === 'GET' && c.req.path.endsWith('/tickets')) {
+      return c.json(ok(c.get('requestId'), []));
+    }
+    return c.json(fail(c.get('requestId'), 'VENDOR_PASSWORD_CHANGE_REQUIRED', 'กรุณาเปลี่ยนรหัสผ่านก่อนใช้งาน Portal'), 403);
+  }
   await next();
 };
 
@@ -121,7 +171,8 @@ async function submissionWithSignature(admin: ReturnType<typeof createAdminClien
 
 export const vendorPortalRoute = new Hono<AppEnv>();
 
-vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabled: true })));
+vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabled: true, csrfToken: issueVendorCsrfCookie(c) })));
+vendorPortalRoute.use('/login', requireVendorCsrf);
 
 vendorPortalRoute.post(
   '/login',
@@ -132,14 +183,14 @@ vendorPortalRoute.post(
     const reqId = c.get('requestId');
     const body = c.req.valid('json');
     const admin = createAdminClient(c.env);
-    const invalid = () => c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'รหัสบริษัท อีเมล หรือรหัสผ่านไม่ถูกต้อง'), 401);
+    const invalid = () => c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'รหัสบริษัท Username หรือรหัสผ่านไม่ถูกต้อง'), 401);
     const { data: vendor } = await admin.from('vendors').select('id, vendor_code, name, status').eq('vendor_code', body.vendorCode).eq('status', 'Active').maybeSingle();
     if (!vendor) return invalid();
     const { data: account } = await admin
       .from('vendor_portal_accounts')
-      .select('id, vendor_id, email, full_name, position, password_hash, status, failed_login_count, locked_until')
+      .select('id, vendor_id, username, email, full_name, position, password_hash, status, must_change_password, failed_login_count, locked_until')
       .eq('vendor_id', vendor.id)
-      .eq('email', body.email)
+      .eq('username', body.username)
       .eq('status', 'Active')
       .maybeSingle();
     if (!account) return invalid();
@@ -176,32 +227,87 @@ vendorPortalRoute.post(
       user_agent: (c.req.header('user-agent') ?? '').slice(0, 500) || null,
     });
     if (sessionError) return dbFailJson(c, 'VENDOR_SESSION_CREATE_FAILED', sessionError, 'เข้าสู่ระบบไม่สำเร็จ');
+    setCookie(c, VENDOR_SESSION_COOKIE, token, vendorCookieOptions(c.env, true, VENDOR_SESSION_HOURS * 3600));
+    issueVendorCsrfCookie(c);
     const profile: VendorPortalProfile = {
       accountId: account.id,
       vendorId: vendor.id,
       vendorCode: vendor.vendor_code,
       vendorName: vendor.name,
+      username: account.username,
       email: account.email,
       fullName: account.full_name,
       position: account.position,
+      mustChangePassword: account.must_change_password === true,
     };
     await writeAuditLog(c.env, { actorEmail: `VENDOR:${account.email}`, action: 'LOGIN', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: account.id, detail: { vendorId: vendor.id }, requestId: reqId });
-    return c.json(ok(reqId, { token, profile, expiresInHours: VENDOR_SESSION_HOURS }));
+    return c.json(ok(reqId, { profile, expiresInHours: VENDOR_SESSION_HOURS }));
   },
 );
 
 vendorPortalRoute.use('/me', requireVendorSession);
 vendorPortalRoute.use('/logout', requireVendorSession);
+vendorPortalRoute.use('/logout', requireVendorCsrf);
+vendorPortalRoute.use('/change-password', requireVendorSession);
+vendorPortalRoute.use('/change-password', requireVendorCsrf);
 vendorPortalRoute.use('/tickets/*', requireVendorSession);
 vendorPortalRoute.use('/tickets', requireVendorSession);
+vendorPortalRoute.use('/tickets/*', requireVendorCsrf);
+vendorPortalRoute.use('/tickets', requireVendorCsrf);
+vendorPortalRoute.use('/tickets/*', requireVendorPasswordChange);
+vendorPortalRoute.use('/tickets', requireVendorPasswordChange);
 
 vendorPortalRoute.get('/me', (c) => c.json(ok(c.get('requestId'), c.get('vendorSession')!.profile)));
 
 vendorPortalRoute.post('/logout', async (c) => {
   const { token } = c.get('vendorSession')!;
   await createAdminClient(c.env).from('vendor_portal_sessions').update({ revoked_at: new Date().toISOString() }).eq('session_hash', await hashVendorSessionToken(token));
+  deleteCookie(c, VENDOR_SESSION_COOKIE, vendorCookieOptions(c.env, true, 0));
+  deleteCookie(c, VENDOR_CSRF_COOKIE, vendorCookieOptions(c.env, false, 0));
   return c.json(ok(c.get('requestId'), { loggedOut: true }));
 });
+
+vendorPortalRoute.post(
+  '/change-password',
+  rateLimit({ windowMs: 15 * 60_000, max: 5, keyFn: (c) => `vendor_password_change:${c.get('vendorSession')!.profile.accountId}` }),
+  zValidator('json', changeVendorPortalPasswordSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const session = c.get('vendorSession')!;
+    const body = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const { data: account, error: accountError } = await admin
+      .from('vendor_portal_accounts')
+      .select('id, password_hash, status')
+      .eq('id', session.profile.accountId)
+      .eq('status', 'Active')
+      .maybeSingle();
+    if (accountError || !account) return c.json(fail(reqId, 'VENDOR_PASSWORD_CHANGE_FAILED', 'ไม่สามารถเปลี่ยนรหัสผ่านได้ กรุณาลองใหม่อีกครั้ง'), 400);
+    if (!await verifyVendorPassword(body.currentPassword, account.password_hash)) {
+      return c.json(fail(reqId, 'VENDOR_PASSWORD_CHANGE_FAILED', 'รหัสผ่านเดิมไม่ถูกต้อง'), 400);
+    }
+    const { error: updateError } = await admin.from('vendor_portal_accounts').update({
+      password_hash: await hashVendorPassword(body.newPassword),
+      must_change_password: false,
+      failed_login_count: 0,
+      locked_until: null,
+    }).eq('id', account.id);
+    if (updateError) return dbFailJson(c, 'VENDOR_PASSWORD_CHANGE_FAILED', updateError, 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
+
+    const { data: otherSessions } = await admin
+      .from('vendor_portal_sessions')
+      .select('id')
+      .eq('account_id', account.id)
+      .is('revoked_at', null)
+      .neq('id', session.sessionId);
+    if (otherSessions?.length) {
+      await admin.from('vendor_portal_sessions').update({ revoked_at: new Date().toISOString() }).in('id', otherSessions.map((item) => item.id));
+    }
+    const profile = { ...session.profile, mustChangePassword: false };
+    await writeAuditLog(c.env, { actorEmail: `VENDOR:${session.profile.email}`, action: 'CHANGE_PASSWORD', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: account.id, detail: { vendorId: session.profile.vendorId }, requestId: reqId });
+    return c.json(ok(reqId, profile));
+  },
+);
 
 vendorPortalRoute.get('/tickets', async (c) => {
   const reqId = c.get('requestId');

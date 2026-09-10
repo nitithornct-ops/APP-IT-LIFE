@@ -17,18 +17,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('VendorPortalPage', () => {
-  it('requires company code, contact email and password', () => {
+  it('requires company code, username and password', () => {
     render(<VendorPortalPage />);
     expect(screen.getByRole('heading', { name: 'Outsource Portal' })).toBeVisible();
     expect(screen.getByLabelText('รหัสบริษัท')).toBeRequired();
-    expect(screen.getByLabelText('อีเมลผู้ติดต่อ')).toBeRequired();
+    expect(screen.getByLabelText('Username')).toBeRequired();
     expect(screen.getByLabelText('รหัสผ่าน')).toHaveAttribute('type', 'password');
   });
 
   it('shows only the assigned outsource list returned by the isolated portal API', async () => {
-    sessionStorage.setItem('vendor_portal_session_token', 'a'.repeat(64));
     vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.endsWith('/me')) return { accountId: 'account-1', vendorId: 'vendor-1', vendorCode: 'VND-001', vendorName: 'บริษัท ทดสอบ จำกัด', email: 'vendor@test.local', fullName: 'สมชาย บริษัท', position: 'ช่าง' };
+      if (path.endsWith('/bootstrap')) return { enabled: true, csrfToken: 'b'.repeat(64) };
+      if (path.endsWith('/me')) return { accountId: 'account-1', vendorId: 'vendor-1', vendorCode: 'VND-001', vendorName: 'บริษัท ทดสอบ จำกัด', username: 'vendor.contact', email: 'vendor@test.local', fullName: 'สมชาย บริษัท', position: 'ช่าง' };
       if (path.endsWith('/tickets')) return [{ id: 'ticket-1', ticket_no: 'TCK-001', title: 'เครื่องพิมพ์เสีย', description: 'พิมพ์ไม่ได้', priority: 'สูง', status: 'ส่งต่อ Outsource', location: 'สำนักงาน', created_at: '2026-08-28T00:00:00Z', outsource_issue_no: null, outsource_sent_at: '2026-08-28T01:00:00Z', ticket_categories: { name: 'Printer' }, latest_submission: null }];
       if (path.endsWith('/tickets/ticket-1')) return { ticket: { id: 'ticket-1', ticket_no: 'TCK-001', title: 'เครื่องพิมพ์เสีย', description: 'พิมพ์ไม่ได้', priority: 'สูง', status: 'ส่งต่อ Outsource', location: 'สำนักงาน', created_at: '2026-08-28T00:00:00Z', outsource_issue_no: null, outsource_sent_at: '2026-08-28T01:00:00Z', ticket_categories: { name: 'Printer' } }, submission: null };
       throw new Error(`Unexpected path ${path}`);
@@ -41,6 +41,19 @@ describe('VendorPortalPage', () => {
     await screen.findByText('ส่วนที่ 3: การแก้ไขปัญหาโดยผู้รับจ้าง');
     expect(screen.getByText(/บริษัทแก้ไขได้เฉพาะข้อมูลในส่วนนี้/)).toBeVisible();
     await waitFor(() => expect(vendorPortalApiFetchMock).toHaveBeenCalledWith('/api/v1/vendor-portal/tickets/ticket-1'));
+  });
+
+  it('blocks portal data until the vendor replaces the temporary password', async () => {
+    vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
+      if (path.endsWith('/bootstrap')) return { enabled: true, csrfToken: 'b'.repeat(64) };
+      if (path.endsWith('/me')) return { accountId: 'account-1', vendorId: 'vendor-1', vendorCode: 'VND-001', vendorName: 'Vendor', username: 'vendor.contact', email: 'vendor@test.local', fullName: 'Vendor User', position: null, mustChangePassword: true };
+      if (path.endsWith('/tickets')) return [];
+      throw new Error(`Unexpected path ${path}`);
+    });
+    render(<VendorPortalPage />);
+    expect(await screen.findByRole('heading', { name: 'กรุณาเปลี่ยนรหัสผ่าน' })).toBeVisible();
+    expect(screen.getByLabelText('รหัสผ่านปัจจุบัน')).toBeRequired();
+    expect(screen.getByLabelText('รหัสผ่านใหม่')).toBeRequired();
   });
 });
 

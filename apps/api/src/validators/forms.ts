@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FORM_MODULE_KEYS } from '../services/formModuleService';
 
 export const FORM_TEMPLATE_STATUSES = ['Draft', 'Published', 'Archived'] as const;
 export const ISSUE_FORM_STATUSES = [
@@ -24,6 +25,7 @@ export const createFormTemplateSchema = z.object({
   category: z.string().trim().min(1).max(100).default('IT Support'),
   contentHtml,
   pageSettings,
+  moduleKey: z.enum(FORM_MODULE_KEYS).nullable().optional(),
 });
 
 export const updateFormTemplateSchema = createFormTemplateSchema.partial().refine(

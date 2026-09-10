@@ -35,6 +35,10 @@ export interface IntegrationEvent {
 export interface IntegrationCenterResponse {
   generatedAt: string;
   canManage: boolean;
+  retention: {
+    days: number;
+    scope: string;
+  };
   summary: {
     activeChannels: number;
     delivered24h: number;

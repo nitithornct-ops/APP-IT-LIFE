@@ -43,6 +43,10 @@ function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
   return difference === 0;
 }
 
+export function constantTimeEqualText(left: string, right: string): boolean {
+  return constantTimeEqual(new TextEncoder().encode(left), new TextEncoder().encode(right));
+}
+
 export async function hashVendorPassword(password: string): Promise<string> {
   const salt = new Uint8Array(SALT_BYTES);
   crypto.getRandomValues(salt);

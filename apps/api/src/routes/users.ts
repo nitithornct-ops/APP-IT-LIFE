@@ -4,6 +4,7 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { isMfaMandatoryForUser } from '../services/mfaPolicy';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -18,6 +19,7 @@ import {
   inviteUserSchema,
   listUsersQuerySchema,
   resetPasswordSchema,
+  updateMfaSchema,
   updateUserSchema,
 } from '../validators/users';
 
@@ -42,7 +44,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
   let query = createAdminClient(c.env)
     .from('profiles')
     .select(
-      'id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, created_at',
+      'id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, mfa_enabled, created_at',
       { count: 'exact' },
     )
     .range(...paginationRange(page, pageSize));
@@ -60,6 +62,77 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
   }
 
   return c.json(ok(reqId, toPaginatedData(data, count, page, pageSize)));
+});
+
+usersRoute.patch('/:id/mfa', requirePermission('user.manage'), zValidator('json', updateMfaSchema, zodValidationHook), async (c) => {
+  const admin = createAdminClient(c.env);
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const targetId = c.req.param('id')!;
+  const { enabled } = c.req.valid('json');
+
+  if (!enabled && targetId === actorId) {
+    return c.json(fail(reqId, 'USER_MFA_SELF_DISABLE_FORBIDDEN', 'ไม่สามารถปิด 2FA ของบัญชีที่กำลังใช้งานอยู่ได้'), 409);
+  }
+
+  const auditBefore = await loadAuditSnapshot(admin, 'profiles', targetId);
+  if (!auditBefore) {
+    return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
+  }
+
+  if (!enabled) {
+    try {
+      if (await isMfaMandatoryForUser(c.env, targetId)) {
+        return c.json(fail(reqId, 'USER_MFA_REQUIRED_BY_POLICY', 'บัญชีนี้ถูกบังคับใช้ 2FA จากบทบาทหรือสิทธิ์ จึงปิดไม่ได้'), 409);
+      }
+    } catch {
+      return c.json(fail(reqId, 'USER_MFA_POLICY_LOOKUP_FAILED', 'ตรวจสอบนโยบาย 2FA ของผู้ใช้งานไม่สำเร็จ กรุณาลองใหม่'), 503);
+    }
+  }
+
+  let removedFactorCount = 0;
+  if (!enabled) {
+    const { data: factorData, error: factorListError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
+    if (factorListError) {
+      return dbFailJson(c, 'USER_MFA_FACTORS_LOAD_FAILED', factorListError, 'โหลดอุปกรณ์ 2FA ของผู้ใช้งานไม่สำเร็จ');
+    }
+
+    for (const factor of factorData?.factors ?? []) {
+      const { error: deleteError } = await admin.auth.admin.mfa.deleteFactor({ userId: targetId, id: factor.id });
+      if (deleteError) {
+        // Keep the profile flag enabled when factor cleanup is incomplete. This fails closed:
+        // the user must enroll again instead of silently losing MFA protection.
+        return dbFailJson(c, 'USER_MFA_FACTOR_DELETE_FAILED', deleteError, 'ปิด 2FA ไม่สำเร็จ อุปกรณ์ยืนยันตัวตนบางรายการยังถูกเก็บไว้');
+      }
+      removedFactorCount += 1;
+    }
+  }
+
+  const { data: updated, error: updateError } = await admin
+    .from('profiles')
+    .update({ mfa_enabled: enabled, updated_by: actorId })
+    .eq('id', targetId)
+    .select('*')
+    .maybeSingle();
+
+  if (updateError || !updated) {
+    return dbFailJson(c, 'USER_MFA_UPDATE_FAILED', updateError, 'บันทึกสถานะ 2FA ของผู้ใช้งานไม่สำเร็จ');
+  }
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: enabled ? 'ENABLE_MFA' : 'DISABLE_MFA',
+    module: 'user',
+    targetTable: 'profiles',
+    targetId,
+    detail: { enabled, removedFactorCount },
+    requestId: reqId,
+    before: auditBefore,
+    after: updated,
+  });
+
+  return c.json(ok(reqId, { id: targetId, enabled: updated.mfa_enabled, removedFactorCount }));
 });
 
 /**
@@ -275,7 +348,7 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
 
   const { data } = await supabase
     .from('profiles')
-    .select('id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, created_at')
+    .select('id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, mfa_enabled, created_at')
     .eq('id', targetId)
     .maybeSingle();
 

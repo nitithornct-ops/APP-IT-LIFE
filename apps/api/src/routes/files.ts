@@ -1,8 +1,10 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { createSignedUrl, deleteFile, uploadFile } from '../services/storageService';
 import type { AppEnv } from '../types';
@@ -20,6 +22,8 @@ import {
 export const filesRoute = new Hono<AppEnv>();
 
 filesRoute.use('*', requireAuth);
+
+const MAX_UPLOAD_REQUEST_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
 
 type AttachmentMeta = {
   module: 'ticket' | 'service_request';
@@ -62,7 +66,14 @@ async function canAccessTarget(
  * ตรวจสอบ File instance ปนกับ field ข้อความอื่นในฟอร์มเดียวกันได้ไม่ตรงรูปแบบ error มาตรฐาน จึง
  * ตรวจเองตรงนี้แล้วคืน VALIDATION_ERROR รูปแบบเดียวกับ zodValidationHook
  */
-filesRoute.post('/', async (c) => {
+filesRoute.post(
+  '/',
+  rateLimit({ windowMs: 3600_000, max: 60, keyFn: (c) => `file_upload:${c.get('userId')}` }),
+  bodyLimit({
+    maxSize: MAX_UPLOAD_REQUEST_BYTES,
+    onError: (c) => c.json(fail(c.get('requestId'), 'FILE_TOO_LARGE', `คำขออัปโหลดต้องมีขนาดไม่เกิน ${MAX_UPLOAD_REQUEST_BYTES / (1024 * 1024)} MB`), 413),
+  }),
+  async (c) => {
   const userScoped = c.get('supabase');
   const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
@@ -156,7 +167,8 @@ filesRoute.post('/', async (c) => {
   const signed = await createSignedUrl(admin, uploaded.path, 300);
 
   return c.json(ok(reqId, { ...data, signedUrl: 'url' in signed ? signed.url : null }), 201);
-});
+  },
+);
 
 /** Signed URL อายุสั้น (ค่าเริ่มต้น 300 วินาที) — สร้างใหม่ทุกครั้งที่ขอ ไม่เก็บ URL ถาวรไว้ที่ไหน */
 filesRoute.get('/:id/signed-url', zValidator('query', signedUrlQuerySchema, zodValidationHook), async (c) => {
