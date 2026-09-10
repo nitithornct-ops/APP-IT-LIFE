@@ -50,18 +50,29 @@ const ticketCategorySchema = z.object({
 
 type TicketCategoryForm = z.infer<typeof ticketCategorySchema>;
 
-function CreateTicketCategoryForm({ onClose }: { onClose: () => void }) {
+function CreateTicketCategoryForm({ category, onClose }: { category?: TicketCategory; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<TicketCategoryForm>({ resolver: zodResolver(ticketCategorySchema) });
+  } = useForm<TicketCategoryForm>({
+    resolver: zodResolver(ticketCategorySchema),
+    defaultValues: {
+      name: category?.name ?? '',
+      defaultPriority: category?.default_priority ?? 'ปานกลาง',
+      responseSlaHours: category?.response_sla_hours ?? undefined,
+      resolutionSlaHours: category?.resolution_sla_hours ?? undefined,
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: (values: TicketCategoryForm) =>
-      apiFetch('/api/v1/ticket-categories', { method: 'POST', body: JSON.stringify(values) }),
+      apiFetch(category ? `/api/v1/ticket-categories/${category.id}` : '/api/v1/ticket-categories', {
+        method: category ? 'PATCH' : 'POST',
+        body: JSON.stringify(values),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'ticket-categories'] });
       onClose();
@@ -76,7 +87,7 @@ function CreateTicketCategoryForm({ onClose }: { onClose: () => void }) {
       noValidate
     >
       <div className="flex items-center justify-between sm:col-span-2">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มหมวดหมู่ Ticket</h3>
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{category ? 'แก้ไขหมวดหมู่ Ticket' : 'เพิ่มหมวดหมู่ Ticket'}</h3>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -100,7 +111,6 @@ function CreateTicketCategoryForm({ onClose }: { onClose: () => void }) {
         </label>
         <select
           id="tc-priority"
-          defaultValue="ปานกลาง"
           className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
           {...register('defaultPriority')}
         >
@@ -153,6 +163,7 @@ function CreateTicketCategoryForm({ onClose }: { onClose: () => void }) {
 
 function TicketCategoriesSection() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<TicketCategory | null>(null);
   const query = useQuery({
     queryKey: ['admin', 'ticket-categories'],
     queryFn: () => apiFetch<TicketCategory[]>('/api/v1/ticket-categories'),
@@ -172,6 +183,7 @@ function TicketCategoriesSection() {
       </CardHeader>
       <CardBody>
         {showCreate && <FormModal title="เพิ่มหมวดหมู่ Ticket" size="md" onClose={() => setShowCreate(false)}><CreateTicketCategoryForm onClose={() => setShowCreate(false)} /></FormModal>}
+        {editingCategory && <FormModal title="แก้ไขหมวดหมู่ Ticket" size="md" onClose={() => setEditingCategory(null)}><CreateTicketCategoryForm category={editingCategory} onClose={() => setEditingCategory(null)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -214,6 +226,7 @@ function TicketCategoriesSection() {
                     </td>
                     <td className="px-2 py-2 text-right">
                       <RowActions recordLabel={cat.name} actions={[
+                        { kind: 'edit', permission: 'ticket_category.manage', onClick: () => setEditingCategory(cat) },
                         { kind: 'custom', icon: cat.status === 'active' ? Ban : CheckCircle2, label: cat.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน', permission: 'ticket_category.manage', onClick: () => toggleStatus.mutate({ id: cat.id, status: cat.status === 'active' ? 'inactive' : 'active' }) },
                         { kind: 'delete', permission: 'ticket_category.manage', deleteEndpoint: `/api/v1/record-deletions/ticket-categories/${cat.id}` },
                       ]} />
@@ -241,18 +254,27 @@ const assetCategorySchema = z.object({
 
 type AssetCategoryForm = z.infer<typeof assetCategorySchema>;
 
-function CreateAssetCategoryForm({ onClose }: { onClose: () => void }) {
+function CreateAssetCategoryForm({ category, onClose }: { category?: AssetCategory; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<AssetCategoryForm>({ resolver: zodResolver(assetCategorySchema) });
+  } = useForm<AssetCategoryForm>({
+    resolver: zodResolver(assetCategorySchema),
+    defaultValues: {
+      name: category?.name ?? '',
+      codePrefix: category?.code_prefix ?? '',
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: (values: AssetCategoryForm) =>
-      apiFetch('/api/v1/asset-categories', { method: 'POST', body: JSON.stringify(values) }),
+      apiFetch(category ? `/api/v1/asset-categories/${category.id}` : '/api/v1/asset-categories', {
+        method: category ? 'PATCH' : 'POST',
+        body: JSON.stringify(values),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'asset-categories'] });
       onClose();
@@ -267,7 +289,7 @@ function CreateAssetCategoryForm({ onClose }: { onClose: () => void }) {
       noValidate
     >
       <div className="flex items-center justify-between sm:col-span-2">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มหมวดหมู่ทรัพย์สิน</h3>
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{category ? 'แก้ไขหมวดหมู่ทรัพย์สิน' : 'เพิ่มหมวดหมู่ทรัพย์สิน'}</h3>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -312,6 +334,7 @@ function CreateAssetCategoryForm({ onClose }: { onClose: () => void }) {
 
 function AssetCategoriesSection() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(null);
   const query = useQuery({
     queryKey: ['admin', 'asset-categories'],
     queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories'),
@@ -331,6 +354,7 @@ function AssetCategoriesSection() {
       </CardHeader>
       <CardBody>
         {showCreate && <FormModal title="เพิ่มหมวดหมู่ทรัพย์สิน" size="md" onClose={() => setShowCreate(false)}><CreateAssetCategoryForm onClose={() => setShowCreate(false)} /></FormModal>}
+        {editingCategory && <FormModal title="แก้ไขหมวดหมู่ทรัพย์สิน" size="md" onClose={() => setEditingCategory(null)}><CreateAssetCategoryForm category={editingCategory} onClose={() => setEditingCategory(null)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -365,6 +389,7 @@ function AssetCategoriesSection() {
                       <RowActions
                         recordLabel={cat.name}
                         actions={[
+                          { kind: 'edit', permission: 'asset_category.manage', onClick: () => setEditingCategory(cat) },
                           {
                             kind: 'custom',
                             icon: cat.status === 'active' ? Ban : CheckCircle2,
@@ -393,17 +418,24 @@ const accessSystemSchema = z.object({
 
 type AccessSystemForm = z.infer<typeof accessSystemSchema>;
 
-function CreateAccessSystemForm({ onClose }: { onClose: () => void }) {
+function CreateAccessSystemForm({ system, onClose }: { system?: AccessSystem; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<AccessSystemForm>({ resolver: zodResolver(accessSystemSchema) });
+  } = useForm<AccessSystemForm>({
+    resolver: zodResolver(accessSystemSchema),
+    defaultValues: { name: system?.name ?? '' },
+  });
 
   const mutation = useMutation({
-    mutationFn: (values: AccessSystemForm) => apiFetch('/api/v1/access-systems', { method: 'POST', body: JSON.stringify(values) }),
+    mutationFn: (values: AccessSystemForm) =>
+      apiFetch(system ? `/api/v1/access-systems/${system.id}` : '/api/v1/access-systems', {
+        method: system ? 'PATCH' : 'POST',
+        body: JSON.stringify(values),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'access-systems'] });
       onClose();
@@ -418,7 +450,7 @@ function CreateAccessSystemForm({ onClose }: { onClose: () => void }) {
       noValidate
     >
       <div className="flex items-center justify-between sm:col-span-2">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มระบบงาน</h3>
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{system ? 'แก้ไขระบบงาน' : 'เพิ่มระบบงาน'}</h3>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -450,6 +482,7 @@ function CreateAccessSystemForm({ onClose }: { onClose: () => void }) {
 
 function AccessSystemsSection() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editingSystem, setEditingSystem] = useState<AccessSystem | null>(null);
   const query = useQuery({
     queryKey: ['admin', 'access-systems'],
     queryFn: () => apiFetch<AccessSystem[]>('/api/v1/access-systems'),
@@ -469,6 +502,7 @@ function AccessSystemsSection() {
       </CardHeader>
       <CardBody>
         {showCreate && <FormModal title="เพิ่มระบบงาน" description="สร้างข้อมูลระบบสำหรับคำขอสิทธิ์" size="md" onClose={() => setShowCreate(false)}><CreateAccessSystemForm onClose={() => setShowCreate(false)} /></FormModal>}
+        {editingSystem && <FormModal title="แก้ไขระบบงาน" description="แก้ไขข้อมูลระบบสำหรับคำขอสิทธิ์" size="md" onClose={() => setEditingSystem(null)}><CreateAccessSystemForm system={editingSystem} onClose={() => setEditingSystem(null)} /></FormModal>}
 
         {query.isLoading && (
           <div className="flex justify-center py-8" role="status">
@@ -499,6 +533,7 @@ function AccessSystemsSection() {
                     </td>
                     <td className="px-2 py-2 text-right">
                       <RowActions recordLabel={system.name} actions={[
+                        { kind: 'edit', permission: 'access_system.manage', onClick: () => setEditingSystem(system) },
                         { kind: 'custom', icon: system.status === 'active' ? Ban : CheckCircle2, label: system.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน', permission: 'access_system.manage', onClick: () => toggleStatus.mutate({ id: system.id, status: system.status === 'active' ? 'inactive' : 'active' }) },
                         { kind: 'delete', permission: 'access_system.manage', deleteEndpoint: `/api/v1/record-deletions/access-systems/${system.id}` },
                       ]} />
