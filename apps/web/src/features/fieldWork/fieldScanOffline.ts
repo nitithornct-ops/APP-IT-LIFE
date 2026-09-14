@@ -24,28 +24,22 @@ export interface LocalFieldScanItem {
 
 const DB_NAME = 'itlife-field-scan';
 const STORE_NAME = 'verification-queue';
-const FALLBACK_KEY = 'itlife-field-scan-queue';
+
+// Without IndexedDB the queue lives only in this tab's memory: scans still sync while
+// the tab stays open, and custodian employee IDs never land in plain-text localStorage.
+const memoryQueue = new Map<string, LocalFieldScanItem>();
 
 function canUseIndexedDb(): boolean {
   return typeof indexedDB !== 'undefined';
 }
 
 function readFallback(): LocalFieldScanItem[] {
-  try {
-    const raw = localStorage.getItem(FALLBACK_KEY);
-    return raw ? JSON.parse(raw) as LocalFieldScanItem[] : [];
-  } catch {
-    return [];
-  }
+  return [...memoryQueue.values()].map((item) => ({ ...item }));
 }
 
 function writeFallback(items: LocalFieldScanItem[]): void {
-  try {
-    localStorage.setItem(FALLBACK_KEY, JSON.stringify(items));
-  } catch {
-    // Private browsing or a full quota should not stop the user from continuing
-    // the in-memory scan; the UI will still offer sync while this tab is open.
-  }
+  memoryQueue.clear();
+  for (const item of items) memoryQueue.set(item.clientRef, item);
 }
 
 function openDb(): Promise<IDBDatabase> {
