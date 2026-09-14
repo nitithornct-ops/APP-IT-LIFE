@@ -25,6 +25,7 @@ const INTENTIONALLY_WITHOUT_PAGE_TITLE: Record<string, string> = {
   'features/linePortal/LineTicketDetail.tsx': 'จอย่อยของ LINE Portal ใช้โครงแอปมือถือ (hero + bottom-nav) ไม่ใช่ AppShell',
   'pages/VendorFormPortalPage.tsx': 'ฟอร์มสาธารณะสำหรับผู้ให้บริการ อยู่นอก AppShell',
   'pages/VendorPortalPage.tsx': 'พอร์ทัลบริษัทภายนอกใช้ session แยกและอยู่นอก AppShell',
+  'pages/VendorPortalInvitePage.tsx': 'หน้ารับคำเชิญของบริษัทภายนอก อยู่นอก AppShell เหมือนหน้า auth',
   'pages/ProfilePage.tsx': 'design handoff 3h ใช้การ์ดโปรไฟล์พื้นเข้มแทนหัวข้อปกติ',
   'features/tickets/TicketFormPage.tsx': 'หน้าสำหรับสั่งพิมพ์ ใช้พื้นขาวขนาด A4 เสมอ',
 };
