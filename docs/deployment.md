@@ -1,5 +1,7 @@
 # Production Deployment Runbook
 
+> Current release choice: `fresh-start`. This release does not import legacy data; the production workflow starts with empty application data and still requires a real `migration_approval_ref` plus the protected `production` environment approval. Do not create a rehearsal report unless a real legacy import is planned.
+
 เอกสารนี้เป็น gate สำหรับ Production ของ LIFE IT Smart Service Center การ deploy จริงทำผ่าน
 GitHub Actions workflow `Deploy Production` จาก branch `master` เท่านั้น และต้องใช้ GitHub
 Environment ชื่อ `production` ที่กำหนด required reviewers ไว้แล้ว
@@ -158,7 +160,7 @@ R2 ยังเป็นที่เก็บสำเนาหลัก ขั�
 
 - `/api/v1/health` ต้องตอบ `status: ok` และ database check เป็น `ok`
 - Login, reset password และ permission menu ถูกต้องอย่างน้อย role: user, approver, technician, auditor, IT admin
-- ทดสอบ Ticket create/assign/SLA/pause/resume/resolve/reopen และ public ticket tracking
+- ทดสอบ Ticket create/assign/SLA/pause/resume/resolve/reopen ในแอป และผ่านพอร์ทัล LINE
 - ตรวจ private attachment signed URL, audit log, login log, notification และ scheduled reminder
 - ทดสอบ report CSV/PDF; PDF ต้องเห็น Browser Rendering binding `MYBROWSER`
 - ตรวจ CORS, CSP/security headers และยืนยัน origin อื่นเรียก API ไม่ได้

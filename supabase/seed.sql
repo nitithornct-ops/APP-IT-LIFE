@@ -55,6 +55,7 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('change.deploy', 'change', 'deploy', 'บันทึกการติดตั้ง Change', 'active'),
   ('report.view', 'report', 'view', 'ดู Report Center และรายงานมาตรฐานตามสิทธิ์ของแหล่งข้อมูล', 'active'),
   ('report.export', 'report', 'export', 'Export รายงาน', 'active'),
+  ('report.schedule', 'report', 'schedule', 'ตั้งเวลาและดูประวัติการสร้างรายงาน', 'active'),
   ('user.manage', 'user', 'manage', 'จัดการบัญชีผู้ใช้งาน', 'active'),
   ('role.manage', 'role', 'manage', 'จัดการบทบาทและสิทธิ์', 'active'),
   ('role.view', 'role', 'view', 'ดูบทบาทและสิทธิ์ (อ่านอย่างเดียว)', 'active'),
@@ -63,6 +64,7 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('audit.view', 'audit', 'view', 'ดู Audit Log และ Login Log', 'active'),
   ('setting.view', 'setting', 'view', 'ดูการตั้งค่าระบบที่ไม่ใช่ความลับ', 'active'),
   ('setting.manage', 'setting', 'manage', 'แก้ไขการตั้งค่าระบบผ่าน allowlist', 'active'),
+  ('setting.approve', 'setting', 'approve', 'อนุมัติการเปลี่ยนค่าตั้งค่าระดับ Critical', 'active'),
   ('ticket_category.manage', 'ticket_category', 'manage', 'จัดการหมวดหมู่ Ticket และค่า SLA ตั้งต้น', 'active'),
   ('asset_category.manage', 'asset_category', 'manage', 'จัดการหมวดหมู่ทรัพย์สิน', 'active'),
   ('approval_group.manage', 'approval_group', 'manage', 'จัดการกลุ่มอนุมัติและสมาชิกกลุ่ม', 'active'),
@@ -80,6 +82,7 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('access_request.approve', 'access_request', 'approve', 'อนุมัติคำขอสิทธิ์ระบบ (สิทธิ์เสริมนอกเหนือหัวหน้างาน)', 'active'),
   ('access_request.process', 'access_request', 'process', 'ดำเนินการให้สิทธิ์จริง (IT)', 'active'),
   ('access_registry.manage', 'access_registry', 'manage', 'ทบทวน/เพิกถอนสิทธิ์ในทะเบียน RBAC', 'active'),
+  ('access_registry.review', 'access_registry', 'review', 'รับรองหรือเพิกถอนสิทธิ์ตาม Access Certification Campaign', 'active'),
   ('task.view', 'task', 'view', 'เข้าถึงงานของฉัน (Task ส่วนตัว)', 'active'),
   ('maintenance.view', 'maintenance', 'view', 'ดูแผน PM/บำรุงรักษา', 'active'),
   ('maintenance.manage', 'maintenance', 'manage', 'จัดการแผน PM/บำรุงรักษาและเทมเพลตเช็กลิสต์', 'active'),
@@ -110,12 +113,14 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('privacy.manage', 'privacy', 'manage', 'จัดการ RoPA, Consent และ DSR', 'active'),
   ('risk.view', 'risk', 'view', 'ดู Risk Register และคะแนนความเสี่ยง', 'active'),
   ('risk.manage', 'risk', 'manage', 'จัดการ Risk Register และแผนตอบสนอง', 'active'),
+  ('risk.accept', 'risk', 'accept', 'อนุมัติหรือปฏิเสธ Risk Acceptance', 'active'),
   ('ai_cloud.view', 'ai_cloud', 'view', 'ดูทะเบียน AI และ Cloud ที่องค์กรอนุญาต', 'active'),
   ('ai_cloud.manage', 'ai_cloud', 'manage', 'จัดการทะเบียน AI และ Cloud', 'active'),
   ('awareness.view', 'awareness', 'view', 'ดูแผนอบรมและนโยบายที่ต้องรับทราบ', 'active'),
   ('awareness.manage', 'awareness', 'manage', 'จัดการแผนอบรมและผลการอบรม', 'active'),
   ('awareness.participate', 'awareness', 'participate', 'เข้าร่วมอบรมและลงนามรับทราบนโยบาย', 'active'),
   ('evidence.view', 'evidence', 'view', 'ดู Evidence Center และสถานะ Operational Control', 'active'),
+  ('evidence.manage', 'evidence', 'manage', 'จัดการ Control Library, Control Test และ Evidence', 'active'),
   ('evidence.export', 'evidence', 'export', 'Export ชุดหลักฐานสำหรับผู้ตรวจสอบ', 'active'),
   ('audit_management.view', 'audit_management', 'view', 'ดูแผน Audit และข้อค้นพบ', 'active'),
   ('audit_management.manage', 'audit_management', 'manage', 'จัดการแผน Audit และ Corrective Action', 'active'),
@@ -140,6 +145,10 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('technician_skill.manage', 'technician_skill', 'manage', 'ประเมินและแก้ไขระดับทักษะของเจ้าหน้าที่', 'active')
 on conflict (key) do nothing;
 
+update public.permissions
+set is_privileged = true
+where key in ('access_registry.manage', 'access_registry.review');
+
 -- ---------------------------------------------------------------------------
 -- Role ↔ Permission เริ่มต้น (ปรับได้ภายหลังผ่านหน้า Permission Matrix — นี่เป็นแค่ค่าตั้งต้น)
 -- super_admin และ it_admin ได้สิทธิ์เต็มเหมือนกันในช่วงเริ่มต้นระบบ เพื่อให้ทีมไอทีใช้งานได้ทันที
@@ -152,6 +161,18 @@ cross join public.permissions p
 where r.key in ('super_admin', 'it_admin')
 on conflict (role_id, permission_id) do nothing;
 
+insert into public.role_permissions (role_id, permission_id, effect)
+select r.id, p.id, 'allow'
+from (values
+  ('approver', 'setting.view'),
+  ('approver', 'setting.approve'),
+  ('executive', 'setting.view'),
+  ('executive', 'setting.approve')
+) as mapping(role_key, permission_key)
+join public.roles r on r.key = mapping.role_key
+join public.permissions p on p.key = mapping.permission_key
+on conflict (role_id, permission_id) do nothing;
+
 -- Governance/ISMS/PDPA permission matrix. Designer UI is deferred post Go-live;
 -- document metadata permissions remain active and configurable.
 insert into public.role_permissions (role_id, permission_id, effect)
@@ -160,11 +181,11 @@ from (values
   ('technician','data_class.view'), ('technician','data_class.manage'),
   ('technician','risk.view'), ('technician','ai_cloud.view'), ('technician','ai_cloud.manage'),
   ('technician','awareness.view'), ('technician','awareness.manage'), ('technician','awareness.participate'),
-  ('technician','evidence.view'), ('technician','audit_management.view'), ('technician','governance_document.view'),
+  ('technician','evidence.view'), ('technician','evidence.manage'), ('technician','audit_management.view'), ('technician','governance_document.view'),
   ('technician','operations.view'), ('technician','operations.manage'), ('technician','integration.view'), ('technician','integration.manage'),
 
   ('approver','data_class.view'), ('approver','data_class.approve'), ('approver','compliance.view'),
-  ('approver','risk.view'), ('approver','risk.manage'), ('approver','ai_cloud.view'),
+  ('approver','risk.view'), ('approver','risk.manage'), ('approver','risk.accept'), ('approver','vulnerability.view'), ('approver','ai_cloud.view'),
   ('approver','awareness.view'), ('approver','awareness.participate'), ('approver','evidence.view'),
 
   ('manager','data_class.view'), ('manager','compliance.view'), ('manager','privacy.view'), ('manager','risk.view'),
@@ -172,7 +193,7 @@ from (values
   ('manager','evidence.view'), ('manager','audit_management.view'), ('manager','governance_document.view'),
 
   ('executive','data_class.view'), ('executive','data_class.approve'), ('executive','compliance.view'),
-  ('executive','privacy.view'), ('executive','risk.view'), ('executive','ai_cloud.view'),
+  ('executive','privacy.view'), ('executive','risk.view'), ('executive','risk.accept'), ('executive','ai_cloud.view'),
   ('executive','awareness.view'), ('executive','awareness.participate'), ('executive','evidence.view'),
   ('executive','evidence.export'), ('executive','audit_management.view'), ('executive','governance_document.view'),
 
@@ -252,6 +273,7 @@ from (values
   ('technician', 'access_request.view'),
   ('technician', 'report.view'),
   ('technician', 'report.export'),
+  ('technician', 'report.schedule'),
   ('technician', 'technician_skill.view'),
 
   ('approver', 'dashboard.view'),
@@ -271,6 +293,7 @@ from (values
   ('approver', 'report.export'),
   ('approver', 'report.view'),
   ('approver', 'service_request.view'),
+  ('approver', 'access_registry.review'),
   ('approver', 'access_request.view'),
   ('approver', 'workflow.view'),
   ('approver', 'workflow.approve'),
@@ -301,7 +324,9 @@ from (values
   ('manager', 'form.view'),
   ('manager', 'report.export'),
   ('manager', 'report.view'),
+  ('manager', 'report.schedule'),
   ('manager', 'service_request.view'),
+  ('manager', 'access_registry.review'),
   ('manager', 'access_request.view'),
   ('manager', 'workflow.view'),
   ('manager', 'workflow.view_all'),
@@ -332,6 +357,7 @@ from (values
   ('executive', 'form.view'),
   ('executive', 'report.export'),
   ('executive', 'report.view'),
+  ('executive', 'report.schedule'),
   ('executive', 'audit.view'),
   ('executive', 'service_request.view'),
   ('executive', 'access_request.view'),
@@ -364,6 +390,7 @@ from (values
   ('auditor', 'form.view'),
   ('auditor', 'report.export'),
   ('auditor', 'report.view'),
+  ('auditor', 'report.schedule'),
   ('auditor', 'role.view'),
   ('auditor', 'audit.view'),
   ('auditor', 'service_request.view'),

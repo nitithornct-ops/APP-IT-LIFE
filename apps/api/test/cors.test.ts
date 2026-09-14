@@ -43,4 +43,21 @@ describe('CORS preflight', () => {
     expect(allowed).toContain('x-tracking-token');
     expect(allowed).toContain('x-vendor-token');
   });
+
+  it('allows bearer-authenticated vendor portal requests', async () => {
+    const preflight = await app.request('/api/v1/vendor-portal/tickets', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: allowedOrigin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+      },
+    }, testEnv);
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('Access-Control-Allow-Headers')?.toLowerCase()).toContain('authorization');
+
+    const bootstrap = await app.request('/api/v1/vendor-portal/bootstrap', { headers: { Origin: allowedOrigin } }, testEnv);
+    expect(bootstrap.status).toBe(200);
+    expect(bootstrap.headers.get('Set-Cookie')).toBeNull();
+  });
 });

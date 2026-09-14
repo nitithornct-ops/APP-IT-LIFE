@@ -3,9 +3,11 @@ export interface VendorPortalProfile {
   vendorId: string;
   vendorCode: string;
   vendorName: string;
+  username: string;
   email: string;
   fullName: string;
   position: string | null;
+  mustChangePassword: boolean;
 }
 
 export interface VendorPortalSubmission {

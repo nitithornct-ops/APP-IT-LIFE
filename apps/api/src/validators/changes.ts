@@ -14,6 +14,7 @@ export const listChangesQuerySchema = paginationQuerySchema.extend({
 export const createChangeSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อ').max(200),
   systemAffected: z.string().trim().min(1, 'กรุณาระบุระบบที่ได้รับผลกระทบ').max(150),
+  configurationItemId: z.string().uuid().nullable().optional(),
   changeType: z.string().trim().max(60).optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   impactAssessment: z.string().trim().max(2000).optional(),

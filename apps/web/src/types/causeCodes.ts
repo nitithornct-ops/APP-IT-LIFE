@@ -10,6 +10,7 @@ export interface CauseCode {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  effective_date: string;
   category: { id: string; name: string } | null;
 }
 

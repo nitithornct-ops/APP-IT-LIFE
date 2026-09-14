@@ -24,7 +24,14 @@ export interface ServiceRequestListItem {
   status: ServiceRequestStatus;
   approval_status: ApprovalStatus;
   assignee_id: string | null;
+  assigned_group_id: string | null;
+  service_owner_id: string | null;
+  fulfillment_task_id: string | null;
+  fulfillment_started_at: string | null;
   due_at: string | null;
+  sla_paused_at: string | null;
+  sla_paused_minutes: number;
+  estimated_cost: number | null;
   created_at: string;
 }
 
@@ -70,6 +77,10 @@ export interface ServiceRequestAttachment {
 
 export interface ServiceRequestDetail extends ServiceRequestListItem {
   catalog_id: string | null;
+  service_owner_id: string | null;
+  estimated_cost: number | null;
+  fulfillment_task_id: string | null;
+  fulfillment_started_at: string | null;
   requested_for: string | null;
   summary: string;
   request_details: Record<string, unknown>;
@@ -93,8 +104,16 @@ export interface ServiceRequestDetail extends ServiceRequestListItem {
   service_catalog: { service_name: string; category: string | null } | null;
   requester: { full_name: string; email: string } | null;
   assignee: { full_name: string; email: string } | null;
+  service_owner: { full_name: string; email: string } | null;
   approval_group: { code: string; name: string } | null;
   tasks: ServiceRequestTask[];
   history: ServiceRequestHistoryEntry[];
   attachments: ServiceRequestAttachment[];
+  sla_paused_at: string | null;
+  sla_paused_minutes: number;
+  sla_pause_reason: string | null;
+  cycle_time: {
+    approvalMinutes: number | null;
+    fulfillmentMinutes: number | null;
+  };
 }

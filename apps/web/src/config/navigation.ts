@@ -125,7 +125,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'ตารางทักษะช่าง', path: '/admin/technician-skills', icon: Layers, permission: 'technician_skill.view' },
       { label: 'บทบาท', path: '/admin/roles', icon: ShieldCheck, permission: 'role.view' },
       { label: 'Permission Matrix', path: '/admin/permission-matrix', icon: KeyRound, permission: 'role.view' },
-      { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, permission: 'access_registry.manage' },
+      { label: 'ทะเบียนสิทธิ์ RBAC', path: '/admin/access-registry', icon: ListChecks, anyPermission: ['access_registry.manage', 'access_registry.review', 'audit.view'] },
       { label: 'กลุ่มอนุมัติ', path: '/admin/approval-groups', icon: Users2, permission: 'approval_group.manage' },
       { label: 'บัญชี LINE', path: '/admin/line-links', icon: MessageCircle, permission: 'line.manage' },
     ],

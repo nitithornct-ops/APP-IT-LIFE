@@ -7,21 +7,23 @@ import { createAdminClient, embeddedName } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { resolveFormModuleTemplate } from '../services/formModuleService';
 import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
-import { saveRequesterSignature } from '../services/ticketSignatureService';
+import { uploadRequesterSignature } from '../services/ticketSignatureService';
 import {
   renderTicketFormTemplate,
-  TICKET_FORM_TEMPLATE_CODE,
   ticketFormFlow,
 } from '../services/ticketFormDocument';
 import { addTicketBusinessHours, parseTicketBusinessCalendar } from '../services/ticketSlaService';
+import { ticketSlaState } from '../services/ticketSlaStatus';
 import {
   TICKET_STATUS,
   applyStatusChange,
   assertTransition,
   changesSlaPause,
   fieldOutcomesFor,
+  WAITING_STATUSES,
 } from '../services/ticketWorkflow';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -34,7 +36,7 @@ import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { verifyFileSignature } from '../utils/fileSignature';
 import { zodValidationHook } from '../utils/validation';
-import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormCheckmarksSchema, ticketFormContentSchema, updateTicketSchema } from '../validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, linkTicketMaintenancePlanSchema, listTicketsQuerySchema, requesterReopenTicketSchema, submitTicketFeedbackSchema, ticketFormCheckmarksSchema, ticketFormContentSchema, updateTicketSchema } from '../validators/tickets';
 
 /**
  * Help Desk / Ticket — สืบทอดจาก Tickets/Ticket_Worklogs เดิม (Module_Ticket.gs) เฉพาะเส้นทาง
@@ -84,6 +86,12 @@ const TICKET_SORT_COLUMNS = ['ticket_no', 'title', 'due_at', 'created_at'] as co
 /** ส่วนของ query builder ที่ตัวกรองรายการ Ticket ต้องใช้ */
 interface TicketFilterableQuery {
   eq(column: string, value: unknown): TicketFilterableQuery;
+  in(column: string, values: unknown[]): TicketFilterableQuery;
+  is(column: string, value: null): TicketFilterableQuery;
+  not(column: string, operator: string, value: unknown): TicketFilterableQuery;
+  gte(column: string, value: unknown): TicketFilterableQuery;
+  lte(column: string, value: unknown): TicketFilterableQuery;
+  lt(column: string, value: unknown): TicketFilterableQuery;
   or(filters: string): TicketFilterableQuery;
 }
 
@@ -94,6 +102,7 @@ interface TicketListFilters {
   search?: string;
   assigneeId?: string;
   mine?: string;
+  queue?: string;
 }
 
 /**
@@ -106,7 +115,7 @@ interface TicketListFilters {
  */
 function applyTicketListFilters<T>(
   query: T,
-  { status, categoryId, priority, search, assigneeId, mine }: TicketListFilters,
+  { status, categoryId, priority, search, assigneeId, mine, queue }: TicketListFilters,
   actorId: string,
 ): T {
   // มอง builder เป็นโครงแคบ ๆ เฉพาะสอง method ที่ใช้ เพราะ generic เต็มของ supabase-js
@@ -125,6 +134,14 @@ function applyTicketListFilters<T>(
   }
   if (assigneeId) next = next.eq('assignee_id', assigneeId);
   if (mine === 'true') next = next.eq('requester_id', actorId);
+  const now = new Date();
+  const terminalFilter = '(เสร็จสิ้น,ปิดงาน,ยกเลิก,ยกระดับเป็น Incident)';
+  if (queue === 'unassigned') next = next.not('status', 'in', terminalFilter).is('assignee_id', null);
+  if (queue === 'near_sla') next = next.not('status', 'in', terminalFilter).is('sla_paused_at', null).gte('due_at', now.toISOString()).lte('due_at', new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString());
+  if (queue === 'overdue') next = next.not('status', 'in', terminalFilter).is('sla_paused_at', null).lt('due_at', now.toISOString());
+  if (queue === 'waiting_follow_up') next = next.in('status', ['รออะไหล่', 'รอผู้ใช้งาน']).lte('waiting_follow_up_at', now.toISOString());
+  if (queue === 'awaiting_acceptance') next = next.eq('status', TICKET_STATUS.RESOLVED);
+  if (queue === 'paused') next = next.not('status', 'in', terminalFilter).not('sla_paused_at', 'is', 'null');
   return next as unknown as T;
 }
 
@@ -132,25 +149,30 @@ ticketsRoute.get('/', zValidator('query', listTicketsQuerySchema, zodValidationH
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { page, pageSize, sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
+  const { page, pageSize, sort, order, status, categoryId, priority, search, assigneeId, mine, queue } = c.req.valid('query');
 
   // RLS (tickets_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง — filter ที่นี่เป็นแค่ UX
   let query = supabase
     .from('tickets')
     .select(
-      'id, ticket_no, title, requester_id, requester_name_snapshot, department_name_snapshot, guest_name, guest_department, source_channel, category_id, priority, status, assignee_id, assignee_name_snapshot, is_security, incident_id, due_at, created_at, outsource_name, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name,email), assignee:profiles!tickets_assignee_id_fkey(full_name,email)',
+      'id, ticket_no, title, requester_id, requester_name_snapshot, department_name_snapshot, guest_name, guest_department, source_channel, category_id, priority, status, assignee_id, assignee_name_snapshot, is_security, incident_id, due_at, sla_paused_at, sla_paused_minutes, waiting_follow_up_at, waiting_since, created_at, outsource_name, ticket_categories(name), requester:profiles!tickets_requester_id_fkey(full_name,email), assignee:profiles!tickets_assignee_id_fkey(full_name,email)',
       { count: 'exact' },
     )
     .range(...paginationRange(page, pageSize));
   query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
-  query = applyTicketListFilters(query, { status, categoryId, priority, search, assigneeId, mine }, actorId);
+  query = applyTicketListFilters(query, { status, categoryId, priority, search, assigneeId, mine, queue }, actorId);
 
   const { data, count, error } = await query;
   if (error) {
     return c.json(fail(reqId, 'TICKETS_LIST_FAILED', 'ดึงรายการ Ticket ไม่สำเร็จ'), 400);
   }
-  return c.json(ok(reqId, toPaginatedData(data, count, page, pageSize)));
+  const items = (data ?? []).map((ticket) => ({
+    ...ticket,
+    is_sla_paused: Boolean(ticket.sla_paused_at),
+    sla_state: ticketSlaState(ticket),
+  }));
+  return c.json(ok(reqId, toPaginatedData(items, count, page, pageSize)));
 });
 
 /** KPI 4 ใบของหน้า Help Desk เดิม คำนวณจากข้อมูลที่ RLS อนุญาตให้ผู้ใช้คนนี้มองเห็นเท่านั้น */
@@ -159,28 +181,53 @@ ticketsRoute.get('/summary', async (c) => {
   const reqId = c.get('requestId');
   const { data, error } = await supabase
     .from('tickets')
-    .select('status,due_at,is_security,rating');
+    .select('status,due_at,sla_paused_at,is_security,rating');
   if (error) return c.json(fail(reqId, 'TICKET_SUMMARY_FAILED', 'โหลดสรุป Ticket ไม่สำเร็จ'), 400);
 
-  const terminal = new Set<string>([
-    TICKET_STATUS.RESOLVED,
-    TICKET_STATUS.CLOSED,
-    TICKET_STATUS.CANCELLED,
-    TICKET_STATUS.ESCALATED,
-  ]);
-  const now = Date.now();
   const rows = data ?? [];
-  const openRows = rows.filter((ticket) => !terminal.has(String(ticket.status)));
+  const openRows = rows.filter((ticket) => !['เสร็จสิ้น', 'ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(String(ticket.status)));
   const ratings = rows
     .map((ticket) => Number(ticket.rating))
     .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
 
   return c.json(ok(reqId, {
     open: openRows.length,
-    overdue: openRows.filter((ticket) => ticket.due_at && new Date(ticket.due_at).getTime() < now).length,
+    overdue: rows.filter((ticket) => ticketSlaState(ticket) === 'overdue').length,
+    paused: rows.filter((ticket) => ticketSlaState(ticket) === 'paused').length,
+    awaitingAcceptance: rows.filter((ticket) => ticket.status === TICKET_STATUS.RESOLVED).length,
     security: openRows.filter((ticket) => ticket.is_security).length,
     averageRating: ratings.length ? Math.round((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length) * 10) / 10 : null,
     ratingCount: ratings.length,
+  }));
+});
+
+/** คิวงานเจ้าหน้าที่ — ตัวเลขทั้งหมดคำนวณจากฐานข้อมูลและใช้กติกา SLA เดียวกับรายการ/รายงาน */
+ticketsRoute.get('/queue-summary', async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nearIso = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
+  const terminal = '(เสร็จสิ้น,ปิดงาน,ยกเลิก,ยกระดับเป็น Incident)';
+  const openBase = () => supabase.from('tickets').select('id', { count: 'exact', head: true }).not('status', 'in', terminal);
+  const [unassigned, nearSla, overdue, waitingFollowUp, awaitingAcceptance, paused] = await Promise.all([
+    openBase().is('assignee_id', null),
+    openBase().is('sla_paused_at', null).gte('due_at', nowIso).lte('due_at', nearIso),
+    openBase().is('sla_paused_at', null).lt('due_at', nowIso),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['รออะไหล่', 'รอผู้ใช้งาน']).lte('waiting_follow_up_at', nowIso),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('status', TICKET_STATUS.RESOLVED),
+    openBase().not('sla_paused_at', 'is', 'null'),
+  ]);
+  const firstError = unassigned.error ?? nearSla.error ?? overdue.error ?? waitingFollowUp.error ?? awaitingAcceptance.error ?? paused.error;
+  if (firstError) return dbFailJson(c, 'TICKET_QUEUE_SUMMARY_FAILED', firstError, 'โหลดคิวงาน Ticket ไม่สำเร็จ');
+  return c.json(ok(reqId, {
+    unassigned: unassigned.count ?? 0,
+    nearSla: nearSla.count ?? 0,
+    overdue: overdue.count ?? 0,
+    waitingFollowUp: waitingFollowUp.count ?? 0,
+    awaitingAcceptance: awaitingAcceptance.count ?? 0,
+    paused: paused.count ?? 0,
+    generatedAt: nowIso,
   }));
 });
 
@@ -221,15 +268,23 @@ ticketsRoute.get('/:id/form-document', async (c) => {
   if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
 
   const admin = createAdminClient(c.env);
-  const { data: template, error: templateError } = await admin
-    .from('form_templates')
-    .select('id, template_code, name, current_version, content_html, page_settings, status, updated_at')
-    .eq('template_code', TICKET_FORM_TEMPLATE_CODE)
-    .neq('status', 'Archived')
-    .maybeSingle();
+  const { data: defaultTemplate, error: templateError } = await resolveFormModuleTemplate<{
+    id: string;
+    template_code: string;
+    name: string;
+    current_version: number;
+    content_html: string;
+    page_settings: Record<string, unknown>;
+    status: string;
+    updated_at: string;
+  }>(
+    admin,
+    'ticket',
+    'id, template_code, name, current_version, content_html, page_settings, status, updated_at',
+  );
   if (templateError) return dbFailJson(c, 'TICKET_FORM_TEMPLATE_LOAD_FAILED', templateError, 'โหลด Template จาก Form Studio ไม่สำเร็จ');
-  if (!template) {
-    return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', `ไม่พบ Template ${TICKET_FORM_TEMPLATE_CODE} ใน Form Studio`), 409);
+  if (!defaultTemplate) {
+    return c.json(fail(reqId, 'TICKET_FORM_TEMPLATE_NOT_FOUND', 'ไม่พบ Template ที่กำหนดให้โมดูล Ticket ใน Form Studio'), 409);
   }
 
   const [
@@ -240,9 +295,8 @@ ticketsRoute.get('/:id/form-document', async (c) => {
   ] = await Promise.all([
     admin
       .from('issue_forms')
-      .select('id, form_no, status, content_html, template_version, vendor_response, updated_at')
+      .select('id, form_no, status, content_html, template_id, template_version, vendor_response, updated_at')
       .eq('ticket_id', id)
-      .eq('template_id', template.id)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -261,6 +315,20 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     admin.from('system_settings').select('value').eq('key', 'ORG_LOGO_URL').maybeSingle(),
   ]);
   if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
+
+  // A module re-assignment changes the default for new work. Keep an existing
+  // Ticket issue form pinned to the template it was created from.
+  let template = defaultTemplate;
+  if (issueForm?.template_id && issueForm.template_id !== defaultTemplate.id) {
+    const issueTemplateResult = await admin
+      .from('form_templates')
+      .select('id, template_code, name, current_version, content_html, page_settings, status, updated_at')
+      .eq('id', issueForm.template_id)
+      .maybeSingle();
+    if (issueTemplateResult.error) return dbFailJson(c, 'TICKET_FORM_TEMPLATE_LOAD_FAILED', issueTemplateResult.error, 'โหลด Template ของแบบฟอร์มงานเดิมไม่สำเร็จ');
+    const issueTemplate = issueTemplateResult.data as typeof defaultTemplate | null;
+    if (issueTemplate) template = issueTemplate;
+  }
 
   let signatureUrl: string | null = null;
   let requesterSignatureUrl: string | null = null;
@@ -467,6 +535,97 @@ ticketsRoute.delete('/:id/form-content', requirePermission('ticket.update'), asy
   return c.json(ok(reqId, { isCustomized: false }));
 });
 
+ticketsRoute.post(
+  '/:id/pm-links',
+  requirePermission('ticket.update'),
+  zValidator('json', linkTicketMaintenancePlanSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    if (!await hasPerm(c, 'maintenance.view')) {
+      return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดูข้อมูล PM เพื่อเชื่อมกับ Ticket นี้'), 403);
+    }
+
+    const { data: ticket, error: ticketError } = await c.get('supabase')
+      .from('tickets')
+      .select('id, ticket_no, asset_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (ticketError) return dbFailJson(c, 'TICKET_PM_LINK_LOAD_FAILED', ticketError);
+    if (!ticket) return c.json(fail(reqId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้'), 404);
+    if (!ticket.asset_id) return c.json(fail(reqId, 'TICKET_ASSET_REQUIRED', 'Ticket นี้ยังไม่ได้ผูกกับอุปกรณ์ จึงเชื่อมรอบ PM ไม่ได้'), 400);
+
+    const { data: plan, error: planError } = await c.get('supabase')
+      .from('maintenance_plans')
+      .select('id, asset_id')
+      .eq('id', body.maintenancePlanId)
+      .maybeSingle();
+    if (planError) return dbFailJson(c, 'TICKET_PM_LINK_LOAD_FAILED', planError);
+    if (!plan) return c.json(fail(reqId, 'MAINTENANCE_NOT_FOUND', 'ไม่พบรอบ PM นี้'), 404);
+    if (plan.asset_id !== ticket.asset_id) return c.json(fail(reqId, 'TICKET_PM_ASSET_MISMATCH', 'รอบ PM ต้องเป็นของอุปกรณ์เดียวกับ Ticket'), 400);
+
+    const admin = createAdminClient(c.env);
+    const { data, error } = await admin
+      .from('ticket_maintenance_links')
+      .upsert({
+        ticket_id: id,
+        maintenance_plan_id: body.maintenancePlanId,
+        relationship: body.relationship,
+        notes: body.notes || null,
+        created_by: actorId,
+      }, { onConflict: 'ticket_id,maintenance_plan_id' })
+      .select('ticket_id,maintenance_plan_id,relationship,notes,created_at,maintenance_plan:maintenance_plans(id,status,plan_date,actual_date,next_due_date,result,notes,asset_id)')
+      .single();
+    if (error) return dbFailJson(c, 'TICKET_PM_LINK_SAVE_FAILED', error);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'LINK_PM',
+      module: 'ticket',
+      targetTable: 'ticket_maintenance_links',
+      targetId: `${id}:${body.maintenancePlanId}`,
+      detail: { ticketNo: ticket.ticket_no, relationship: body.relationship },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, {
+      ...data,
+      maintenance_plan: Array.isArray(data.maintenance_plan) ? data.maintenance_plan[0] ?? null : data.maintenance_plan,
+    }), 201);
+  },
+);
+
+ticketsRoute.delete('/:id/pm-links/:maintenancePlanId', requirePermission('ticket.update'), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id');
+  const maintenancePlanId = c.req.param('maintenancePlanId');
+  if (!await hasPerm(c, 'maintenance.view')) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์จัดการความสัมพันธ์ PM ของ Ticket นี้'), 403);
+  }
+  const { data, error } = await createAdminClient(c.env)
+    .from('ticket_maintenance_links')
+    .delete()
+    .eq('ticket_id', id)
+    .eq('maintenance_plan_id', maintenancePlanId)
+    .select('ticket_id,maintenance_plan_id')
+    .maybeSingle();
+  if (error) return dbFailJson(c, 'TICKET_PM_LINK_DELETE_FAILED', error);
+  if (!data) return c.json(fail(reqId, 'TICKET_PM_LINK_NOT_FOUND', 'ไม่พบความสัมพันธ์ Ticket/PM นี้'), 404);
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'UNLINK_PM',
+    module: 'ticket',
+    targetTable: 'ticket_maintenance_links',
+    targetId: `${id}:${maintenancePlanId}`,
+    detail: {},
+    requestId: reqId,
+  });
+  return c.json(ok(reqId, { deleted: true }));
+});
+
 ticketsRoute.get('/:id', async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -511,6 +670,45 @@ ticketsRoute.get('/:id', async (c) => {
     return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
   }));
 
+  const [roundsResult, canViewPm, canViewProblems] = await Promise.all([
+    supabase
+      .from('ticket_sla_rounds')
+      .select('id, round_no, opened_at, closed_at, status, response_sla_hours, resolution_sla_hours, response_due_at, resolution_due_at, paused_minutes, paused_at, response_met_at, resolved_at, response_sla_met, resolution_sla_met, is_inferred')
+      .eq('ticket_id', id)
+      .order('round_no', { ascending: false }),
+    ticket.asset_id ? hasPerm(c, 'maintenance.view') : Promise.resolve(false),
+    hasPerm(c, 'problem.view'),
+  ]);
+  if (roundsResult.error) return dbFailJson(c, 'TICKET_SLA_ROUNDS_LOAD_FAILED', roundsResult.error, 'ดึงประวัติ SLA ไม่สำเร็จ');
+
+  const [pmResult, pmLinksResult, problemResult] = await Promise.all([
+    ticket.asset_id && canViewPm
+      ? supabase
+        .from('maintenance_plans')
+        .select('id,status,plan_date,actual_date,next_due_date,result,notes,asset_id')
+        .eq('asset_id', ticket.asset_id)
+        .order('plan_date', { ascending: false })
+        .limit(20)
+      : Promise.resolve({ data: [], error: null }),
+    ticket.asset_id && canViewPm
+      ? supabase
+        .from('ticket_maintenance_links')
+        .select('ticket_id,maintenance_plan_id,relationship,notes,created_at,maintenance_plan:maintenance_plans(id,status,plan_date,actual_date,next_due_date,result,notes,asset_id)')
+        .eq('ticket_id', id)
+        .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    canViewProblems
+      ? supabase
+        .from('problem_tickets')
+        .select('problem:problems(id,problem_number,title,status,root_cause,workaround,permanent_fix)')
+        .eq('ticket_id', id)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const relatedProblems = ((problemResult.data ?? []) as Array<{ problem?: unknown }>)
+    .map((link) => Array.isArray(link.problem) ? link.problem[0] : link.problem)
+    .filter(Boolean);
+  if (pmLinksResult.error) return dbFailJson(c, 'TICKET_PM_LINKS_LOAD_FAILED', pmLinksResult.error, 'ดึงความสัมพันธ์ Ticket/PM ไม่สำเร็จ');
+
   // ลายเซ็นผูกกับ Ticket ใบนี้เท่านั้น ไม่มีลายเซ็นกลางให้ตกทอด — ใบที่ยังไม่มีคนเซ็นต้องว่างไว้ตามจริง
   const signaturePath = ticket.signature_storage_path ? String(ticket.signature_storage_path) : '';
   const signatureUploadedAt = ticket.signature_uploaded_at ?? null;
@@ -530,7 +728,24 @@ ticketsRoute.get('/:id', async (c) => {
   }
 
   // field_outcomes มาจาก state machine ตัวเดียวกับที่ PATCH บังคับ จอหน้างานจึงเสนอเฉพาะสิ่งที่ทำได้จริง
-  return c.json(ok(reqId, { ...ticket, signature_url: signatureUrl, requester_signature_url: requesterSignatureUrl, signature_uploaded_at: signatureUploadedAt, attachments, worklogs: worklogs ?? [], field_outcomes: fieldOutcomesFor(String(ticket.status)) }));
+  return c.json(ok(reqId, {
+    ...ticket,
+    signature_url: signatureUrl,
+    requester_signature_url: requesterSignatureUrl,
+    signature_uploaded_at: signatureUploadedAt,
+    is_sla_paused: Boolean(ticket.sla_paused_at),
+    sla_state: ticketSlaState(ticket),
+    sla_rounds: roundsResult.data ?? [],
+    related_pm: pmResult.data ?? [],
+    related_pm_links: (pmLinksResult.data ?? []).map((link) => ({
+      ...link,
+      maintenance_plan: Array.isArray(link.maintenance_plan) ? link.maintenance_plan[0] ?? null : link.maintenance_plan,
+    })),
+    related_problems: relatedProblems,
+    attachments,
+    worklogs: worklogs ?? [],
+    field_outcomes: fieldOutcomesFor(String(ticket.status)),
+  }));
 });
 
 ticketsRoute.post(
@@ -646,6 +861,7 @@ ticketsRoute.post(
               url: appUrl(c.env, '/line?mode=status'),
               buttonLabel: 'เปิดดูและตอบกลับ',
             }),
+            'ticket_comment',
           );
         }
       }
@@ -723,19 +939,6 @@ ticketsRoute.post('/', requirePermission('ticket.create'), zValidator('json', cr
     return dbFailJson(c, 'TICKET_CREATE_FAILED', error);
   }
 
-  // ผู้แจ้งทั่วไปมีแค่ ticket.create ไม่มี ticket.update ซึ่ง RLS insert policy ของ ticket_worklogs
-  // ต้องการ (เพื่อกันไม่ให้ผู้แจ้งแต่งประวัติ worklog เองได้ตามใจ) — รายการ "เปิด Ticket" นี้เป็น
-  // entry ที่ระบบสร้างอัตโนมัติหลังตรวจสอบทุกอย่างแล้ว จึงใช้ Admin client เขียนแทนในจุดนี้จุดเดียว
-  const adminForWorklog = createAdminClient(c.env);
-  await adminForWorklog.from('ticket_worklogs').insert({
-    ticket_id: ticket.id,
-    action: 'เปิด Ticket',
-    status_to: TICKET_STATUS.NEW,
-    detail: 'สร้างผ่านระบบ',
-    is_public: true,
-    actor_id: actorId,
-  });
-
   await writeAuditLog(c.env, {
     actorId,
     actorEmail: c.get('userEmail'),
@@ -761,6 +964,7 @@ interface TicketExportRow {
   assignee_name_snapshot: string | null;
   outsource_name: string | null;
   due_at: string | null;
+  sla_paused_at: string | null;
   created_at: string | null;
   ticket_categories: { name: string | null } | null;
 }
@@ -782,6 +986,7 @@ const TICKET_EXPORT_COLUMNS: ExportColumn<TicketExportRow>[] = [
   { label: 'ผู้รับผิดชอบ', value: (row) => row.assignee_name_snapshot },
   { label: 'Outsource', value: (row) => row.outsource_name },
   { label: 'ครบกำหนด SLA', value: (row) => exportDateTime(row.due_at) },
+  { label: 'สถานะ SLA', value: (row) => row.sla_paused_at ? 'พัก SLA' : ticketSlaState(row) },
   { label: 'วันที่แจ้ง', value: (row) => exportDateTime(row.created_at) },
 ];
 
@@ -797,8 +1002,8 @@ ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValid
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
-  const { sort, order, status, categoryId, priority, search, assigneeId, mine } = c.req.valid('query');
-  const filters = { status, categoryId, priority, search, assigneeId, mine };
+  const { sort, order, status, categoryId, priority, search, assigneeId, mine, queue } = c.req.valid('query');
+  const filters = { status, categoryId, priority, search, assigneeId, mine, queue };
 
   // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
   const countQuery = applyTicketListFilters(
@@ -815,7 +1020,7 @@ ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValid
   let query = supabase
     .from('tickets')
     .select(
-      'ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, created_at, ticket_categories(name)',
+      'ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, sla_paused_at, created_at, ticket_categories(name)',
     )
     .range(0, LIST_EXPORT_MAX_ROWS - 1);
   query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
@@ -906,18 +1111,19 @@ ticketsRoute.patch('/bulk', zValidator('json', bulkUpdateTicketsSchema, zodValid
     if (toStatus !== fromStatus) applyStatusChange(patch, current as never, toStatus, now, businessCalendar!);
 
     const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
-    const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
-    if (error || !updated) throw new BulkItemError('TICKET_UPDATE_FAILED', 'บันทึกไม่สำเร็จ');
-
-    await supabase.from('ticket_worklogs').insert({
-      ticket_id: id,
-      action: assigneeId !== undefined && toStatus === fromStatus ? 'คัดแยก/มอบหมาย' : 'บันทึกการดำเนินงาน',
-      detail: note ?? null,
-      status_from: fromStatus,
-      status_to: (patch.status as string) ?? fromStatus,
-      is_public: true,
-      actor_id: actorId,
+    const { data: updatedData, error } = await supabase.rpc('transition_ticket_with_worklog', {
+      ticket_id_input: id,
+      expected_status_input: fromStatus,
+      patch_input: patch,
+      action_input: assigneeId !== undefined && toStatus === fromStatus ? 'คัดแยก/มอบหมาย' : 'บันทึกการดำเนินงาน',
+      detail_input: note ?? null,
+      minutes_spent_input: null,
     });
+    if (error || !updatedData) {
+      if (error?.message.includes('TICKET_STALE_STATE')) throw new BulkItemError('TICKET_STALE_STATE', 'Ticket ถูกเปลี่ยนแปลงแล้ว กรุณารีเฟรชคิว');
+      throw new BulkItemError('TICKET_UPDATE_FAILED', 'บันทึกไม่สำเร็จ');
+    }
+    const updated = updatedData as typeof current;
 
     await writeAuditLog(c.env, {
       actorId,
@@ -998,6 +1204,19 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     if (!body.note) {
       return c.json(fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุเหตุผลการเปิดงานซ้ำ', [{ field: 'note', message: 'จำเป็น' }]), 400);
     }
+  } else if (toStatus === TICKET_STATUS.RESOLVED && toStatus !== fromStatus) {
+    if (!canUpdate) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ส่งงานตรวจรับ'), 403);
+    try {
+      assertTransition(fromStatus, toStatus);
+    } catch (e) {
+      return c.json(fail(reqId, 'TICKET_TRANSITION_INVALID', (e as Error).message), 400);
+    }
+    if (!body.resolution?.trim() && !String(current.resolution ?? '').trim()) {
+      return c.json(
+        fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุผลการแก้ไขก่อนส่งให้ผู้แจ้งตรวจรับ', [{ field: 'resolution', message: 'จำเป็น' }]),
+        400,
+      );
+    }
   } else if (closingStatuses.includes(toStatus) && toStatus !== fromStatus) {
     if (!canClose) return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ปิด/ยกเลิก Ticket'), 403);
     try {
@@ -1009,12 +1228,6 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
       return c.json(
         fail(reqId, 'TICKET_REQUESTER_SIGNOFF_REQUIRED', 'ผู้แจ้งต้องประเมินการบริการและลงลายเซ็นตรวจรับก่อนปิดงาน'),
         409,
-      );
-    }
-    if (toStatus === TICKET_STATUS.RESOLVED && !body.resolution && !current.resolution) {
-      return c.json(
-        fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุผลการแก้ไขก่อนส่งให้ผู้แจ้งตรวจรับ', [{ field: 'resolution', message: 'จำเป็น' }]),
-        400,
       );
     }
     if (toStatus === TICKET_STATUS.CANCELLED && !body.note) {
@@ -1036,6 +1249,21 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
         fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุชื่อผู้ให้บริการภายนอก', [{ field: 'outsourceName', message: 'จำเป็น' }]),
         400,
       );
+    }
+    if (WAITING_STATUSES.has(toStatus)) {
+      const waitingReason = body.waitingReason ?? current.waiting_reason;
+      const waitingOwnerId = body.waitingOwnerId ?? current.waiting_owner_id;
+      const waitingFollowUpAt = body.waitingFollowUpAt ?? current.waiting_follow_up_at;
+      if (!String(waitingReason ?? '').trim() || !waitingOwnerId || !waitingFollowUpAt) {
+        return c.json(
+          fail(reqId, 'VALIDATION_ERROR', 'กรุณาระบุเหตุผล ผู้ติดตาม และวันติดตามเมื่อพัก Ticket', [
+            { field: 'waitingReason', message: 'จำเป็นเมื่อรออะไหล่/รอผู้ใช้งาน' },
+            { field: 'waitingOwnerId', message: 'จำเป็นเมื่อรออะไหล่/รอผู้ใช้งาน' },
+            { field: 'waitingFollowUpAt', message: 'จำเป็นเมื่อรออะไหล่/รอผู้ใช้งาน' },
+          ]),
+          400,
+        );
+      }
     }
   } else if (!canUpdate) {
     // ไม่ได้เปลี่ยนสถานะ แค่แก้ field อื่น (assignee/priority/category/...) — ต้องมี ticket.update
@@ -1085,6 +1313,11 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
     }
   }
   if (body.outsourceIssueNo !== undefined) patch.outsource_issue_no = body.outsourceIssueNo;
+  if (WAITING_STATUSES.has(toStatus)) {
+    patch.waiting_reason = body.waitingReason ?? current.waiting_reason;
+    patch.waiting_owner_id = body.waitingOwnerId ?? current.waiting_owner_id;
+    patch.waiting_follow_up_at = body.waitingFollowUpAt ?? current.waiting_follow_up_at;
+  }
 
   if (isReopen) {
     patch.status = TICKET_STATUS.IN_PROGRESS;
@@ -1104,12 +1337,6 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
   if (body.rootCause !== undefined) patch.root_cause = body.rootCause || null;
   if (body.causeCodeId !== undefined) patch.cause_code_id = body.causeCodeId || null;
 
-  const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
-  const { data: updated, error } = await supabase.from('tickets').update(patch).eq('id', id).select().single();
-  if (error) {
-    return dbFailJson(c, 'TICKET_UPDATE_FAILED', error);
-  }
-
   const worklogAction = isReopen
     ? 'เปิดงานซ้ำ'
     : toStatus === TICKET_STATUS.ACK && fromStatus === TICKET_STATUS.NEW
@@ -1124,16 +1351,23 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
               ? 'คัดแยก/มอบหมาย'
               : 'บันทึกการดำเนินงาน';
 
-  await supabase.from('ticket_worklogs').insert({
-    ticket_id: id,
-    action: worklogAction,
-    detail: body.note ?? null,
-    status_from: fromStatus,
-    status_to: (patch.status as string) ?? fromStatus,
-    minutes_spent: body.minutesSpent ?? null,
-    is_public: true,
-    actor_id: actorId,
+  const auditBefore = await loadAuditSnapshot(supabase, 'tickets', id);
+  const { data: updatedData, error } = await supabase.rpc('transition_ticket_with_worklog', {
+    ticket_id_input: id,
+    expected_status_input: fromStatus,
+    patch_input: patch,
+    action_input: worklogAction,
+    detail_input: body.note ?? null,
+    minutes_spent_input: body.minutesSpent ?? null,
   });
+  if (error) {
+    if (error.message.includes('TICKET_STALE_STATE')) {
+      return c.json(fail(reqId, 'TICKET_STALE_STATE', 'Ticket ถูกเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลใหม่ก่อนบันทึกอีกครั้ง'), 409);
+    }
+    return dbFailJson(c, 'TICKET_UPDATE_FAILED', error);
+  }
+  if (!updatedData) return c.json(fail(reqId, 'TICKET_UPDATE_FAILED', 'ไม่พบผลการบันทึก Ticket'), 400);
+  const updated = updatedData as typeof current;
 
   await writeAuditLog(c.env, {
     actorId,
@@ -1205,6 +1439,7 @@ ticketsRoute.patch('/:id', zValidator('json', updateTicketSchema, zodValidationH
           url: appUrl(c.env, '/line?mode=status'),
           buttonLabel: patch.status === TICKET_STATUS.RESOLVED ? 'ประเมินและตรวจรับงาน' : 'ดูสถานะของฉัน',
         }),
+        'ticket_status_changed',
       );
     }
   }
@@ -1259,34 +1494,35 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
     label: String(criterion.label),
     score: evaluation.data.ratings[String(criterion.key)],
   }));
-  const saved = await saveRequesterSignature(admin, {
+  const saved = await uploadRequesterSignature(admin, {
     ticketId: ticket.id,
-    previousPath: ticket.requester_signature_storage_path,
     file,
-    uploadedBy: actorId,
   });
   if (!saved.ok) return c.json(fail(requestId, saved.code, saved.message), 400);
 
-  const { error: closeError } = await admin.from('tickets').update({
-    status: TICKET_STATUS.CLOSED,
-    closed_at: saved.uploadedAt,
-    rating,
-    rating_details: evaluation.data.ratings,
-    rating_criteria_snapshot: ratingSnapshot,
-    feedback: evaluation.data.feedback ?? null,
-    feedback_at: saved.uploadedAt,
-    updated_by: actorId,
-  }).eq('id', ticket.id).eq('status', TICKET_STATUS.RESOLVED);
-  if (closeError) return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError, 'บันทึกการตรวจรับงานไม่สำเร็จ');
-  await admin.from('ticket_worklogs').insert({
-    ticket_id: ticket.id,
-    action: 'ผู้แจ้งตรวจรับและลงนาม',
-    detail: `ผู้แจ้งประเมิน ${rating}/5 คะแนน ยืนยันผลการแก้ไข และลงลายเซ็นในส่วนที่ 5`,
-    status_from: TICKET_STATUS.RESOLVED,
-    status_to: TICKET_STATUS.CLOSED,
-    is_public: true,
-    actor_id: actorId,
+  const { data: updatedData, error: closeError } = await admin.rpc('complete_ticket_requester_signoff', {
+    ticket_id_input: ticket.id,
+    expected_status_input: TICKET_STATUS.RESOLVED,
+    actor_id_input: actorId,
+    actor_line_user_id_input: null,
+    rating_input: rating,
+    rating_details_input: evaluation.data.ratings,
+    rating_criteria_snapshot_input: ratingSnapshot,
+    feedback_input: evaluation.data.feedback ?? null,
+    signature_path_input: saved.path,
+    signed_at_input: saved.uploadedAt,
+    worklog_detail_input: `ผู้แจ้งประเมิน ${rating}/5 คะแนน ยืนยันผลการแก้ไข และลงลายเซ็นในส่วนที่ 5`,
   });
+  if (closeError || !updatedData) {
+    await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([saved.path]);
+    if (closeError?.message.includes('TICKET_STALE_STATE')) {
+      return c.json(fail(requestId, 'TICKET_SIGNOFF_STALE_STATE', 'สถานะ Ticket เปลี่ยนระหว่างตรวจรับ กรุณาโหลดข้อมูลใหม่แล้วลองอีกครั้ง'), 409);
+    }
+    return dbFailJson(c, 'TICKET_REQUESTER_SIGNOFF_FAILED', closeError ?? { message: 'ไม่พบผลการปิดงาน' }, 'บันทึกการตรวจรับงานไม่สำเร็จ');
+  }
+  if (ticket.requester_signature_storage_path && ticket.requester_signature_storage_path !== saved.path) {
+    await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([ticket.requester_signature_storage_path]);
+  }
   await writeAuditLog(c.env, {
     actorId, actorEmail: c.get('userEmail'), action: 'REQUESTER_SIGNOFF', module: 'ticket',
     targetTable: 'tickets', targetId: ticket.id,
@@ -1302,6 +1538,63 @@ ticketsRoute.post('/:id/requester-signoff', async (c) => {
   }
   return c.json(ok(requestId, { signatureUrl: saved.signatureUrl, uploadedAt: saved.uploadedAt, status: TICKET_STATUS.CLOSED, rating }), 201);
 });
+
+/** ผู้แจ้งกด "ยังใช้งานไม่ได้" — เปิด SLA round ใหม่โดยเก็บผลของรอบเดิมไว้ */
+ticketsRoute.post(
+  '/:id/requester-reopen',
+  zValidator('json', requesterReopenTicketSchema, zodValidationHook),
+  async (c) => {
+    const requestId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const supabase = c.get('supabase');
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('id, ticket_no, title, status, requester_id, assignee_id, response_sla_hours, resolution_sla_hours')
+      .eq('id', id)
+      .maybeSingle();
+    if (ticketError || !ticket || ticket.requester_id !== actorId) {
+      return c.json(fail(requestId, 'TICKET_NOT_FOUND', 'ไม่พบ Ticket นี้ในรายการแจ้งของท่าน'), 404);
+    }
+    if (![TICKET_STATUS.RESOLVED, TICKET_STATUS.CLOSED].includes(ticket.status as typeof TICKET_STATUS.RESOLVED)) {
+      return c.json(fail(requestId, 'TICKET_REOPEN_NOT_ALLOWED', 'ส่งกลับได้เมื่อ Ticket อยู่ระหว่างรอตรวจรับหรือปิดงานแล้วเท่านั้น'), 409);
+    }
+
+    const now = new Date();
+    const calendar = await loadTicketBusinessCalendar(c);
+    const responseSlaHours = Number(ticket.response_sla_hours ?? 4);
+    const resolutionSlaHours = Number(ticket.resolution_sla_hours ?? 24);
+    const admin = createAdminClient(c.env);
+    const { data: updatedData, error } = await admin.rpc('requester_reopen_ticket', {
+      ticket_id_input: id,
+      requester_id_input: actorId,
+      reason_input: body.reason,
+      response_due_at_input: addTicketBusinessHours(now, responseSlaHours, calendar).toISOString(),
+      resolution_due_at_input: addTicketBusinessHours(now, resolutionSlaHours, calendar).toISOString(),
+    });
+    if (error) {
+      if (error.message.includes('TICKET_REOPEN_STALE_STATE')) {
+        return c.json(fail(requestId, 'TICKET_REOPEN_STALE_STATE', 'Ticket ถูกดำเนินการไปแล้ว กรุณาโหลดข้อมูลใหม่'), 409);
+      }
+      return dbFailJson(c, 'TICKET_REOPEN_FAILED', error, 'ส่ง Ticket กลับให้ทีม IT ไม่สำเร็จ');
+    }
+    await writeAuditLog(c.env, {
+      actorId, actorEmail: c.get('userEmail'), action: 'REQUESTER_REOPEN', module: 'ticket',
+      targetTable: 'tickets', targetId: id, detail: { reason: body.reason, previousStatus: ticket.status }, requestId,
+    });
+    if (ticket.assignee_id) {
+      await sendNotification(c.env, {
+        recipientId: ticket.assignee_id,
+        type: 'ticket_reopened',
+        title: `ผู้แจ้งส่งกลับ Ticket ${ticket.ticket_no}: ยังใช้งานไม่ได้`,
+        body: body.reason,
+        link: `/tickets/${id}`,
+      });
+    }
+    return c.json(ok(requestId, updatedData), 201);
+  },
+);
 
 /**
  * ลายเซ็นรับรองของ Ticket ใบเดียว — ไม่มีลายเซ็นกลางให้ตกทอดแล้ว ต้องเซ็นทีละใบ

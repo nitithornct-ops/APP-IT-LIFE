@@ -15,6 +15,7 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type {
   SkillMatrixResponse,
   SkillMatrixTechnician,
+  TechnicianAvailability,
   TechnicianSkillProfile,
 } from '../../types/technicianSkills';
 import { formatThaiDate } from '../../utils/date';
@@ -215,7 +216,7 @@ function MatrixTable({ data, onEdit }: { data: SkillMatrixResponse; onEdit?: (te
                   <span key={cell.categoryId} className="flex justify-center">
                     <span
                       className={`grid h-7 w-9 place-items-center rounded-[6px] font-mono text-[13px] font-bold ${skillChipClass(cell.level)}`}
-                      title={`${skillLevelLabel(data.levels, cell.level)}${cell.note ? ` · ${cell.note}` : ''}`}
+                      title={`${cell.skill || 'Skill ยังไม่ระบุ'} · ${skillLevelLabel(data.levels, cell.level)}${cell.certification ? ` · Certification: ${cell.certification}` : ''}${cell.productTechnology ? ` · Product/Technology: ${cell.productTechnology}` : ''}${cell.location ? ` · Location: ${cell.location}` : ''}${cell.note ? ` · ${cell.note}` : ''}`}
                     >
                       {skillChipText(cell.level)}
                       <span className="sr-only">{skillLevelLabel(data.levels, cell.level)}</span>
@@ -254,12 +255,32 @@ function AssessmentForm({
   onSaved: (message: string) => void;
   onFailed: (message: string) => void;
 }) {
+  type DraftEntry = {
+    level: number | null;
+    skill: string;
+    certification: string;
+    certificationExpiry: string;
+    productTechnology: string;
+    location: string;
+    availability: TechnicianAvailability;
+    note: string;
+  };
+
   const [draft, setDraft] = useState(() =>
-    Object.fromEntries(technician.cells.map((cell) => [cell.categoryId, { level: cell.level, note: cell.note ?? '' }])),
+    Object.fromEntries(technician.cells.map((cell) => [cell.categoryId, {
+      level: cell.level,
+      skill: cell.skill ?? '',
+      certification: cell.certification ?? '',
+      certificationExpiry: cell.certificationExpiry ?? '',
+      productTechnology: cell.productTechnology ?? '',
+      location: cell.location ?? '',
+      availability: cell.availability ?? 'available',
+      note: cell.note ?? '',
+    }] as const)),
   );
 
   const mutation = useMutation({
-    mutationFn: (payload: { skills: Array<{ categoryId: string; level: number | null; note?: string }> }) =>
+    mutationFn: (payload: { skills: Array<{ categoryId: string; level: number | null; skill?: string; certification?: string; certificationExpiry?: string | null; productTechnology?: string; location?: string; availability?: TechnicianAvailability; note?: string }> }) =>
       apiFetch<TechnicianSkillProfile>(`/api/v1/technician-skills/${technician.id}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -275,11 +296,20 @@ function AssessmentForm({
 
   const submit = () => {
     mutation.mutate({
-      skills: categories.map((category) => ({
-        categoryId: category.id,
-        level: draft[category.id]?.level ?? null,
-        note: draft[category.id]?.note?.trim() || undefined,
-      })),
+      skills: categories.map((category) => {
+        const entry = draft[category.id] as DraftEntry | undefined;
+        return {
+          categoryId: category.id,
+          level: entry?.level ?? null,
+          skill: entry?.skill.trim() || undefined,
+          certification: entry?.certification.trim() || undefined,
+          certificationExpiry: entry?.certificationExpiry || null,
+          productTechnology: entry?.productTechnology.trim() || undefined,
+          location: entry?.location.trim() || undefined,
+          availability: entry?.availability ?? 'available',
+          note: entry?.note.trim() || undefined,
+        };
+      }),
     });
   };
 
@@ -287,13 +317,22 @@ function AssessmentForm({
     <div className="px-5 py-5">
       <ul className="space-y-2">
         {categories.map((category) => {
-          const entry = draft[category.id] ?? { level: null, note: '' };
+          const entry = (draft[category.id] as DraftEntry | undefined) ?? {
+            level: null,
+            skill: category.name,
+            certification: '',
+            certificationExpiry: '',
+            productTechnology: '',
+            location: '',
+            availability: 'available' as const,
+            note: '',
+          };
           return (
             <li key={category.id} className="rounded-[8px] border border-hairline px-3 py-2.5 dark:border-white/[.08]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="min-w-0 truncate text-[12.5px] font-semibold text-ink-heading dark:text-slate-100">{category.name}</span>
-                <div className="flex items-center gap-1" role="group" aria-label={`ระดับทักษะหมวด ${category.name}`}>
-                  {[null, 1, 2, 3].map((level) => {
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label={`ระดับทักษะหมวด ${category.name}`}>
+                  {[null, ...levels.map((item) => item.level)].map((level) => {
                     const selected = entry.level === level;
                     return (
                       <button
@@ -313,15 +352,44 @@ function AssessmentForm({
                   })}
                 </div>
               </div>
-              <input
-                type="text"
-                value={entry.note}
-                maxLength={300}
-                onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, note: event.target.value } }))}
-                placeholder="บันทึกการประเมิน (ไม่บังคับ) เช่น อุปกรณ์หรืองานที่เคยรับผิดชอบ"
-                aria-label={`บันทึกการประเมินหมวด ${category.name}`}
-                className="mt-2 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200"
-              />
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Skill
+                  <input type="text" value={entry.skill} maxLength={160} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, skill: event.target.value } }))} placeholder={category.name} aria-label={`Skill ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Certification
+                  <input type="text" value={entry.certification} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, certification: event.target.value } }))} placeholder="เช่น CCNA, Microsoft Certified" aria-label={`Certification ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Certification Expiry
+                  <input type="date" value={entry.certificationExpiry} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, certificationExpiry: event.target.value } }))} aria-label={`Certification Expiry ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Product/Technology
+                  <input type="text" value={entry.productTechnology} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, productTechnology: event.target.value } }))} placeholder="เช่น Cisco, SAP, Windows" aria-label={`Product/Technology ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Location
+                  <input type="text" value={entry.location} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, location: event.target.value } }))} placeholder="เช่น สำนักงานใหญ่, โรงงาน A" aria-label={`Location ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
+                  Availability
+                  <select value={entry.availability} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, availability: event.target.value as TechnicianAvailability } }))} aria-label={`Availability ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200">
+                    <option value="available">พร้อมรับงาน</option>
+                    <option value="limited">พร้อมแบบจำกัด</option>
+                    <option value="unavailable">ไม่พร้อม</option>
+                  </select>
+                </label>
+                <div className="rounded-[7px] border border-dashed border-hairline-control px-2.5 py-1.5 text-[10.5px] text-slate-500 dark:border-white/[.12] dark:text-slate-400">
+                  <span className="block font-semibold">Current workload</span>
+                  <span className="mt-0.5 block font-mono">งานค้าง {technician.cells.find((cell) => cell.categoryId === category.id)?.openTickets ?? 0} งาน · ระบบคำนวณจาก Ticket จริง</span>
+                </div>
+                <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 sm:col-span-2">
+                  บันทึกการประเมิน
+                  <input type="text" value={entry.note} maxLength={300} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, note: event.target.value } }))} placeholder="ไม่บังคับ เช่น อุปกรณ์หรืองานที่เคยรับผิดชอบ" aria-label={`บันทึกการประเมินหมวด ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
+                </label>
+              </div>
             </li>
           );
         })}

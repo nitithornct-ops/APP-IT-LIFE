@@ -22,9 +22,9 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { AssetCategory, EmployeeOption, PaginatedResult } from '../../types/admin';
-import type { Asset } from '../../types/assets';
+import type { Asset, AssetModelCatalog } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
-import { ASSET_STATUSES, ASSET_TYPES, assetStatusTone } from './assetDisplay';
+import { ASSET_LIFECYCLE_LABELS, ASSET_STATUSES, ASSET_TYPES, assetLifecycleTone, assetStatusTone } from './assetDisplay';
 
 const createAssetSchema = z.object({
   name: z.string().trim().min(1, 'กรุณากรอกชื่อทรัพย์สิน'),
@@ -37,6 +37,16 @@ const createAssetSchema = z.object({
   contractId: z.string().optional(),
   location: z.string().trim().optional(),
   price: z.coerce.number().nonnegative().optional().or(z.literal('')),
+  usefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
+  depreciationMethod: z.enum(['straight_line', 'declining_balance', 'none']).optional(),
+  depreciationRate: z.coerce.number().nonnegative().max(100).optional().or(z.literal('')),
+  purchaseDate: z.string().optional(),
+  warrantyExpire: z.string().optional(),
+  purchaseOrder: z.string().optional(),
+  invoiceNumber: z.string().optional(),
+  costCenter: z.string().optional(),
+  barcode: z.string().optional(),
+  modelCatalogId: z.string().optional(),
 });
 type CreateAssetForm = z.infer<typeof createAssetSchema>;
 
@@ -44,6 +54,41 @@ type CreateAssetForm = z.infer<typeof createAssetSchema>;
 const BULK_ASSET_STATUSES = ['พร้อมใช้งาน', 'ใช้งานอยู่', 'ซ่อมบำรุง'] as const;
 
 type AssetBulkResult = BulkResult<{ id: string; assetCode: string; status: string }>;
+
+const modelCatalogSchema = z.object({
+  modelCode: z.string().trim().min(1, 'กรุณาระบุรหัส Model'),
+  name: z.string().trim().min(1, 'กรุณาระบุชื่อ Model'),
+  assetType: z.enum(ASSET_TYPES),
+  brand: z.string().trim().optional(),
+  model: z.string().trim().optional(),
+  defaultUsefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
+  defaultWarrantyMonths: z.coerce.number().int().nonnegative().optional().or(z.literal('')),
+  defaultCostCenter: z.string().trim().optional(),
+});
+type ModelCatalogForm = z.infer<typeof modelCatalogSchema>;
+
+function CreateModelCatalogForm({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<ModelCatalogForm>({ resolver: zodResolver(modelCatalogSchema), defaultValues: { assetType: 'Endpoint' } });
+  const mutation = useMutation({
+    mutationFn: (values: ModelCatalogForm) => apiFetch('/api/v1/assets/models', { method: 'POST', body: JSON.stringify({ ...values, defaultUsefulLifeYears: values.defaultUsefulLifeYears === '' ? undefined : values.defaultUsefulLifeYears, defaultWarrantyMonths: values.defaultWarrantyMonths === '' ? undefined : values.defaultWarrantyMonths }) }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['assets', 'models'] }); onClose(); },
+    onError: (value) => setError(value instanceof ApiError ? value.message : 'สร้าง Model ไม่สำเร็จ'),
+  });
+  return <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid gap-3 p-5 sm:grid-cols-2" noValidate>
+    <label className="text-xs font-semibold">Model Code<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('modelCode')} />{errors.modelCode && <span className="mt-1 block text-red-600">{errors.modelCode.message}</span>}</label>
+    <label className="text-xs font-semibold">ชื่อ Model<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('name')} />{errors.name && <span className="mt-1 block text-red-600">{errors.name.message}</span>}</label>
+    <label className="text-xs font-semibold">Asset Type<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('assetType')}>{ASSET_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+    <label className="text-xs font-semibold">ยี่ห้อ<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('brand')} /></label>
+    <label className="text-xs font-semibold">รุ่น<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('model')} /></label>
+    <label className="text-xs font-semibold">อายุใช้งาน (ปี)<input type="number" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('defaultUsefulLifeYears')} /></label>
+    <label className="text-xs font-semibold">ประกัน (เดือน)<input type="number" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('defaultWarrantyMonths')} /></label>
+    <label className="text-xs font-semibold">Cost Center<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('defaultCostCenter')} /></label>
+    {error && <p className="text-xs text-red-600 sm:col-span-2">{error}</p>}
+    <div className="flex justify-end gap-2 border-t border-slate-200 pt-3 sm:col-span-2 dark:border-slate-700"><Button type="button" size="sm" variant="outline" onClick={onClose} disabled={mutation.isPending}>ยกเลิก</Button><Button type="submit" size="sm" isLoading={isSubmitting || mutation.isPending}>บันทึก Model</Button></div>
+  </form>;
+}
 
 /**
  * แผงดำเนินการกับทรัพย์สินที่เลือกไว้หลายชิ้น
@@ -178,7 +223,7 @@ function BulkAssetPanel({
   );
 }
 
-function CreateAssetForm({ categories, vendors, contracts, onClose }: { categories: AssetCategory[]; vendors: ContractVendorRef[]; contracts: ContractOption[]; onClose: () => void }) {
+function CreateAssetForm({ categories, vendors, contracts, models, onClose }: { categories: AssetCategory[]; vendors: ContractVendorRef[]; contracts: ContractOption[]; models: AssetModelCatalog[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -191,7 +236,7 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
     mutationFn: (values: CreateAssetForm) =>
       apiFetch('/api/v1/assets', {
         method: 'POST',
-        body: JSON.stringify({ ...values, categoryId: values.categoryId || undefined, vendorId: values.vendorId || undefined, contractId: values.contractId || undefined, price: values.price === '' ? undefined : values.price }),
+        body: JSON.stringify({ ...values, assetType: values.assetType || undefined, categoryId: values.categoryId || undefined, vendorId: values.vendorId || undefined, contractId: values.contractId || undefined, assetModelCatalogId: values.modelCatalogId || undefined, price: values.price === '' ? undefined : values.price, usefulLifeYears: values.usefulLifeYears === '' ? undefined : values.usefulLifeYears, depreciationRate: values.depreciationRate === '' ? undefined : values.depreciationRate }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['assets'] });
@@ -239,6 +284,13 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
       </div>
 
       <div>
+        <label htmlFor="as-type" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Asset Type</label>
+        <select id="as-type" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('assetType')}>
+          <option value="">— ไม่ระบุ —</option>
+          {ASSET_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+      </div>
+      <div>
         <label htmlFor="as-brand" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
           ยี่ห้อ
         </label>
@@ -263,6 +315,14 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
       </div>
 
       <div>
+        <label htmlFor="as-model-catalog" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Asset Model Catalog</label>
+        <select id="as-model-catalog" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('modelCatalogId')}>
+          <option value="">— ไม่ระบุ —</option>
+          {models.map((model) => <option key={model.id} value={model.id}>{model.model_code} — {model.name}</option>)}
+        </select>
+      </div>
+
+      <div>
         <label htmlFor="as-serial" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
           S/N
         </label>
@@ -283,6 +343,16 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
         <input id="as-price" type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('price')} />
       </div>
 
+      <div><label htmlFor="as-useful-life" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Useful Life (years)</label><input id="as-useful-life" type="number" min="1" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('usefulLifeYears')} /></div>
+      <div><label htmlFor="as-depreciation-method" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Depreciation Method</label><select id="as-depreciation-method" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('depreciationMethod')}><option value="straight_line">Straight-line</option><option value="declining_balance">Declining balance</option><option value="none">None</option></select></div>
+      <div><label htmlFor="as-depreciation-rate" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Depreciation Rate (%)</label><input id="as-depreciation-rate" type="number" min="0" max="100" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('depreciationRate')} /></div>
+      <div><label htmlFor="as-purchase-date" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Purchase Date</label><input id="as-purchase-date" type="date" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('purchaseDate')} /></div>
+      <div><label htmlFor="as-warranty" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Warranty End</label><input id="as-warranty" type="date" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('warrantyExpire')} /></div>
+      <div><label htmlFor="as-purchase-order" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Purchase Order</label><input id="as-purchase-order" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('purchaseOrder')} /></div>
+      <div><label htmlFor="as-invoice" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Invoice</label><input id="as-invoice" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('invoiceNumber')} /></div>
+      <div><label htmlFor="as-cost-center" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Cost Center</label><input id="as-cost-center" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('costCenter')} /></div>
+      <div><label htmlFor="as-barcode" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">QR / Barcode</label><input id="as-barcode" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('barcode')} /></div>
+
       {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
 
       <div className="-mx-5 -mb-5 mt-2 flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:col-span-3 dark:border-slate-700 dark:bg-slate-900/40">
@@ -299,6 +369,7 @@ function CreateAssetForm({ categories, vendors, contracts, onClose }: { categori
 
 export function AssetsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [showModelCatalog, setShowModelCatalog] = useState(false);
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
   const canUpdateAsset = hasPermission('asset.update');
@@ -315,6 +386,10 @@ export function AssetsPage() {
   const categoriesQuery = useQuery({
     queryKey: ['admin', 'asset-categories'],
     queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories'),
+  });
+  const modelsQuery = useQuery({
+    queryKey: ['assets', 'models'],
+    queryFn: () => apiFetch<AssetModelCatalog[]>('/api/v1/assets/models'),
   });
   const employeeOptionsQuery = useQuery({
     queryKey: ['employee-options'],
@@ -352,12 +427,15 @@ export function AssetsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / ทะเบียนทรัพย์สิน" title="ทะเบียนทรัพย์สิน IT" description="Asset Register — ยืม/คืน/โอนย้าย/ส่งซ่อม/ตรวจนับ" />
-        <RequirePermission permission="asset.create">
-          <Button size="sm" onClick={() => setShowCreate(true)} data-testid="asset-create-toggle" aria-haspopup="dialog">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            เพิ่มทรัพย์สิน
-          </Button>
-        </RequirePermission>
+        <div className="flex items-center gap-2">
+          <RequirePermission permission="asset.update"><Button size="sm" variant="outline" onClick={() => setShowModelCatalog(true)} aria-haspopup="dialog">Model Catalog</Button></RequirePermission>
+          <RequirePermission permission="asset.create">
+            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="asset-create-toggle" aria-haspopup="dialog">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              เพิ่มทรัพย์สิน
+            </Button>
+          </RequirePermission>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -453,6 +531,7 @@ export function AssetsPage() {
                     <th className="px-2 py-2">ผู้ถือครอง</th>
                     <th className="px-2 py-2" data-sort-key="location">สถานที่</th>
                     <th className="px-2 py-2">สถานะ</th>
+                    <th className="px-2 py-2">Lifecycle</th>
                     <th className="px-2 py-2 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
@@ -474,6 +553,9 @@ export function AssetsPage() {
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400" data-label="สถานที่">{a.location ?? '—'}</td>
                       <td className="px-2 py-2" data-label="สถานะ">
                         <Badge variant={assetStatusTone[a.status]}>{a.status}</Badge>
+                      </td>
+                      <td className="px-2 py-2" data-label="Lifecycle">
+                        <Badge variant={assetLifecycleTone[a.lifecycle_status]}>{ASSET_LIFECYCLE_LABELS[a.lifecycle_status]}</Badge>
                       </td>
                       <td className="px-2 py-2 text-right">
                         <RowActions recordLabel={a.asset_code} actions={[
@@ -550,13 +632,16 @@ export function AssetsPage() {
         />
       )}
 
+      {showModelCatalog && <Modal title="Asset Model Catalog" size="lg" onClose={() => setShowModelCatalog(false)}><CreateModelCatalogForm onClose={() => setShowModelCatalog(false)} /></Modal>}
+
       {showCreate && (
         <Modal title="เพิ่มทรัพย์สิน" size="xl" onClose={() => setShowCreate(false)} testId="asset-create-dialog">
-          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data ? (
+          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && modelsQuery.data ? (
             <CreateAssetForm
               categories={categoriesQuery.data}
               vendors={vendorOptionsQuery.data}
               contracts={contractOptionsQuery.data}
+              models={modelsQuery.data}
               onClose={() => setShowCreate(false)}
             />
           ) : (

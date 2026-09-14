@@ -39,6 +39,8 @@ export interface LineTicketSummary {
   updated_at: string | null;
   response_due_at: string | null;
   due_at: string | null;
+  sla_paused_at?: string | null;
+  is_sla_paused?: boolean;
   resolved_at: string | null;
   closed_at: string | null;
   rating: number | null;

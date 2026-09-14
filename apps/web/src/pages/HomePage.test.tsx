@@ -19,10 +19,10 @@ vi.mock('../stores/authContext', () => ({
 const summary: DashboardSummary = {
   mode: 'executive',
   metrics: [
-    { label: 'เหตุการณ์สำคัญที่เปิดอยู่', value: 2, note: 'Incident ระดับสูง/วิกฤต', tone: 'danger', path: '/incidents' },
-    { label: 'สุขภาพมาตรการควบคุม', value: '86%', note: 'จากข้อมูลที่เข้าถึงได้', tone: 'amber' },
-    { label: 'รายการเกินกำหนด', value: 4, note: 'รวมทุกโมดูล', tone: 'danger' },
-    { label: 'คำขอบริการที่เปิดอยู่', value: 8, note: '1 รายการเกินกำหนด', tone: 'primary', path: '/service-requests' },
+    { key: 'critical-incidents', label: 'เหตุการณ์สำคัญที่เปิดอยู่', value: 2, note: 'Incident ระดับสูง/วิกฤต', tone: 'danger', path: '/incidents' },
+    { key: 'control-health', label: 'สุขภาพมาตรการควบคุม', value: '86%', note: 'จากข้อมูลที่เข้าถึงได้', tone: 'amber' },
+    { key: 'overdue-items', label: 'รายการเกินกำหนด', value: 4, note: 'รวมทุกโมดูล', tone: 'danger' },
+    { key: 'open-service-requests', label: 'คำขอบริการที่เปิดอยู่', value: 8, note: '1 รายการเกินกำหนด', tone: 'primary', path: '/service-requests' },
   ],
   cards: [
     { key: 'tickets', label: 'Ticket', path: '/tickets', total: 12, warning: 3, overdue: 1, truncated: false, scanned: 12, tone: 'danger' },
@@ -35,6 +35,10 @@ const summary: DashboardSummary = {
     { key: 'ticket-priority', label: 'Ticket ตามความสำคัญ', items: [{ label: 'สูง', value: 7 }, { label: 'ปกติ', value: 5 }] },
   ],
   executiveAnalytics: null,
+  decisions: [
+    { id: 'incident-1', source: 'Incident', title: 'INC-001 · ข้อมูลรั่วไหล', reason: 'Incident ระดับสูง/วิกฤต ต้องกำกับการตอบสนอง', path: '/incidents/incident-1' },
+  ],
+  trend: { label: 'รายการที่สร้าง', current: 12, previous: 9, delta: 3, percent: 33, sampled: false },
   alertCount: 3,
   leadDays: 30,
   generatedAt: '2026-08-21T10:00:00.000Z',
@@ -53,6 +57,7 @@ function renderPage() {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   mocks.apiFetch.mockReset();
   mocks.downloadCsv.mockReset();
 });
@@ -70,6 +75,23 @@ describe('HomePage executive overview', () => {
     expect(screen.getByText('กำหนดการที่ต้องติดตาม')).toBeVisible();
     expect(screen.getByText('แก้ไขระบบเครือข่าย')).toBeVisible();
     expect(screen.getByText('เกิน 1 วัน')).toBeVisible();
+    expect(screen.getByTestId('dashboard-trend')).toBeVisible();
+    expect(screen.getByTestId('dashboard-decisions')).toBeVisible();
+    expect(screen.getByText('เรื่องที่ต้องตัดสินใจ')).toBeVisible();
+  });
+
+  it('ปักหมุดเฉพาะ KPI ที่เลือกและส่งช่วง Dashboard ไปยังรายการต้นทาง', async () => {
+    mocks.apiFetch.mockResolvedValue(summary);
+    renderPage();
+    await screen.findByText('สุขภาพงานควบคุมเชิงปฏิบัติการ');
+
+    expect(screen.getByRole('link', { name: 'คำขอบริการที่เปิดอยู่: 8' })).toHaveAttribute('href', '/service-requests?fromDashboard=1&dashboardRange=30');
+
+    fireEvent.click(screen.getByRole('button', { name: 'จัดการ KPI' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /คำขอบริการที่เปิดอยู่/ }));
+
+    expect(screen.queryByRole('link', { name: 'คำขอบริการที่เปิดอยู่: 8' })).not.toBeInTheDocument();
+    expect(localStorage.getItem('itlife-dashboard-kpis:anonymous:executive')).toContain('critical-incidents');
   });
 
   it('เปลี่ยนช่วงติดตามแล้วโหลด summary ด้วยค่าใหม่', async () => {

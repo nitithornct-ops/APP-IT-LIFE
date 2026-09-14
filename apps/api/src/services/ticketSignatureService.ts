@@ -7,14 +7,10 @@ export const MAX_TICKET_SIGNATURE_BYTES = 2 * 1024 * 1024;
 type SignatureFailure = { ok: false; code: string; message: string };
 type SignatureSuccess = { ok: true; signatureUrl: string | null; uploadedAt: string; path: string };
 
-export async function saveRequesterSignature(
+/** อัปโหลดและตรวจสอบไฟล์อย่างเดียว — ผู้เรียกจะผูก path กับ Ticket ใน transaction ของตัวเอง */
+export async function uploadRequesterSignature(
   admin: ReturnType<typeof createAdminClient>,
-  options: {
-    ticketId: string;
-    previousPath?: string | null;
-    file: File;
-    uploadedBy: string | null;
-  },
+  options: { ticketId: string; file: File },
 ): Promise<SignatureFailure | SignatureSuccess> {
   if (options.file.type !== 'image/png') {
     return { ok: false, code: 'TICKET_SIGNATURE_TYPE_NOT_ALLOWED', message: 'ลายเซ็นต้องเป็นไฟล์ PNG เท่านั้น' };
@@ -34,6 +30,22 @@ export async function saveRequesterSignature(
   if (uploadError) return { ok: false, code: 'TICKET_SIGNATURE_UPLOAD_FAILED', message: 'อัปโหลดลายเซ็นไม่สำเร็จ' };
 
   const uploadedAt = new Date().toISOString();
+  const { data: signed } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).createSignedUrl(path, 3600);
+  return { ok: true, signatureUrl: signed?.signedUrl ?? null, uploadedAt, path };
+}
+
+export async function saveRequesterSignature(
+  admin: ReturnType<typeof createAdminClient>,
+  options: {
+    ticketId: string;
+    previousPath?: string | null;
+    file: File;
+    uploadedBy: string | null;
+  },
+): Promise<SignatureFailure | SignatureSuccess> {
+  const uploaded = await uploadRequesterSignature(admin, options);
+  if (!uploaded.ok) return uploaded;
+  const { path, uploadedAt, signatureUrl } = uploaded;
   const { error: updateError } = await admin.from('tickets').update({
     requester_signature_storage_path: path,
     requester_signature_uploaded_by: options.uploadedBy,
@@ -46,6 +58,5 @@ export async function saveRequesterSignature(
   if (options.previousPath && options.previousPath !== path) {
     await admin.storage.from(TICKET_SIGNATURE_BUCKET).remove([options.previousPath]);
   }
-  const { data: signed } = await admin.storage.from(TICKET_SIGNATURE_BUCKET).createSignedUrl(path, 3600);
-  return { ok: true, signatureUrl: signed?.signedUrl ?? null, uploadedAt, path };
+  return { ok: true, signatureUrl, uploadedAt, path };
 }

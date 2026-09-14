@@ -12,13 +12,15 @@ import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
+import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult, UserListItem } from '../../types/admin';
 import type { AccessRegistryEntry } from '../../types/accessRequests';
 import { formatThaiDate } from '../../utils/date';
+import { AccessCertificationCampaigns } from './AccessCertificationCampaigns';
 
 function StatusBadge({ status }: { status: AccessRegistryEntry['status'] }) {
-  const tone = status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'secondary';
-  const label = status === 'active' ? 'ใช้งาน' : status === 'suspended' ? 'ระงับ (พ้นสภาพ)' : 'เพิกถอนแล้ว';
+  const tone = status === 'active' ? 'success' : status === 'scheduled' || status === 'suspended' ? 'warning' : 'secondary';
+  const label = status === 'active' ? 'ใช้งาน' : status === 'scheduled' ? 'รอวันเริ่ม' : status === 'suspended' ? 'ระงับ (พ้นสภาพ)' : 'เพิกถอนแล้ว';
   return <Badge variant={tone}>{label}</Badge>;
 }
 
@@ -100,7 +102,9 @@ function RegistrySection() {
                 <tr>
                   <th className="px-2 py-2">ผู้ใช้</th>
                   <th className="px-2 py-2">ระบบงาน</th>
-                  <th className="px-2 py-2">ระดับ</th>
+                  <th className="px-2 py-2">RBAC item / Actions</th>
+                  <th className="px-2 py-2">Classification</th>
+                  <th className="px-2 py-2">ผู้อนุมัติ / ผู้ดำเนินการ</th>
                   <th className="px-2 py-2">รอบทบทวนถัดไป</th>
                   <th className="px-2 py-2">สถานะ</th>
                   <th className="px-2 py-2 text-right">ดำเนินการ</th>
@@ -111,9 +115,18 @@ function RegistrySection() {
                   <tr key={entry.id} className="border-t border-slate-100 dark:border-slate-700">
                     <td className="px-2 py-2 text-slate-800 dark:text-slate-200">{entry.user?.full_name ?? '—'}</td>
                     <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{entry.access_systems?.name ?? '—'}</td>
-                    <td className="px-2 py-2">
-                      <Badge variant="secondary">{entry.access_level}</Badge>
-                    </td>
+                      <td className="px-2 py-2">
+                        <Badge variant="secondary">{entry.access_control_item?.name ?? entry.access_level ?? '—'}</Badge>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{entry.permission_actions.join(', ') || 'legacy'}</div>
+                        {entry.temporary_access && <div className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">Temporary · {entry.expires_at ? formatThaiDate(entry.expires_at, 'd MMM yyyy HH:mm') : 'ไม่มีวันหมดอายุ'}</div>}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-slate-500 dark:text-slate-400">
+                        {entry.data_classification ?? '—'}{entry.privileged_access && <div className="font-semibold text-red-600">Privileged</div>}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-slate-500 dark:text-slate-400">
+                        <div>{entry.approver?.full_name ?? '—'}</div>
+                        <div>→ {entry.operator?.full_name ?? entry.user?.full_name ?? '—'}</div>
+                      </td>
                     <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
                       {entry.next_review_due ? formatThaiDate(entry.next_review_due, 'd MMM yyyy') : '—'}
                     </td>
@@ -128,11 +141,12 @@ function RegistrySection() {
                             kind: 'custom',
                             icon: CheckCircle2,
                             label: 'ทบทวนแล้ว',
+                            permission: 'access_registry.manage',
                             hidden: entry.status !== 'active',
                             disabled: reviewMutation.isPending,
                             onClick: () => reviewMutation.mutate(entry.id),
                           },
-                          { kind: 'node', hidden: entry.status !== 'active', node: <RevokeButton entryId={entry.id} /> },
+                          { kind: 'node', permission: 'access_registry.manage', hidden: entry.status === 'revoked' || entry.status === 'suspended', node: <RevokeButton entryId={entry.id} /> },
                           { kind: 'delete', permission: 'access_registry.manage', deleteEndpoint: `/api/v1/record-deletions/access-registry/${entry.id}` },
                         ]}
                       />
@@ -242,6 +256,8 @@ function DeactivateEmployeeSection() {
 }
 
 export function AccessRegistryPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('access_registry.manage');
   const registryQuery = useQuery({
     queryKey: ['admin', 'access-registry'],
     queryFn: () => apiFetch<AccessRegistryEntry[]>('/api/v1/access-registry'),
@@ -254,11 +270,12 @@ export function AccessRegistryPage() {
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<ListChecks className="h-5 w-5" />} label="สิทธิ์ในทะเบียน" value={registry.length} tone="primary" />
         <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="สิทธิ์ที่ใช้งาน" value={registry.filter((entry) => entry.status === 'active').length} tone="teal" />
-        <StatCard icon={<Clock3 className="h-5 w-5" />} label="ถึงรอบทบทวน" value={registry.filter((entry) => entry.next_review_due && entry.next_review_due <= new Date().toISOString().slice(0, 10)).length} tone="amber" />
-        <StatCard icon={<ShieldOff className="h-5 w-5" />} label="ระงับ/เพิกถอน" value={registry.filter((entry) => entry.status !== 'active').length} tone="gray" />
+        <StatCard icon={<Clock3 className="h-5 w-5" />} label="ถึงรอบทบทวน" value={registry.filter((entry) => entry.next_review_due && entry.next_review_due <= new Date().toISOString()).length} tone="amber" />
+        <StatCard icon={<ShieldOff className="h-5 w-5" />} label="ระงับ/เพิกถอน" value={registry.filter((entry) => entry.status === 'revoked' || entry.status === 'suspended').length} tone="gray" />
       </div>
+      <AccessCertificationCampaigns />
       <RegistrySection />
-      <DeactivateEmployeeSection />
+      {canManage && registryQuery.data && <DeactivateEmployeeSection />}
     </div>
   );
 }

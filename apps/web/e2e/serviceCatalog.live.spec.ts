@@ -83,12 +83,22 @@ test('workspace matches catalog, request and management flows', async ({ page })
   await expect(catalogSearch).toBeVisible();
   await catalogSearch.fill(serviceCode);
   await expect(page.getByText(serviceCode, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Preview ' + serviceCode, exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Preview ก่อน Publish', exact: true })).toBeVisible();
+  await expect(page.getByText('Service Owner', { exact: true })).toBeVisible();
+  await expect(page.getByText('Effective Date', { exact: true })).toBeVisible();
+  await expect(page.getByText('Form Version', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'กลับไปแก้ไข', exact: true }).click();
   await page.screenshot({ path: 'test-results/service-catalog-management.png', fullPage: true });
 
   await page.getByTestId('catalog-manage-create').click();
   await expect(page.getByRole('heading', { name: 'เพิ่มรายการบริการ', exact: true })).toBeVisible();
   await expect(page.getByLabel('รหัสบริการ *')).toBeVisible();
+  await expect(page.getByLabel('Audience')).toBeVisible();
+  await expect(page.getByLabel('Documentation URL')).toBeVisible();
+  await expect(page.getByLabel('Effective Date *')).toBeVisible();
   await expect(page.getByLabel('Checklist (JSON)')).toBeVisible();
+  await expect(page.getByTestId('catalog-editor-preview')).toBeVisible();
   await page.screenshot({ path: 'test-results/service-catalog-editor.png', fullPage: true });
   await page.getByRole('dialog', { name: 'เพิ่มรายการบริการ', exact: true }).getByRole('button', { name: 'ปิดหน้าต่าง', exact: true }).click();
 });

@@ -1,12 +1,12 @@
 import { BookOpen, Loader2, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../../services/apiClient';
-import { publicTicketApiFetch } from '../../services/publicTicketApiClient';
+import { publicApiFetch } from '../../services/publicApiClient';
 import { LineEmptyState } from './LinePortalChrome';
 import type { LineKnowledgeData } from './types';
 
 /**
- * คลังวิธีแก้เบื้องต้น — อ่านจาก endpoint สาธารณะเดียวกับหน้า /report
+ * คลังวิธีแก้เบื้องต้น — อ่านจาก endpoint สาธารณะ /api/v1/public/knowledge (ไม่ต้อง login)
  * ไม่ต้องใช้ LINE session เพราะบทความเปิดให้ทุกคนอ่านอยู่แล้ว
  */
 export function LineKnowledgeTab() {
@@ -23,7 +23,7 @@ export function LineKnowledgeTab() {
     const suffix = params.size > 0 ? `?${params.toString()}` : '';
     setError(null);
     setData(null);
-    void publicTicketApiFetch<LineKnowledgeData>(`/api/v1/public/knowledge${suffix}`)
+    void publicApiFetch<LineKnowledgeData>(`/api/v1/public/knowledge${suffix}`)
       .then(setData)
       .catch((loadError) => setError(loadError instanceof ApiError ? loadError.message : 'โหลดวิธีแก้เบื้องต้นไม่สำเร็จ'));
   }, [query]);

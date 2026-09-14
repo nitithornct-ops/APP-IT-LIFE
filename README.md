@@ -2,7 +2,7 @@
 
 ระบบ Web Application สำหรับบริหารงานบริการเทคโนโลยีสารสนเทศ (ITSM) และงานกำกับดูแลด้านเทคโนโลยีขององค์กร โดยรวมงานรับแจ้งปัญหา การให้บริการ งานปฏิบัติการไอที ทรัพย์สิน โครงสร้างพื้นฐาน รายงาน และ Governance ไว้ในระบบเดียว
 
-> **สถานะโครงการ:** Pre-production / migration rehearsal  
+> **สถานะโครงการ:** Pre-production / migration rehearsal
 > Repository นี้เป็น **public repository** สำหรับ source code และเอกสารทางเทคนิคเท่านั้น ห้ามใช้เป็นที่เก็บข้อมูลจริงของผู้ใช้งาน ข้อมูล Ticket ไฟล์แนบ credentials หรือ secrets ดูแนวทางได้ที่ [SECURITY.md](SECURITY.md)
 
 ## ระบบนี้ทำอะไรได้บ้าง

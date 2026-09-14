@@ -47,4 +47,22 @@ describe('resolvePermissionRecipientIds', () => {
       overrides: [{ userId: 'direct-user', effect: 'allow' }],
     })).toEqual(['direct-user']);
   });
+
+  it('applies the same deny-over-allow rule to access groups', () => {
+    expect(resolvePermissionRecipientIds({
+      activeProfileIds: ['group-user', 'group-denied'],
+      roleAssignments: [],
+      roleEffects: [],
+      groupAssignments: [
+        { userId: 'group-user', groupId: 'support' },
+        { userId: 'group-denied', groupId: 'support' },
+        { userId: 'group-denied', groupId: 'restricted' },
+      ],
+      groupEffects: [
+        { groupId: 'support', effect: 'allow' },
+        { groupId: 'restricted', effect: 'deny' },
+      ],
+      overrides: [],
+    })).toEqual(['group-user']);
+  });
 });

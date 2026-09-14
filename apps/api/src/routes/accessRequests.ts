@@ -13,11 +13,13 @@ import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
   approveAccessRequestSchema,
+  createAccessControlItemSchema,
   deactivateEmployeeSchema,
   listAccessRequestsQuerySchema,
   processAccessRequestSchema,
   revokeAccessEntrySchema,
   submitAccessRequestSchema,
+  updateAccessControlItemSchema,
 } from '../validators/accessRequests';
 
 /**
@@ -32,6 +34,9 @@ accessRequestsRoute.use('*', requireAuth);
 export const accessRegistryRoute = new Hono<AppEnv>();
 accessRegistryRoute.use('*', requireAuth);
 
+export const accessControlItemsRoute = new Hono<AppEnv>();
+accessControlItemsRoute.use('*', requireAuth);
+
 const STATUS = {
   PENDING_APPROVE: 'รออนุมัติจากหัวหน้างาน',
   PENDING_IT: 'รอส่วนงานไอทีดำเนินการ',
@@ -41,11 +46,21 @@ const STATUS = {
 
 const REVIEW_CYCLE_DAYS = 180;
 const REQUEST_TYPE_REVOKE = 'เพิกถอนสิทธิ์';
+const ACCESS_ACTIONS = ['read', 'create', 'update', 'delete', 'approve'] as const;
+type AccessAction = (typeof ACCESS_ACTIONS)[number];
 
-function addDaysIso(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+function reviewDueIso(expiresAt: string | null | undefined): string {
+  const reviewDate = new Date();
+  reviewDate.setDate(reviewDate.getDate() + REVIEW_CYCLE_DAYS);
+  if (expiresAt) {
+    const expiry = new Date(expiresAt);
+    if (expiry < reviewDate) return expiry.toISOString();
+  }
+  return reviewDate.toISOString();
+}
+
+function hasOnlyAllowedActions(actions: string[], allowed: string[]): boolean {
+  return actions.every((action) => ACCESS_ACTIONS.includes(action as AccessAction) && allowed.includes(action));
 }
 
 async function hasPerm(c: Context<AppEnv>, permissionKey: string): Promise<boolean> {
@@ -68,6 +83,21 @@ async function notifyItAdmins(env: Bindings, input: { type: string; title: strin
   }
 }
 
+accessRequestsRoute.get(
+  '/subject-options',
+  requireAnyPermission(['access_request.process', 'access_registry.manage', 'user.manage']),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { data, error } = await createAdminClient(c.env)
+      .from('profiles')
+      .select('id, full_name, email, status')
+      .order('full_name', { ascending: true })
+      .limit(1000);
+    if (error) return c.json(fail(reqId, 'ACCESS_SUBJECT_OPTIONS_FAILED', 'ดึงรายชื่อผู้รับสิทธิ์ไม่สำเร็จ'), 400);
+    return c.json(ok(reqId, data));
+  },
+);
+
 accessRequestsRoute.get('/', zValidator('query', listAccessRequestsQuerySchema, zodValidationHook), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -76,7 +106,7 @@ accessRequestsRoute.get('/', zValidator('query', listAccessRequestsQuerySchema, 
 
   let query = supabase
     .from('access_requests')
-    .select('id, requester_id, system_id, access_level, request_type, status, approver_id, created_at, access_systems(name)', {
+    .select('id, requester_id, subject_user_id, system_id, access_level, access_item_id, requested_actions, request_type, lifecycle_event, temporary_access, start_at, expires_at, data_classification, privileged_access, status, approver_id, created_at, access_systems(name), access_control_item:access_control_items!access_requests_access_item_id_fkey(kind, code, name)', {
       count: 'exact',
     })
     .order('created_at', { ascending: false })
@@ -103,7 +133,7 @@ accessRequestsRoute.get('/:id', async (c) => {
   const { data, error } = await supabase
     .from('access_requests')
     .select(
-      '*, access_systems(name), requester:profiles!access_requests_requester_id_fkey(full_name, email), approver:profiles!access_requests_approver_id_fkey(full_name, email), it_handler:profiles!access_requests_it_handler_id_fkey(full_name, email)',
+      '*, access_systems(name), access_control_item:access_control_items!access_requests_access_item_id_fkey(kind, code, name, description, permission_actions, data_classification, privileged_access), requester:profiles!access_requests_requester_id_fkey(full_name, email), subject_user:profiles!access_requests_subject_user_id_fkey(full_name, email), approver:profiles!access_requests_approver_id_fkey(full_name, email), system_owner:profiles!access_requests_system_owner_id_fkey(full_name, email), it_handler:profiles!access_requests_it_handler_id_fkey(full_name, email)',
     )
     .eq('id', id)
     .maybeSingle();
@@ -126,10 +156,20 @@ accessRequestsRoute.post(
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
     const body = c.req.valid('json');
+    const subjectUserId = body.subjectUserId ?? actorId;
+
+    if (subjectUserId !== actorId) {
+      const canCreateForOthers = (await hasPerm(c, 'access_request.process'))
+        || (await hasPerm(c, 'access_registry.manage'))
+        || (await hasPerm(c, 'user.manage'));
+      if (!canCreateForOthers) {
+        return c.json(fail(reqId, 'ACCESS_REQUEST_SUBJECT_FORBIDDEN', 'ท่านไม่มีสิทธิ์ยื่นคำขอแทนผู้ใช้อื่น'), 403);
+      }
+    }
 
     const { data: system, error: systemError } = await supabase
       .from('access_systems')
-      .select('*')
+      .select('id, name, status')
       .eq('id', body.systemId)
       .eq('status', 'active')
       .maybeSingle();
@@ -137,8 +177,39 @@ accessRequestsRoute.post(
       return c.json(fail(reqId, 'ACCESS_SYSTEM_INVALID', 'กรุณาเลือกระบบงานที่เปิดใช้งานอยู่'), 400);
     }
 
-    const { data: me, error: meError } = await supabase.from('profiles').select('supervisor_id').eq('id', actorId).maybeSingle();
-    if (meError || !me?.supervisor_id) {
+    const { data: accessItem, error: accessItemError } = await supabase
+      .from('access_control_items')
+      .select('id, system_id, kind, code, name, permission_actions, data_classification, privileged_access, system_owner_id, default_approver_id, status')
+      .eq('id', body.accessItemId)
+      .eq('system_id', body.systemId)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (accessItemError || !accessItem) {
+      return c.json(fail(reqId, 'ACCESS_ITEM_INVALID', 'Role / Profile / Group / Entitlement นี้ไม่พร้อมให้ขอสิทธิ์'), 400);
+    }
+    if (!hasOnlyAllowedActions(body.requestedActions, accessItem.permission_actions ?? [])) {
+      return c.json(fail(reqId, 'ACCESS_ACTION_NOT_ALLOWED', 'รายการ action ที่ขอไม่อยู่ในขอบเขตของสิทธิ์นี้'), 400);
+    }
+
+    const { data: subject, error: subjectError } = await supabase
+      .from('profiles')
+      .select('id, supervisor_id, status')
+      .eq('id', subjectUserId)
+      .maybeSingle();
+    if (subjectError || !subject || (body.lifecycleEvent !== 'leaver' && subject.status !== 'active')) {
+      return c.json(fail(reqId, 'ACCESS_REQUEST_SUBJECT_INVALID', 'ไม่พบผู้รับสิทธิ์ในทะเบียน หรือสถานะผู้รับสิทธิ์ไม่ถูกต้องสำหรับ Lifecycle นี้'), 400);
+    }
+
+    const requestType = body.requestType ?? 'ขอเพิ่มสิทธิ์';
+    if (body.lifecycleEvent === 'joiner' && requestType === REQUEST_TYPE_REVOKE) {
+      return c.json(fail(reqId, 'ACCESS_LIFECYCLE_INVALID', 'Joiner ต้องเป็นคำขอเพิ่มสิทธิ์'), 400);
+    }
+    if (body.lifecycleEvent === 'leaver' && requestType !== REQUEST_TYPE_REVOKE) {
+      return c.json(fail(reqId, 'ACCESS_LIFECYCLE_INVALID', 'Leaver ต้องเป็นคำขอเพิกถอนสิทธิ์'), 400);
+    }
+
+    const approverId = accessItem.default_approver_id ?? subject.supervisor_id;
+    if (!approverId) {
       return c.json(
         fail(reqId, 'SUPERVISOR_NOT_SET', 'ยังไม่ได้กำหนดหัวหน้างานของท่านในทะเบียนผู้ใช้ กรุณาติดต่อส่วนงานไอที'),
         400,
@@ -147,21 +218,38 @@ accessRequestsRoute.post(
     const { data: supervisor, error: supervisorError } = await supabase
       .from('profiles')
       .select('id, status')
-      .eq('id', me.supervisor_id)
+      .eq('id', approverId)
       .maybeSingle();
     if (supervisorError || !supervisor || supervisor.status !== 'active') {
       return c.json(fail(reqId, 'SUPERVISOR_INACTIVE', 'บัญชีหัวหน้างานของท่านไม่ใช่บัญชีที่ใช้งานอยู่ กรุณาติดต่อส่วนงานไอที'), 400);
     }
+    if (supervisor.id === subjectUserId || supervisor.id === actorId) {
+      return c.json(fail(reqId, 'ACCESS_REQUEST_SOD_CONFLICT', 'SoD ไม่อนุญาตให้ผู้รับสิทธิ์หรือผู้ยื่นคำขอเป็นผู้อนุมัติรายการเดียวกัน'), 409);
+    }
+
+    const startAt = body.startAt ?? new Date().toISOString();
+    const expiresAt = body.expiresAt ?? null;
 
     const { data: request, error } = await supabase
       .from('access_requests')
       .insert({
         requester_id: actorId,
+        subject_user_id: subjectUserId,
         system_id: body.systemId,
-        access_level: body.accessLevel,
-        reason: body.reason,
-        request_type: body.requestType ?? 'ขอเพิ่มสิทธิ์',
+        access_item_id: body.accessItemId,
+        access_level: null,
+        requested_actions: body.requestedActions,
+        temporary_access: body.temporaryAccess,
+        start_at: startAt,
+        expires_at: expiresAt,
+        data_classification: accessItem.data_classification,
+        privileged_access: accessItem.privileged_access,
+        reason: body.businessReason,
+        business_reason: body.businessReason,
+        request_type: requestType,
         approver_id: supervisor.id,
+        system_owner_id: accessItem.system_owner_id,
+        lifecycle_event: body.lifecycleEvent,
         status: STATUS.PENDING_APPROVE,
         created_by: actorId,
       })
@@ -179,14 +267,20 @@ accessRequestsRoute.post(
       module: 'access_request',
       targetTable: 'access_requests',
       targetId: request.id,
-      detail: { systemId: body.systemId, accessLevel: body.accessLevel },
+      detail: {
+        systemId: body.systemId,
+        accessItemId: body.accessItemId,
+        requestedActions: body.requestedActions,
+        temporaryAccess: body.temporaryAccess,
+        lifecycleEvent: body.lifecycleEvent,
+      },
       requestId: reqId,
     });
 
     await sendNotification(c.env, {
       recipientId: supervisor.id,
       type: 'access_request_approval_needed',
-      title: `มีคำขอสิทธิ์รออนุมัติ: ${system.name} (${body.accessLevel})`,
+      title: `มีคำขอสิทธิ์รออนุมัติ: ${system.name} · ${accessItem.name}`,
       link: `/access-requests/${request.id}`,
     });
 
@@ -290,14 +384,18 @@ accessRequestsRoute.post(
       return c.json(fail(reqId, 'PERMISSION_DENIED', 'ผู้อนุมัติไม่สามารถเป็นผู้ดำเนินการให้สิทธิ์รายการเดียวกันได้'), 403);
     }
 
+    const subjectUserId = current.subject_user_id ?? current.requester_id;
+
     if (body.success && current.request_type !== REQUEST_TYPE_REVOKE) {
-      const { count: duplicateCount } = await supabase
+      let duplicateQuery = supabase
         .from('user_access_registry')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', current.requester_id)
-        .eq('system_id', current.system_id)
-        .eq('access_level', current.access_level)
+        .eq('user_id', subjectUserId)
         .eq('status', 'active');
+      duplicateQuery = current.access_item_id
+        ? duplicateQuery.eq('access_item_id', current.access_item_id)
+        : duplicateQuery.eq('system_id', current.system_id).eq('access_level', current.access_level);
+      const { count: duplicateCount } = await duplicateQuery;
       if ((duplicateCount ?? 0) > 0) {
         return c.json(fail(reqId, 'ACCESS_ALREADY_GRANTED', 'ผู้ใช้นี้มีสิทธิ์ระดับเดียวกันในระบบงานนี้อยู่แล้ว'), 400);
       }
@@ -311,8 +409,9 @@ accessRequestsRoute.post(
         it_action_at: now,
         it_success: body.success,
         it_comment: body.comment ?? null,
+        evidence_after_grant: body.evidence ?? null,
         status: body.success ? STATUS.DONE : STATUS.PENDING_IT,
-        review_due: body.success ? addDaysIso(REVIEW_CYCLE_DAYS) : null,
+        review_due: body.success && current.request_type !== REQUEST_TYPE_REVOKE ? reviewDueIso(current.expires_at) : null,
         updated_by: actorId,
       })
       .eq('id', id)
@@ -325,25 +424,47 @@ accessRequestsRoute.post(
 
     if (body.success) {
       if (current.request_type === REQUEST_TYPE_REVOKE) {
-        await supabase
-          .from('user_access_registry')
-          .update({ status: 'revoked', notes: `เพิกถอนตามคำขอ ${id}`, updated_by: actorId })
-          .eq('user_id', current.requester_id)
-          .eq('system_id', current.system_id)
-          .eq('status', 'active');
+        const revokeQuery = current.access_item_id
+          ? supabase
+            .from('user_access_registry')
+            .update({ status: 'revoked', notes: `เพิกถอนตามคำขอ ${id}`, updated_by: actorId })
+            .eq('user_id', subjectUserId)
+            .eq('access_item_id', current.access_item_id)
+            .eq('status', 'active')
+          : supabase
+            .from('user_access_registry')
+            .update({ status: 'revoked', notes: `เพิกถอนตามคำขอ ${id}`, updated_by: actorId })
+            .eq('user_id', subjectUserId)
+            .eq('system_id', current.system_id)
+            .eq('status', 'active');
+        const { error: revokeError } = await revokeQuery;
+        if (revokeError) return dbFailJson(c, 'ACCESS_REGISTRY_REVOKE_FAILED', revokeError);
       } else {
-        await supabase.from('user_access_registry').insert({
-          user_id: current.requester_id,
+        const { error: grantError } = await supabase.from('user_access_registry').insert({
+          user_id: subjectUserId,
           system_id: current.system_id,
+          access_item_id: current.access_item_id,
           access_level: current.access_level,
+          permission_actions: current.requested_actions ?? [],
+          temporary_access: current.temporary_access,
+          start_at: current.start_at,
+          expires_at: current.expires_at,
+          data_classification: current.data_classification,
+          privileged_access: current.privileged_access,
+          business_reason: current.business_reason ?? current.reason,
+          system_owner_id: current.system_owner_id,
+          approved_by: approvedBy,
+          lifecycle_event: current.lifecycle_event,
+          evidence_after_grant: body.evidence ?? null,
           granted_by: actorId,
           grant_date: now,
           last_review_date: now,
-          next_review_due: addDaysIso(REVIEW_CYCLE_DAYS),
-          status: 'active',
+          next_review_due: reviewDueIso(current.expires_at),
+          status: current.start_at && new Date(current.start_at) > new Date() ? 'scheduled' : 'active',
           source_request_id: id,
           created_by: actorId,
         });
+        if (grantError) return dbFailJson(c, 'ACCESS_REGISTRY_GRANT_FAILED', grantError);
       }
     }
 
@@ -369,13 +490,135 @@ accessRequestsRoute.post(
   },
 );
 
+const ACCESS_ITEM_SELECT = '*, access_systems(name), system_owner:profiles!access_control_items_system_owner_id_fkey(full_name, email), default_approver:profiles!access_control_items_default_approver_id_fkey(full_name, email)';
+
+accessControlItemsRoute.get('/', requireAnyPermission(['access_request.view', 'access_system.manage']), async (c) => {
+  const reqId = c.get('requestId');
+  const { data, error } = await c.get('supabase')
+    .from('access_control_items')
+    .select(ACCESS_ITEM_SELECT)
+    .order('name', { ascending: true });
+  if (error) return c.json(fail(reqId, 'ACCESS_ITEMS_LIST_FAILED', 'ดึงรายการ Role / Profile / Group / Entitlement ไม่สำเร็จ'), 400);
+  return c.json(ok(reqId, data));
+});
+
+accessControlItemsRoute.get('/people', requirePermission('access_system.manage'), async (c) => {
+  const reqId = c.get('requestId');
+  const { data, error } = await createAdminClient(c.env)
+    .from('profiles')
+    .select('id, full_name, email, status')
+    .eq('status', 'active')
+    .order('full_name', { ascending: true })
+    .limit(1000);
+  if (error) return c.json(fail(reqId, 'ACCESS_ITEM_PEOPLE_FAILED', 'ดึงรายชื่อ System Owner / Approver ไม่สำเร็จ'), 400);
+  return c.json(ok(reqId, data));
+});
+
+accessControlItemsRoute.post(
+  '/',
+  requirePermission('access_system.manage'),
+  zValidator('json', createAccessControlItemSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const body = c.req.valid('json');
+
+    const { data: system } = await supabase.from('access_systems').select('id').eq('id', body.systemId).eq('status', 'active').maybeSingle();
+    if (!system) return c.json(fail(reqId, 'ACCESS_SYSTEM_INVALID', 'กรุณาเลือกระบบงานที่เปิดใช้งานอยู่'), 400);
+
+    const profileIds = [body.systemOwnerId, body.defaultApproverId].filter((id): id is string => Boolean(id));
+    const { data: people, error: peopleError } = await supabase.from('profiles').select('id').in('id', profileIds).eq('status', 'active');
+    if (peopleError || (people?.length ?? 0) !== new Set(profileIds).size) {
+      return c.json(fail(reqId, 'ACCESS_ITEM_OWNER_INVALID', 'System Owner หรือ Approver ต้องเป็นบัญชีที่ใช้งานอยู่'), 400);
+    }
+
+    const { data, error } = await supabase
+      .from('access_control_items')
+      .insert({
+        system_id: body.systemId,
+        kind: body.kind,
+        code: body.code,
+        name: body.name,
+        description: body.description ?? null,
+        permission_actions: body.permissionActions,
+        data_classification: body.dataClassification,
+        privileged_access: body.privilegedAccess,
+        system_owner_id: body.systemOwnerId,
+        default_approver_id: body.defaultApproverId ?? null,
+        created_by: actorId,
+      })
+      .select(ACCESS_ITEM_SELECT)
+      .single();
+    if (error) return dbFailJson(c, 'ACCESS_ITEM_CREATE_FAILED', error);
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'CREATE',
+      module: 'access_control_item',
+      targetTable: 'access_control_items',
+      targetId: data.id,
+      detail: { systemId: body.systemId, kind: body.kind, code: body.code, privilegedAccess: body.privilegedAccess },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+accessControlItemsRoute.patch(
+  '/:id',
+  requirePermission('access_system.manage'),
+  zValidator('json', updateAccessControlItemSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.kind !== undefined) patch.kind = body.kind;
+    if (body.code !== undefined) patch.code = body.code;
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.description !== undefined) patch.description = body.description;
+    if (body.permissionActions !== undefined) patch.permission_actions = body.permissionActions;
+    if (body.dataClassification !== undefined) patch.data_classification = body.dataClassification;
+    if (body.privilegedAccess !== undefined) patch.privileged_access = body.privilegedAccess;
+    if (body.systemOwnerId !== undefined) patch.system_owner_id = body.systemOwnerId;
+    if (body.defaultApproverId !== undefined) patch.default_approver_id = body.defaultApproverId;
+    if (body.status !== undefined) patch.status = body.status;
+
+    const profileIds = [body.systemOwnerId, body.defaultApproverId].filter((profileId): profileId is string => Boolean(profileId));
+    if (profileIds.length) {
+      const { data: people, error: peopleError } = await supabase.from('profiles').select('id').in('id', profileIds).eq('status', 'active');
+      if (peopleError || (people?.length ?? 0) !== new Set(profileIds).size) {
+        return c.json(fail(reqId, 'ACCESS_ITEM_OWNER_INVALID', 'System Owner หรือ Approver ต้องเป็นบัญชีที่ใช้งานอยู่'), 400);
+      }
+    }
+
+    const { data, error } = await supabase.from('access_control_items').update(patch).eq('id', id).select(ACCESS_ITEM_SELECT).single();
+    if (error) return dbFailJson(c, 'ACCESS_ITEM_UPDATE_FAILED', error);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'UPDATE',
+      module: 'access_control_item',
+      targetTable: 'access_control_items',
+      targetId: id,
+      detail: body,
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, data));
+  },
+);
+
 accessRegistryRoute.get('/', requireAnyPermission(['access_request.view', 'access_registry.manage']), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
 
   const { data, error } = await supabase
     .from('user_access_registry')
-    .select('*, access_systems(name), user:profiles!user_access_registry_user_id_fkey(full_name, email)')
+    .select('*, access_systems(name), access_control_item:access_control_items!user_access_registry_access_item_id_fkey(kind, code, name), user:profiles!user_access_registry_user_id_fkey(full_name, email), system_owner:profiles!user_access_registry_system_owner_id_fkey(full_name, email), approver:profiles!user_access_registry_approved_by_fkey(full_name, email), operator:profiles!user_access_registry_granted_by_fkey(full_name, email)')
     .order('created_at', { ascending: false, nullsFirst: false });
 
   if (error) {
@@ -391,9 +634,16 @@ accessRegistryRoute.post('/:id/review', requirePermission('access_registry.manag
   const id = c.req.param('id');
   const now = new Date().toISOString();
 
+  const { data: current, error: currentError } = await supabase
+    .from('user_access_registry')
+    .select('expires_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError || !current) return c.json(fail(reqId, 'ACCESS_REGISTRY_NOT_FOUND', 'ไม่พบรายการสิทธิ์ในทะเบียน'), 404);
+
   const { data, error } = await supabase
     .from('user_access_registry')
-    .update({ last_review_date: now, next_review_due: addDaysIso(REVIEW_CYCLE_DAYS), updated_by: actorId })
+    .update({ last_review_date: now, next_review_due: reviewDueIso(current.expires_at), updated_by: actorId })
     .eq('id', id)
     .select()
     .single();

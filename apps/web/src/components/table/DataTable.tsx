@@ -103,6 +103,7 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   onSelectionChange?: (ids: string[]) => void;
   /** ปุ่มที่จะโผล่บนแถบ "เลือก N รายการ" */
   selectionActions?: ReactNode;
+  showAllColumnsButton?: boolean;
 }
 
 interface StoredTablePrefs {
@@ -390,6 +391,7 @@ export function DataTable({
   selectedIds,
   onSelectionChange,
   selectionActions,
+  showAllColumnsButton = true,
   ...props
 }: DataTableProps) {
   const [storedPrefs] = useState(() => readTablePrefs(tableId));
@@ -649,6 +651,21 @@ export function DataTable({
                 )}
               </div>
             )}
+            {showAllColumnsButton && headers.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="แสดงคอลัมน์ทั้งหมดที่ตารางนี้มี"
+                aria-label="แสดงทั้งหมด"
+                onClick={() => {
+                  setHiddenColumnNames([]);
+                  setShowColumns(false);
+                }}
+              >
+                <Columns3 className="h-4 w-4" aria-hidden="true" />แสดงทั้งหมด
+              </Button>
+            )}
             {currentPageExport && (
               <Button type="button" variant="outline" size="sm" disabled={filteredRows.length === 0} onClick={() => saveCsv(headers, filteredRows, visibleColumns, exportFileName, rowNumber)}>
                 <Download className="h-4 w-4" aria-hidden="true" />ส่งออกหน้านี้
@@ -658,6 +675,20 @@ export function DataTable({
               {filteredRows.length.toLocaleString('th-TH')} {itemLabel}
             </span>
           </div>
+        </div>
+      )}
+      {!showToolbar && showAllColumnsButton && headers.length > 0 && rows.length > 0 && (
+        <div className="flex justify-end border-b border-hairline bg-surface-header px-3 py-2 dark:border-white/[.07] dark:bg-white/[.028]">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            title="แสดงคอลัมน์ทั้งหมดที่ตารางนี้มี"
+            aria-label="แสดงทั้งหมด"
+            onClick={() => setHiddenColumnNames([])}
+          >
+            <Columns3 className="h-4 w-4" aria-hidden="true" />แสดงทั้งหมด
+          </Button>
         </div>
       )}
       <div

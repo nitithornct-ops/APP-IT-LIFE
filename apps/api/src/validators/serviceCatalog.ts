@@ -16,6 +16,20 @@ const checklistItemSchema = z.object({
   ownerGroupId: z.string().uuid().optional(),
 });
 
+const dependencySchema = z.object({
+  type: z.enum(['requester_employee', 'requester_department', 'requester_role']),
+  value: z.string().trim().max(120).optional(),
+  label: z.string().trim().min(1).max(200).optional(),
+});
+
+const suggestedKnowledgeSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  summary: z.string().trim().max(500).optional(),
+  url: z.string().url().max(1000).optional(),
+});
+
+const catalogDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD');
+
 /** null/ไม่ระบุ = ทุกคนขอได้ — ระบุแล้วต้องมีอย่างน้อย 1 เงื่อนไข (roles หรือ departmentIds) */
 const eligibilitySchema = z
   .object({
@@ -31,6 +45,7 @@ const serviceCatalogBaseFields = {
   serviceName: z.string().trim().min(1, 'กรุณาระบุชื่อบริการ').max(200),
   category: z.string().trim().max(120).optional(),
   description: z.string().trim().max(3000).optional(),
+  audience: z.string().trim().max(200).nullable().optional(),
   eligibility: eligibilitySchema,
   formSchema: z.array(formFieldSchema).max(50).optional(),
   attachmentRequired: z.boolean().optional(),
@@ -39,9 +54,17 @@ const serviceCatalogBaseFields = {
   approvalGroupId: z.string().uuid().optional(),
   fulfillmentGroupId: z.string().uuid().optional(),
   checklist: z.array(checklistItemSchema).max(50).optional(),
+  autoAssign: z.boolean().optional(),
+  autoCreateTask: z.boolean().optional(),
+  estimatedCost: z.coerce.number().min(0).max(999999999.99).optional(),
+  dependencies: z.array(dependencySchema).max(20).optional(),
+  suggestedKnowledge: z.array(suggestedKnowledgeSchema).max(20).optional(),
   closeMode: z.enum(['requester_confirms', 'it_closes']).optional(),
   closeCondition: z.string().trim().max(1000).optional(),
   ownerId: z.string().uuid().optional(),
+  documentationUrl: z.string().trim().url().max(1000).nullable().optional(),
+  effectiveDate: catalogDateSchema.optional(),
+  reviewDate: catalogDateSchema.nullable().optional(),
   notes: z.string().trim().max(2000).optional(),
 };
 
@@ -50,6 +73,10 @@ export const createServiceCatalogSchema = z
   .refine((v) => v.approvalMode !== 'group' || !!v.approvalGroupId, {
     message: 'กรุณาเลือกกลุ่มอนุมัติเมื่อรูปแบบการอนุมัติเป็น "กลุ่มอนุมัติ"',
     path: ['approvalGroupId'],
+  })
+  .refine((v) => !v.reviewDate || !v.effectiveDate || v.reviewDate >= v.effectiveDate, {
+    message: 'Review Date ต้องไม่ก่อน Effective Date',
+    path: ['reviewDate'],
   });
 
 export type CreateServiceCatalogInput = z.infer<typeof createServiceCatalogSchema>;

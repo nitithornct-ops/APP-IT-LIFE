@@ -1,26 +1,32 @@
+import { calculateVulnerabilityRisk, type VulnerabilityAssetCriticality, type VulnerabilityCriticalitySource } from '@itlife/shared';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle,
+  Activity,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   ExternalLink,
   FileCheck2,
+  FileUp,
+  Flag,
+  GitPullRequest,
+  Info,
   Loader2,
-  Activity,
   Plus,
+  RefreshCw,
   Save,
   ShieldAlert,
   ShieldCheck,
   Siren,
+  Upload,
   UserRoundCheck,
   X,
 } from 'lucide-react';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -33,279 +39,213 @@ import type { PaginatedResult } from '../../types/admin';
 import {
   VULNERABILITY_SEVERITIES,
   VULNERABILITY_STATUSES,
+  type VulnerabilityExceptionApproval,
   type VulnerabilityFinding,
   type VulnerabilityOptions,
+  type VulnerabilityRiskPriority,
   type VulnerabilitySeverity,
   type VulnerabilityStatus,
+  type VulnerabilityRetest,
 } from '../../types/vulnerabilities';
 import { formatThaiDate } from '../../utils/date';
 import { daysUntilVulnerabilityDue, remediationPercent, severityFromCvss, vulnerabilityIsOverdue } from './vulnerabilityDisplay';
 
 const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
-
-const severityTone: Record<VulnerabilitySeverity, 'secondary' | 'warning' | 'danger'> = {
-  ต่ำ: 'secondary',
-  ปานกลาง: 'warning',
-  สูง: 'danger',
-  วิกฤต: 'danger',
-};
-
-const statusTone: Record<VulnerabilityStatus, 'secondary' | 'info' | 'warning' | 'primary' | 'success'> = {
-  เปิด: 'secondary',
-  กำลังวิเคราะห์: 'info',
-  กำลังแก้ไข: 'warning',
-  รอตรวจยืนยัน: 'primary',
-  ปิด: 'success',
-};
+const riskTone: Record<VulnerabilityRiskPriority, 'secondary' | 'warning' | 'danger'> = { P0: 'danger', P1: 'danger', P2: 'warning', P3: 'secondary' };
+const severityTone: Record<VulnerabilitySeverity, 'secondary' | 'warning' | 'danger'> = { ต่ำ: 'secondary', ปานกลาง: 'warning', สูง: 'danger', วิกฤต: 'danger' };
+const statusTone: Record<VulnerabilityStatus, 'secondary' | 'info' | 'warning' | 'primary' | 'success'> = { เปิด: 'secondary', กำลังวิเคราะห์: 'info', กำลังแก้ไข: 'warning', รอตรวจยืนยัน: 'primary', ปิด: 'success' };
+const retestLabels: Record<VulnerabilityRetest['status'], string> = { scheduled: 'นัดหมาย', passed: 'ผ่าน', failed: 'ไม่ผ่าน', blocked: 'ติดขัด' };
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError || error instanceof Error ? error.message : fallback;
 }
 
+function parseCsv(text: string): Array<Record<string, string>> {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') { cell += '"'; index += 1; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (char === ',' && !quoted) { row.push(cell.trim()); cell = ''; continue; }
+    if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1;
+      row.push(cell.trim()); cell = '';
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      continue;
+    }
+    cell += char;
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  const headers = (rows.shift() ?? []).map((header) => header.toLowerCase().replace(/[\s-]+/g, '_'));
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])));
+}
+
+function csvValue(row: Record<string, string>, ...names: string[]): string | undefined {
+  const value = names.map((name) => row[name]).find((item) => item !== undefined && item !== '');
+  return value === undefined || value === null || value === '' ? undefined : String(value);
+}
+
+function parseNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : undefined;
+}
+
+function parseBool(value: string | undefined): boolean | undefined {
+  if (!value) return undefined;
+  return ['true', '1', 'yes', 'y', 'ใช่'].includes(value.trim().toLowerCase());
+}
+
 interface FindingFormState {
-  title: string;
-  assetId: string;
-  configurationItemId: string;
-  affectedSystem: string;
-  source: string;
-  cve: string;
-  cvss: string;
-  severity: VulnerabilitySeverity;
-  description: string;
-  detectedAt: string;
-  ownerId: string;
-  remediationPlan: string;
-  patchReference: string;
-  dueDate: string;
-  status: VulnerabilityStatus;
-  exceptionReason: string;
-  exceptionExpiry: string;
-  evidenceLink: string;
-  notes: string;
+  title: string; assetId: string; configurationItemId: string; affectedSystem: string; source: string; scannerName: string; scannerFindingId: string;
+  cve: string; cvss: string; epssScore: string; epssPercentile: string; kevListed: boolean; internetFacing: boolean; severity: VulnerabilitySeverity;
+  description: string; detectedAt: string; ownerId: string; remediationPlan: string; patchReference: string; dueDate: string; status: VulnerabilityStatus;
+  exceptionReason: string; exceptionExpiry: string; exceptionOwnerId: string; evidenceLink: string; campaignId: string; changeId: string; incidentId: string; problemId: string; notes: string;
 }
 
 function initialForm(finding: VulnerabilityFinding | undefined, currentUserId: string | undefined): FindingFormState {
   return {
-    title: finding?.title ?? '',
-    assetId: finding?.asset_id ?? '',
-    configurationItemId: finding?.configuration_item_id ?? '',
-    affectedSystem: finding?.affected_system ?? '',
-    source: finding?.source ?? '',
-    cve: finding?.cve ?? '',
-    cvss: finding?.cvss === null || finding?.cvss === undefined ? '' : String(finding.cvss),
-    severity: finding?.severity ?? 'ปานกลาง',
-    description: finding?.description ?? '',
-    detectedAt: finding?.detected_at ?? new Date().toISOString().slice(0, 10),
-    ownerId: finding?.owner_id ?? currentUserId ?? '',
-    remediationPlan: finding?.remediation_plan ?? '',
-    patchReference: finding?.patch_reference ?? '',
-    dueDate: finding?.due_date ?? '',
-    status: finding?.status === 'ปิด' ? 'รอตรวจยืนยัน' : finding?.status ?? 'เปิด',
-    exceptionReason: finding?.exception_reason ?? '',
-    exceptionExpiry: finding?.exception_expiry ?? '',
-    evidenceLink: finding?.evidence_link ?? '',
-    notes: finding?.notes ?? '',
+    title: finding?.title ?? '', assetId: finding?.asset_id ?? '', configurationItemId: finding?.configuration_item_id ?? '', affectedSystem: finding?.affected_system ?? '', source: finding?.source ?? '', scannerName: finding?.scanner_name ?? '', scannerFindingId: finding?.scanner_finding_id ?? '', cve: finding?.cve ?? '', cvss: finding?.cvss == null ? '' : String(finding.cvss), epssScore: finding?.epss_score == null ? '' : String(finding.epss_score), epssPercentile: finding?.epss_percentile == null ? '' : String(finding.epss_percentile), kevListed: finding?.kev_listed ?? false, internetFacing: finding?.internet_facing ?? false, severity: finding?.severity ?? 'ปานกลาง', description: finding?.description ?? '', detectedAt: finding?.detected_at ?? new Date().toISOString().slice(0, 10), ownerId: finding?.owner_id ?? currentUserId ?? '', remediationPlan: finding?.remediation_plan ?? '', patchReference: finding?.patch_reference ?? '', dueDate: finding?.due_date ?? '', status: finding?.status === 'ปิด' ? 'รอตรวจยืนยัน' : finding?.status ?? 'เปิด', exceptionReason: finding?.exception_reason ?? '', exceptionExpiry: finding?.exception_expiry ?? '', exceptionOwnerId: finding?.exception_owner_id ?? '', evidenceLink: finding?.evidence_link ?? '', campaignId: finding?.campaign_id ?? '', changeId: finding?.change_id ?? '', incidentId: finding?.incident_id ?? '', problemId: finding?.problem_id ?? '', notes: finding?.notes ?? '',
   };
 }
 
-function FindingForm({
-  finding,
-  options,
-  currentUserId,
-  onClose,
-}: {
-  finding?: VulnerabilityFinding;
-  options: VulnerabilityOptions;
-  currentUserId?: string;
-  onClose: () => void;
-}) {
+function OptionSelect({ label, value, onChange, children, required = false }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode; required?: boolean }) {
+  return <label className="text-xs font-semibold">{label}<select required={required} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass}>{children}</select></label>;
+}
+
+function FindingForm({ finding, options, currentUserId, onClose }: { finding?: VulnerabilityFinding; options: VulnerabilityOptions; currentUserId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(() => initialForm(finding, currentUserId));
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof FindingFormState,>(key: K, value: FindingFormState[K]) => setForm((current) => ({ ...current, [key]: value }));
-
+  const selectedCi = options.configurationItems.find((item) => item.id === form.configurationItemId);
+  const selectedAsset = options.assets.find((item) => item.id === form.assetId);
+  const criticality: VulnerabilityAssetCriticality = selectedCi?.criticality === 'Critical' || selectedCi?.criticality === 'High' || selectedCi?.criticality === 'Medium' || selectedCi?.criticality === 'Low'
+    ? selectedCi.criticality
+    : selectedAsset?.criticality === 'สูง' ? 'High' : selectedAsset?.criticality === 'กลาง' ? 'Medium' : selectedAsset?.criticality === 'ต่ำ' ? 'Low' : 'Unknown';
+  const criticalitySource: VulnerabilityCriticalitySource = selectedCi && criticality !== 'Unknown' ? 'CMDB' : selectedAsset && criticality !== 'Unknown' ? 'Asset' : 'Unknown';
+  const riskPreview = calculateVulnerabilityRisk({ cvss: form.cvss === '' ? null : Number(form.cvss), epssScore: form.epssScore === '' ? null : Number(form.epssScore), kevListed: form.kevListed, internetFacing: form.internetFacing, assetCriticality: criticality, criticalitySource });
   const mutation = useMutation({
     mutationFn: () => {
       const cvss = form.cvss === '' ? undefined : Number(form.cvss);
       if (cvss !== undefined && (!Number.isFinite(cvss) || cvss < 0 || cvss > 10)) throw new Error('CVSS ต้องอยู่ระหว่าง 0–10');
-      if (form.dueDate && form.detectedAt && form.dueDate < form.detectedAt) throw new Error('วันครบกำหนดต้องไม่ก่อนวันที่ตรวจพบ');
-      if (form.exceptionExpiry && !form.exceptionReason.trim()) throw new Error('กรุณาระบุเหตุผลข้อยกเว้นเมื่อกำหนดวันหมดอายุข้อยกเว้น');
+      if (form.dueDate && form.dueDate < form.detectedAt) throw new Error('วันครบกำหนดต้องไม่ก่อนวันที่ตรวจพบ');
       if (form.evidenceLink && !form.evidenceLink.startsWith('https://')) throw new Error('ลิงก์หลักฐานต้องเป็น HTTPS');
-      return apiFetch(finding ? `/api/v1/vulnerabilities/${finding.id}` : '/api/v1/vulnerabilities', {
-        method: finding ? 'PATCH' : 'POST',
-        body: JSON.stringify({
-          title: form.title,
-          assetId: form.assetId,
-          configurationItemId: form.configurationItemId,
-          affectedSystem: form.affectedSystem,
-          source: form.source,
-          cve: form.cve,
-          cvss,
-          severity: form.severity,
-          description: form.description,
-          detectedAt: form.detectedAt,
-          ownerId: form.ownerId,
-          remediationPlan: form.remediationPlan,
-          patchReference: form.patchReference,
-          dueDate: form.dueDate,
-          status: form.status,
-          exceptionReason: form.exceptionReason,
-          exceptionExpiry: form.exceptionExpiry,
-          evidenceLink: form.evidenceLink,
-          notes: form.notes,
-        }),
-      });
+      return apiFetch(finding ? `/api/v1/vulnerabilities/${finding.id}` : '/api/v1/vulnerabilities', { method: finding ? 'PATCH' : 'POST', body: JSON.stringify({ title: form.title, assetId: form.assetId, configurationItemId: form.configurationItemId, affectedSystem: form.affectedSystem, source: form.source, scannerName: form.scannerName, scannerFindingId: form.scannerFindingId, cve: form.cve, cvss, epssScore: form.epssScore === '' ? undefined : Number(form.epssScore), epssPercentile: form.epssPercentile === '' ? undefined : Number(form.epssPercentile), kevListed: form.kevListed, internetFacing: form.internetFacing, severity: form.severity, description: form.description, detectedAt: form.detectedAt, ownerId: form.ownerId, remediationPlan: form.remediationPlan, patchReference: form.patchReference, dueDate: form.dueDate, status: form.status, evidenceLink: form.evidenceLink, campaignId: form.campaignId, changeId: form.changeId, incidentId: form.incidentId, problemId: form.problemId, notes: form.notes }) });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] });
-      onClose();
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); onClose(); },
     onError: (reason) => setError(errorText(reason, 'บันทึกช่องโหว่ไม่สำเร็จ')),
   });
+  return <Card data-testid="vulnerability-form" className="border-primary-200 dark:border-primary-900"><CardHeader className="flex items-center justify-between gap-3"><div><p>{finding ? `แก้ไข ${finding.vulnerability_code}` : 'เพิ่มช่องโหว่'}</p><p className="mt-0.5 text-xs font-normal text-slate-500">Scanner · CVE/CVSS · EPSS/KEV · CMDB Criticality · Risk Priority · SLA · Link งานที่เกี่ยวข้อง</p></div><button type="button" aria-label="ปิดแบบฟอร์ม" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button></CardHeader><CardBody><form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}>
+    <label className="text-xs font-semibold sm:col-span-2">ชื่อช่องโหว่<input required maxLength={200} data-testid="vuln-form-title" value={form.title} onChange={(event) => set('title', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold">CVE<input maxLength={100} value={form.cve} onChange={(event) => set('cve', event.target.value.toUpperCase())} placeholder="CVE-2026-12345" className={fieldClass} /></label>
+    <label className="text-xs font-semibold">Scanner<input maxLength={100} value={form.scannerName} onChange={(event) => set('scannerName', event.target.value)} placeholder="Nessus / Qualys / Wiz" className={fieldClass} /></label>
+    <label className="text-xs font-semibold">Scanner Finding ID<input maxLength={200} value={form.scannerFindingId} onChange={(event) => set('scannerFindingId', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold">CVSS 0–10<input type="number" min="0" max="10" step="0.1" data-testid="vuln-form-cvss" value={form.cvss} onChange={(event) => { const next = event.target.value; setForm((current) => ({ ...current, cvss: next, ...(severityFromCvss(next === '' ? null : Number(next)) ? { severity: severityFromCvss(Number(next))! } : {}) })); }} className={fieldClass} /></label>
+    <label className="text-xs font-semibold">EPSS Score (0–1)<input type="number" min="0" max="1" step="0.00001" value={form.epssScore} onChange={(event) => set('epssScore', event.target.value)} placeholder="0.72" className={fieldClass} /></label>
+    <label className="text-xs font-semibold">EPSS Percentile<input type="number" min="0" max="1" step="0.00001" value={form.epssPercentile} onChange={(event) => set('epssPercentile', event.target.value)} placeholder="0.98" className={fieldClass} /></label>
+    <OptionSelect label="Severity" value={form.severity} onChange={(value) => set('severity', value as VulnerabilitySeverity)}>{VULNERABILITY_SEVERITIES.map((item) => <option key={item}>{item}</option>)}</OptionSelect>
+    <label className="flex items-end gap-2 text-xs font-semibold"><input type="checkbox" checked={form.kevListed} onChange={(event) => set('kevListed', event.target.checked)} className="mb-2 h-4 w-4 rounded border-slate-300 text-primary-700" /><span>Known Exploited / KEV<br /><span className="font-normal text-slate-400">อยู่ใน CISA KEV catalog</span></span></label>
+    <label className="flex items-end gap-2 text-xs font-semibold"><input type="checkbox" checked={form.internetFacing} onChange={(event) => set('internetFacing', event.target.checked)} className="mb-2 h-4 w-4 rounded border-slate-300 text-primary-700" /><span>Internet-facing<br /><span className="font-normal text-slate-400">เปิดรับจากอินเทอร์เน็ต</span></span></label>
+    <label className="text-xs font-semibold">วันที่ตรวจพบ<input required type="date" value={form.detectedAt} onChange={(event) => set('detectedAt', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold">กำหนดแก้ไข (Custom)<input type="date" data-testid="vuln-form-due" value={form.dueDate} onChange={(event) => set('dueDate', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold sm:col-span-2">Asset<select value={form.assetId} onChange={(event) => set('assetId', event.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{options.assets.map((item) => <option key={item.id} value={item.id}>{item.asset_code} — {item.name} {item.criticality ? `(${item.criticality})` : ''}</option>)}</select></label>
+    <label className="text-xs font-semibold sm:col-span-2">Configuration Item (CMDB)<select value={form.configurationItemId} onChange={(event) => set('configurationItemId', event.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{options.configurationItems.map((item) => <option key={item.id} value={item.id}>{item.ci_code} — {item.name} · {item.criticality}</option>)}</select></label>
+    <div className="rounded-lg border border-primary-200 bg-primary-50 p-3 text-xs dark:border-primary-900 dark:bg-primary-950/30 sm:col-span-2"><div className="flex items-center justify-between"><span className="font-semibold text-primary-900 dark:text-primary-100">Risk-based Priority</span><Badge variant={riskTone[riskPreview.priority]}>{riskPreview.priority}</Badge></div><p className="mt-1 text-slate-600 dark:text-slate-300">คะแนน {riskPreview.score}/100 · Criticality: {criticality} {criticalitySource !== 'Unknown' ? `(จาก ${criticalitySource})` : ''}</p><p className="mt-1 text-slate-500">{riskPreview.factors.reasons.join(' + ') || 'ยังไม่มีปัจจัยเพิ่ม'}</p></div>
+    <label className="text-xs font-semibold sm:col-span-2">ระบบที่ได้รับผลกระทบ<input maxLength={200} value={form.affectedSystem} onChange={(event) => set('affectedSystem', event.target.value)} className={fieldClass} /></label>
+    <OptionSelect label="Owner" required value={form.ownerId} onChange={(value) => set('ownerId', value)}><option value="">— เลือกผู้รับผิดชอบ —</option>{options.users.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.email}</option>)}</OptionSelect>
+    <OptionSelect label="Patch Campaign" value={form.campaignId} onChange={(value) => set('campaignId', value)}><option value="">— ยังไม่เข้าคิว Campaign —</option>{options.campaigns.map((item) => <option key={item.id} value={item.id}>{item.campaign_code} — {item.name}</option>)}</OptionSelect>
+    <label className="text-xs font-semibold sm:col-span-2">รายละเอียด<textarea rows={3} maxLength={1500} value={form.description} onChange={(event) => set('description', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold sm:col-span-2">แผนแก้ไข<textarea rows={3} maxLength={1500} value={form.remediationPlan} onChange={(event) => set('remediationPlan', event.target.value)} className={fieldClass} /></label>
+    <label className="text-xs font-semibold sm:col-span-2">Patch / Fix Reference<input maxLength={300} value={form.patchReference} onChange={(event) => set('patchReference', event.target.value)} placeholder="KB / Vendor advisory / Patch ID" className={fieldClass} /></label>
+    <OptionSelect label="สถานะ" value={form.status} onChange={(value) => set('status', value as VulnerabilityStatus)}>{VULNERABILITY_STATUSES.filter((item) => item !== 'ปิด').map((item) => <option key={item}>{item}</option>)}</OptionSelect>
+    <OptionSelect label="Link Change" value={form.changeId} onChange={(value) => set('changeId', value)}><option value="">— ไม่ผูก Change —</option>{options.changes.map((item) => <option key={item.id} value={item.id}>{item.change_number} — {item.title}</option>)}</OptionSelect>
+    <OptionSelect label="Link Incident" value={form.incidentId} onChange={(value) => set('incidentId', value)}><option value="">— ไม่ผูก Incident —</option>{options.incidents.map((item) => <option key={item.id} value={item.id}>{item.incident_number} — {item.title}</option>)}</OptionSelect>
+    <OptionSelect label="Link Problem" value={form.problemId} onChange={(value) => set('problemId', value)}><option value="">— ไม่ผูก Problem —</option>{options.problems.map((item) => <option key={item.id} value={item.id}>{item.problem_number} — {item.title}</option>)}</OptionSelect>
+    <label className="text-xs font-semibold sm:col-span-2">หลักฐาน HTTPS<input type="url" maxLength={500} value={form.evidenceLink} onChange={(event) => set('evidenceLink', event.target.value)} placeholder="https://..." className={fieldClass} /></label>
+    <label className="text-xs font-semibold sm:col-span-2 lg:col-span-4">หมายเหตุ<textarea rows={2} maxLength={1000} value={form.notes} onChange={(event) => set('notes', event.target.value)} className={fieldClass} /></label>
+    {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2 lg:col-span-4 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
+    <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><Button type="submit" size="sm" isLoading={mutation.isPending} disabled={!form.title.trim() || !form.ownerId} data-testid="vuln-form-submit"><Save className="h-4 w-4" />บันทึกช่องโหว่</Button><Button size="sm" variant="ghost" onClick={onClose}>ยกเลิก</Button></div>
+  </form></CardBody></Card>;
+}
 
-  const inferredSeverity = severityFromCvss(form.cvss === '' ? null : Number(form.cvss));
+function ScannerImportModal({ options, currentUserId, onClose, onSuccess }: { options: VulnerabilityOptions; currentUserId?: string; onClose: () => void; onSuccess: () => void }) {
+  const [scannerName, setScannerName] = useState('');
+  const [ownerId, setOwnerId] = useState(currentUserId ?? '');
+  const [raw, setRaw] = useState('');
+  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({ mutationFn: () => apiFetch<{ created: number; updated: number; skipped: number; errors: Array<{ row: number; message: string }> }>('/api/v1/vulnerabilities/import', { method: 'POST', body: JSON.stringify({ scannerName, ownerId: ownerId || undefined, rows }) }), onSuccess: (result) => { onSuccess(); setError(result.errors.length ? `${result.created} เพิ่ม, ${result.updated} อัปเดต · ${result.errors.length} แถวผิดพลาด` : `${result.created} เพิ่ม, ${result.updated} อัปเดต และ Deduplicate แล้ว`); }, onError: (reason) => setError(errorText(reason, 'นำเข้า Scanner ไม่สำเร็จ')) });
+  const parseInput = (text: string) => {
+    setRaw(text);
+    try {
+      const parsed = text.trim().startsWith('[') ? JSON.parse(text) as Array<Record<string, string>> : parseCsv(text);
+      setRows((parsed ?? []).map((row) => ({ externalId: csvValue(row, 'external_id', 'finding_id', 'id'), title: csvValue(row, 'title', 'name'), cve: csvValue(row, 'cve', 'cve_id'), cvss: parseNumber(csvValue(row, 'cvss', 'cvss_score')), epssScore: parseNumber(csvValue(row, 'epss_score', 'epss')), epssPercentile: parseNumber(csvValue(row, 'epss_percentile', 'percentile')), kevListed: parseBool(csvValue(row, 'kev', 'kev_listed', 'known_exploited')), internetFacing: parseBool(csvValue(row, 'internet_facing', 'internet-facing', 'exposed')), assetCode: csvValue(row, 'asset_code', 'asset'), ciCode: csvValue(row, 'ci_code', 'configuration_item'), affectedSystem: csvValue(row, 'affected_system', 'system'), detectedAt: csvValue(row, 'detected_at', 'first_seen'), lastSeenAt: csvValue(row, 'last_seen_at', 'last_seen'), description: csvValue(row, 'description') })).filter((row) => row.title || row.cve || row.externalId));
+      setError(null);
+    } catch { setRows([]); setError('CSV/JSON ไม่ถูกต้อง'); }
+  };
+  const onFile = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) parseInput(await file.text()); };
+  return <FormModal title="Scanner Import + Deduplicate" description="รองรับ CSV/JSON สูงสุด 1,000 แถว · ใช้ CVE + Asset/CI เป็น dedup key" size="lg" onClose={onClose}><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">ชื่อ Scanner *<input required value={scannerName} onChange={(event) => setScannerName(event.target.value)} placeholder="Nessus / Qualys / Wiz" className={fieldClass} /></label><OptionSelect label="Owner เริ่มต้น" value={ownerId} onChange={setOwnerId}><option value="">— เลือก Owner —</option>{options.users.map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</OptionSelect></div><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-300 bg-primary-50 px-4 py-4 text-sm font-semibold text-primary-800 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-200"><Upload className="h-5 w-5" />เลือกไฟล์ CSV/JSON<input type="file" accept=".csv,.json,text/csv,application/json" onChange={(event) => { void onFile(event); }} className="sr-only" /></label><label className="text-xs font-semibold">หรือวาง CSV/JSON<textarea rows={9} value={raw} onChange={(event) => parseInput(event.target.value)} placeholder={'cve,title,cvss,epss_score,kev_listed,internet_facing,asset_code,ci_code\nCVE-2026-12345,OpenSSL RCE,9.8,0.72,true,true,AST-001,CI-ERP-01'} className={`${fieldClass} font-mono`} /></label><div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900"><span><strong>{rows.length}</strong> แถวพร้อมนำเข้า · ระบบจะอัปเดตผลเดิมแทนการสร้างซ้ำ</span><FileUp className="h-4 w-4 text-slate-400" /></div>{error && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{error}</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>ปิด</Button><Button isLoading={mutation.isPending} disabled={!scannerName.trim() || !ownerId || rows.length === 0} onClick={() => { setError(null); mutation.mutate(); }}><Upload className="h-4 w-4" />นำเข้า {rows.length} แถว</Button></div></div></FormModal>;
+}
 
-  return (
-    <Card data-testid="vulnerability-form" className="border-primary-200 dark:border-primary-900">
-      <CardHeader className="flex items-center justify-between gap-3">
-        <div>
-          <p>{finding ? `แก้ไข ${finding.vulnerability_code}` : 'เพิ่มช่องโหว่'}</p>
-          <p className="mt-0.5 text-xs font-normal text-slate-500">CVE/CVSS · Asset/CI · แผนแก้ไข · ข้อยกเว้น · หลักฐาน</p>
-        </div>
-        <button type="button" aria-label="ปิดแบบฟอร์ม" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
-      </CardHeader>
-      <CardBody>
-        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}>
-          <label className="text-xs font-semibold sm:col-span-2">ชื่อช่องโหว่<input required maxLength={200} data-testid="vuln-form-title" value={form.title} onChange={(event) => set('title', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold">CVE<input maxLength={100} value={form.cve} onChange={(event) => set('cve', event.target.value.toUpperCase())} placeholder="CVE-2026-12345" className={fieldClass} /></label>
-          <label className="text-xs font-semibold">แหล่งตรวจพบ<input maxLength={150} value={form.source} onChange={(event) => set('source', event.target.value)} placeholder="Scanner / Pentest / Vendor" className={fieldClass} /></label>
-          <label className="text-xs font-semibold">CVSS 0–10<input type="number" min="0" max="10" step="0.1" data-testid="vuln-form-cvss" value={form.cvss} onChange={(event) => { const next = event.target.value; setForm((current) => ({ ...current, cvss: next, ...(severityFromCvss(next === '' ? null : Number(next)) ? { severity: severityFromCvss(Number(next))! } : {}) })); }} className={fieldClass} />{inferredSeverity && <span className="mt-1 block text-[11px] font-normal text-slate-400">ระดับแนะนำ: {inferredSeverity}</span>}</label>
-          <label className="text-xs font-semibold">Severity<select value={form.severity} onChange={(event) => set('severity', event.target.value as VulnerabilitySeverity)} className={fieldClass}>{VULNERABILITY_SEVERITIES.map((severity) => <option key={severity}>{severity}</option>)}</select></label>
-          <label className="text-xs font-semibold">วันที่ตรวจพบ<input required type="date" value={form.detectedAt} onChange={(event) => set('detectedAt', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold">กำหนดแก้ไข<input type="date" data-testid="vuln-form-due" value={form.dueDate} onChange={(event) => set('dueDate', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">Asset<select value={form.assetId} onChange={(event) => set('assetId', event.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{options.assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.asset_code} — {asset.name}</option>)}</select></label>
-          <label className="text-xs font-semibold sm:col-span-2">Configuration Item<select value={form.configurationItemId} onChange={(event) => set('configurationItemId', event.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{options.configurationItems.map((ci) => <option key={ci.id} value={ci.id}>{ci.ci_code} — {ci.name} ({ci.environment})</option>)}</select></label>
-          <label className="text-xs font-semibold sm:col-span-2">ระบบที่ได้รับผลกระทบ<input maxLength={200} value={form.affectedSystem} onChange={(event) => set('affectedSystem', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">Owner<select required value={form.ownerId} onChange={(event) => set('ownerId', event.target.value)} className={fieldClass}><option value="">— เลือกผู้รับผิดชอบ —</option>{options.users.map((user) => <option key={user.id} value={user.id}>{user.full_name} — {user.email}</option>)}</select></label>
-          <label className="text-xs font-semibold sm:col-span-2">รายละเอียด<textarea rows={3} maxLength={1500} value={form.description} onChange={(event) => set('description', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">แผนแก้ไข<textarea rows={3} maxLength={1500} value={form.remediationPlan} onChange={(event) => set('remediationPlan', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">Patch / Fix Reference<input maxLength={300} value={form.patchReference} onChange={(event) => set('patchReference', event.target.value)} placeholder="KB / Vendor advisory / Patch ID" className={fieldClass} /></label>
-          <label className="text-xs font-semibold">สถานะ<select value={form.status} onChange={(event) => set('status', event.target.value as VulnerabilityStatus)} className={fieldClass}>{VULNERABILITY_STATUSES.filter((status) => status !== 'ปิด').map((status) => <option key={status}>{status}</option>)}</select></label>
-          <label className="text-xs font-semibold">ข้อยกเว้นถึงวันที่<input type="date" value={form.exceptionExpiry} onChange={(event) => set('exceptionExpiry', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">เหตุผลข้อยกเว้น<input maxLength={1000} value={form.exceptionReason} onChange={(event) => set('exceptionReason', event.target.value)} className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2">หลักฐาน HTTPS<input type="url" maxLength={500} value={form.evidenceLink} onChange={(event) => set('evidenceLink', event.target.value)} placeholder="https://..." className={fieldClass} /></label>
-          <label className="text-xs font-semibold sm:col-span-2 lg:col-span-4">หมายเหตุ<textarea rows={2} maxLength={1000} value={form.notes} onChange={(event) => set('notes', event.target.value)} className={fieldClass} /></label>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2 lg:col-span-4 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-          <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><Button type="submit" size="sm" isLoading={mutation.isPending} disabled={!form.title.trim() || !form.ownerId} data-testid="vuln-form-submit"><Save className="h-4 w-4" />บันทึกช่องโหว่</Button><Button size="sm" variant="ghost" onClick={onClose}>ยกเลิก</Button></div>
-        </form>
-      </CardBody>
-    </Card>
-  );
+function CampaignModal({ options, currentUserId, onClose, onSuccess }: { options: VulnerabilityOptions; currentUserId?: string; onClose: () => void; onSuccess: () => void }) {
+  const [name, setName] = useState(''); const [objective, setObjective] = useState(''); const [targetDate, setTargetDate] = useState(''); const [ownerId, setOwnerId] = useState(currentUserId ?? ''); const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({ mutationFn: () => apiFetch('/api/v1/vulnerabilities/campaigns', { method: 'POST', body: JSON.stringify({ name, objective, targetDate, ownerId }) }), onSuccess: () => { onSuccess(); onClose(); }, onError: (reason) => setError(errorText(reason, 'สร้าง Patch Campaign ไม่สำเร็จ')) });
+  return <FormModal title="สร้าง Patch Campaign" description="รวมรายการที่ต้องแก้ไขเป็นชุดเดียว พร้อม Owner และ Target date" size="md" onClose={onClose}><form className="space-y-3" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}><label className="text-xs font-semibold">ชื่อ Campaign *<input required value={name} onChange={(event) => setName(event.target.value)} className={fieldClass} /></label><label className="text-xs font-semibold">วัตถุประสงค์<textarea rows={3} value={objective} onChange={(event) => setObjective(event.target.value)} className={fieldClass} /></label><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Target date<input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} className={fieldClass} /></label><OptionSelect label="Campaign Owner" required value={ownerId} onChange={setOwnerId}><option value="">— เลือก Owner —</option>{options.users.map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</OptionSelect></div>{error && <p className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>ยกเลิก</Button><Button type="submit" isLoading={mutation.isPending}><Plus className="h-4 w-4" />สร้าง Campaign</Button></div></form></FormModal>;
 }
 
 function StatusPanel({ finding, currentUserId, onClose }: { finding: VulnerabilityFinding; currentUserId?: string; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const [status, setStatus] = useState<VulnerabilityStatus>(finding.status);
-  const [evidenceLink, setEvidenceLink] = useState(finding.evidence_link ?? '');
-  const [error, setError] = useState<string | null>(null);
-  const ownerCannotVerify = status === 'ปิด' && finding.owner_id === currentUserId;
-  const mutation = useMutation({
-    mutationFn: () => {
-      if (status === 'ปิด' && !evidenceLink.startsWith('https://')) throw new Error('การปิดรายการต้องมีหลักฐาน HTTPS');
-      if (ownerCannotVerify) throw new Error('Owner ผู้แก้ไขห้ามตรวจยืนยันปิดรายการของตนเอง');
-      return apiFetch(`/api/v1/vulnerabilities/${finding.id}/status`, { method: 'POST', body: JSON.stringify({ status, evidenceLink }) });
-    },
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); onClose(); },
-    onError: (reason) => setError(errorText(reason, 'อัปเดตสถานะไม่สำเร็จ')),
-  });
-  return (
-    <div className="mt-3 grid gap-2 rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-900 dark:bg-primary-950/30 sm:grid-cols-[180px_1fr_auto]" data-testid={`vuln-status-${finding.id}`}>
-      <label className="text-xs font-semibold">สถานะ<select value={status} onChange={(event) => setStatus(event.target.value as VulnerabilityStatus)} className={fieldClass}>{VULNERABILITY_STATUSES.filter((item) => item !== 'ปิด' || finding.status === 'รอตรวจยืนยัน' || finding.status === 'ปิด').map((item) => <option key={item}>{item}</option>)}</select></label>
-      <label className="text-xs font-semibold">หลักฐาน HTTPS<input type="url" value={evidenceLink} onChange={(event) => setEvidenceLink(event.target.value)} placeholder="จำเป็นเมื่อปิดรายการ" className={fieldClass} /></label>
-      <div className="flex items-end gap-1"><Button size="sm" isLoading={mutation.isPending} disabled={ownerCannotVerify} onClick={() => { setError(null); mutation.mutate(); }}><UserRoundCheck className="h-4 w-4" />บันทึก</Button><Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button></div>
-      {ownerCannotVerify && <p className="text-xs text-amber-700 sm:col-span-3 dark:text-amber-300">ต้องให้ผู้ดูแลคนอื่นตรวจยืนยันตามหลัก Separation of Duties</p>}
-      {error && <p className="text-xs text-red-600 sm:col-span-3">{error}</p>}
-    </div>
-  );
+  const queryClient = useQueryClient(); const [status, setStatus] = useState<VulnerabilityStatus>(finding.status); const [evidenceLink, setEvidenceLink] = useState(finding.evidence_link ?? ''); const [error, setError] = useState<string | null>(null); const ownerCannotVerify = status === 'ปิด' && finding.owner_id === currentUserId;
+  const mutation = useMutation({ mutationFn: () => { if (status === 'ปิด' && !evidenceLink.startsWith('https://')) throw new Error('การปิดรายการต้องมีหลักฐาน HTTPS'); if (ownerCannotVerify) throw new Error('Owner ผู้แก้ไขห้ามตรวจยืนยันปิดรายการของตนเอง'); return apiFetch(`/api/v1/vulnerabilities/${finding.id}/status`, { method: 'POST', body: JSON.stringify({ status, evidenceLink }) }); }, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); onClose(); }, onError: (reason) => setError(errorText(reason, 'อัปเดตสถานะไม่สำเร็จ')) });
+  return <div className="mt-3 grid gap-2 rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-900 dark:bg-primary-950/30 sm:grid-cols-[180px_1fr_auto]" data-testid={`vuln-status-${finding.id}`}><OptionSelect label="สถานะ" value={status} onChange={(value) => setStatus(value as VulnerabilityStatus)}>{VULNERABILITY_STATUSES.filter((item) => item !== 'ปิด' || finding.status === 'รอตรวจยืนยัน' || finding.status === 'ปิด').map((item) => <option key={item}>{item}</option>)}</OptionSelect><label className="text-xs font-semibold">หลักฐาน HTTPS<input type="url" value={evidenceLink} onChange={(event) => setEvidenceLink(event.target.value)} placeholder="จำเป็นเมื่อปิดรายการ" className={fieldClass} /></label><div className="flex items-end gap-1"><Button size="sm" isLoading={mutation.isPending} disabled={ownerCannotVerify} onClick={() => { setError(null); mutation.mutate(); }}><UserRoundCheck className="h-4 w-4" />บันทึก</Button><Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button></div>{ownerCannotVerify && <p className="text-xs text-amber-700 sm:col-span-3 dark:text-amber-300">ต้องให้ผู้ดูแลคนอื่นตรวจยืนยันตาม Separation of Duties และรายการต้องมี Retest ผ่าน</p>}{error && <p className="text-xs text-red-600 sm:col-span-3">{error}</p>}</div>;
 }
 
-function DueText({ finding }: { finding: VulnerabilityFinding }) {
-  const days = daysUntilVulnerabilityDue(finding.due_date);
-  if (!finding.due_date) return <span className="text-slate-400">ไม่กำหนด</span>;
-  return <div><p>{formatThaiDate(finding.due_date, 'd MMM yyyy')}</p>{finding.status !== 'ปิด' && days !== null && <p className={`text-xs font-semibold ${days < 0 ? 'text-red-600' : days <= 7 ? 'text-amber-600' : 'text-slate-400'}`}>{days < 0 ? `เกิน ${Math.abs(days)} วัน` : `เหลือ ${days} วัน`}</p>}</div>;
+function RetestPanel({ finding, onUpdated }: { finding: VulnerabilityFinding; onUpdated: () => void }) {
+  const queryClient = useQueryClient(); const [status, setStatus] = useState<VulnerabilityRetest['status']>('passed'); const [method, setMethod] = useState('Automated validation'); const [result, setResult] = useState(''); const [evidenceLink, setEvidenceLink] = useState(''); const [error, setError] = useState<string | null>(null);
+  const query = useQuery({ queryKey: ['vulnerability-retests', finding.id], queryFn: () => apiFetch<VulnerabilityRetest[]>(`/api/v1/vulnerabilities/${finding.id}/retests`) });
+  const mutation = useMutation({ mutationFn: () => apiFetch(`/api/v1/vulnerabilities/${finding.id}/retests`, { method: 'POST', body: JSON.stringify({ status, method, result, evidenceLink }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerability-retests', finding.id] }); void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); setResult(''); setEvidenceLink(''); setError(null); onUpdated(); }, onError: (reason) => setError(errorText(reason, 'บันทึก Retest ไม่สำเร็จ')) });
+  return <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"><div className="flex items-center justify-between gap-2"><p className="flex items-center gap-2 text-xs font-bold"><RefreshCw className="h-4 w-4 text-primary-700" />Retest / Verification</p>{query.data?.[0] && <Badge variant={query.data[0].status === 'passed' ? 'success' : query.data[0].status === 'failed' ? 'danger' : 'warning'}>{retestLabels[query.data[0].status]} #{query.data[0].attempt_no}</Badge>}</div><div className="mt-3 grid gap-2 sm:grid-cols-4"><OptionSelect label="ผล Retest" value={status} onChange={(value) => setStatus(value as VulnerabilityRetest['status'])}>{Object.entries(retestLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</OptionSelect><label className="text-xs font-semibold sm:col-span-2">วิธีทดสอบ<input value={method} onChange={(event) => setMethod(event.target.value)} className={fieldClass} /></label><label className="text-xs font-semibold">Evidence URL<input type="url" value={evidenceLink} onChange={(event) => setEvidenceLink(event.target.value)} placeholder="https://..." className={fieldClass} /></label><label className="text-xs font-semibold sm:col-span-4">ผลการทดสอบ<textarea rows={2} value={result} onChange={(event) => setResult(event.target.value)} placeholder="ยืนยันเวอร์ชันที่แก้ไข / ผล scan หลัง patch" className={fieldClass} /></label></div>{error && <p className="mt-2 text-xs text-red-600">{error}</p>}<div className="mt-2 flex justify-end"><Button size="sm" isLoading={mutation.isPending} disabled={!method.trim() || (status === 'passed' && (!result.trim() || !evidenceLink.startsWith('https://')))} onClick={() => mutation.mutate()}><RefreshCw className="h-4 w-4" />บันทึก Retest</Button></div>{query.data && query.data.length > 0 && <div className="mt-3 space-y-1 border-t border-slate-100 pt-2 text-xs dark:border-slate-700">{query.data.slice(0, 3).map((item) => <p key={item.id} className="flex items-center justify-between gap-2"><span>#{item.attempt_no} · {formatThaiDate(item.tested_at, 'd MMM yyyy HH:mm')} · {item.method}</span><Badge variant={item.status === 'passed' ? 'success' : item.status === 'failed' ? 'danger' : 'warning'}>{retestLabels[item.status]}</Badge></p>)}</div>}</div>;
+}
+
+function ExceptionPanel({ finding, options, canApprove, onUpdated }: { finding: VulnerabilityFinding; options?: VulnerabilityOptions; canApprove: boolean; onUpdated: () => void }) {
+  const queryClient = useQueryClient(); const [reason, setReason] = useState(''); const [expiresOn, setExpiresOn] = useState(''); const [ownerId, setOwnerId] = useState(''); const [comment, setComment] = useState(''); const [error, setError] = useState<string | null>(null);
+  const query = useQuery({ queryKey: ['vulnerability-exceptions', finding.id], queryFn: () => apiFetch<VulnerabilityExceptionApproval[]>(`/api/v1/vulnerabilities/${finding.id}/exceptions`) });
+  const request = useMutation({ mutationFn: () => apiFetch(`/api/v1/vulnerabilities/${finding.id}/exceptions`, { method: 'POST', body: JSON.stringify({ reason, expiresOn, exceptionOwnerId: ownerId }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerability-exceptions', finding.id] }); void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); setReason(''); setExpiresOn(''); setOwnerId(''); setError(null); onUpdated(); }, onError: (value) => setError(errorText(value, 'ส่งคำขอข้อยกเว้นไม่สำเร็จ')) });
+  const decide = useMutation({ mutationFn: (approve: boolean) => apiFetch(`/api/v1/vulnerabilities/${finding.id}/exception-approval`, { method: 'POST', body: JSON.stringify({ approve, comment }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['vulnerability-exceptions', finding.id] }); void queryClient.invalidateQueries({ queryKey: ['vulnerabilities'] }); setComment(''); setError(null); onUpdated(); }, onError: (value) => setError(errorText(value, 'ตัดสินใจข้อยกเว้นไม่สำเร็จ')) });
+  const pending = query.data?.find((item) => item.status === 'pending');
+  return <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-900 dark:bg-amber-950/20"><div className="flex items-center justify-between"><p className="flex items-center gap-2 text-xs font-bold"><Flag className="h-4 w-4 text-amber-600" />Exception Approval</p><Badge variant={finding.exception_status === 'approved' ? 'success' : finding.exception_status === 'pending' ? 'warning' : 'secondary'}>{finding.exception_status}</Badge></div>{finding.exception_reason && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">เหตุผลปัจจุบัน: {finding.exception_reason} · หมดอายุ {finding.exception_expiry ? formatThaiDate(finding.exception_expiry) : '—'} · Owner: {finding.exception_owner?.full_name ?? '—'}</p>}{options && <div className="mt-3 grid gap-2 sm:grid-cols-4"><label className="text-xs font-semibold sm:col-span-2">เหตุผลขอข้อยกเว้น<textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} className={fieldClass} /></label><label className="text-xs font-semibold">หมดอายุวันที่<input type="date" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} className={fieldClass} /></label><OptionSelect label="Exception Owner" value={ownerId} onChange={setOwnerId}><option value="">— เลือก —</option>{options.users.map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</OptionSelect></div>}{options && <div className="mt-2 flex justify-end"><Button size="sm" isLoading={request.isPending} disabled={!reason.trim() || reason.trim().length < 3 || !expiresOn || !ownerId || Boolean(pending)} onClick={() => request.mutate()}><Flag className="h-4 w-4" />ส่งขออนุมัติ</Button></div>}{pending && canApprove && <div className="mt-3 border-t border-amber-200 pt-3 dark:border-amber-800"><p className="text-xs">คำขอโดย {pending.requester?.full_name ?? '—'} · Exception Owner {pending.exception_owner?.full_name ?? '—'} · หมดอายุ {formatThaiDate(pending.expires_on)}</p><label className="mt-2 block text-xs font-semibold">ความเห็นผู้อนุมัติ<input value={comment} onChange={(event) => setComment(event.target.value)} className={fieldClass} /></label><div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="danger" isLoading={decide.isPending} onClick={() => decide.mutate(false)}>ปฏิเสธ</Button><Button size="sm" variant="success" isLoading={decide.isPending} onClick={() => decide.mutate(true)}>อนุมัติข้อยกเว้น</Button></div></div>}{query.data && query.data.length > 0 && <div className="mt-3 space-y-1 border-t border-amber-200 pt-2 text-xs dark:border-amber-800">{query.data.slice(0, 3).map((item) => <p key={item.id}>{item.status} · {formatThaiDate(item.expires_on)} · {item.reason}</p>)}</div>}{error && <p className="mt-2 text-xs text-red-700">{error}</p>}</div>;
+}
+
+function DueText({ finding }: { finding: VulnerabilityFinding }) { const days = daysUntilVulnerabilityDue(finding.due_date); if (!finding.due_date) return <span className="text-slate-400">ไม่กำหนด</span>; return <div><p>{formatThaiDate(finding.due_date, 'd MMM yyyy')}</p>{finding.status !== 'ปิด' && days !== null && <p className={`text-xs font-semibold ${days < 0 ? 'text-red-600' : days <= 7 ? 'text-amber-600' : 'text-slate-400'}`}>{days < 0 ? `เกิน ${Math.abs(days)} วัน` : `เหลือ ${days} วัน`}</p>}</div>; }
+
+function FindingRow({ finding, expanded, statusId, canManage, canApprove, currentUserId, options, onToggle, onStatusToggle, onEdit, onUpdated }: { finding: VulnerabilityFinding; expanded: boolean; statusId: string | null; canManage: boolean; canApprove: boolean; currentUserId?: string; options?: VulnerabilityOptions; onToggle: () => void; onStatusToggle: () => void; onEdit: () => void; onUpdated: () => void }) {
+  const overdueItem = vulnerabilityIsOverdue(finding) || Boolean(finding.sla_due_date && finding.sla_due_date < new Date().toISOString().slice(0, 10) && finding.status !== 'ปิด');
+  return <Fragment><tr data-testid={`vuln-row-${finding.id}`} className={`border-t border-slate-100 align-top dark:border-slate-700 ${overdueItem ? 'bg-red-50/40 dark:bg-red-950/10' : ''}`}><td className="p-2"><p className="font-semibold text-slate-800 dark:text-slate-100">{finding.title}</p><p className="font-mono text-xs text-primary-700 dark:text-primary-300">{finding.vulnerability_code}{finding.cve ? ` · ${finding.cve}` : ''}</p><p className="mt-0.5 max-w-72 truncate text-xs text-slate-400">{finding.scanner_name || finding.source || 'ไม่ระบุ Scanner'}</p></td><td className="p-2"><div className="flex gap-1"><Badge variant={riskTone[finding.risk_priority]}>{finding.risk_priority}</Badge><Badge variant={severityTone[finding.severity]}>{finding.severity}</Badge></div><p className="mt-1 text-xs font-semibold text-slate-500">Score {finding.risk_score ?? '—'} · CVSS {finding.cvss ?? '—'}</p></td><td className="p-2 text-xs"><p>EPSS {finding.epss_score == null ? '—' : `${(finding.epss_score * 100).toFixed(1)}%`}</p>{finding.kev_listed && <Badge variant="danger">KEV</Badge>}<p className="mt-1 text-slate-400">{finding.internet_facing ? 'Internet-facing' : 'Internal'}</p></td><td className="p-2 text-xs text-slate-500"><p>{finding.asset ? `${finding.asset.asset_code} — ${finding.asset.name}` : '—'}</p>{finding.configuration_item && <p className="mt-1 font-mono text-primary-700 dark:text-primary-300">{finding.configuration_item.ci_code} · {finding.asset_criticality ?? finding.configuration_item.criticality}</p>}{!finding.asset && !finding.configuration_item && finding.affected_system && <p>{finding.affected_system}</p>}</td><td className="p-2 text-xs text-slate-500"><DueText finding={{ ...finding, due_date: finding.sla_due_date }} /><p className="mt-1 text-[11px] text-slate-400">Severity SLA {finding.sla_policy_days ? `${finding.sla_policy_days} วัน` : '—'}</p></td><td className="p-2"><Badge variant={statusTone[finding.status]}>{finding.status}</Badge>{finding.exception_status === 'pending' && <p className="mt-1 text-xs text-amber-600">รอ Exception Approval</p>}{finding.campaign && <p className="mt-1 max-w-32 truncate text-xs text-primary-700">{finding.campaign.campaign_code}</p>}</td><td className="p-2"><RowActions recordLabel={finding.vulnerability_code} actions={[{ kind: 'view', icon: expanded ? ChevronUp : ChevronDown, label: expanded ? 'ย่อ' : 'รายละเอียด', onClick: onToggle }, { kind: 'custom', icon: RefreshCw, label: 'Retest', permission: 'vulnerability.manage', onClick: onToggle }, { kind: 'custom', icon: Flag, label: 'Exception', permission: 'vulnerability.manage', onClick: onToggle }, { kind: 'custom', icon: Activity, label: 'สถานะ', permission: 'vulnerability.manage', onClick: onStatusToggle }, { kind: 'edit', permission: 'vulnerability.manage', onClick: onEdit }, { kind: 'delete', permission: 'vulnerability.manage', deleteEndpoint: `/api/v1/record-deletions/vulnerabilities/${finding.id}` }]} />{statusId === finding.id && <StatusPanel finding={finding} currentUserId={currentUserId} onClose={onStatusToggle} />}</td></tr>{expanded && <tr className="border-t border-slate-100 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/40"><td colSpan={7} className="p-4"><div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-4"><div><p className="font-semibold text-slate-500">Risk Factors</p><p className="mt-1">{finding.risk_factors?.reasons?.join(' + ') || '—'}</p><p className="mt-1 text-slate-400">คำนวณเมื่อ {finding.risk_calculated_at ? formatThaiDate(finding.risk_calculated_at, 'd MMM yyyy HH:mm') : '—'}</p></div><div><p className="font-semibold text-slate-500">SLA ตาม Severity</p><p className="mt-1">{finding.sla_due_date ? formatThaiDate(finding.sla_due_date, 'd MMM yyyy') : '—'} · {finding.sla_policy_days ?? '—'} วัน</p><p className="mt-1">{finding.sla_breached_at ? <span className="text-red-600">SLA breached</span> : 'ยังไม่ breach'}</p></div><div><p className="font-semibold text-slate-500">Patch / Fix</p><p className="mt-1 whitespace-pre-wrap">{finding.patch_reference || '—'}</p><p className="mt-1 text-slate-400">{finding.remediation_plan || 'ไม่มีแผนแก้ไข'}</p></div><div><p className="font-semibold text-slate-500">Links</p><p className="mt-1">{finding.change ? <span className="inline-flex items-center gap-1"><GitPullRequest className="h-3 w-3" />{finding.change.change_number}</span> : 'Change —'}</p><p>{finding.incident ? `Incident ${finding.incident.incident_number}` : 'Incident —'}</p><p>{finding.problem ? `Problem ${finding.problem.problem_number}` : 'Problem —'}</p><p className="mt-1 text-primary-700">{finding.campaign ? `Campaign ${finding.campaign.campaign_code}` : 'Campaign —'}</p></div><div className="sm:col-span-2"><p className="font-semibold text-slate-500">การตรวจยืนยัน</p><p className="mt-1">{finding.verifier ? `${finding.verifier.full_name} · ${finding.verified_at ? formatThaiDate(finding.verified_at) : ''}` : 'ยังไม่ตรวจยืนยัน'}</p>{finding.evidence_link && <a href={finding.evidence_link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-primary-700 hover:underline">เปิดหลักฐาน <ExternalLink className="h-3 w-3" /></a>}</div><div className="sm:col-span-2"><p className="font-semibold text-slate-500">ข้อยกเว้น</p><p className="mt-1 whitespace-pre-wrap">{finding.exception_reason || '—'}</p></div></div>{canManage && <RetestPanel finding={finding} onUpdated={onUpdated} />}{(canManage || canApprove) && <ExceptionPanel finding={finding} options={options} canApprove={canApprove} onUpdated={onUpdated} />}</td></tr>}</Fragment>;
 }
 
 export function VulnerabilitiesPage() {
-  const { hasPermission, me } = useAuth();
-  const canManage = hasPermission('vulnerability.manage');
-  const [search, setSearch] = useState('');
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<VulnerabilityFinding | undefined>();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [statusId, setStatusId] = useState<string | null>(null);
-  const debouncedSearch = useDebouncedValue(search);
-
-  const findingsQuery = useQuery({
-    queryKey: ['vulnerabilities', debouncedSearch],
-    queryFn: () => apiFetch<PaginatedResult<VulnerabilityFinding>>(`/api/v1/vulnerabilities?page=1&pageSize=100${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`),
-  });
-  const optionsQuery = useQuery({
-    queryKey: ['vulnerabilities', 'options'],
-    enabled: canManage && showForm,
-    queryFn: () => apiFetch<VulnerabilityOptions>('/api/v1/vulnerabilities/options'),
-  });
-
-  const items = useMemo(() => findingsQuery.data?.items ?? [], [findingsQuery.data?.items]);
-  const visibleItems = items.filter((item) => (!severityFilter || item.severity === severityFilter) && (!statusFilter || item.status === statusFilter));
-  const criticalOpen = items.filter((item) => item.status !== 'ปิด' && (item.severity === 'วิกฤต' || item.severity === 'สูง')).length;
-  const overdue = items.filter((item) => vulnerabilityIsOverdue(item)).length;
-  const waitingVerification = items.filter((item) => item.status === 'รอตรวจยืนยัน').length;
-  const closed = items.filter((item) => item.status === 'ปิด').length;
-  const resetForm = () => { setShowForm(false); setEditing(undefined); };
-
-  return (
-    <div className="flex flex-col gap-4" data-testid="vulnerabilities-page">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Vulnerability & Patch" title="Vulnerability / Patch" description="ติดตาม CVE/CVSS แผนแก้ไข ข้อยกเว้น Patch และการตรวจยืนยันแบบแยกหน้าที่" />
-        {canManage && <Button size="sm" data-testid="vuln-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มช่องโหว่</Button>}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <StatCard icon={<ShieldAlert className="h-5 w-5" />} label="ช่องโหว่ทั้งหมด" value={findingsQuery.data?.pagination.totalItems ?? 0} tone="primary" />
-        <StatCard icon={<Siren className="h-5 w-5" />} label="สูง / วิกฤตที่เปิด" value={criticalOpen} tone={criticalOpen ? 'danger' : 'gray'} />
-        <StatCard icon={<CalendarClock className="h-5 w-5" />} label="เกินกำหนด" value={overdue} tone={overdue ? 'danger' : 'gray'} />
-        <StatCard icon={<FileCheck2 className="h-5 w-5" />} label="รอตรวจยืนยัน" value={waitingVerification} tone={waitingVerification ? 'amber' : 'gray'} />
-        <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="แก้ไขแล้ว" value={`${remediationPercent(items)}%`} note={`${closed} / ${items.length} รายการ`} tone="teal" />
-      </div>
-
-      {showForm && <FormModal title={editing ? 'แก้ไขช่องโหว่' : 'เพิ่มช่องโหว่'} description="บันทึกผลตรวจ แผนแก้ไข Owner และหลักฐาน" size="xl" onClose={resetForm}>{optionsQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียม Asset, CI และ Owner</div> : optionsQuery.isError || !optionsQuery.data ? <div className="flex items-center justify-between p-5 text-sm text-red-700"><span>โหลดตัวเลือกสำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></div> : <FindingForm finding={editing} options={optionsQuery.data} currentUserId={me?.profile.id} onClose={resetForm} />}</FormModal>}
-
-      <Card>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-          <div><p>ทะเบียนช่องโหว่</p><p className="mt-0.5 text-xs font-normal text-slate-500">เรียงตาม Severity และวันครบกำหนดเพื่อจัดลำดับการแก้ไข</p></div>
-          <div className="flex flex-wrap gap-2"><select aria-label="กรอง Severity" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุก Severity</option>{VULNERABILITY_SEVERITIES.map((severity) => <option key={severity}>{severity}</option>)}</select><select aria-label="กรองสถานะช่องโหว่" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{VULNERABILITY_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></div>
-        </CardHeader>
-        <CardBody>
-          <div className="mb-4 flex flex-wrap items-center gap-2"><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหารหัส CVE ชื่อ Asset ระบบ หรือ Owner..." className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />{(search || severityFilter || statusFilter) && <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setSeverityFilter(''); setStatusFilter(''); }}>ล้างตัวกรอง</Button>}</div>
-          {findingsQuery.isLoading && <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
-          {findingsQuery.isError && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{errorText(findingsQuery.error, 'โหลดทะเบียนช่องโหว่ไม่สำเร็จ')}</div>}
-          {!findingsQuery.isLoading && !findingsQuery.isError && visibleItems.length === 0 && <EmptyState icon={<ShieldCheck className="h-10 w-10" />} title="ไม่พบช่องโหว่" message="เพิ่มรายการใหม่หรือลองเปลี่ยนคำค้นหาและตัวกรอง" />}
-          {visibleItems.length > 0 && <div className="overflow-x-auto"><DataTable className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">ช่องโหว่</th><th className="p-2">Severity</th><th className="p-2">Asset / CI</th><th className="p-2">Owner</th><th className="p-2">กำหนดแก้ไข</th><th className="p-2">สถานะ</th><th className="p-2 text-right">จัดการ</th></tr></thead><tbody>{visibleItems.map((finding) => {
-            const expanded = expandedId === finding.id;
-            const overdueItem = vulnerabilityIsOverdue(finding);
-            return <Fragment key={finding.id}><tr data-testid={`vuln-row-${finding.id}`} className={`border-t border-slate-100 align-top dark:border-slate-700 ${overdueItem ? 'bg-red-50/40 dark:bg-red-950/10' : ''}`}><td className="p-2"><p className="font-semibold text-slate-800 dark:text-slate-100">{finding.title}</p><p className="font-mono text-xs text-primary-700 dark:text-primary-300">{finding.vulnerability_code}{finding.cve ? ` · ${finding.cve}` : ''}</p><p className="mt-0.5 max-w-72 truncate text-xs text-slate-400">{finding.source || 'ไม่ระบุแหล่งตรวจพบ'}</p></td><td className="p-2"><Badge variant={severityTone[finding.severity]}>{finding.severity}</Badge><p className="mt-1 text-xs font-semibold text-slate-500">CVSS {finding.cvss ?? '—'}</p></td><td className="p-2 text-slate-500"><p>{finding.asset ? `${finding.asset.asset_code} — ${finding.asset.name}` : '—'}</p>{finding.configuration_item && <p className="mt-1 font-mono text-xs text-primary-700 dark:text-primary-300">{finding.configuration_item.ci_code} · {finding.configuration_item.environment}</p>}{!finding.asset && !finding.configuration_item && finding.affected_system && <p>{finding.affected_system}</p>}</td><td className="p-2 text-slate-500"><p>{finding.owner?.full_name ?? '—'}</p><p className="text-xs text-slate-400">{finding.owner?.email}</p></td><td className="p-2 text-slate-500"><DueText finding={finding} /></td><td className="p-2"><Badge variant={statusTone[finding.status]}>{finding.status}</Badge>{finding.exception_expiry && <p className="mt-1 text-xs text-amber-600">ยกเว้นถึง {formatThaiDate(finding.exception_expiry, 'd MMM yyyy')}</p>}</td><td className="p-2"><RowActions recordLabel={finding.vulnerability_code} actions={[
-                          { kind: 'view', icon: expanded ? ChevronUp : ChevronDown, label: expanded ? 'ย่อ' : 'รายละเอียด', onClick: () => setExpandedId(expanded ? null : finding.id) },
-                          { kind: 'custom', icon: Activity, label: 'สถานะ', permission: 'risk.manage', onClick: () => setStatusId(statusId === finding.id ? null : finding.id) },
-                          { kind: 'edit', permission: 'risk.manage', onClick: () => { setEditing(finding); setShowForm(true); } },
-                          { kind: 'delete', permission: 'vulnerability.manage', deleteEndpoint: `/api/v1/record-deletions/vulnerabilities/${finding.id}` },
-                        ]} />{statusId === finding.id && <StatusPanel finding={finding} currentUserId={me?.profile.id} onClose={() => setStatusId(null)} />}</td></tr>{expanded && <tr className="border-t border-slate-100 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/40"><td colSpan={7} className="p-4"><div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-4"><div><p className="font-semibold text-slate-500">รายละเอียด</p><p className="mt-1 whitespace-pre-wrap">{finding.description || '—'}</p></div><div><p className="font-semibold text-slate-500">แผนแก้ไข</p><p className="mt-1 whitespace-pre-wrap">{finding.remediation_plan || '—'}</p></div><div><p className="font-semibold text-slate-500">Patch / Fix</p><p className="mt-1">{finding.patch_reference || '—'}</p><p className="mt-1 text-slate-400">Asset patch: {finding.asset?.patch_status || '—'}{finding.asset?.patch_date ? ` · ${formatThaiDate(finding.asset.patch_date)}` : ''}</p></div><div><p className="font-semibold text-slate-500">การตรวจยืนยัน</p><p className="mt-1">{finding.verifier ? `${finding.verifier.full_name} · ${finding.verified_at ? formatThaiDate(finding.verified_at) : ''}` : 'ยังไม่ตรวจยืนยัน'}</p>{finding.evidence_link && <a href={finding.evidence_link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-primary-700 hover:underline">เปิดหลักฐาน <ExternalLink className="h-3 w-3" /></a>}</div><div className="sm:col-span-2"><p className="font-semibold text-slate-500">ข้อยกเว้น</p><p className="mt-1 whitespace-pre-wrap">{finding.exception_reason || '—'}</p></div><div className="sm:col-span-2"><p className="font-semibold text-slate-500">หมายเหตุ</p><p className="mt-1 whitespace-pre-wrap">{finding.notes || '—'}</p></div></div></td></tr>}</Fragment>;
-          })}</tbody></DataTable></div>}
-        </CardBody>
-      </Card>
-
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>การปิดช่องโหว่ต้องใช้หลักฐาน HTTPS และผู้ตรวจยืนยันต้องไม่ใช่ Owner ของแผนแก้ไขรายการเดียวกัน เมื่อปิดสำเร็จ ระบบจะอัปเดตสถานะ Patch ของ Asset ที่เชื่อมโยงโดยอัตโนมัติ</span></div>
-    </div>
-  );
+  const { hasPermission, me } = useAuth(); const canManage = hasPermission('vulnerability.manage'); const canApprove = hasPermission('risk.manage');
+  const [search, setSearch] = useState(''); const [severityFilter, setSeverityFilter] = useState(''); const [statusFilter, setStatusFilter] = useState(''); const [riskFilter, setRiskFilter] = useState(''); const [kevOnly, setKevOnly] = useState(false); const [showForm, setShowForm] = useState(false); const [showImport, setShowImport] = useState(false); const [showCampaign, setShowCampaign] = useState(false); const [editing, setEditing] = useState<VulnerabilityFinding | undefined>(); const [expandedId, setExpandedId] = useState<string | null>(null); const [statusId, setStatusId] = useState<string | null>(null); const debouncedSearch = useDebouncedValue(search);
+  const findingsQuery = useQuery({ queryKey: ['vulnerabilities', debouncedSearch, severityFilter, statusFilter, riskFilter, kevOnly], queryFn: () => { const params = new URLSearchParams({ page: '1', pageSize: '100' }); if (debouncedSearch) params.set('search', debouncedSearch); if (severityFilter) params.set('severity', severityFilter); if (statusFilter) params.set('status', statusFilter); if (riskFilter) params.set('riskPriority', riskFilter); if (kevOnly) params.set('kevListed', 'true'); return apiFetch<PaginatedResult<VulnerabilityFinding>>(`/api/v1/vulnerabilities?${params.toString()}`); } });
+  const optionsQuery = useQuery({ queryKey: ['vulnerabilities', 'options'], enabled: canManage && (showForm || showImport || showCampaign), queryFn: () => apiFetch<VulnerabilityOptions>('/api/v1/vulnerabilities/options') });
+  const items = useMemo(() => findingsQuery.data?.items ?? [], [findingsQuery.data?.items]); const criticalOpen = items.filter((item) => item.status !== 'ปิด' && (item.risk_priority === 'P0' || item.risk_priority === 'P1')).length; const overdue = items.filter((item) => vulnerabilityIsOverdue(item) || (item.sla_due_date && item.sla_due_date < new Date().toISOString().slice(0, 10) && item.status !== 'ปิด')).length; const waitingVerification = items.filter((item) => item.status === 'รอตรวจยืนยัน').length; const closed = items.filter((item) => item.status === 'ปิด').length; const kevCount = items.filter((item) => item.kev_listed && item.status !== 'ปิด').length; const resetForm = () => { setShowForm(false); setEditing(undefined); };
+  const afterMutation = () => { void findingsQuery.refetch(); void optionsQuery.refetch(); };
+  return <div className="flex flex-col gap-4" data-testid="vulnerabilities-page"><div className="flex flex-wrap items-center justify-between gap-3"><PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Vulnerability & Patch" title="Vulnerability / Patch" description="จัดลำดับ CVE ด้วย Risk-based Priority จาก EPSS, KEV, Internet-facing และ CMDB Criticality" /><div className="flex flex-wrap gap-2">{canManage && <><Button size="sm" variant="outline" onClick={() => setShowImport(true)}><Upload className="h-4 w-4" />Scanner Import</Button><Button size="sm" variant="outline" onClick={() => setShowCampaign(true)}><Flag className="h-4 w-4" />Patch Campaign</Button><Button size="sm" onClick={() => { setEditing(undefined); setShowForm(true); }} data-testid="vuln-create-toggle"><Plus className="h-4 w-4" />เพิ่มช่องโหว่</Button></>}</div></div>
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-6"><StatCard icon={<ShieldAlert className="h-5 w-5" />} label="ช่องโหว่ทั้งหมด" value={findingsQuery.data?.pagination.totalItems ?? 0} tone="primary" /><StatCard icon={<Siren className="h-5 w-5" />} label="P0 / P1 ที่เปิด" value={criticalOpen} tone={criticalOpen ? 'danger' : 'gray'} /><StatCard icon={<Flag className="h-5 w-5" />} label="KEV ที่เปิด" value={kevCount} tone={kevCount ? 'danger' : 'gray'} /><StatCard icon={<CalendarClock className="h-5 w-5" />} label="เกิน SLA / Due" value={overdue} tone={overdue ? 'danger' : 'gray'} /><StatCard icon={<FileCheck2 className="h-5 w-5" />} label="รอตรวจยืนยัน" value={waitingVerification} tone={waitingVerification ? 'amber' : 'gray'} /><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="แก้ไขแล้ว" value={`${remediationPercent(items)}%`} note={`${closed} / ${items.length} รายการ`} tone="teal" /></div>
+    {showForm && <FormModal title={editing ? 'แก้ไขช่องโหว่' : 'เพิ่มช่องโหว่'} description="Risk, SLA, Patch Campaign และ links ถูกตรวจสอบฝั่ง API" size="xl" onClose={resetForm}>{optionsQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมตัวเลือก</div> : optionsQuery.isError || !optionsQuery.data ? <div className="flex items-center justify-between p-5 text-sm text-red-700"><span>โหลดตัวเลือกสำหรับแบบฟอร์มไม่สำเร็จ</span><Button size="sm" variant="ghost" onClick={resetForm}>ปิด</Button></div> : <FindingForm finding={editing} options={optionsQuery.data} currentUserId={me?.profile.id} onClose={resetForm} />}</FormModal>}
+    {showImport && optionsQuery.data && <ScannerImportModal options={optionsQuery.data} currentUserId={me?.profile.id} onClose={() => setShowImport(false)} onSuccess={afterMutation} />}{showCampaign && optionsQuery.data && <CampaignModal options={optionsQuery.data} currentUserId={me?.profile.id} onClose={() => setShowCampaign(false)} onSuccess={afterMutation} />}
+    <Card><CardHeader className="flex flex-wrap items-center justify-between gap-2"><div><p>ทะเบียนช่องโหว่</p><p className="mt-0.5 text-xs font-normal text-slate-500">เรียงตาม Risk Score เพื่อให้ P0/P1 ขึ้นก่อน · SLA แยกจาก Due date ที่กำหนดเอง</p></div><div className="flex flex-wrap gap-2"><select aria-label="กรอง Risk Priority" value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุก Risk Priority</option>{(['P0', 'P1', 'P2', 'P3'] as const).map((item) => <option key={item}>{item}</option>)}</select><select aria-label="กรอง Severity" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุก Severity</option>{VULNERABILITY_SEVERITIES.map((item) => <option key={item}>{item}</option>)}</select><select aria-label="กรองสถานะช่องโหว่" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{VULNERABILITY_STATUSES.map((item) => <option key={item}>{item}</option>)}</select><label className="flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold dark:border-slate-600"><input type="checkbox" checked={kevOnly} onChange={(event) => setKevOnly(event.target.checked)} />KEV เท่านั้น</label></div></CardHeader><CardBody><div className="mb-4 flex flex-wrap items-center gap-2"><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหา CVE Scanner Asset CI Owner..." className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />{(search || severityFilter || statusFilter || riskFilter || kevOnly) && <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setSeverityFilter(''); setStatusFilter(''); setRiskFilter(''); setKevOnly(false); }}>ล้างตัวกรอง</Button>}</div>
+      {findingsQuery.isLoading && <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
+      {findingsQuery.isError && <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{errorText(findingsQuery.error, 'โหลดทะเบียนช่องโหว่ไม่สำเร็จ')}</div>}
+      {!findingsQuery.isLoading && !findingsQuery.isError && items.length === 0 && <EmptyState icon={<ShieldCheck className="h-10 w-10" />} title="ไม่พบช่องโหว่" message="เพิ่มรายการใหม่ หรือนำเข้าจาก Scanner แล้วระบบจะ Deduplicate CVE ให้" />}
+      {items.length > 0 && <div className="overflow-x-auto"><DataTable className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">ช่องโหว่</th><th className="p-2">Risk / CVSS</th><th className="p-2">EPSS / KEV</th><th className="p-2">Asset / CMDB</th><th className="p-2">SLA</th><th className="p-2">สถานะ</th><th className="p-2 text-right">จัดการ</th></tr></thead><tbody>{items.map((finding) => <FindingRow key={finding.id} finding={finding} expanded={expandedId === finding.id} statusId={statusId} canManage={canManage} canApprove={canApprove} currentUserId={me?.profile.id} options={optionsQuery.data} onToggle={() => setExpandedId(expandedId === finding.id ? null : finding.id)} onStatusToggle={() => setStatusId(statusId === finding.id ? null : finding.id)} onEdit={() => { setEditing(finding); setShowForm(true); }} onUpdated={afterMutation} />)}</tbody></DataTable></div>}
+      </CardBody></Card>
+    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>Risk Priority เป็นค่าที่ API คำนวณจากข้อมูล Scanner + CMDB เช่น CVSS 9.8 + Internet-facing + Critical CI = <strong>P0</strong> · การปิดรายการต้องมี Retest ผ่าน, Evidence HTTPS และผู้ตรวจที่ไม่ใช่ Owner</span></div>
+  </div>;
 }

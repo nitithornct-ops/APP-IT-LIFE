@@ -8,7 +8,7 @@ import { buildReconciliationReport } from './reconciliation.js';
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = join(packageRoot, '..', '..');
-const configPath = join(repositoryRoot, 'legacy-gas', 'Config.gs');
+const configPath = join(packageRoot, 'fixtures', 'legacyDbSchema.gs');
 const profilePath = join(repositoryRoot, 'docs', 'migration', 'phase7-source-profile.json');
 const jsonOutput = join(repositoryRoot, 'docs', 'migration', 'phase7-dry-run-report.json');
 const markdownOutput = join(repositoryRoot, 'docs', 'migration', 'phase7-dry-run-report.md');

@@ -14,6 +14,7 @@ const codeField = z
 
 const nameField = z.string().trim().min(2).max(120);
 const descriptionField = z.string().trim().max(500).nullish();
+const effectiveDateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'วันที่มีผลต้องเป็นรูปแบบ YYYY-MM-DD');
 
 export const listCauseCodesQuerySchema = z.object({
   categoryId: z.string().uuid().optional(),
@@ -26,6 +27,7 @@ export const createCauseCodeSchema = z.object({
   description: descriptionField,
   categoryId: z.string().uuid().nullish(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
+  effectiveDate: effectiveDateField.optional(),
 });
 
 export const updateCauseCodeSchema = z
@@ -34,6 +36,7 @@ export const updateCauseCodeSchema = z
     description: descriptionField,
     categoryId: z.string().uuid().nullish(),
     sortOrder: z.number().int().min(0).max(9999).optional(),
+    effectiveDate: effectiveDateField.optional(),
     isActive: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'ต้องระบุอย่างน้อยหนึ่งฟิลด์ที่จะแก้ไข' });

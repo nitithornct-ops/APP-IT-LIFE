@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBackupSchema, createBcpSchema, createLogReviewSchema, createRecoverySchema } from '../src/validators/backupMonitoring';
+import { createBackupImportSchema, createBackupPolicySchema, createBackupSchema, createBcpSchema, createLogReviewSchema, createRecoverySchema } from '../src/validators/backupMonitoring';
 
 describe('backup and monitoring validators', () => {
   it('accepts a valid backup and rejects an earlier next due date', () => {
@@ -20,5 +20,16 @@ describe('backup and monitoring validators', () => {
     expect(createLogReviewSchema.safeParse(base).success).toBe(false);
     expect(createLogReviewSchema.safeParse({ ...base, anomalyDetail: 'Repeated failed login' }).success).toBe(true);
     expect(createLogReviewSchema.safeParse({ ...base, anomalyDetail: 'x', status: 'ปกติ' }).success).toBe(false);
+  });
+
+  it('validates per-CI policy targets and storage capacity', () => {
+    const base = { configurationItemId: '4c81d775-3f63-4127-ae0f-62e7c88cbd5d', expectedBackupPolicy: 'Full ทุกคืน', backupSchedule: 'ทุกวัน', scheduleIntervalMinutes: 1440, status: 'active' };
+    expect(createBackupPolicySchema.safeParse({ ...base, storageCapacityBytes: 100, storageUsedBytes: 101 }).success).toBe(false);
+    expect(createBackupPolicySchema.safeParse({ ...base, rtoTargetHours: 4, rpoTargetHours: 1, storageCapacityBytes: 100, storageUsedBytes: 80 }).success).toBe(true);
+  });
+
+  it('accepts idempotent import batches with a source run id', () => {
+    expect(createBackupImportSchema.safeParse({ sourceSystem: 'Veeam', idempotencyKey: 'veeam:2026-08-10', items: [{ sourceRunId: 'run-1', ciCode: 'CI-ERP', result: 'ล้มเหลว' }] }).success).toBe(true);
+    expect(createBackupImportSchema.safeParse({ sourceSystem: 'Veeam', idempotencyKey: 'batch', items: [] }).success).toBe(false);
   });
 });

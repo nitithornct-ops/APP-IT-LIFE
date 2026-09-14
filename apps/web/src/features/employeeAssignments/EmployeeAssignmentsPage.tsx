@@ -18,9 +18,10 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTableParams } from '../../hooks/useTableParams';
 import { apiFetch } from '../../services/apiClient';
 import type { EmployeeOption, PaginatedResult } from '../../types/admin';
-import type { EmployeeAssignment } from '../../types/assets';
+import type { AssetOption, EmployeeAssignment } from '../../types/assets';
 import { EMPLOYEE_ASSIGNMENT_STATUSES } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
+import { EmployeeAssignmentBulkModal } from './EmployeeAssignmentBulkModal';
 
 const statusTone: Record<string, 'primary' | 'success' | 'warning' | 'danger'> = {
   ครอบครอง: 'primary',
@@ -74,8 +75,14 @@ function AssignmentDetail({ assignment }: { assignment: EmployeeAssignment }) {
     ['สถานะ', assignment.status],
     ['รหัสทรัพย์สิน', assignment.asset?.asset_code ?? assignment.asset_code ?? '—'],
     ['Serial Number', assignment.serial_number ?? '—'],
-    ['วันที่รับ', assignment.assigned_date ? formatThaiDate(assignment.assigned_date, 'd MMM yyyy') : '—'],
-    ['วันที่คืน', assignment.returned_date ? formatThaiDate(assignment.returned_date, 'd MMM yyyy') : '—'],
+    ['Owner', assignment.owner ? `${assignment.owner.first_name_th} ${assignment.owner.last_name_th}` : 'องค์กร / ไม่ระบุ'],
+    ['Custodian / ผู้ถือครอง', assignment.custodian ? `${assignment.custodian.first_name_th} ${assignment.custodian.last_name_th}` : '—'],
+    ['ผู้ได้รับมอบหมายใช้งาน', assignment.assigned_user ? `${assignment.assigned_user.first_name_th} ${assignment.assigned_user.last_name_th}` : assignment.employee ? `${assignment.employee.first_name_th} ${assignment.employee.last_name_th}` : '—'],
+    ['วันที่เบิก', assignment.checkout_date ? formatThaiDate(assignment.checkout_date, 'd MMM yyyy') : assignment.assigned_date ? formatThaiDate(assignment.assigned_date, 'd MMM yyyy') : '—'],
+    ['วันที่คืน', assignment.return_date ? formatThaiDate(assignment.return_date, 'd MMM yyyy') : assignment.returned_date ? formatThaiDate(assignment.returned_date, 'd MMM yyyy') : '—'],
+    ['Accessories', assignment.accessories?.length ? assignment.accessories.join(', ') : '—'],
+    ['Manager approval', assignment.manager_approval_status === 'approved' ? 'อนุมัติแล้ว' : assignment.manager_approval_status],
+    ['เอกสารรับมอบ', assignment.handover_document_name ?? 'ยังไม่มีเอกสารแนบ'],
     ['หมายเหตุ', assignment.notes ?? '—'],
   ];
   return (
@@ -94,14 +101,18 @@ function AssignmentDetail({ assignment }: { assignment: EmployeeAssignment }) {
 
 export function EmployeeAssignmentsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const table = useTableParams<'employeeId' | 'status' | 'search'>({ filters: ['employeeId', 'status', 'search'] });
   const { page, pageSize } = table;
   const { employeeId, status, search } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
   const [viewingAssignment, setViewingAssignment] = useState<EmployeeAssignment | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<EmployeeAssignment | null>(null);
+  const [bulkMode, setBulkMode] = useState<'assign' | 'return' | null>(null);
 
   const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
+  const returnEmployeesQuery = useQuery({ queryKey: ['employee-return-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employee-assignments/return-options') });
+  const assetsQuery = useQuery({ queryKey: ['asset-options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
   const assignmentsQuery = useQuery({
     queryKey: ['employee-assignments', page, pageSize, employeeId, status, debouncedSearch],
     queryFn: () =>
@@ -111,6 +122,7 @@ export function EmployeeAssignmentsPage() {
   });
 
   const employees = employeesQuery.data ?? [];
+  const returnEmployees = returnEmployeesQuery.data ?? [];
   const items = assignmentsQuery.data?.items ?? [];
   const totalItems = assignmentsQuery.data?.pagination.totalItems ?? 0;
   const activeFilterCount = [employeeId, status, search].filter(Boolean).length;
@@ -120,8 +132,9 @@ export function EmployeeAssignmentsPage() {
       <PageHeader
         eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / เบิกจ่ายทรัพย์สิน"
         title="เบิกจ่าย / คืนทรัพย์สินพนักงาน"
-        description="ติดตามสถานะครอบครอง รับคืน ส่งซ่อม และแจ้งสูญหายของอุปกรณ์หรือสิทธิ์ใช้งาน"
-        secondaryActions={<RequirePermission permission="employee.manage"><Button size="sm" variant="outline" onClick={() => navigate('/admin/employees')} data-testid="ea-go-employees">ไปหน้าพนักงานเพื่อเพิ่มรายการ<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button></RequirePermission>}
+        description="แยก Owner / Custodian / ผู้ใช้งาน พร้อมวันที่เบิก-คืน เอกสารรับมอบ Accessories และ Manager approval"
+        primaryAction={<RequirePermission permission="employee.manage"><Button size="sm" onClick={() => setBulkMode('assign')} data-testid="employee-assignment-bulk-assign">Bulk Assign</Button></RequirePermission>}
+        secondaryActions={<div className="flex flex-wrap gap-2"><RequirePermission permission="employee.manage"><Button size="sm" variant="outline" onClick={() => setBulkMode('return')} data-testid="employee-assignment-bulk-return">Bulk Return</Button></RequirePermission><RequirePermission permission="employee.manage"><Button size="sm" variant="outline" onClick={() => navigate('/admin/employees')} data-testid="ea-go-employees">ไปหน้าพนักงานเพื่อเพิ่มรายการ<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button></RequirePermission></div>}
       />
 
       <KpiStrip items={[
@@ -132,7 +145,7 @@ export function EmployeeAssignmentsPage() {
       ]} />
 
       <div className="rounded-lg border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-800 dark:border-primary-900/60 dark:bg-primary-950/30 dark:text-primary-200">
-        การเพิ่มหรือแก้ไขข้อมูลพนักงานและรายการที่มอบหมาย ทำจากหน้า <strong>พนักงาน</strong> ส่วนหน้านี้ใช้สำหรับงานปฏิบัติการหลังการมอบหมาย
+        ใช้ Bulk Assign สำหรับพนักงานใหม่ และ Bulk Return เมื่อพนักงานพ้นสภาพได้จากหน้านี้ ส่วนรายการเดิมยังดูประวัติและแก้ไขสถานะได้จากตาราง
       </div>
 
       <Card className="overflow-hidden">
@@ -174,12 +187,13 @@ export function EmployeeAssignmentsPage() {
           {assignmentsQuery.data && items.length === 0 && <div className="min-h-72"><EmptyState icon={<Laptop2 className="h-10 w-10" aria-hidden="true" />} title="ไม่พบรายการครอบครอง" message="ลองเปลี่ยนตัวกรอง หรือเพิ่มรายการจากหน้าพนักงาน" /></div>}
 
           {items.length > 0 && <DataTable mode="server" toolbar={false} pagination={false} currentPageExport={false} tableId="employee-assignments" rowNumberStart={(page - 1) * pageSize + 1} cardOnMobile containerClassName="rounded-none border-x-0 shadow-none" className="min-w-[900px]">
-            <thead><tr><th>รายการ / รหัส</th><th>พนักงาน</th><th>หมวดหมู่</th><th>วันที่รับ / คืน</th><th>สถานะ</th><th className="text-right">จัดการ</th></tr></thead>
+            <thead><tr><th>รายการ / รหัส</th><th>พนักงาน / ผู้ใช้งาน</th><th>Owner / Custodian</th><th>วันที่เบิก / คืน</th><th>Approval / เอกสาร</th><th>สถานะ</th><th className="text-right">จัดการ</th></tr></thead>
             <tbody>{items.map((assignment) => <tr key={assignment.id} data-testid={`ea-row-${assignment.id}`}>
               <td data-label="รายการ / รหัส"><p className="font-semibold text-slate-800 dark:text-slate-100">{assignment.item_name}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{assignment.asset?.asset_code ?? assignment.asset_code ?? assignment.serial_number ?? '—'}</p></td>
-              <td data-label="พนักงาน">{assignment.employee ? <><p>{assignment.employee.first_name_th} {assignment.employee.last_name_th}</p><p className="text-xs text-slate-400">{assignment.employee.employee_code}</p></> : '—'}</td>
-              <td data-label="หมวดหมู่" className="text-slate-500">{assignment.category}</td>
-              <td data-label="วันที่รับ / คืน" className="text-slate-500"><p>{assignment.assigned_date ? formatThaiDate(assignment.assigned_date, 'd MMM yyyy') : '—'}</p>{assignment.returned_date && <p className="text-xs text-slate-400">คืน {formatThaiDate(assignment.returned_date, 'd MMM yyyy')}</p>}</td>
+              <td data-label="พนักงาน / ผู้ใช้งาน">{(assignment.assigned_user ?? assignment.employee) ? <><p>{(assignment.assigned_user ?? assignment.employee)?.first_name_th} {(assignment.assigned_user ?? assignment.employee)?.last_name_th}</p><p className="text-xs text-slate-400">{(assignment.assigned_user ?? assignment.employee)?.employee_code}</p></> : '—'}</td>
+              <td data-label="Owner / Custodian" className="text-slate-500"><p>O: {assignment.owner ? `${assignment.owner.first_name_th} ${assignment.owner.last_name_th}` : 'องค์กร'}</p><p className="text-xs">C: {assignment.custodian ? `${assignment.custodian.first_name_th} ${assignment.custodian.last_name_th}` : '—'}</p></td>
+              <td data-label="วันที่เบิก / คืน" className="text-slate-500"><p>{assignment.checkout_date || assignment.assigned_date ? formatThaiDate(assignment.checkout_date ?? assignment.assigned_date!, 'd MMM yyyy') : '—'}</p>{(assignment.return_date || assignment.returned_date) && <p className="text-xs text-slate-400">คืน {formatThaiDate(assignment.return_date ?? assignment.returned_date!, 'd MMM yyyy')}</p>}</td>
+              <td data-label="Approval / เอกสาร" className="text-slate-500"><p>{assignment.manager_approval_status === 'approved' ? 'อนุมัติแล้ว' : assignment.manager_approval_status}</p><p className="max-w-36 truncate text-xs">{assignment.handover_document_name ?? 'ไม่มีเอกสาร'}</p></td>
               <td data-label="สถานะ"><Badge variant={statusTone[assignment.status]}>{assignment.status}</Badge></td>
               <td data-label="จัดการ" className="text-right"><RowActions recordLabel={assignment.item_name} actions={[
                 { kind: 'view', onClick: () => setViewingAssignment(assignment) },
@@ -194,6 +208,7 @@ export function EmployeeAssignmentsPage() {
 
       {viewingAssignment && <Modal title="ดูรายละเอียดการครอบครอง" size="lg" onClose={() => setViewingAssignment(null)}><AssignmentDetail assignment={viewingAssignment} /></Modal>}
       {editingAssignment && <Modal title="แก้ไขสถานะการครอบครอง" size="sm" onClose={() => setEditingAssignment(null)}><AssignmentStatusControl key={editingAssignment.id} assignment={editingAssignment} onSaved={() => setEditingAssignment(null)} /></Modal>}
+      {bulkMode && <EmployeeAssignmentBulkModal mode={bulkMode} employees={bulkMode === 'return' ? returnEmployees : employees} assets={assetsQuery.data ?? []} onClose={() => setBulkMode(null)} onSaved={() => { setBulkMode(null); void assignmentsQuery.refetch(); void assetsQuery.refetch(); void returnEmployeesQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['admin', 'employees-overview'] }); }} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Parse the DB_SCHEMA object in legacy-gas/Config.gs without executing Apps Script.
+ * Parse the DB_SCHEMA object in packages/migration/fixtures/legacyDbSchema.gs (คัดลอกมาจาก
+ * Config.gs ของระบบเดิม) without executing Apps Script.
  * The schema contains only unquoted property names and arrays of quoted strings.
  */
 export function parseLegacySchema(source: string): Record<string, string[]> {

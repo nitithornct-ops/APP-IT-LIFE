@@ -25,15 +25,17 @@ function CreateChangeForm({ references, onClose }: { references: ChangeReference
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ title: '', systemAffected: '', changeType: '', description: '', impactAssessment: '', riskLevel: 'ต่ำ', rollbackPlan: '', sourceServiceRequestId: '', notes: '' });
   const [error, setError] = useState<string | null>(null);
+  const [configurationItemId, setConfigurationItemId] = useState('');
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const mutation = useMutation({
-    mutationFn: () => apiFetch<ChangeRequest>('/api/v1/changes', { method: 'POST', body: JSON.stringify({ ...form, sourceServiceRequestId: form.sourceServiceRequestId || null }) }),
+    mutationFn: () => apiFetch<ChangeRequest>('/api/v1/changes', { method: 'POST', body: JSON.stringify({ ...form, configurationItemId: configurationItemId || null, sourceServiceRequestId: form.sourceServiceRequestId || null }) }),
     onSuccess: (data) => { void queryClient.invalidateQueries({ queryKey: ['changes'] }); void navigate(`/changes/${data.id}`); },
     onError: (reason) => setError(reason instanceof ApiError ? reason.message : 'สร้างคำขอเปลี่ยนแปลงไม่สำเร็จ'),
   });
 
   return <Card data-testid="change-create-form"><CardHeader className="flex items-center justify-between"><span>ยื่นคำขอเปลี่ยนแปลง</span><button type="button" onClick={onClose} aria-label="ปิด"><X className="h-4 w-4" /></button></CardHeader><CardBody>
     <form className="grid gap-3 sm:grid-cols-3" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}>
+      <label className="text-xs font-semibold sm:col-span-2">Configuration Item (CI)<select data-testid="change-create-ci" value={configurationItemId} onChange={(e) => setConfigurationItemId(e.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{references.configurationItems.map((item) => <option key={item.id} value={item.id}>{item.ci_code} — {item.name} ({item.environment})</option>)}</select></label>
       <label className="text-xs font-semibold sm:col-span-2">หัวข้อ<input required maxLength={200} data-testid="change-create-title" value={form.title} onChange={(e) => set('title', e.target.value)} className={fieldClass} /></label>
       <label className="text-xs font-semibold">ระบบที่ได้รับผลกระทบ<input required maxLength={150} data-testid="change-create-system" value={form.systemAffected} onChange={(e) => set('systemAffected', e.target.value)} className={fieldClass} /></label>
       <label className="text-xs font-semibold">ประเภท Change<input maxLength={60} value={form.changeType} onChange={(e) => set('changeType', e.target.value)} placeholder="เช่น Standard / Normal" className={fieldClass} /></label>

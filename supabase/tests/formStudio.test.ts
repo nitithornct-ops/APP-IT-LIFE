@@ -104,6 +104,19 @@ describe('Form Studio database controls', () => {
     }
   });
 
+  it('keeps one selected master template per supported module', async () => {
+    const bindings = await asUser(db, TECHNICIAN_ID, async () => db.query<{ module_key: string; template_code: string }>(
+      `select b.module_key, t.template_code
+       from public.form_module_bindings b
+       join public.form_templates t on t.id = b.template_id
+       order by b.module_key`,
+    ));
+    expect(bindings.rows).toEqual([
+      { module_key: 'asset_borrow', template_code: 'ASSET-BORROW' },
+      { module_key: 'ticket', template_code: 'IT-ERP-ISSUE' },
+    ]);
+  });
+
   /**
    * Ticket และหน้ายืมทรัพย์สินค้นแม่แบบด้วย template_code ถ้าลบหรือเก็บถาวรได้ หน้าจอทั้งสองจะพังทันที
    */
@@ -131,5 +144,23 @@ describe('Form Studio database controls', () => {
       { template_code: 'ASSET-BORROW', status: 'Published' },
       { template_code: 'IT-ERP-ISSUE', status: 'Published' },
     ]);
+  });
+
+  it('reassigns a module to a newly created template in one database operation', async () => {
+    const created = await asServiceRole(db, async () => db.query<{ id: string }>(
+      `insert into public.form_templates(template_code, name, category, status, content_html)
+       values ('TMP-MODULE', 'Module template', 'Test', 'Published', '<p>test</p>') returning id`,
+    ));
+    await asServiceRole(db, async () => db.query(
+      'select public.assign_form_module_template($1, $2, $3)',
+      ['ticket', created.rows[0]!.id, TECHNICIAN_ID],
+    ));
+    const selected = await asUser(db, TECHNICIAN_ID, async () => db.query<{ template_code: string }>(
+      `select t.template_code
+       from public.form_module_bindings b
+       join public.form_templates t on t.id = b.template_id
+       where b.module_key = 'ticket'`,
+    ));
+    expect(selected.rows).toEqual([{ template_code: 'TMP-MODULE' }]);
   });
 });

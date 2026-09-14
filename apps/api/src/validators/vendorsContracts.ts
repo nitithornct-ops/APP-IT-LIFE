@@ -5,6 +5,10 @@ export const VENDOR_SERVICE_TYPES = ['ร้านซ่อม', 'ผู้ข�
 export const VENDOR_STATUSES = ['Active', 'Inactive'] as const;
 export const CONTRACT_TYPES = ['Service', 'Maintenance', 'Software', 'Internet', 'Cloud', 'Purchase', 'Other'] as const;
 export const CONTRACT_STATUSES = ['Draft', 'Active', 'Expired', 'Terminated', 'Renewed'] as const;
+export const VENDOR_CRITICALITY_TIERS = ['Low', 'Medium', 'High', 'Critical'] as const;
+export const VENDOR_ASSESSMENT_STATUSES = ['Not Assessed', 'Not Required', 'Pending', 'Approved', 'Expired', 'Rejected'] as const;
+export const VENDOR_NDA_STATUSES = ['Not Assessed', 'Not Required', 'Pending', 'Active', 'Expired', 'Rejected'] as const;
+export const RENEWAL_DECISIONS = ['Pending', 'Renew', 'Do Not Renew', 'Renegotiate', 'Terminate'] as const;
 
 const optionalDate = z.union([z.string().date(), z.literal('')]).optional();
 const optionalEmail = z.union([z.string().trim().email('รูปแบบอีเมลไม่ถูกต้อง').max(160), z.literal('')]).optional();
@@ -30,6 +34,20 @@ const vendorFields = {
   email: optionalEmail,
   contactInfo: z.string().trim().max(300).optional(),
   ownerId: z.string().uuid().nullable().optional(),
+  criticalityTier: z.enum(VENDOR_CRITICALITY_TIERS).default('Medium'),
+  vendorRiskAssessment: z.string().trim().max(4000).optional(),
+  securityAssessment: z.string().trim().max(4000).optional(),
+  dpaStatus: z.enum(VENDOR_ASSESSMENT_STATUSES).default('Not Assessed'),
+  ndaStatus: z.enum(VENDOR_NDA_STATUSES).default('Not Assessed'),
+  dataAccess: z.string().trim().max(2000).optional(),
+  systemsAccessed: z.array(z.string().trim().min(1).max(200)).max(100).default([]),
+  sla: z.string().trim().max(2000).optional(),
+  incidentContact: z.string().trim().max(300).optional(),
+  escalationContact: z.string().trim().max(300).optional(),
+  performanceReview: z.string().trim().max(4000).optional(),
+  annualReview: z.string().trim().max(4000).optional(),
+  performanceReviewDate: optionalDate,
+  annualReviewDate: optionalDate,
   notes: z.string().trim().max(1000).optional(),
 };
 
@@ -55,7 +73,18 @@ const contractFields = {
   contractValue: z.coerce.number().min(0).optional(),
   currency: z.string().trim().regex(/^[A-Z]{3}$/, 'สกุลเงินต้องเป็นรหัส 3 ตัว เช่น THB').default('THB'),
   ownerId: z.string().uuid().nullable().optional(),
-  renewalNoticeDays: z.coerce.number().int().min(0).max(3650).default(30),
+  budget: z.coerce.number().min(0).optional(),
+  annualCost: z.coerce.number().min(0).optional(),
+  autoRenewal: z.boolean().default(false),
+  renewalNoticeDays: z.coerce.number().int().refine((value) => [30, 60, 90].includes(value), 'เลือกกำหนดแจ้งเตือน 30, 60 หรือ 90 วัน').default(30),
+  slaOla: z.string().trim().max(3000).optional(),
+  dpaAttachmentId: z.string().uuid().nullable().optional(),
+  securityClause: z.string().trim().max(3000).optional(),
+  linkedAssetIds: z.array(z.string().uuid()).max(500).default([]),
+  linkedLicenseIds: z.array(z.string().uuid()).max(500).default([]),
+  linkedConfigurationItemIds: z.array(z.string().uuid()).max(500).default([]),
+  renewalDecision: z.enum(RENEWAL_DECISIONS).default('Pending'),
+  terminationChecklist: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
   status: z.enum(CONTRACT_STATUSES).default('Draft'),
   notes: z.string().trim().max(1000).optional(),
 };

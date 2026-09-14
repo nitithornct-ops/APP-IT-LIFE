@@ -23,6 +23,8 @@ const CHANGE_SELECT =
   'tester:profiles!change_requests_test_signoff_by_fkey(id, full_name, email), ' +
   'approver:profiles!change_requests_approver_id_fkey(id, full_name, email), ' +
   'deployer:profiles!change_requests_deploy_by_fkey(id, full_name, email), ' +
+  'configuration_item:configuration_items!change_requests_configuration_item_id_fkey(id, ci_code, name, ci_type, environment, criticality, status), ' +
+  'source_incident:incidents!change_requests_source_incident_id_fkey(id, incident_number, title, status), ' +
   'source_service_request:service_requests!change_requests_source_service_request_id_fkey(id, service_code, service_name, status)';
 
 type ChangeRow = Record<string, unknown> & {
@@ -60,9 +62,12 @@ async function notifyItOperations(env: Bindings, changeId: string, title: string
 
 changesRoute.get('/references', requirePermission('change.create'), async (c) => {
   const reqId = c.get('requestId');
-  const { data, error } = await createAdminClient(c.env).from('service_requests').select('id, service_code, service_name, status').order('created_at', { ascending: false }).limit(500);
+  const admin = createAdminClient(c.env);
+  const { data, error } = await admin.from('service_requests').select('id, service_code, service_name, status').order('created_at', { ascending: false }).limit(500);
+  const { data: configurationItems, error: ciError } = await admin.from('configuration_items').select('id, ci_code, name, ci_type, environment, criticality, status').neq('status', 'Retired').order('ci_code', { ascending: true }).limit(2000);
+  if (ciError) return c.json(fail(reqId, 'CHANGE_REFERENCES_LOAD_FAILED', 'Unable to load Configuration Items'), 400);
   if (error) return c.json(fail(reqId, 'CHANGE_REFERENCES_LOAD_FAILED', 'ดึงคำขอบริการอ้างอิงไม่สำเร็จ'), 400);
-  return c.json(ok(reqId, { serviceRequests: data ?? [] }));
+  return c.json(ok(reqId, { serviceRequests: data ?? [], configurationItems: configurationItems ?? [] }));
 });
 
 changesRoute.get('/', zValidator('query', listChangesQuerySchema, zodValidationHook), async (c) => {
@@ -97,8 +102,18 @@ changesRoute.post('/', requirePermission('change.create'), zValidator('json', cr
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const body = c.req.valid('json');
+  if (body.configurationItemId) {
+    const { data: ci } = await createAdminClient(c.env)
+      .from('configuration_items')
+      .select('id')
+      .eq('id', body.configurationItemId)
+      .neq('status', 'Retired')
+      .maybeSingle();
+    if (!ci) return c.json(fail(reqId, 'CHANGE_CONFIGURATION_ITEM_INVALID', 'Selected Configuration Item was not found or is retired'), 400);
+  }
   const result = await c.get('supabase').from('change_requests').insert({
     change_number: generateChangeNumber(), title: body.title, system_affected: body.systemAffected,
+    configuration_item_id: body.configurationItemId || null,
     change_type: body.changeType || null, description: body.description, requester_id: actorId,
     impact_assessment: body.impactAssessment || null, risk_level: body.riskLevel,
     rollback_plan: body.rollbackPlan || null, source_service_request_id: body.sourceServiceRequestId || null,

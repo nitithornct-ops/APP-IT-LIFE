@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLicenseSchema, listLicensesQuerySchema, updateLicenseSchema } from '../src/validators/licenses';
+import { createLicenseAllocationSchema, createLicenseSchema, listLicensesQuerySchema, renewalApprovalSchema, updateLicenseSchema } from '../src/validators/licenses';
 
 describe('software license validators', () => {
   it('accepts a complete license and supplies renewal defaults', () => {
@@ -22,6 +22,13 @@ describe('software license validators', () => {
   it('validates renewal notice bounds and partial updates', () => {
     expect(createLicenseSchema.safeParse({ softwareName: 'Too long', expiryNoticeDays: 3651 }).success).toBe(false);
     expect(updateLicenseSchema.safeParse({ usedQty: 4 }).success).toBe(true);
+  });
+
+  it('validates product metadata, license model, and allocation target type', () => {
+    expect(createLicenseSchema.parse({ softwareName: 'Microsoft 365', productName: 'Microsoft 365', licenseModel: 'SaaS' }).licenseModel).toBe('SaaS');
+    expect(createLicenseAllocationSchema.safeParse({ assigneeType: 'user', employeeId: '00000000-0000-0000-0000-000000000001', assetId: '00000000-0000-0000-0000-000000000002' }).success).toBe(false);
+    expect(createLicenseAllocationSchema.safeParse({ assigneeType: 'device', assetId: '00000000-0000-0000-0000-000000000002' }).success).toBe(true);
+    expect(renewalApprovalSchema.safeParse({ status: 'approved' }).success).toBe(true);
   });
 
   it('coerces pagination and validates status filters', () => {

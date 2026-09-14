@@ -141,6 +141,38 @@ async function getAccessToken(
   return { ok: true, token };
 }
 
+export interface GoogleDriveProbeResult {
+  ok: boolean;
+  responseTimeMs: number | null;
+  reason: GoogleDriveFailureReason | null;
+}
+
+/** Read-only connectivity probe used by the internal system status page. */
+export async function probeGoogleDrive(
+  env: Bindings,
+  fetchImpl: typeof fetch = fetch,
+  now = Date.now(),
+): Promise<GoogleDriveProbeResult> {
+  const config = googleDriveConfig(env);
+  if (!config) return { ok: false, responseTimeMs: null, reason: 'configuration' };
+  const startedAt = Date.now();
+  const auth = await getAccessToken(config, fetchImpl, now);
+  if (!auth.ok) return { ok: false, responseTimeMs: Date.now() - startedAt, reason: auth.reason };
+  try {
+    const response = await fetchImpl(`${FILES_URL}/${encodeURIComponent(config.folderId)}?fields=id&supportsAllDrives=true`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return {
+      ok: response.ok,
+      responseTimeMs: Date.now() - startedAt,
+      reason: response.ok ? null : 'rejected',
+    };
+  } catch {
+    return { ok: false, responseTimeMs: Date.now() - startedAt, reason: 'network' };
+  }
+}
+
 /** ชื่อไฟล์ที่ผู้ใช้เห็นใน Drive — ตัด path separator กับอักขระควบคุมที่ทำให้ชื่อไฟล์เพี้ยน */
 export function safeDriveName(name: string, fallback: string): string {
   const cleaned = name

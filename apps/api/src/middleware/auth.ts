@@ -6,7 +6,7 @@ import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { fail } from '../utils/response';
 
 type AuthenticationResult =
-  | { ok: true; aal: string | null; hasVerifiedMfa: boolean }
+  | { ok: true; aal: string | null; hasVerifiedMfa: boolean; mfaEnabled: boolean }
   | { ok: false; response: Response };
 
 /** Validate the Supabase session and active profile, without applying the MFA policy yet. */
@@ -38,13 +38,15 @@ async function authenticateRequest(c: Context<AppEnv>): Promise<AuthenticationRe
 
   const aal = jwtAuthenticatorAssuranceLevel(token);
   const hasVerifiedMfa = data.user.factors?.some((factor) => factor.status === 'verified') ?? false;
+  const mfaEnabled = profile.mfa_enabled === true;
   c.set('supabase', supabase);
   c.set('userId', data.user.id);
   c.set('userEmail', data.user.email ?? '');
   c.set('authAal', aal);
   c.set('hasVerifiedMfa', hasVerifiedMfa);
+  c.set('mfaEnabled', mfaEnabled);
 
-  return { ok: true, aal, hasVerifiedMfa };
+  return { ok: true, aal, hasVerifiedMfa, mfaEnabled };
 }
 
 /**
@@ -65,7 +67,7 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (authentication.aal !== 'aal2') {
     let policy;
     try {
-      policy = await loadMfaPolicy(c.get('supabase'), authentication.hasVerifiedMfa);
+      policy = await loadMfaPolicy(c.get('supabase'), authentication.hasVerifiedMfa, authentication.mfaEnabled);
     } catch {
       // A policy lookup outage must not downgrade a privileged account to AAL1.
       return c.json(fail(c.get('requestId'), 'MFA_POLICY_UNAVAILABLE', 'ตรวจสอบนโยบาย MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);

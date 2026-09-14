@@ -1,8 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { renderAssetBorrowForm } from '../services/assetBorrowForm';
+import { resolveFormModuleTemplate } from '../services/formModuleService';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission, requireAnyPermission, requirePermission } from '../middleware/permission';
 import {
@@ -12,6 +13,13 @@ import {
   isAssetRetired,
 } from '../services/assetOwnership';
 import { buildAssetFieldSummary, parseScannedAssetCode } from '../services/assetFieldService';
+import {
+  ASSET_LIFECYCLE_LABELS,
+  allowedAssetLifecycleTransitions,
+  canTransitionAssetLifecycle,
+  isAssetLifecycleStatus,
+  legacyStatusForLifecycle,
+} from '../services/assetLifecycle';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { BulkItemError, runBulk } from '../utils/bulk';
@@ -25,18 +33,25 @@ import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   assetBorrowOverviewQuerySchema,
+  ASSET_AUDIT_RESULTS,
+  FIELD_SCAN_RESULT_LABELS,
   assignAssetSchema,
+  assetLoanCreateSchema,
   bulkUpdateAssetsSchema,
+  createAssetModelSchema,
   createAssetSchema,
   listAssetsQuerySchema,
   returnAssetFromRepairSchema,
   returnAssetSchema,
+  transitionAssetLifecycleSchema,
   sendAssetToRepairSchema,
   setAssetStatusSchema,
   transferAssetSchema,
   updateAssetPatchSchema,
   updateAssetSchema,
   verifyAssetSchema,
+  fieldScanCampaignCreateSchema,
+  fieldScanSyncSchema,
 } from '../validators/assets';
 
 /**
@@ -51,13 +66,25 @@ assetsRoute.use('*', requireAuth);
 
 assetsRoute.get('/:id/borrow-form', requirePermission('asset.view'), async (c) => {
   const reqId = c.get('requestId');
-  const { data: asset, error } = await c.get('supabase').from('assets')
-    .select('asset_code, name, loan_date, loan_due_date, location, owner:employees(first_name_th, last_name_th, employee_code), department:departments(name_th)')
-    .eq('id', c.req.param('id')).maybeSingle();
+  const supabase = c.get('supabase');
+  const assetId = c.req.param('id');
+  const [{ data: asset, error }, { data: loan, error: loanError }] = await Promise.all([
+    supabase.from('assets')
+      .select('asset_code, name, loan_date, loan_due_date, location, owner:employees(first_name_th, last_name_th, employee_code), department:departments(name_th)')
+      .eq('id', assetId).maybeSingle(),
+    supabase.from('asset_loans')
+      .select('purpose, condition_before, companion_equipment, borrower_acknowledged, borrower_acknowledgement_name, returned_at, condition_after, return_outcome, approver:employees!asset_loans_approver_employee_id_fkey(first_name_th, last_name_th, employee_code)')
+      .eq('asset_id', assetId).eq('status', 'active').maybeSingle(),
+  ]);
   if (error) return dbFailJson(c, 'BORROW_FORM_LOAD_FAILED', error);
+  if (loanError) return dbFailJson(c, 'BORROW_FORM_LOAN_LOAD_FAILED', loanError);
   if (!asset) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้ หรือไม่มีสิทธิ์เข้าถึง'), 404);
-  const { data: template, error: templateError } = await createAdminClient(c.env).from('form_templates')
-    .select('id, name, content_html, current_version').eq('template_code', 'ASSET-BORROW').eq('status', 'Published').maybeSingle();
+  const { data: template, error: templateError } = await resolveFormModuleTemplate<{ id: string; name: string; content_html: string; current_version: number }>(
+    createAdminClient(c.env),
+    'asset_borrow',
+    'id, name, content_html, current_version',
+    true,
+  );
   if (templateError) return dbFailJson(c, 'BORROW_TEMPLATE_LOAD_FAILED', templateError);
   if (!template) return c.json(fail(reqId, 'BORROW_TEMPLATE_NOT_FOUND', 'ยังไม่มีแม่แบบขอยืมทรัพย์สินที่เผยแพร่ใน Form Studio'), 409);
   return c.json(ok(reqId, {
@@ -66,18 +93,81 @@ assetsRoute.get('/:id/borrow-form', requirePermission('asset.view'), async (c) =
       ...asset,
       owner: Array.isArray(asset.owner) ? asset.owner[0] ?? null : asset.owner,
       department: Array.isArray(asset.department) ? asset.department[0] ?? null : asset.department,
+      loan: loan ? {
+        ...loan,
+        approver: Array.isArray(loan.approver) ? loan.approver[0] ?? null : loan.approver,
+      } : null,
     }),
   }));
 });
 
 const ASSET_SELECT =
   'id, asset_code, name, asset_type, category_id, brand, model, serial_number, vendor_name, vendor_id, contract_id, ' +
-  'purchase_date, warranty_expire, price, useful_life_years, license_no, license_expiry, location, ' +
-  'department_id, owner_employee_id, patch_status, patch_date, criticality, status, qr_code_url, ' +
+  'purchase_date, warranty_expire, purchase_order, invoice_number, price, useful_life_years, depreciation_method, depreciation_rate, cost_center, barcode, ' +
+  'asset_model_catalog_id, parent_asset_id, physical_verification_status, physical_verified_at, physical_verified_by, disposed_at, disposal_reason, disposal_value, license_no, license_expiry, location, ' +
+  'department_id, owner_employee_id, patch_status, patch_date, criticality, status, lifecycle_status, qr_code_url, ' +
   'last_audit_date, audit_status, loan_date, loan_due_date, notes, remark, created_at, updated_at, ' +
   'category:asset_categories(id, name, code_prefix), department:departments(id, name_th), ' +
   'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date), ' +
-  'owner:employees(id, employee_code, first_name_th, last_name_th, nickname)';
+  'owner:employees(id, employee_code, first_name_th, last_name_th, nickname), ' +
+  'model_catalog:asset_model_catalog(id, model_code, name, asset_type, brand, model, default_useful_life_years, default_warranty_months, depreciation_method, default_cost_center, specs, status, notes)';
+
+const FIELD_SCAN_ASSET_SELECT =
+  'id, asset_code, name, asset_type, brand, model, serial_number, location, owner_employee_id, ' +
+  'owner:employees!assets_owner_employee_id_fkey(id, employee_code, prefix_th, first_name_th, last_name_th), ' +
+  'department:departments(id, name_th)';
+
+const FIELD_SCAN_VERIFICATION_SELECT =
+  'id, campaign_id, asset_id, client_ref, result, expected_location, actual_location, ' +
+  'expected_custodian_employee_id, actual_custodian_employee_id, note, scanned_at, synced_at, created_at, updated_at, ' +
+  `asset:assets!asset_verifications_asset_id_fkey(${FIELD_SCAN_ASSET_SELECT}), ` +
+  'expected_custodian:employees!asset_verifications_expected_custodian_employee_id_fkey(id, employee_code, prefix_th, first_name_th, last_name_th), ' +
+  'actual_custodian:employees!asset_verifications_actual_custodian_employee_id_fkey(id, employee_code, prefix_th, first_name_th, last_name_th)';
+
+const ASSET_LOAN_SELECT =
+  'id, asset_id, borrower_employee_id, approver_employee_id, borrowed_at, due_at, purpose, condition_before, companion_equipment, ' +
+  'borrower_acknowledged, borrower_acknowledged_at, borrower_acknowledgement_name, reminder_recipient_id, reminder_days_before, status, ' +
+  'returned_at, return_receiver_employee_id, condition_after, return_outcome, damage_notes, return_notes, created_by, created_at, updated_at, ' +
+  'asset:assets!asset_loans_asset_id_fkey(id, asset_code, name, status, lifecycle_status), ' +
+  'borrower:employees!asset_loans_borrower_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
+  'approver:employees!asset_loans_approver_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
+  'return_receiver:employees!asset_loans_return_receiver_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname)';
+
+const ASSET_LOAN_ERROR_MESSAGES: Record<string, { message: string; status: 400 | 403 | 404 | 409 }> = {
+  ASSET_LOAN_PERMISSION_REQUIRED: { message: 'ท่านไม่มีสิทธิ์บันทึกการยืม/คืน Asset', status: 403 },
+  ASSET_LOAN_DATE_RANGE_INVALID: { message: 'วันที่ต้องคืนต้องไม่ก่อนวันที่ยืม', status: 400 },
+  ASSET_LOAN_PURPOSE_REQUIRED: { message: 'กรุณาระบุวัตถุประสงค์การยืม', status: 400 },
+  ASSET_LOAN_CONDITION_BEFORE_REQUIRED: { message: 'กรุณาระบุสภาพก่อนยืม', status: 400 },
+  ASSET_LOAN_COMPANION_EQUIPMENT_INVALID: { message: 'อุปกรณ์ประกอบมีรูปแบบไม่ถูกต้อง', status: 400 },
+  ASSET_LOAN_REMINDER_INVALID: { message: 'จำนวนวันเตือนต้องอยู่ระหว่าง 0 ถึง 30 วัน', status: 400 },
+  ASSET_LOAN_ACKNOWLEDGEMENT_REQUIRED: { message: 'กรุณายืนยัน acknowledgement ของผู้ยืม', status: 400 },
+  ASSET_NOT_FOUND: { message: 'ไม่พบทรัพย์สินนี้', status: 404 },
+  ASSET_NOT_AVAILABLE: { message: 'Asset นี้ไม่พร้อมให้ยืม หรือมีผู้ถือครองอยู่แล้ว', status: 409 },
+  BORROWER_NOT_FOUND: { message: 'ไม่พบผู้ยืมที่ยังปฏิบัติงานอยู่', status: 400 },
+  APPROVER_NOT_FOUND: { message: 'ไม่พบผู้อนุมัติที่ยังปฏิบัติงานอยู่', status: 400 },
+  ASSET_LOAN_NOT_FOUND: { message: 'ไม่พบรายการยืม Asset นี้', status: 404 },
+  ASSET_LOAN_ALREADY_RETURNED: { message: 'รายการยืมนี้ถูกรับคืนแล้ว', status: 409 },
+  ASSET_LOAN_RETURN_DETAILS_REQUIRED: { message: 'กรุณาระบุวันที่คืนและสภาพหลังคืน', status: 400 },
+  ASSET_LOAN_RETURN_OUTCOME_INVALID: { message: 'ผลการคืน Asset ไม่ถูกต้อง', status: 400 },
+  ASSET_LOAN_DAMAGE_DETAILS_REQUIRED: { message: 'กรุณาระบุรายละเอียดความเสียหายหรือการสูญหาย', status: 400 },
+  ASSET_LOAN_RETURN_DATE_INVALID: { message: 'วันที่คืนต้องไม่ก่อนวันที่ยืม', status: 400 },
+  RETURN_RECEIVER_NOT_FOUND: { message: 'ไม่พบผู้รับคืนที่ยังปฏิบัติงานอยู่', status: 400 },
+};
+
+function assetLoanRpcError(c: Context<AppEnv>, code: string, error: { message?: string; code?: string }, fallbackCode: string) {
+  const domainCode = Object.keys(ASSET_LOAN_ERROR_MESSAGES).find((key) => error.message?.includes(key));
+  if (domainCode) {
+    const detail = ASSET_LOAN_ERROR_MESSAGES[domainCode];
+    return c.json(fail(c.get('requestId'), domainCode, detail.message), detail.status);
+  }
+  return dbFailJson(c, fallbackCode, error);
+}
+
+function readLoanId(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const loanId = (value as { loan_id?: unknown }).loan_id;
+  return typeof loanId === 'string' ? loanId : null;
+}
 
 /** จำนวน Ticket สูงสุดที่ดึงมาสรุปประวัติซ่อมของเครื่องหนึ่งเครื่อง */
 const ASSET_FIELD_TICKET_LIMIT = 100;
@@ -89,14 +179,27 @@ function daysUntil(dateStr: string | null | undefined): number | null {
   return Math.ceil((d.getTime() - Date.now()) / 86400000);
 }
 
-function computeDepreciation(price: number | null, purchaseDate: string | null, usefulLifeYears: number | null) {
+function computeDepreciation(
+  price: number | null,
+  purchaseDate: string | null,
+  usefulLifeYears: number | null,
+  depreciationMethod?: string | null,
+  depreciationRate?: number | null,
+) {
   const p = Number(price) || 0;
   const life = Number(usefulLifeYears) || 5;
   if (!p || !purchaseDate) return { ageYears: null, bookValue: p || null, depreciationPct: null };
   const pd = new Date(purchaseDate);
   if (Number.isNaN(pd.getTime())) return { ageYears: null, bookValue: p || null, depreciationPct: null };
-  const ageYears = (Date.now() - pd.getTime()) / (365.25 * 86400000);
-  const remain = Math.max(0, 1 - ageYears / life);
+  const ageYears = Math.max(0, (Date.now() - pd.getTime()) / (365.25 * 86400000));
+  const method = depreciationMethod ?? 'straight_line';
+  const explicitRate = depreciationRate === null || depreciationRate === undefined ? null : Number(depreciationRate) / 100;
+  const rate = explicitRate !== null && Number.isFinite(explicitRate) ? Math.min(1, Math.max(0, explicitRate)) : 1 / life;
+  const remain = method === 'none'
+    ? 1
+    : method === 'declining_balance'
+      ? Math.pow(Math.max(0, 1 - rate), ageYears)
+      : Math.max(0, 1 - ageYears / life);
   return {
     ageYears: Math.round(ageYears * 10) / 10,
     bookValue: Math.round(p * remain),
@@ -117,10 +220,10 @@ function generateAssetCode(categoryPrefix: string | null | undefined): string {
   return `${prefix}-${datePart}${rand}`;
 }
 
-function enrichAsset<T extends { price: number | null; purchase_date: string | null; useful_life_years: number | null; warranty_expire: string | null; license_expiry: string | null }>(
+function enrichAsset<T extends { price: number | null; purchase_date: string | null; useful_life_years: number | null; depreciation_method?: string | null; depreciation_rate?: number | null; warranty_expire: string | null; license_expiry: string | null }>(
   row: T,
 ) {
-  const dep = computeDepreciation(row.price, row.purchase_date, row.useful_life_years);
+  const dep = computeDepreciation(row.price, row.purchase_date, row.useful_life_years, row.depreciation_method, row.depreciation_rate);
   return {
     ...row,
     ...dep,
@@ -167,6 +270,65 @@ async function loadAssetOr404(supabase: SupabaseClient, id: string) {
   return supabase.from('assets').select('*').eq('id', id).maybeSingle();
 }
 
+type DuplicateAsset = { id: string; asset_code: string; name: string; serial_number?: string | null; barcode?: string | null };
+
+async function findDuplicateAssetValue(
+  supabase: SupabaseClient,
+  field: 'serial_number' | 'barcode',
+  value: string | undefined,
+  excludeId?: string,
+): Promise<DuplicateAsset | null> {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  let query = supabase.from('assets').select(`id, asset_code, name, ${field}`).neq('lifecycle_status', 'disposed').limit(100);
+  if (excludeId) query = query.neq('id', excludeId);
+  const { data, error } = await query;
+  if (error) return null;
+  return ((data ?? []) as unknown as DuplicateAsset[]).find((row) => String(row[field] ?? '').trim().toLowerCase() === normalized) ?? null;
+}
+
+async function ensureAssetConfigurationItem(
+  env: AppEnv['Bindings'],
+  asset: { id: string; asset_code: string; name: string; asset_type: string; owner_employee_id?: string | null; location?: string | null },
+) {
+  if (asset.asset_type !== 'Server' && asset.asset_type !== 'Network Device') return null;
+  const admin = createAdminClient(env);
+  const { data: existing } = await admin.from('configuration_items').select('id, ci_code, name, ci_type, environment, status').eq('asset_id', asset.id).maybeSingle();
+  if (existing) return existing;
+
+  const { data, error } = await admin.from('configuration_items').insert({
+    ci_code: `CI-${asset.asset_code}`.slice(0, 100),
+    name: `${asset.name} (${asset.asset_code})`.slice(0, 150),
+    ci_type: asset.asset_type,
+    environment: 'Shared',
+    owner_employee_id: asset.owner_employee_id ?? null,
+    asset_id: asset.id,
+    location: asset.location ?? null,
+    status: 'Draft',
+    notes: 'Auto-created from Asset Register',
+  }).select('id, ci_code, name, ci_type, environment, status').single();
+  if (error) {
+    const { data: raced } = await admin.from('configuration_items').select('id, ci_code, name, ci_type, environment, status').eq('asset_id', asset.id).maybeSingle();
+    return raced ?? null;
+  }
+  return data;
+}
+
+async function recordLifecycleEvent(
+  supabase: SupabaseClient,
+  input: { assetId: string; fromStatus: string | null; toStatus: string; notes?: string | null; relatedTicketId?: string | null; performedBy: string; eventDate?: string },
+) {
+  await supabase.from('asset_lifecycle_events').insert({
+    asset_id: input.assetId,
+    from_status: input.fromStatus,
+    to_status: input.toStatus,
+    notes: input.notes ?? null,
+    related_ticket_id: input.relatedTicketId ?? null,
+    performed_by: input.performedBy,
+    event_date: input.eventDate ?? new Date().toISOString(),
+  });
+}
+
 /** dropdown แบบเบา (สำหรับฟอร์ม PM/Employee Assignment ฯลฯ) — ต้องอยู่ก่อน '/:id' */
 assetsRoute.get('/options', requirePermission('asset.view'), async (c) => {
   const supabase = c.get('supabase');
@@ -177,6 +339,273 @@ assetsRoute.get('/options', requirePermission('asset.view'), async (c) => {
     .order('asset_code', { ascending: true })
     .limit(2000);
   if (error) return c.json(fail(reqId, 'ASSET_OPTIONS_LOAD_FAILED', 'ดึงรายการทรัพย์สินไม่สำเร็จ'), 400);
+  return c.json(ok(reqId, data));
+});
+
+assetsRoute.get('/models', requirePermission('asset.view'), async (c) => {
+  const { data, error } = await c.get('supabase').from('asset_model_catalog')
+    .select('id, model_code, name, asset_type, brand, model, default_useful_life_years, default_warranty_months, depreciation_method, default_cost_center, specs, status, notes')
+    .eq('status', 'active').order('name', { ascending: true }).limit(2000);
+  if (error) return dbFailJson(c, 'ASSET_MODEL_LIST_FAILED', error);
+  return c.json(ok(c.get('requestId'), data ?? []));
+});
+
+assetsRoute.post('/models', requirePermission('asset.update'), zValidator('json', createAssetModelSchema, zodValidationHook), async (c) => {
+  const body = c.req.valid('json');
+  const actorId = c.get('userId');
+  const { data, error } = await c.get('supabase').from('asset_model_catalog').insert({
+    model_code: body.modelCode,
+    name: body.name,
+    asset_type: body.assetType,
+    brand: body.brand ?? null,
+    model: body.model ?? null,
+    default_useful_life_years: body.defaultUsefulLifeYears ?? null,
+    default_warranty_months: body.defaultWarrantyMonths ?? null,
+    depreciation_method: body.depreciationMethod ?? 'straight_line',
+    default_cost_center: body.defaultCostCenter ?? null,
+    specs: body.specs ?? {},
+    notes: body.notes ?? null,
+    created_by: actorId,
+    updated_by: actorId,
+  }).select('id, model_code, name, asset_type, brand, model, default_useful_life_years, default_warranty_months, depreciation_method, default_cost_center, specs, status, notes').single();
+  if (error) return dbFailJson(c, 'ASSET_MODEL_CREATE_FAILED', error);
+  return c.json(ok(c.get('requestId'), data), 201);
+});
+
+assetsRoute.get('/duplicates', requirePermission('asset.view'), async (c) => {
+  const serialNumber = c.req.query('serialNumber');
+  const barcode = c.req.query('barcode');
+  const excludeId = c.req.query('excludeId');
+  const [serial, code] = await Promise.all([
+    findDuplicateAssetValue(c.get('supabase'), 'serial_number', serialNumber, excludeId),
+    findDuplicateAssetValue(c.get('supabase'), 'barcode', barcode, excludeId),
+  ]);
+  return c.json(ok(c.get('requestId'), { serial, barcode: code }));
+});
+
+function fieldRelation(row: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const value = row[key];
+  if (Array.isArray(value)) return (value[0] as Record<string, unknown> | undefined) ?? null;
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function fieldPersonName(person: Record<string, unknown> | null): string | null {
+  if (!person) return null;
+  const name = [person.prefix_th, person.first_name_th, person.last_name_th].filter(Boolean).map(String).join(' ').trim();
+  return name || null;
+}
+
+function fieldAssetPayload(row: Record<string, unknown>) {
+  const owner = fieldRelation(row, 'owner');
+  const department = fieldRelation(row, 'department');
+  return {
+    id: String(row.id),
+    assetCode: String(row.asset_code ?? ''),
+    name: String(row.name ?? ''),
+    assetType: row.asset_type ? String(row.asset_type) : null,
+    brand: row.brand ? String(row.brand) : null,
+    model: row.model ? String(row.model) : null,
+    serialNumber: row.serial_number ? String(row.serial_number) : null,
+    location: row.location ? String(row.location) : null,
+    ownerEmployeeId: row.owner_employee_id ? String(row.owner_employee_id) : null,
+    ownerName: fieldPersonName(owner),
+    departmentName: department?.name_th ? String(department.name_th) : null,
+  };
+}
+
+function fieldVerificationPayload(row: Record<string, unknown>) {
+  const asset = fieldRelation(row, 'asset');
+  const expectedCustodian = fieldRelation(row, 'expected_custodian');
+  const actualCustodian = fieldRelation(row, 'actual_custodian');
+  return {
+    id: String(row.id),
+    campaignId: String(row.campaign_id),
+    assetId: String(row.asset_id),
+    clientRef: String(row.client_ref),
+    asset: asset ? fieldAssetPayload(asset) : null,
+    result: String(row.result),
+    resultLabel: FIELD_SCAN_RESULT_LABELS[row.result as keyof typeof FIELD_SCAN_RESULT_LABELS] ?? String(row.result),
+    expectedLocation: row.expected_location ? String(row.expected_location) : null,
+    actualLocation: row.actual_location ? String(row.actual_location) : null,
+    expectedCustodianEmployeeId: row.expected_custodian_employee_id ? String(row.expected_custodian_employee_id) : null,
+    actualCustodianEmployeeId: row.actual_custodian_employee_id ? String(row.actual_custodian_employee_id) : null,
+    expectedCustodianName: fieldPersonName(expectedCustodian),
+    actualCustodianName: fieldPersonName(actualCustodian),
+    note: row.note ? String(row.note) : null,
+    scannedAt: String(row.scanned_at),
+    syncedAt: String(row.synced_at),
+  };
+}
+
+/** Lightweight asset lookup used by the batch field scanner; it stays separate from the repair-history lookup. */
+assetsRoute.get('/field/resolve', requirePermission('asset.view'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const code = parseScannedAssetCode(c.req.query('code') ?? '');
+  if (!code) return c.json(fail(reqId, 'ASSET_CODE_INVALID', 'อ่านรหัสทรัพย์สินไม่ได้ กรุณาลองใหม่หรือพิมพ์รหัสเอง'), 400);
+
+  const { data: matches, error } = await supabase
+    .from('assets')
+    .select(FIELD_SCAN_ASSET_SELECT)
+    .ilike('asset_code', code)
+    .order('asset_code', { ascending: true })
+    .limit(5);
+  if (error) return dbFailJson(c, 'FIELD_ASSET_RESOLVE_FAILED', error, 'ค้นหาทรัพย์สินไม่สำเร็จ');
+  const candidates = (matches ?? []) as unknown as Array<Record<string, unknown>>;
+  const asset = candidates.find((row) => String(row.asset_code) === code) ?? (candidates.length === 1 ? candidates[0] : null);
+  if (!asset) {
+    if (candidates.length > 1) return c.json(fail(reqId, 'ASSET_CODE_AMBIGUOUS', `รหัส ${code} ตรงกับหลายรายการ กรุณาพิมพ์ให้ตรงตัวพิมพ์`), 409);
+    return c.json(fail(reqId, 'ASSET_NOT_FOUND', `ไม่พบทรัพย์สินรหัส ${code} ในระบบ`), 404);
+  }
+  return c.json(ok(reqId, fieldAssetPayload(asset)));
+});
+
+/** Campaign ที่เตรียมไว้ก่อนลงพื้นที่ — โหลดได้แม้ยังไม่มีรายการตรวจ */
+assetsRoute.get('/field/campaigns', requirePermission('asset.view'), async (c) => {
+  const { data, error } = await c.get('supabase')
+    .from('asset_verification_campaigns')
+    .select('id, campaign_code, name, planned_date, location, status, completed_at, created_at, asset_verifications(count)')
+    .order('planned_date', { ascending: false })
+    .limit(50);
+  if (error) return dbFailJson(c, 'FIELD_CAMPAIGNS_LOAD_FAILED', error, 'ดึง Campaign ตรวจนับไม่สำเร็จ');
+  return c.json(ok(c.get('requestId'), (data ?? []).map((row) => {
+    const rawCount = (row as unknown as { asset_verifications?: Array<{ count?: number }> }).asset_verifications?.[0]?.count ?? 0;
+    const campaign = { ...(row as unknown as Record<string, unknown>) };
+    delete campaign.asset_verifications;
+    return { ...campaign, verificationCount: Number(rawCount) };
+  })));
+});
+
+assetsRoute.post('/field/campaigns', requirePermission('asset.update'), zValidator('json', fieldScanCampaignCreateSchema, zodValidationHook), async (c) => {
+  const body = c.req.valid('json');
+  const actorId = c.get('userId');
+  const reqId = c.get('requestId');
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const { data, error } = await c.get('supabase').from('asset_verification_campaigns').insert({
+    campaign_code: `FSC-${datePart}-${randomCodeSuffix()}`,
+    name: body.name,
+    planned_date: body.plannedDate ?? new Date().toISOString().slice(0, 10),
+    location: body.location || null,
+    status: 'active',
+    created_by: actorId,
+  }).select('id, campaign_code, name, planned_date, location, status, completed_at, created_at').single();
+  if (error) return dbFailJson(c, 'FIELD_CAMPAIGN_CREATE_FAILED', error, 'สร้าง Campaign ตรวจนับไม่สำเร็จ');
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'FIELD_CAMPAIGN_CREATE', module: 'asset', targetTable: 'asset_verification_campaigns', targetId: data.id, detail: { campaignCode: data.campaign_code }, requestId: reqId });
+  return c.json(ok(reqId, { ...data, verificationCount: 0 }), 201);
+});
+
+assetsRoute.get('/field/campaigns/:id', requirePermission('asset.view'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const id = c.req.param('id');
+  const [{ data: campaign, error: campaignError }, { data: verifications, error: verificationError }] = await Promise.all([
+    supabase.from('asset_verification_campaigns').select('id, campaign_code, name, planned_date, location, status, completed_at, created_at').eq('id', id).maybeSingle(),
+    supabase.from('asset_verifications').select(FIELD_SCAN_VERIFICATION_SELECT).eq('campaign_id', id).order('updated_at', { ascending: false }).limit(2000),
+  ]);
+  if (campaignError) return dbFailJson(c, 'FIELD_CAMPAIGN_LOAD_FAILED', campaignError, 'ดึง Campaign ตรวจนับไม่สำเร็จ');
+  if (verificationError) return dbFailJson(c, 'FIELD_VERIFICATIONS_LOAD_FAILED', verificationError, 'ดึงผลตรวจนับไม่สำเร็จ');
+  if (!campaign) return c.json(fail(reqId, 'FIELD_CAMPAIGN_NOT_FOUND', 'ไม่พบ Campaign ตรวจนับนี้'), 404);
+  return c.json(ok(reqId, { ...campaign, verificationCount: verifications?.length ?? 0, verifications: (verifications ?? []).map((row) => fieldVerificationPayload(row as unknown as Record<string, unknown>)) }));
+});
+
+/** รับผลตรวจจากออนไลน์หรือคิวออฟไลน์ — upsert ด้วย campaign + asset เพื่อ retry ได้โดยไม่สร้างแถวซ้ำ */
+assetsRoute.post('/field/campaigns/:id/sync', requirePermission('asset.update'), zValidator('json', fieldScanSyncSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const campaignId = c.req.param('id');
+  const { items } = c.req.valid('json');
+
+  const { data: campaign, error: campaignError } = await supabase.from('asset_verification_campaigns').select('id, status').eq('id', campaignId).maybeSingle();
+  if (campaignError) return dbFailJson(c, 'FIELD_CAMPAIGN_LOAD_FAILED', campaignError, 'ดึง Campaign ตรวจนับไม่สำเร็จ');
+  if (!campaign) return c.json(fail(reqId, 'FIELD_CAMPAIGN_NOT_FOUND', 'ไม่พบ Campaign ตรวจนับนี้'), 404);
+  if (campaign.status === 'completed') return c.json(fail(reqId, 'FIELD_CAMPAIGN_COMPLETED', 'Campaign นี้ปิดแล้ว ไม่สามารถซิงก์เพิ่มได้'), 409);
+
+  const parsedItems = items.map((item) => ({ ...item, code: parseScannedAssetCode(item.assetCode) }));
+  const invalidItem = parsedItems.find((item) => !item.code);
+  if (invalidItem) return c.json(fail(reqId, 'FIELD_ASSET_CODE_INVALID', `รหัส ${invalidItem.assetCode} ไม่ถูกต้อง`), 400);
+  const codes = [...new Set(parsedItems.map((item) => item.code!))];
+  const { data: assets, error: assetsError } = await supabase
+    .from('assets')
+    .select(FIELD_SCAN_ASSET_SELECT)
+    .or(codes.map((code) => `asset_code.ilike.${code}`).join(','))
+    .limit(Math.max(2000, codes.length));
+  if (assetsError) return dbFailJson(c, 'FIELD_ASSETS_RESOLVE_FAILED', assetsError, 'ยืนยันรายการทรัพย์สินไม่สำเร็จ');
+
+  const assetByCode = new Map<string, Record<string, unknown>>();
+  for (const row of (assets ?? []) as unknown as Array<Record<string, unknown>>) {
+    const key = String(row.asset_code).toLocaleLowerCase('en-US');
+    if (assetByCode.has(key)) return c.json(fail(reqId, 'ASSET_CODE_AMBIGUOUS', `รหัส ${row.asset_code} ซ้ำต่างตัวพิมพ์เล็ก-ใหญ่ กรุณาแก้ทะเบียนก่อนตรวจนับ`), 409);
+    assetByCode.set(key, row);
+  }
+  const missing = parsedItems.find((item) => !assetByCode.has(item.code!.toLocaleLowerCase('en-US')));
+  if (missing) return c.json(fail(reqId, 'ASSET_NOT_FOUND', `ไม่พบทรัพย์สินรหัส ${missing.code} ในระบบ`), 404);
+
+  const byAssetId = new Map<string, Record<string, unknown>>();
+  for (const item of parsedItems) {
+    const asset = assetByCode.get(item.code!.toLocaleLowerCase('en-US'))!;
+    const assetPayload = fieldAssetPayload(asset);
+    byAssetId.set(String(asset.id), {
+      campaign_id: campaignId,
+      asset_id: asset.id,
+      client_ref: item.clientRef,
+      result: item.result,
+      expected_location: item.expectedLocation ?? assetPayload.location,
+      actual_location: item.actualLocation ?? (item.result === 'found' ? assetPayload.location : null),
+      expected_custodian_employee_id: item.expectedCustodianEmployeeId ?? assetPayload.ownerEmployeeId,
+      actual_custodian_employee_id: item.actualCustodianEmployeeId ?? (item.result === 'found' ? assetPayload.ownerEmployeeId : null),
+      note: item.note || null,
+      scanned_at: item.scannedAt ?? new Date().toISOString(),
+      synced_at: new Date().toISOString(),
+      created_by: actorId,
+    });
+  }
+  const rows = [...byAssetId.values()];
+  const { data: saved, error: saveError } = await supabase
+    .from('asset_verifications')
+    .upsert(rows, { onConflict: 'campaign_id,asset_id' })
+    .select(FIELD_SCAN_VERIFICATION_SELECT);
+  if (saveError) return dbFailJson(c, 'FIELD_VERIFICATIONS_SAVE_FAILED', saveError, 'บันทึกผลตรวจนับไม่สำเร็จ');
+
+  const savedByAssetId = new Map((saved ?? []).map((row) => [String((row as unknown as Record<string, unknown>).asset_id), row as unknown as Record<string, unknown>]));
+  const auditAt = new Date().toISOString();
+  const assetUpdateResults = await Promise.all(rows.map((row) => supabase.from('assets').update({
+    last_audit_date: auditAt.slice(0, 10),
+    last_audit_by: actorId,
+    audit_status: FIELD_SCAN_RESULT_LABELS[row.result as keyof typeof FIELD_SCAN_RESULT_LABELS],
+    physical_verification_status: row.result === 'found' ? 'verified' : 'exception',
+    physical_verified_at: auditAt,
+    physical_verified_by: actorId,
+    updated_by: actorId,
+  }).eq('id', row.asset_id)));
+  const assetUpdateError = assetUpdateResults.find((result) => result.error)?.error;
+  if (assetUpdateError) return dbFailJson(c, 'FIELD_ASSET_AUDIT_UPDATE_FAILED', assetUpdateError, 'อัปเดตสถานะตรวจนับของ Asset ไม่สำเร็จ');
+
+  await supabase.from('asset_movements').insert(rows.map((row) => ({
+    asset_id: row.asset_id,
+    action_type: 'Audit',
+    location: row.actual_location ?? row.expected_location ?? null,
+    status_label: FIELD_SCAN_RESULT_LABELS[row.result as keyof typeof FIELD_SCAN_RESULT_LABELS],
+    notes: row.note,
+    created_by: actorId,
+  })));
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'FIELD_VERIFICATION_SYNC', module: 'asset', targetTable: 'asset_verification_campaigns', targetId: campaignId, detail: { count: rows.length }, requestId: reqId });
+
+  return c.json(ok(reqId, {
+    savedCount: rows.length,
+    verifications: [...savedByAssetId.values()].map((row) => fieldVerificationPayload(row)),
+  }));
+});
+
+assetsRoute.post('/field/campaigns/:id/complete', requirePermission('asset.update'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id');
+  const { data, error } = await supabase.from('asset_verification_campaigns').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id).neq('status', 'completed').select('id, campaign_code, name, planned_date, location, status, completed_at, created_at').maybeSingle();
+  if (error) return dbFailJson(c, 'FIELD_CAMPAIGN_COMPLETE_FAILED', error, 'ปิด Campaign ตรวจนับไม่สำเร็จ');
+  if (!data) return c.json(fail(reqId, 'FIELD_CAMPAIGN_NOT_FOUND_OR_COMPLETED', 'ไม่พบ Campaign หรือ Campaign นี้ปิดไปแล้ว'), 409);
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'FIELD_CAMPAIGN_COMPLETE', module: 'asset', targetTable: 'asset_verification_campaigns', targetId: id, requestId: reqId });
   return c.json(ok(reqId, data));
 });
 
@@ -325,7 +754,8 @@ assetsRoute.get(
       .from('assets')
       .select(
         'id, asset_code, name, status, location, loan_date, loan_due_date, ' +
-          'owner:employees(id, employee_code, first_name_th, last_name_th, nickname), department:departments(id, name_th)',
+          'owner:employees(id, employee_code, first_name_th, last_name_th, nickname), department:departments(id, name_th), ' +
+          'loan:asset_loans!asset_loans_asset_id_fkey(id, status, borrowed_at, due_at, purpose, condition_before, companion_equipment, borrower_acknowledged, borrower_acknowledged_at, borrower_acknowledgement_name, approver_employee_id, return_outcome)',
         { count: 'exact' },
       )
       .eq('status', 'ใช้งานอยู่')
@@ -338,9 +768,64 @@ assetsRoute.get(
 
     const { data, count, error } = await activeQuery;
     if (error) return c.json(fail(reqId, 'ASSET_BORROW_LIST_FAILED', 'ดึงรายการกำลังยืม/ถือครองไม่สำเร็จ'), 400);
-    return c.json(ok(reqId, { summary, records: toPaginatedData(data ?? [], count, page, pageSize) }));
+    const normalized = (data ?? []).map((row) => {
+      const candidate = row as unknown as { loan?: Array<{ status?: string }> | { status?: string } | null };
+      const loans = Array.isArray(candidate.loan) ? candidate.loan : candidate.loan ? [candidate.loan] : [];
+      return { ...(row as unknown as Record<string, unknown>), loan: loans.find((loan) => loan.status === 'active') ?? null };
+    });
+    return c.json(ok(reqId, { summary, records: toPaginatedData(normalized, count, page, pageSize) }));
   },
 );
+
+assetsRoute.get('/loans/:id', requirePermission('asset.view'), async (c) => {
+  const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
+  const reqId = c.get('requestId');
+  const id = c.req.param('id')!;
+  const [{ data: loan, error }, { data: attachments, error: attachmentError }] = await Promise.all([
+    supabase.from('asset_loans').select(ASSET_LOAN_SELECT).eq('id', id).maybeSingle(),
+    admin.from('file_attachments')
+      .select('id, original_filename, mime_type, size_bytes, asset_loan_stage, created_at')
+      .eq('module', 'asset_loan').eq('target_table', 'asset_loans').eq('target_id', id)
+      .order('created_at', { ascending: true }).limit(100),
+  ]);
+  if (error) return dbFailJson(c, 'ASSET_LOAN_LOAD_FAILED', error);
+  if (attachmentError) return dbFailJson(c, 'ASSET_LOAN_ATTACHMENTS_LOAD_FAILED', attachmentError);
+  if (!loan) return c.json(fail(reqId, 'ASSET_LOAN_NOT_FOUND', 'ไม่พบรายการยืม Asset นี้'), 404);
+  return c.json(ok(reqId, { ...(loan as unknown as Record<string, unknown>), attachments: attachments ?? [] }));
+});
+
+assetsRoute.post('/loans', requirePermission('asset.transfer'), zValidator('json', assetLoanCreateSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const body = c.req.valid('json');
+  const { data, error } = await supabase.rpc('create_asset_loan', {
+    p_asset_id: body.assetId,
+    p_borrower_employee_id: body.borrowerEmployeeId,
+    p_approver_employee_id: body.approverEmployeeId,
+    p_borrowed_at: body.borrowedAt,
+    p_due_at: body.dueAt,
+    p_purpose: body.purpose,
+    p_condition_before: body.conditionBefore,
+    p_companion_equipment: body.companionEquipment,
+    p_reminder_days_before: body.reminderDaysBefore,
+    p_borrower_acknowledged: body.borrowerAcknowledged,
+    p_borrower_acknowledgement_name: body.borrowerAcknowledgementName,
+    p_department_id: body.departmentId ?? null,
+    p_location: body.location ?? null,
+  });
+  if (error) return assetLoanRpcError(c, 'ASSET_LOAN_CREATE_FAILED', error, 'ASSET_LOAN_CREATE_FAILED');
+  const loanId = readLoanId(data);
+  if (!loanId) return c.json(fail(reqId, 'ASSET_LOAN_CREATE_FAILED', 'ระบบไม่คืนรหัสรายการยืม กรุณาลองใหม่'), 500);
+  const { data: loan, error: loadError } = await supabase.from('asset_loans').select(ASSET_LOAN_SELECT).eq('id', loanId).single();
+  if (loadError) return dbFailJson(c, 'ASSET_LOAN_LOAD_FAILED', loadError);
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'CREATE_ASSET_LOAN', module: 'asset',
+    targetTable: 'asset_loans', targetId: loanId,
+    detail: { assetId: body.assetId, borrowerEmployeeId: body.borrowerEmployeeId, dueAt: body.dueAt }, requestId: reqId,
+  });
+  return c.json(ok(reqId, { loanId, loan }), 201);
+});
 
 /** ไม่รวม status/criticality เพราะเก็บเป็นข้อความไทย เรียงแล้วได้ลำดับตัวอักษร ไม่ใช่ลำดับที่สื่อความหมาย */
 const ASSET_SORT_COLUMNS = ['asset_code', 'name', 'location', 'purchase_date', 'warranty_expire', 'created_at'] as const;
@@ -392,8 +877,65 @@ assetsRoute.get('/', requirePermission('asset.view'), zValidator('query', listAs
   return c.json(ok(reqId, toPaginatedData(items, count, page, pageSize)));
 });
 
+assetsRoute.post('/:id/lifecycle', requirePermission('asset.update'), zValidator('json', transitionAssetLifecycleSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id')!;
+  const { toStatus: rawToStatus, notes, relatedTicketId, eventDate } = c.req.valid('json');
+  if (!isAssetLifecycleStatus(rawToStatus)) return c.json(fail(reqId, 'ASSET_LIFECYCLE_INVALID', 'ขั้นตอน Lifecycle ไม่ถูกต้อง'), 400);
+  const toStatus = rawToStatus as import('../services/assetLifecycle').AssetLifecycleStatus;
+  const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
+  if (currentError) return dbFailJson(c, 'ASSET_LIFECYCLE_LOAD_FAILED', currentError);
+  if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
+
+  const fromStatus = isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'ready';
+  if (toStatus === 'disposed' && !(await hasPermission(c, 'asset.dispose'))) {
+    return c.json(fail(reqId, 'PERMISSION_DENIED', 'ต้องมีสิทธิ์จำหน่ายทรัพย์สิน'), 403);
+  }
+  if (fromStatus === toStatus) {
+    return c.json(fail(reqId, 'ASSET_LIFECYCLE_NOOP', 'ทรัพย์สินอยู่ในขั้นตอนนี้อยู่แล้ว'), 409);
+  }
+  if (!canTransitionAssetLifecycle(fromStatus, toStatus)) {
+    const allowed = allowedAssetLifecycleTransitions(fromStatus).map((status) => ASSET_LIFECYCLE_LABELS[status]).join(', ') || 'ไม่มี';
+    return c.json(fail(reqId, 'ASSET_LIFECYCLE_INVALID', `ไม่สามารถเปลี่ยนจาก ${ASSET_LIFECYCLE_LABELS[fromStatus]} ไป ${ASSET_LIFECYCLE_LABELS[toStatus]} ได้ (ถัดไป: ${allowed})`), 409);
+  }
+
+  const patch: Record<string, unknown> = { lifecycle_status: toStatus, updated_by: actorId };
+  const legacyStatus = legacyStatusForLifecycle(toStatus);
+  if (legacyStatus) patch.status = legacyStatus;
+  if (toStatus === 'disposed') patch.disposed_at = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase.from('assets').update(patch).eq('id', id).select(ASSET_SELECT).single();
+  if (error) return dbFailJson(c, 'ASSET_LIFECYCLE_UPDATE_FAILED', error);
+
+  await recordLifecycleEvent(supabase, { assetId: id, fromStatus, toStatus, notes, relatedTicketId, performedBy: actorId, eventDate });
+  await recordMovement(supabase, { assetId: id, actionType: 'Status', statusLabel: ASSET_LIFECYCLE_LABELS[toStatus], notes: notes ?? null, createdBy: actorId });
+  const updatedRow = data as unknown as Record<string, unknown>;
+  const configurationItem = await ensureAssetConfigurationItem(c.env, {
+    id,
+    asset_code: String(updatedRow.asset_code ?? current.asset_code),
+    name: String(updatedRow.name ?? current.name),
+    asset_type: String(updatedRow.asset_type ?? current.asset_type),
+    owner_employee_id: (updatedRow.owner_employee_id as string | null | undefined) ?? current.owner_employee_id ?? null,
+    location: (updatedRow.location as string | null | undefined) ?? current.location ?? null,
+  });
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'LIFECYCLE_TRANSITION',
+    module: 'asset',
+    targetTable: 'assets',
+    targetId: id,
+    detail: { fromStatus, toStatus, relatedTicketId },
+    requestId: reqId,
+  });
+  const enriched = enrichAsset(data as never) as unknown as Record<string, unknown>;
+  return c.json(ok(reqId, { ...enriched, configurationItem }));
+});
+
 assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
   const supabase = c.get('supabase');
+  const admin = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const id = c.req.param('id')!;
 
@@ -401,7 +943,7 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
   if (error) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!asset) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
 
-  const [{ data: movements }, { data: pm }, { data: licenses }] = await Promise.all([
+  const [{ data: movements }, { data: pm }, { data: licenses }, { data: lifecycleEvents }, { data: children }, { data: configurationItem }, { data: attachments }] = await Promise.all([
     supabase
       .from('asset_movements')
       .select(
@@ -419,9 +961,13 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
       .order('plan_date', { ascending: false })
       .limit(50),
     supabase.from('software_licenses').select('id, software_name, license_type, expire_date, status').ilike('assigned_to', `%${id}%`),
+    supabase.from('asset_lifecycle_events').select('id, from_status, to_status, event_date, notes, related_ticket_id, performed_by').eq('asset_id', id).order('event_date', { ascending: false }).limit(100),
+    supabase.from('assets').select('id, asset_code, name, status').eq('parent_asset_id', id).order('asset_code', { ascending: true }).limit(100),
+    admin.from('configuration_items').select('id, ci_code, name, ci_type, environment, status').eq('asset_id', id).maybeSingle(),
+    admin.from('file_attachments').select('id, original_filename, mime_type, size_bytes, created_at').eq('module', 'asset').eq('target_table', 'assets').eq('target_id', id).order('created_at', { ascending: false }).limit(100),
   ]);
 
-  return c.json(ok(reqId, { asset: enrichAsset(asset as never), movements: movements ?? [], maintenance: pm ?? [], licenses: licenses ?? [] }));
+  return c.json(ok(reqId, { asset: enrichAsset(asset as never), movements: movements ?? [], maintenance: pm ?? [], licenses: licenses ?? [], lifecycleEvents: lifecycleEvents ?? [], children: children ?? [], configurationItem: configurationItem ?? null, attachments: attachments ?? [] }));
 });
 
 assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', createAssetSchema, zodValidationHook), async (c) => {
@@ -430,6 +976,42 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
   const actorId = c.get('userId');
   const body = c.req.valid('json');
 
+  const duplicateSerial = await findDuplicateAssetValue(supabase, 'serial_number', body.serialNumber);
+  if (duplicateSerial) {
+    return c.json(fail(reqId, 'DUPLICATE_SERIAL', `Serial ซ้ำกับ ${duplicateSerial.asset_code} — ${duplicateSerial.name}`), 409);
+  }
+  const duplicateBarcode = await findDuplicateAssetValue(supabase, 'barcode', body.barcode);
+  if (duplicateBarcode) {
+    return c.json(fail(reqId, 'DUPLICATE_BARCODE', `Barcode ซ้ำกับ ${duplicateBarcode.asset_code} — ${duplicateBarcode.name}`), 409);
+  }
+  if (body.parentAssetId) {
+    const { data: parent, error: parentError } = await supabase.from('assets').select('id, lifecycle_status').eq('id', body.parentAssetId).maybeSingle();
+    if (parentError) return dbFailJson(c, 'PARENT_ASSET_LOOKUP_FAILED', parentError);
+    if (!parent) return c.json(fail(reqId, 'PARENT_ASSET_NOT_FOUND', 'ไม่พบ Parent Asset ที่เลือก'), 400);
+  }
+
+  type AssetModelDefaults = {
+    asset_type: string;
+    brand: string | null;
+    model: string | null;
+    default_useful_life_years: number | null;
+    depreciation_method: 'straight_line' | 'declining_balance' | 'none';
+    default_cost_center: string | null;
+  };
+  let modelDefaults: AssetModelDefaults | null = null;
+  if (body.assetModelCatalogId) {
+    const { data: catalog, error: catalogError } = await supabase
+      .from('asset_model_catalog')
+      .select('asset_type, brand, model, default_useful_life_years, depreciation_method, default_cost_center, status')
+      .eq('id', body.assetModelCatalogId)
+      .maybeSingle();
+    if (catalogError) return dbFailJson(c, 'ASSET_MODEL_LOOKUP_FAILED', catalogError);
+    if (!catalog || catalog.status !== 'active') return c.json(fail(reqId, 'ASSET_MODEL_NOT_FOUND', 'ไม่พบ Asset Model Catalog ที่ใช้งานอยู่'), 400);
+    modelDefaults = catalog as AssetModelDefaults;
+  }
+
+  const resolvedAssetType = body.assetType ?? modelDefaults?.asset_type ?? 'อื่นๆ';
+  const initialLifecycle = body.lifecycleStatus ?? 'ordered';
   let categoryPrefix: string | null = null;
   if (body.categoryId) {
     const { data: category } = await supabase.from('asset_categories').select('code_prefix').eq('id', body.categoryId).maybeSingle();
@@ -442,18 +1024,27 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
     .insert({
       asset_code: assetCode,
       name: body.name,
-      asset_type: body.assetType ?? 'อื่นๆ',
+      asset_type: resolvedAssetType,
       category_id: body.categoryId ?? null,
-      brand: body.brand ?? null,
-      model: body.model ?? null,
+      brand: body.brand ?? modelDefaults?.brand ?? null,
+      model: body.model ?? modelDefaults?.model ?? null,
       serial_number: body.serialNumber ?? null,
       vendor_name: body.vendorName ?? null,
       vendor_id: body.vendorId || null,
       contract_id: body.contractId || null,
+      lifecycle_status: initialLifecycle,
+      purchase_order: body.purchaseOrder ?? null,
+      invoice_number: body.invoiceNumber ?? null,
       purchase_date: body.purchaseDate || null,
       warranty_expire: body.warrantyExpire || null,
       price: body.price ?? null,
-      useful_life_years: body.usefulLifeYears ?? null,
+      useful_life_years: body.usefulLifeYears ?? modelDefaults?.default_useful_life_years ?? null,
+      depreciation_method: body.depreciationMethod ?? modelDefaults?.depreciation_method ?? 'straight_line',
+      depreciation_rate: body.depreciationRate ?? null,
+      cost_center: body.costCenter ?? modelDefaults?.default_cost_center ?? null,
+      barcode: body.barcode ?? null,
+      asset_model_catalog_id: body.assetModelCatalogId || null,
+      parent_asset_id: body.parentAssetId || null,
       license_no: body.licenseNo ?? null,
       license_expiry: body.licenseExpiry || null,
       location: body.location ?? null,
@@ -462,7 +1053,7 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
       patch_status: body.patchStatus ?? null,
       patch_date: body.patchDate || null,
       criticality: body.criticality ?? null,
-      status: body.status ?? 'พร้อมใช้งาน',
+      status: body.status ?? legacyStatusForLifecycle(initialLifecycle) ?? 'พร้อมใช้งาน',
       qr_code_url: buildAssetQrUrl(assetCode, body.name),
       notes: body.notes ?? null,
       remark: body.remark ?? null,
@@ -481,6 +1072,15 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
     notes: 'ลงทะเบียนทรัพย์สิน',
     createdBy: actorId,
   });
+  await recordLifecycleEvent(supabase, { assetId: createdId, fromStatus: null, toStatus: initialLifecycle, performedBy: actorId });
+  const configurationItem = await ensureAssetConfigurationItem(c.env, {
+    id: createdId,
+    asset_code: assetCode,
+    name: body.name,
+    asset_type: resolvedAssetType,
+    owner_employee_id: body.ownerEmployeeId ?? null,
+    location: body.location ?? null,
+  });
   await writeAuditLog(c.env, {
     actorId,
     actorEmail: c.get('userEmail'),
@@ -492,7 +1092,8 @@ assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', crea
     requestId: reqId,
   });
 
-  return c.json(ok(reqId, enrichAsset(data as never)), 201);
+  const enriched = enrichAsset(data as never) as unknown as Record<string, unknown>;
+  return c.json(ok(reqId, { ...enriched, configurationItem }), 201);
 });
 
 /** แถวดิบของทรัพย์สินเท่าที่การส่งออกต้องใช้ */
@@ -670,6 +1271,15 @@ assetsRoute.patch(
         notes: notes ?? null,
         createdBy: actorId,
       });
+      if (patch.lifecycle_status === 'checked_out' || patch.lifecycle_status === 'returned') {
+        await recordLifecycleEvent(supabase, {
+          assetId: id,
+          fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'ready',
+          toStatus: patch.lifecycle_status,
+          notes: notes ?? null,
+          performedBy: actorId,
+        });
+      }
       await writeAuditLog(c.env, {
         actorId,
         actorEmail: c.get('userEmail'),
@@ -697,6 +1307,7 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
+
   const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
   if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
@@ -712,10 +1323,18 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
   if (body.vendorName !== undefined) patch.vendor_name = body.vendorName;
   if (body.vendorId !== undefined) patch.vendor_id = body.vendorId || null;
   if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
+  if (body.purchaseOrder !== undefined) patch.purchase_order = body.purchaseOrder;
+  if (body.invoiceNumber !== undefined) patch.invoice_number = body.invoiceNumber;
   if (body.purchaseDate !== undefined) patch.purchase_date = body.purchaseDate || null;
   if (body.warrantyExpire !== undefined) patch.warranty_expire = body.warrantyExpire || null;
   if (body.price !== undefined) patch.price = body.price;
   if (body.usefulLifeYears !== undefined) patch.useful_life_years = body.usefulLifeYears;
+  if (body.depreciationMethod !== undefined) patch.depreciation_method = body.depreciationMethod;
+  if (body.depreciationRate !== undefined) patch.depreciation_rate = body.depreciationRate;
+  if (body.costCenter !== undefined) patch.cost_center = body.costCenter;
+  if (body.barcode !== undefined) patch.barcode = body.barcode;
+  if (body.assetModelCatalogId !== undefined) patch.asset_model_catalog_id = body.assetModelCatalogId || null;
+  if (body.parentAssetId !== undefined) patch.parent_asset_id = body.parentAssetId || null;
   if (body.licenseNo !== undefined) patch.license_no = body.licenseNo;
   if (body.licenseExpiry !== undefined) patch.license_expiry = body.licenseExpiry || null;
   if (body.location !== undefined) patch.location = body.location;
@@ -727,6 +1346,21 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
   if (body.notes !== undefined) patch.notes = body.notes;
   if (body.remark !== undefined) patch.remark = body.remark;
 
+  if (body.lifecycleStatus && body.lifecycleStatus !== current.lifecycle_status) {
+    return c.json(fail(reqId, 'USE_LIFECYCLE_ENDPOINT', 'กรุณาเปลี่ยนขั้นตอนผ่าน Asset Lifecycle โดยตรง'), 409);
+  }
+  const duplicateSerial = await findDuplicateAssetValue(supabase, 'serial_number', body.serialNumber, id);
+  if (duplicateSerial) return c.json(fail(reqId, 'DUPLICATE_SERIAL', `Serial ซ้ำกับ ${duplicateSerial.asset_code} — ${duplicateSerial.name}`), 409);
+  const duplicateBarcode = await findDuplicateAssetValue(supabase, 'barcode', body.barcode, id);
+  if (duplicateBarcode) return c.json(fail(reqId, 'DUPLICATE_BARCODE', `Barcode ซ้ำกับ ${duplicateBarcode.asset_code} — ${duplicateBarcode.name}`), 409);
+  if (body.parentAssetId === id) return c.json(fail(reqId, 'PARENT_ASSET_INVALID', 'Asset ไม่สามารถเป็น Parent ของตัวเองได้'), 400);
+
+  if (body.parentAssetId) {
+    const { data: parent, error: parentError } = await supabase.from('assets').select('id').eq('id', body.parentAssetId).maybeSingle();
+    if (parentError) return dbFailJson(c, 'PARENT_ASSET_LOOKUP_FAILED', parentError);
+    if (!parent) return c.json(fail(reqId, 'PARENT_ASSET_NOT_FOUND', 'ไม่พบ Parent Asset ที่ระบุ'), 400);
+  }
+
   if (patch.asset_code || patch.name) {
     patch.qr_code_url = buildAssetQrUrl((patch.asset_code as string) || current.asset_code, (patch.name as string) || current.name);
   }
@@ -734,6 +1368,16 @@ assetsRoute.patch('/:id', requirePermission('asset.update'), zValidator('json', 
   const auditBefore = await loadAuditSnapshot(supabase, 'assets', id);
   const { data, error } = await supabase.from('assets').update(patch).eq('id', id).select(ASSET_SELECT).single();
   if (error) return dbFailJson(c, 'ASSET_UPDATE_FAILED', error);
+
+  const updatedRow = data as unknown as Record<string, unknown>;
+  await ensureAssetConfigurationItem(c.env, {
+    id,
+    asset_code: String(updatedRow.asset_code ?? current.asset_code),
+    name: String(updatedRow.name ?? current.name),
+    asset_type: String(updatedRow.asset_type ?? current.asset_type),
+    owner_employee_id: (updatedRow.owner_employee_id as string | null | undefined) ?? current.owner_employee_id ?? null,
+    location: (updatedRow.location as string | null | undefined) ?? current.location ?? null,
+  });
 
   await recordMovement(supabase, { assetId: id, actionType: 'Update', statusLabel: 'บันทึก', notes: 'แก้ไขข้อมูลทรัพย์สิน', createdBy: actorId });
   await writeAuditLog(c.env, {
@@ -799,11 +1443,18 @@ assetsRoute.post('/:id/retire', requirePermission('asset.dispose'), async (c) =>
 
   const { data, error } = await supabase
     .from('assets')
-    .update({ status: 'จำหน่าย/เลิกใช้', updated_by: actorId })
+    .update({ status: 'จำหน่าย/เลิกใช้', lifecycle_status: 'disposed', disposed_at: new Date().toISOString().slice(0, 10), updated_by: actorId })
     .eq('id', id)
     .select(ASSET_SELECT)
     .single();
   if (error) return dbFailJson(c, 'ASSET_RETIRE_FAILED', error);
+
+  await recordLifecycleEvent(supabase, {
+    assetId: id,
+    fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'ready',
+    toStatus: 'disposed',
+    performedBy: actorId,
+  });
 
   await recordMovement(supabase, { assetId: id, actionType: 'Retire', statusLabel: 'จำหน่าย/เลิกใช้', notes: 'จำหน่าย/เลิกใช้', createdBy: actorId });
   await writeAuditLog(c.env, {
@@ -904,6 +1555,9 @@ assetsRoute.post('/:id/verify', requirePermission('asset.update'), zValidator('j
     last_audit_date: new Date().toISOString().slice(0, 10),
     last_audit_by: actorId,
     audit_status: result,
+    physical_verification_status: result === ASSET_AUDIT_RESULTS[0] ? 'verified' : 'exception',
+    physical_verified_at: new Date().toISOString(),
+    physical_verified_by: actorId,
     updated_by: actorId,
   };
   if (result === 'พบ/ผิดตำแหน่ง' && location) patch.location = location;
@@ -974,6 +1628,13 @@ assetsRoute.post('/:id/assign', requirePermission('asset.transfer'), zValidator(
     notes: notes ?? null,
     createdBy: actorId,
   });
+  await recordLifecycleEvent(supabase, {
+    assetId: id,
+    fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'ready',
+    toStatus: 'checked_out',
+    notes: notes ?? null,
+    performedBy: actorId,
+  });
   await writeAuditLog(c.env, {
     actorId,
     actorEmail: c.get('userEmail'),
@@ -994,11 +1655,54 @@ assetsRoute.post('/:id/return', requirePermission('asset.transfer'), zValidator(
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id')!;
-  const { location, condition, notes } = c.req.valid('json');
+  const {
+    location, condition, notes, assetLoanId, returnedAt, returnReceiverEmployeeId,
+    conditionAfter, returnOutcome, damageNotes, returnNotes,
+  } = c.req.valid('json');
 
   const { data: current, error: currentError } = await loadAssetOr404(supabase, id);
   if (currentError) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!current) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
+
+  // New complete loan records are returned through the transaction-backed RPC.
+  // A lookup by asset keeps the existing /:id/return URL compatible for callers
+  // that do not yet know the loan id.
+  let loanId = assetLoanId ?? null;
+  if (!loanId) {
+    const { data: activeLoan, error: activeLoanError } = await supabase
+      .from('asset_loans').select('id').eq('asset_id', id).eq('status', 'active').maybeSingle();
+    if (activeLoanError) return dbFailJson(c, 'ASSET_LOAN_LOOKUP_FAILED', activeLoanError);
+    loanId = activeLoan?.id ?? null;
+  }
+  if (loanId) {
+    const { data: linkedLoan, error: linkedLoanError } = await supabase
+      .from('asset_loans').select('id').eq('id', loanId).eq('asset_id', id).maybeSingle();
+    if (linkedLoanError) return dbFailJson(c, 'ASSET_LOAN_LOOKUP_FAILED', linkedLoanError);
+    if (!linkedLoan) return c.json(fail(reqId, 'ASSET_LOAN_NOT_FOUND', 'ไม่พบรายการยืมของ Asset นี้'), 404);
+    if (!returnedAt || !returnReceiverEmployeeId || !conditionAfter || !returnOutcome) {
+      return c.json(fail(reqId, 'ASSET_LOAN_RETURN_DETAILS_REQUIRED', 'กรุณาระบุวันที่คืน ผู้รับคืน สภาพหลังคืน และผลการคืนให้ครบ'), 400);
+    }
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('return_asset_loan', {
+      p_loan_id: loanId,
+      p_returned_at: returnedAt,
+      p_return_receiver_employee_id: returnReceiverEmployeeId,
+      p_condition_after: conditionAfter,
+      p_return_outcome: returnOutcome,
+      p_damage_notes: damageNotes ?? null,
+      p_return_notes: returnNotes ?? notes ?? null,
+      p_location: location ?? null,
+    });
+    if (rpcError) return assetLoanRpcError(c, 'ASSET_LOAN_RETURN_FAILED', rpcError, 'ASSET_LOAN_RETURN_FAILED');
+    const { data: returnedAsset, error: returnedAssetError } = await loadAssetOr404(supabase, id);
+    if (returnedAssetError) return dbFailJson(c, 'ASSET_RETURN_FAILED', returnedAssetError);
+    await writeAuditLog(c.env, {
+      actorId, actorEmail: c.get('userEmail'), action: 'RETURN_ASSET_LOAN', module: 'asset',
+      targetTable: 'asset_loans', targetId: loanId,
+      detail: { assetId: id, returnOutcome, returnReceiverEmployeeId }, requestId: reqId,
+    });
+    const enrichedReturnedAsset = enrichAsset(returnedAsset as never) as unknown as Record<string, unknown>;
+    return c.json(ok(reqId, { ...enrichedReturnedAsset, loanId, returnResult: rpcResult }));
+  }
 
   const resolvedLocation = location || ASSET_DEFAULT_RETURN_LOCATION;
   const { data, error } = await supabase
@@ -1018,6 +1722,13 @@ assetsRoute.post('/:id/return', requirePermission('asset.transfer'), zValidator(
     condition: condition ?? null,
     notes: notes ?? null,
     createdBy: actorId,
+  });
+  await recordLifecycleEvent(supabase, {
+    assetId: id,
+    fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'checked_out',
+    toStatus: 'returned',
+    notes: notes ?? null,
+    performedBy: actorId,
   });
   await writeAuditLog(c.env, {
     actorId,
@@ -1050,6 +1761,7 @@ assetsRoute.post('/:id/transfer', requirePermission('asset.transfer'), zValidato
 
   const patch: Record<string, unknown> = { status: 'ใช้งานอยู่', loan_date: new Date().toISOString().slice(0, 10), updated_by: actorId };
   if (toEmployeeId) patch.owner_employee_id = toEmployeeId;
+  patch.lifecycle_status = 'checked_out';
   if (departmentId) patch.department_id = departmentId;
   if (location) patch.location = location;
   if (dueDate !== undefined) patch.loan_due_date = dueDate || null;
@@ -1068,6 +1780,13 @@ assetsRoute.post('/:id/transfer', requirePermission('asset.transfer'), zValidato
     dueDate: dueDate || null,
     notes: notes ?? null,
     createdBy: actorId,
+  });
+  await recordLifecycleEvent(supabase, {
+    assetId: id,
+    fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'ready',
+    toStatus: 'checked_out',
+    notes: notes ?? null,
+    performedBy: actorId,
   });
   await writeAuditLog(c.env, {
     actorId,
@@ -1111,11 +1830,12 @@ assetsRoute.post(
 
     const { data, error } = await supabase
       .from('assets')
-      .update({ status: 'ซ่อมบำรุง', loan_date: null, loan_due_date: null, updated_by: actorId })
+      .update({ status: 'ซ่อมบำรุง', lifecycle_status: 'repair', loan_date: null, loan_due_date: null, updated_by: actorId })
       .eq('id', id)
       .select(ASSET_SELECT)
       .single();
     if (error) return dbFailJson(c, 'ASSET_REPAIR_SEND_FAILED', error);
+    await recordLifecycleEvent(supabase, { assetId: id, fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'checked_out', toStatus: 'repair', notes, performedBy: actorId });
 
     await recordMovement(supabase, {
       assetId: id,
@@ -1162,11 +1882,12 @@ assetsRoute.post(
     const resolvedLocation = location || 'คลัง IT';
     const { data, error } = await supabase
       .from('assets')
-      .update({ status: 'พร้อมใช้งาน', location: resolvedLocation, updated_by: actorId })
+      .update({ status: 'พร้อมใช้งาน', lifecycle_status: 'returned', location: resolvedLocation, updated_by: actorId })
       .eq('id', id)
       .select(ASSET_SELECT)
       .single();
     if (error) return dbFailJson(c, 'ASSET_REPAIR_RETURN_FAILED', error);
+    await recordLifecycleEvent(supabase, { assetId: id, fromStatus: isAssetLifecycleStatus(current.lifecycle_status) ? current.lifecycle_status : 'repair', toStatus: 'returned', notes, performedBy: actorId });
 
     await recordMovement(supabase, {
       assetId: id,

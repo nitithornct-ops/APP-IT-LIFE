@@ -17,6 +17,13 @@ export const BREACH_RISK_LEVELS = ['ไม่มีความเสี่ย�
 export const REGULATORY_DECISIONS = ['Yes', 'No', 'Pending'] as const;
 export const REGULATORY_DESTINATIONS = ['PDPC', 'DATA_SUBJECT', 'NCSA', 'OTHER'] as const;
 export const REGULATORY_NOTIFICATION_STATUSES = ['รอแจ้ง', 'แจ้งแล้ว', 'ไม่ต้องแจ้ง', 'ยกเลิก'] as const;
+export const NOTIFICATION_CLOCK_TYPES = ['PDPA', 'CYBER'] as const;
+export const NOTIFICATION_CLOCK_STATUSES = ['RUNNING', 'NOTIFIED', 'NOT_REQUIRED', 'EXPIRED'] as const;
+export const NOTIFICATION_TIMELINE_EVENT_TYPES = [
+  'REPORT_RECEIVED', 'DPO_ACKNOWLEDGED', 'PDPA_CLOCK_STARTED', 'PDPA_NOTIFIED',
+  'CYBER_CLOCK_STARTED', 'CYBER_NOTIFIED', 'DATA_SUBJECT_NOTIFIED',
+  'OTHER_REGULATOR_NOTIFIED', 'NOTIFICATION_RECORDED', 'OTHER',
+] as const;
 
 const optionalUrl = z.union([z.string().trim().url('URL ไม่ถูกต้อง').max(1000), z.literal('')]).optional();
 const optionalDateTime = z.union([z.string().datetime({ offset: true }), z.literal('')]).optional();
@@ -35,7 +42,11 @@ export const createIncidentSchema = z.object({
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   category: z.enum(INCIDENT_CATEGORIES),
   affectedSystem: z.string().trim().max(150).optional(),
+  affectedCiId: z.string().uuid().nullable().optional(),
+  detectionSource: z.string().trim().max(150).optional(),
   containsPersonalData: z.boolean().optional(),
+  majorIncident: z.boolean().optional(),
+  incidentCommanderId: z.string().uuid().nullable().optional(),
   evidenceUrl: optionalUrl,
 });
 
@@ -44,6 +55,13 @@ export const updateIncidentSchema = z.object({
   likelihood: z.number().int().min(1).max(5).nullable().optional(),
   impact: z.number().int().min(1).max(5).nullable().optional(),
   assigneeId: z.string().uuid().nullable().optional(),
+  affectedCiId: z.string().uuid().nullable().optional(),
+  detectionSource: z.string().trim().max(150).optional(),
+  containment: z.string().trim().max(3000).optional(),
+  eradication: z.string().trim().max(3000).optional(),
+  recovery: z.string().trim().max(3000).optional(),
+  majorIncident: z.boolean().optional(),
+  incidentCommanderId: z.string().uuid().nullable().optional(),
   status: z.enum(INCIDENT_ACTIVE_STATUSES).optional(),
   notes: z.string().trim().max(2000).optional(),
   evidenceUrl: optionalUrl,
@@ -59,7 +77,36 @@ export const regulatoryAssessmentSchema = z.object({
   dataSubjectRequired: z.enum(REGULATORY_DECISIONS),
   ncsaRequired: z.enum(REGULATORY_DECISIONS),
   otherRegulatorRequired: z.enum(REGULATORY_DECISIONS),
+  pdpaDeadline: optionalDateTime,
+  cyberDeadline: optionalDateTime,
   assessment: z.string().trim().min(1, 'กรุณาระบุเหตุผลการประเมิน').max(3000),
+});
+
+export const notificationClockSchema = z.object({
+  clockType: z.enum(NOTIFICATION_CLOCK_TYPES),
+  startedAt: optionalDateTime,
+  deadlineAt: optionalDateTime,
+  status: z.enum(NOTIFICATION_CLOCK_STATUSES).default('RUNNING'),
+  notifiedAt: optionalDateTime,
+  referenceNo: z.string().trim().max(250).optional(),
+  notes: z.string().trim().max(1000).optional(),
+}).superRefine((data, ctx) => {
+  const startedAt = data.startedAt && data.startedAt !== '' ? Date.parse(data.startedAt) : null;
+  const deadlineAt = data.deadlineAt && data.deadlineAt !== '' ? Date.parse(data.deadlineAt) : null;
+  if (startedAt !== null && deadlineAt !== null && deadlineAt < startedAt) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deadlineAt'], message: 'กำหนดเวลาต้องไม่ก่อนเวลาเริ่มนับ' });
+  }
+  if (data.status === 'NOTIFIED' && !data.notifiedAt) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['notifiedAt'], message: 'กรุณาระบุเวลาที่แจ้งแล้ว' });
+  }
+});
+
+export const notificationTimelineEventSchema = z.object({
+  eventType: z.enum(NOTIFICATION_TIMELINE_EVENT_TYPES),
+  destination: z.enum(REGULATORY_DESTINATIONS).optional(),
+  occurredAt: optionalDateTime,
+  note: z.string().trim().min(1, 'กรุณาระบุรายละเอียดเหตุการณ์').max(2000),
+  referenceNo: z.string().trim().max(250).optional(),
 });
 
 export const createRegulatoryNotificationSchema = z

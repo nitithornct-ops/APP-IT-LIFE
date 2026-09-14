@@ -18,6 +18,13 @@ interface LineUserRow {
   link_status: 'Pending' | 'Active' | 'Suspended' | 'Unlinked' | null;
   friend_status: string | null;
   last_login_at: string | null;
+  last_used_at: string | null;
+  linked_at: string | null;
+  unlinked_at: string | null;
+  unlinked_reason: string | null;
+  link_state: 'Linked' | 'Unlinked';
+  line_user_id_masked: string | null;
+  consent_acknowledged: boolean;
 }
 
 interface LinkOption {
@@ -40,6 +47,11 @@ const FILTERS = [
   { value: 'Active', label: 'พร้อมใช้งาน' },
   { value: 'Suspended', label: 'ระงับ' },
 ];
+const LINK_STATE_FILTERS = [
+  { value: '', label: 'ทุกการเชื่อม' },
+  { value: 'Linked', label: 'Linked' },
+  { value: 'Unlinked', label: 'Unlinked' },
+];
 const selectClass = 'h-10 min-w-64 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 shadow-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40';
 
 function optionLabel(option: LinkOption) {
@@ -47,14 +59,25 @@ function optionLabel(option: LinkOption) {
 }
 
 /** เชื่อมบัญชี LINE กับผู้ใช้ระบบแบบหนึ่งต่อหนึ่ง เพื่อให้การแจ้งเตือนไปยังบุคคลที่ถูกต้อง */
+function formatDate(value: string | null | undefined) {
+  return value ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+}
+
 export function LineLinksPage() {
   const [status, setStatus] = useState('');
+  const [linkState, setLinkState] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
 
   const linksQuery = useQuery({
-    queryKey: ['admin', 'line-links', status],
-    queryFn: () => apiFetch<LineUserRow[]>(`/api/v1/line/admin/links${status ? `?status=${status}` : ''}`),
+    queryKey: ['admin', 'line-links', status, linkState],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (linkState) params.set('linkState', linkState);
+      const query = params.toString();
+      return apiFetch<LineUserRow[]>(`/api/v1/line/admin/links${query ? `?${query}` : ''}`);
+    },
   });
   const optionsQuery = useQuery({
     queryKey: ['admin', 'line-link-options'],
@@ -67,7 +90,7 @@ export function LineLinksPage() {
   });
   const updateLinkMutation = useMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string | null }) =>
-      apiFetch(`/api/v1/line/admin/links/${id}/link`, { method: 'PATCH', body: JSON.stringify({ userId }) }),
+      apiFetch(`/api/v1/line/admin/links/${id}/link`, { method: 'PATCH', body: JSON.stringify({ userId, consentAcknowledged: true }) }),
     onSuccess: (_data, variables) => {
       setSelectedUserIds((current) => {
         const next = { ...current };
@@ -98,6 +121,8 @@ export function LineLinksPage() {
       <Card>
         <CardHeader className="flex flex-wrap items-center gap-2">
           {FILTERS.map((filter) => <button key={filter.value} type="button" onClick={() => setStatus(filter.value)} className={`rounded-full px-3 py-1 text-xs font-medium ${status === filter.value ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>{filter.label}</button>)}
+          <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+          {LINK_STATE_FILTERS.map((filter) => <button key={filter.value} type="button" onClick={() => setLinkState(filter.value)} className={`rounded-full px-3 py-1 text-xs font-medium ${linkState === filter.value ? 'bg-primary-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>{filter.label}</button>)}
         </CardHeader>
         <CardBody>
           {loading && <div className="flex justify-center py-8" role="status"><Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" /></div>}
@@ -106,15 +131,16 @@ export function LineLinksPage() {
 
           {!loading && rows.length > 0 && (
             <div className="overflow-x-auto">
-              <DataTable className="w-full min-w-[1040px] text-left text-sm">
-                <thead className="text-xs uppercase text-slate-500 dark:text-slate-400"><tr><th className="px-2 py-2">ชื่อ LINE</th><th className="px-2 py-2">เชื่อมกับผู้ใช้ระบบ</th><th className="px-2 py-2">สถานะเพื่อน LINE OA</th><th className="px-2 py-2">เข้าใช้ล่าสุด</th><th className="px-2 py-2">สถานะ</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead>
+              <DataTable className="w-full min-w-[1280px] text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500 dark:text-slate-400"><tr><th className="px-2 py-2">ชื่อ LINE / ID</th><th className="px-2 py-2">สถานะการเชื่อม</th><th className="px-2 py-2">เชื่อมกับผู้ใช้ระบบ</th><th className="px-2 py-2">วันที่ Link</th><th className="px-2 py-2">ใช้ล่าสุด</th><th className="px-2 py-2">สถานะเพื่อน LINE OA</th><th className="px-2 py-2">สถานะบัญชี</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead>
                 <tbody>
                   {rows.map((row) => {
                     const selectedUserId = selectedUserIds[row.id] ?? row.linked_user_id ?? '';
                     const isSavingThisRow = updateLinkMutation.isPending && updateLinkMutation.variables?.id === row.id;
                     return (
                       <tr key={row.id} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="px-2 py-3 font-medium text-slate-800 dark:text-slate-200">{row.full_name ?? row.display_name ?? '-'}{row.full_name && row.display_name && row.full_name !== row.display_name && <p className="text-xs font-normal text-slate-400">LINE: {row.display_name}</p>}</td>
+                        <td className="px-2 py-3 font-medium text-slate-800 dark:text-slate-200">{row.full_name ?? row.display_name ?? '-'}{row.full_name && row.display_name && row.full_name !== row.display_name && <p className="text-xs font-normal text-slate-400">LINE: {row.display_name}</p>}<p className="mt-1 font-mono text-[11px] font-normal text-slate-400">ID: {row.line_user_id_masked ?? '-'}</p></td>
+                        <td className="px-2 py-3"><Badge variant={row.link_state === 'Linked' ? 'success' : 'secondary'}>{row.link_state}</Badge></td>
                         <td className="px-2 py-3">
                           <div className="flex items-center gap-2">
                             <select aria-label={`เลือกผู้ใช้สำหรับ ${row.full_name ?? row.display_name ?? 'บัญชี LINE'}`} className={selectClass} value={selectedUserId} disabled={isSavingThisRow} onChange={(event) => setSelectedUserIds((current) => ({ ...current, [row.id]: event.target.value }))}>
@@ -128,8 +154,9 @@ export function LineLinksPage() {
                             <Button size="sm" variant={selectedUserId ? 'primary' : 'outline'} isLoading={isSavingThisRow} disabled={selectedUserId === (row.linked_user_id ?? '')} onClick={() => updateLinkMutation.mutate({ id: row.id, userId: selectedUserId || null })}>{selectedUserId ? 'บันทึก' : 'ยกเลิกเชื่อม'}</Button>
                           </div>
                         </td>
+                        <td className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">{formatDate(row.linked_at)}</td>
+                        <td className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">{formatDate(row.last_used_at ?? row.last_login_at)}</td>
                         <td className="px-2 py-3 text-slate-600 dark:text-slate-300">{row.friend_status ?? '-'}</td>
-                        <td className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">{row.last_login_at ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.last_login_at)) : '-'}</td>
                         <td className="px-2 py-3"><Badge variant={row.link_status ? STATUS_VARIANT[row.link_status] : 'secondary'}>{row.link_status ? STATUS_LABEL[row.link_status] : '-'}</Badge></td>
                         <td className="px-2 py-3 text-right"><RowActions recordLabel={row.full_name ?? row.display_name ?? 'บัญชี LINE'} actions={[
                           { kind: 'custom', icon: RotateCcw, label: 'ยกเลิกระงับ', hidden: row.link_status !== 'Suspended', onClick: () => updateStatusMutation.mutate({ id: row.id, nextStatus: 'Active' }) },

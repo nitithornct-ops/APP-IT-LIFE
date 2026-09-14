@@ -7,20 +7,37 @@ const passwordSchema = z.string()
   .regex(/[A-Z]/, 'รหัสผ่านต้องมีตัวอักษรภาษาอังกฤษตัวใหญ่')
   .regex(/[0-9]/, 'รหัสผ่านต้องมีตัวเลข');
 
-export const vendorPortalLoginSchema = z.object({
+const usernameSchema = z.string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9._-]{3,32}$/, 'Username ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดล่าง และขีดกลาง ความยาว 3-32 ตัวอักษร');
+
+export const vendorPortalIdentitySchema = z.object({
   vendorCode: z.string().trim().min(1).max(80).transform((value) => value.toUpperCase()),
-  email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
-  password: z.string().min(1).max(128),
+  username: usernameSchema,
 });
 
 export const createVendorPortalAccountSchema = z.object({
+  username: usernameSchema,
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
   fullName: z.string().trim().min(1).max(160),
   position: z.string().trim().max(160).optional(),
-  password: passwordSchema,
+}).strict();
+
+export const completeVendorPortalInviteSchema = z.object({
+  mfaFactorId: z.string().uuid().optional(),
 });
 
 export const resetVendorPortalPasswordSchema = z.object({ password: passwordSchema });
+
+export const changeVendorPortalPasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: passwordSchema,
+}).superRefine((value, context) => {
+  if (value.currentPassword === value.newPassword) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['newPassword'], message: 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม' });
+  }
+});
 
 export const setVendorPortalAccountStatusSchema = z.object({
   status: z.enum(['Active', 'Inactive']),

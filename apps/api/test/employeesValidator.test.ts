@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bulkUpdateEmployeesSchema, createEmployeeSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../src/validators/employees';
+import { bulkUpdateEmployeesSchema, createEmployeeSchema, employeeLifecycleSchema, listEmployeesQuerySchema, updateEmployeeSchema } from '../src/validators/employees';
 
 const DEPARTMENT_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -20,6 +20,27 @@ describe('employee validators', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts personnel source fields and rejects inverted employment dates', () => {
+    expect(createEmployeeSchema.safeParse({
+      employeeCode: '690402',
+      firstNameTh: 'Source',
+      lastNameTh: 'Employee',
+      managerEmployeeId: DEPARTMENT_ID,
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      employmentStatus: 'contractor',
+      location: 'Bangkok',
+    }).success).toBe(true);
+
+    expect(createEmployeeSchema.safeParse({
+      employeeCode: '690403',
+      firstNameTh: 'Invalid',
+      lastNameTh: 'Dates',
+      startDate: '2026-12-31',
+      endDate: '2026-01-01',
+    }).success).toBe(false);
+  });
+
   it('accepts status, department and ownership list filters', () => {
     expect(listEmployeesQuerySchema.parse({
       page: '2',
@@ -34,6 +55,23 @@ describe('employee validators', () => {
     expect(listEmployeesQuerySchema.safeParse({ ownership: 'unknown' }).success).toBe(false);
     expect(listEmployeesQuerySchema.safeParse({ departmentId: 'not-uuid' }).success).toBe(false);
     expect(updateEmployeeSchema.safeParse({ status: 'inactive' }).success).toBe(true);
+  });
+});
+
+describe('employeeLifecycleSchema', () => {
+  it('accepts joiner, mover and leaver event shapes', () => {
+    for (const eventType of ['JOINER', 'MOVER', 'LEAVER'] as const) {
+      expect(employeeLifecycleSchema.safeParse({
+        eventType,
+        effectiveDate: '2026-09-01',
+        reason: `${eventType} test`,
+      }).success).toBe(true);
+    }
+  });
+
+  it('rejects an invalid event type and missing reason', () => {
+    expect(employeeLifecycleSchema.safeParse({ eventType: 'TRANSFER', effectiveDate: '2026-09-01', reason: 'test' }).success).toBe(false);
+    expect(employeeLifecycleSchema.safeParse({ eventType: 'LEAVER', effectiveDate: '2026-09-01', reason: '' }).success).toBe(false);
   });
 });
 

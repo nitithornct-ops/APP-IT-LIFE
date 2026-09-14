@@ -18,6 +18,7 @@ export interface LicenseCostRow {
   status: string;
   total_qty: number | string | null;
   used_qty: number | string | null;
+  assigned_qty?: number | string | null;
   unit_price: number | string | null;
 }
 
@@ -64,7 +65,9 @@ export function buildLicenseCostSummary(rows: LicenseCostRow[]): LicenseCostSumm
     }
 
     const total = toNumber(row.total_qty) ?? 0;
-    const used = toNumber(row.used_qty) ?? 0;
+    const used = row.assigned_qty === undefined || row.assigned_qty === null
+      ? toNumber(row.used_qty) ?? 0
+      : toNumber(row.assigned_qty) ?? 0;
     // ใช้เกินสิทธิ์ (used > total) เป็นคนละปัญหาและมีการ์ดของตัวเองอยู่แล้ว ที่นี่จึงไม่ให้ติดลบ
     const unusedSeats = Math.max(0, total - used);
 

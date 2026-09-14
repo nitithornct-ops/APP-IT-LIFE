@@ -28,7 +28,7 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
-import type { Department, Employee, PaginatedResult, Position } from '../../types/admin';
+import type { Department, Employee, EmployeeLifecycleAction, EmployeeLifecycleEvent, EmployeeOption, PaginatedResult, Position } from '../../types/admin';
 import {
   EMPLOYEE_ASSET_CATEGORIES,
   EMPLOYEE_ASSIGNMENT_STATUSES,
@@ -60,15 +60,28 @@ const employeeSchema = z.object({
   lastNameEn: z.string().trim().optional(),
   departmentId: z.string().optional(),
   positionId: z.string().optional(),
+  managerEmployeeId: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  employmentStatus: z.enum(['active', 'on_leave', 'terminated', 'contractor', 'retired']),
+  location: z.string().trim().optional(),
   usernameAd: z.string().trim().optional(),
   upn: z.string().trim().optional(),
   email: z.string().trim().email('รูปแบบ Email ไม่ถูกต้อง').optional().or(z.literal('')),
   notes: z.string().trim().optional(),
+}).superRefine((value, ctx) => {
+  if (value.startDate && value.endDate && value.endDate < value.startDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: 'End Date must not be before Start Date' });
+  }
 });
 
 type EmployeeFormValues = z.infer<typeof employeeSchema>;
 
 function employeeName(employee: Employee): string {
+  return [employee.prefix_th, employee.first_name_th, employee.last_name_th].filter(Boolean).join(' ');
+}
+
+function employeeOptionName(employee: EmployeeOption): string {
   return [employee.prefix_th, employee.first_name_th, employee.last_name_th].filter(Boolean).join(' ');
 }
 
@@ -84,7 +97,7 @@ function Label({ htmlFor, required, children }: { htmlFor: string; required?: bo
   );
 }
 
-function EmployeeEditor({ employee, departments, positions, onClose }: { employee?: Employee; departments: Department[]; positions: Position[]; onClose: () => void }) {
+function EmployeeEditor({ employee, departments, positions, employeeOptions, onClose }: { employee?: Employee; departments: Department[]; positions: Position[]; employeeOptions: EmployeeOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const formId = employee ? `employee-edit-${employee.id}` : 'employee-create';
@@ -102,6 +115,11 @@ function EmployeeEditor({ employee, departments, positions, onClose }: { employe
       lastNameEn: employee?.last_name_en ?? '',
       departmentId: employee?.department_id ?? '',
       positionId: employee?.position_id ?? '',
+      managerEmployeeId: employee?.manager_employee_id ?? '',
+      startDate: employee?.start_date ?? '',
+      endDate: employee?.end_date ?? '',
+      employmentStatus: employee?.employment_status ?? (employee?.status === 'inactive' ? 'terminated' : 'active'),
+      location: employee?.location ?? '',
       usernameAd: employee?.username_ad ?? '',
       upn: employee?.upn ?? '',
       email: employee?.email ?? '',
@@ -115,6 +133,10 @@ function EmployeeEditor({ employee, departments, positions, onClose }: { employe
         ...values,
         departmentId: values.departmentId || undefined,
         positionId: values.positionId || undefined,
+        managerEmployeeId: values.managerEmployeeId || null,
+        startDate: values.startDate || undefined,
+        endDate: values.endDate || undefined,
+        location: values.location || undefined,
         email: values.email || undefined,
       }),
     }),
@@ -136,6 +158,11 @@ function EmployeeEditor({ employee, departments, positions, onClose }: { employe
       footer={<><Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button><Button type="submit" form={formId} isLoading={mutation.isPending}>{employee ? 'บันทึกการแก้ไข' : 'เพิ่มพนักงาน'}</Button></>}
     >
       <form id={formId} onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-6" noValidate>
+        <div className="md:col-span-2"><Label htmlFor={`${formId}-employment-status`}>Employment Status</Label><select id={`${formId}-employment-status`} className={fieldClass} {...register('employmentStatus')}><option value="active">Active</option><option value="on_leave">On leave</option><option value="terminated">Terminated</option><option value="contractor">Contractor</option><option value="retired">Retired</option></select></div>
+        <div className="md:col-span-2"><Label htmlFor={`${formId}-start-date`}>Start Date</Label><input id={`${formId}-start-date`} type="date" className={fieldClass} {...register('startDate')} /></div>
+        <div className="md:col-span-2"><Label htmlFor={`${formId}-end-date`}>End Date</Label><input id={`${formId}-end-date`} type="date" className={fieldClass} {...register('endDate')} /></div>
+        <div className="md:col-span-3"><Label htmlFor={`${formId}-manager`}>Manager</Label><select id={`${formId}-manager`} className={fieldClass} {...register('managerEmployeeId')}><option value="">— ไม่ระบุ —</option>{employeeOptions.filter((item) => item.id !== employee?.id).map((item) => <option key={item.id} value={item.id}>{item.employee_code} · {employeeOptionName(item)}</option>)}</select></div>
+        <div className="md:col-span-3"><Label htmlFor={`${formId}-location`}>Location</Label><input id={`${formId}-location`} className={fieldClass} {...register('location')} placeholder="เช่น Bangkok HQ / Remote" /></div>
         <div className="md:col-span-2"><Label htmlFor={`${formId}-code`} required>รหัสพนักงาน</Label><input id={`${formId}-code`} data-testid="employee-code" className={fieldClass} {...register('employeeCode')} />{errors.employeeCode && <p className="mt-1 text-xs text-red-600">{errors.employeeCode.message}</p>}</div>
         <div className="md:col-span-2"><Label htmlFor={`${formId}-status`}>สถานะ</Label><select id={`${formId}-status`} className={fieldClass} {...register('status')}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
         <div className="md:col-span-2"><Label htmlFor={`${formId}-prefix`}>คำนำหน้า</Label><input id={`${formId}-prefix`} className={fieldClass} {...register('prefixTh')} /></div>
@@ -222,18 +249,19 @@ function AssignmentModal({ employee, assets, canUseAssetRegister, onClose }: { e
   );
 }
 
-function LifecycleModal({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+function LifecycleModal({ employee, employeeOptions, onClose }: { employee: Employee; employeeOptions: EmployeeOption[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [eventType, setEventType] = useState<'JOINER' | 'MOVER' | 'LEAVER'>('MOVER');
   const [effectiveDate, setEffectiveDate] = useState('');
   const [newDepartment, setNewDepartment] = useState('');
   const [newPosition, setNewPosition] = useState('');
+  const [managerEmployeeId, setManagerEmployeeId] = useState(employee.manager_employee_id ?? '');
   const [reason, setReason] = useState('');
   const [serverError, setServerError] = useState<string | null>(null);
   const formId = `lifecycle-${employee.id}`;
   const mutation = useMutation({
-    mutationFn: () => apiFetch('/api/v1/governance/operations/employee-lifecycle', { method: 'POST', body: JSON.stringify({ employeeId: employee.id, eventType, effectiveDate, newDepartment: newDepartment || undefined, newPosition: newPosition || undefined, reason }) }),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['admin', 'employees-overview'] }); onClose(); },
+    mutationFn: () => apiFetch(`/api/v1/employees/${employee.id}/lifecycle`, { method: 'POST', body: JSON.stringify({ eventType, effectiveDate, newDepartment: newDepartment || undefined, newPosition: newPosition || undefined, managerEmployeeId: managerEmployeeId || undefined, reason }) }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] }); void queryClient.invalidateQueries({ queryKey: ['admin', 'employees-overview'] }); onClose(); },
     onError: (error) => setServerError(error instanceof ApiError ? error.message : 'เริ่ม Workflow ไม่สำเร็จ'),
   });
   return (
@@ -243,15 +271,18 @@ function LifecycleModal({ employee, onClose }: { employee: Employee; onClose: ()
         <div><Label htmlFor={`${formId}-date`} required>วันที่มีผล</Label><input id={`${formId}-date`} type="date" className={fieldClass} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></div>
         {eventType === 'MOVER' && <><div><Label htmlFor={`${formId}-department`}>Department ใหม่</Label><input id={`${formId}-department`} className={fieldClass} value={newDepartment} onChange={(event) => setNewDepartment(event.target.value)} /></div><div><Label htmlFor={`${formId}-position`}>ตำแหน่งใหม่</Label><input id={`${formId}-position`} className={fieldClass} value={newPosition} onChange={(event) => setNewPosition(event.target.value)} /></div></>}
         <div className="sm:col-span-2"><Label htmlFor={`${formId}-reason`} required>เหตุผล/หมายเหตุ</Label><textarea id={`${formId}-reason`} rows={4} className={textareaClass} value={reason} onChange={(event) => setReason(event.target.value)} /></div>
-        {eventType === 'LEAVER' && <p className="text-xs text-slate-500 sm:col-span-2">LEAVER จะสร้าง checklist สำหรับระงับบัญชี สิทธิ์ และคืนทรัพย์สิน โดยยังไม่ระงับข้อมูลพนักงานทันที</p>}
+        {eventType === 'LEAVER' && <p className="text-xs text-slate-500 sm:col-span-2">LEAVER จะปิดบัญชี ระงับ Access คืน Asset และ reclaim License ให้อัตโนมัติ พร้อมบันทึกผลแยกตาม downstream module</p>}
         {serverError && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{serverError}</p>}
+        <div className="mt-1"><Label htmlFor={`${formId}-manager`}>Manager</Label><select id={`${formId}-manager`} className={fieldClass} value={managerEmployeeId} onChange={(event) => setManagerEmployeeId(event.target.value)}><option value="">— ไม่ระบุ —</option>{employeeOptions.filter((item) => item.id !== employee.id).map((item) => <option key={item.id} value={item.id}>{item.employee_code} · {employeeOptionName(item)}</option>)}</select></div>
       </form>
     </FormModal>
   );
 }
 
-function EmployeeDetailModal({ employee, departments, positions, onClose }: { employee: Employee; departments: Department[]; positions: Position[]; onClose: () => void }) {
+function EmployeeDetailModal({ employee, departments, positions, employeeOptions, onClose }: { employee: Employee; departments: Department[]; positions: Position[]; employeeOptions: EmployeeOption[]; onClose: () => void }) {
   const assignmentsQuery = useQuery({ queryKey: ['employee-assignments', employee.id], queryFn: () => apiFetch<PaginatedResult<EmployeeAssignment>>(`/api/v1/employee-assignments?page=1&pageSize=100&employeeId=${employee.id}`) });
+  const lifecycleQuery = useQuery({ queryKey: ['employee-lifecycle', employee.id], queryFn: () => apiFetch<{ events: EmployeeLifecycleEvent[]; actions: EmployeeLifecycleAction[] }>(`/api/v1/employees/${employee.id}/lifecycle`) });
+  const manager = employeeOptions.find((item) => item.id === employee.manager_employee_id);
   const department = departments.find((item) => item.id === employee.department_id)?.name_th ?? '—';
   const position = positions.find((item) => item.id === employee.position_id)?.name_th ?? '—';
   return (
@@ -260,6 +291,19 @@ function EmployeeDetailModal({ employee, departments, positions, onClose }: { em
         {[['รหัสพนักงาน', employee.employee_code], ['สถานะ', employee.status === 'active' ? 'Active' : 'Inactive'], ['Department', department], ['ตำแหน่ง', position], ['ชื่อภาษาอังกฤษ', englishName(employee) || '—'], ['Username_AD', employee.username_ad || '—'], ['UPN', employee.upn || '—'], ['Email', employee.email || '—']].map(([label, value]) => <div key={label}><p className="text-xs font-semibold text-slate-400">{label}</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{value}</p></div>)}
       </div>
       <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700"><h3 className="mb-3 font-bold text-slate-800 dark:text-slate-100">ทรัพย์สินและสิทธิ์ใช้งาน</h3>{assignmentsQuery.isLoading && <Loader2 className="h-5 w-5 animate-spin text-slate-400" />}{assignmentsQuery.data?.items.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีรายการ</p>}{assignmentsQuery.data?.items.map((item) => <div key={item.id} className="mb-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"><div><p className="font-semibold text-slate-700 dark:text-slate-200">{item.item_name}</p><p className="text-xs text-slate-400">{item.category} · {item.asset?.asset_code ?? item.asset_number ?? 'ไม่มีรหัส Asset'}</p></div><Badge variant={item.status === 'ครอบครอง' ? 'success' : item.status === 'ส่งซ่อม' ? 'warning' : 'secondary'}>{item.status}</Badge></div>)}</div>
+      <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-700 md:grid-cols-4">
+        <div><p className="text-xs font-semibold text-slate-400">Manager</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{manager ? `${manager.employee_code} · ${employeeOptionName(manager)}` : '—'}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Start Date</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{employee.start_date || '—'}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">End Date</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{employee.end_date || '—'}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Location</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{employee.location || '—'}</p></div>
+        <div><p className="text-xs font-semibold text-slate-400">Employment Status</p><p className="mt-1 font-medium text-slate-700 dark:text-slate-200">{employee.employment_status}</p></div>
+      </div>
+      <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
+        <h3 className="mb-3 font-bold text-slate-800 dark:text-slate-100">Lifecycle history</h3>
+        {lifecycleQuery.isLoading && <Loader2 className="h-5 w-5 animate-spin text-slate-400" />}
+        {!lifecycleQuery.isLoading && lifecycleQuery.data?.events.length === 0 && <p className="text-sm text-slate-400">ยังไม่มี Join / Move / Leave event</p>}
+        <div className="space-y-2">{lifecycleQuery.data?.events.map((event) => <div key={event.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-slate-700 dark:text-slate-200">{event.event_type} · {event.effective_date}</p><Badge variant={event.status === 'COMPLETED' ? 'success' : event.status === 'FAILED' ? 'danger' : 'warning'}>{event.status}</Badge></div><p className="mt-1 text-xs text-slate-500">{event.lifecycle_code} · {event.reason}</p><div className="mt-2 flex flex-wrap gap-1">{lifecycleQuery.data?.actions.filter((action) => action.lifecycle_event_id === event.id).map((action) => <Badge key={action.id} variant={action.status === 'COMPLETED' ? 'success' : action.status === 'FAILED' ? 'danger' : action.status === 'PENDING' ? 'warning' : 'secondary'}>{action.target_type}: {action.status} ({action.affected_count})</Badge>)}</div></div>)}</div>
+      </div>
     </Modal>
   );
 }
@@ -349,7 +393,7 @@ function BulkEmployeePanel({
 
         {action === 'status' && status === 'inactive' && holdersSelected > 0 && (
           <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200" role="alert">
-            {holdersSelected.toLocaleString('th-TH')} คนที่เลือกไว้ยังมีทรัพย์สินครอบครองอยู่ — ปิดสถานะแล้วรายการครอบครองจะยังค้างในทะเบียน ควรรับคืนของก่อน
+            {holdersSelected.toLocaleString('th-TH')} คนที่เลือกไว้ยังมีทรัพย์สินครอบครองอยู่ — เมื่อปิดสถานะ ระบบจะคืนรายการและ Asset ที่ยังค้างโดยอัตโนมัติ พร้อมบันทึกเป็น Offboarding batch
           </p>
         )}
       </div>
@@ -387,10 +431,12 @@ export function EmployeesPage() {
   const overviewQuery = useQuery({ queryKey: ['admin', 'employees-overview'], queryFn: () => apiFetch<EmployeesOverview>('/api/v1/employees/overview') });
   const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
   const positionsQuery = useQuery({ queryKey: ['admin', 'positions'], queryFn: () => apiFetch<Position[]>('/api/v1/positions') });
+  const employeeOptionsQuery = useQuery({ queryKey: ['admin', 'employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const canViewAssets = hasPermission('asset.view');
   const assetsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options'), enabled: canViewAssets });
   const departments = departmentsQuery.data ?? [];
   const positions = positionsQuery.data ?? [];
+  const employeeOptions = employeeOptionsQuery.data ?? [];
   const rows = employeesQuery.data?.items ?? [];
   const overview = overviewQuery.data;
 
@@ -422,6 +468,11 @@ export function EmployeesPage() {
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><span className="inline-flex items-center gap-2"><GitBranch className="h-4 w-4 text-primary-600" aria-hidden="true" />ข้อมูลจากโมดูลนี้จะรวมรายการใน Employee Assignments, เจ้าของใน Asset Register และผู้ใช้ใน Software Licenses ไว้ในหน้ารายคน</span></div>
+
+      <div className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 shadow-sm dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-100">
+        <p className="font-semibold">Employee directory is the personnel source of truth.</p>
+        <p className="mt-1 text-xs opacity-80">Accounts are optional links. Joiner, Mover and Leaver events update the employee record and create follow-up actions for User, Access, Asset, License and Approval Group.</p>
+      </div>
 
       <Card>
         <CardBody>
@@ -460,7 +511,7 @@ export function EmployeesPage() {
                       { kind: 'view', onClick: () => setViewingEmployee(employee) },
                       { kind: 'edit', onClick: () => setEditingEmployee(employee) },
                       { kind: 'custom', icon: Box, label: 'เพิ่มทรัพย์สิน', onClick: () => setAssetEmployee(employee) },
-                      { kind: 'custom', icon: GitBranch, label: 'Lifecycle', permission: 'operations.manage', onClick: () => setLifecycleEmployee(employee) },
+                      { kind: 'custom', icon: GitBranch, label: 'Lifecycle', permission: 'employee.manage', onClick: () => setLifecycleEmployee(employee) },
                       { kind: 'delete', permission: 'employee.manage', deleteEndpoint: `/api/v1/record-deletions/employees/${employee.id}` },
                       {
                         kind: 'cancel',
@@ -497,11 +548,11 @@ export function EmployeesPage() {
         />
       )}
 
-      {showCreate && <EmployeeEditor departments={departments} positions={positions} onClose={() => setShowCreate(false)} />}
-      {editingEmployee && <EmployeeEditor employee={editingEmployee} departments={departments} positions={positions} onClose={() => setEditingEmployee(null)} />}
-      {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} departments={departments} positions={positions} onClose={() => setViewingEmployee(null)} />}
+      {showCreate && <EmployeeEditor departments={departments} positions={positions} employeeOptions={employeeOptions} onClose={() => setShowCreate(false)} />}
+      {editingEmployee && <EmployeeEditor employee={editingEmployee} departments={departments} positions={positions} employeeOptions={employeeOptions} onClose={() => setEditingEmployee(null)} />}
+      {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} departments={departments} positions={positions} employeeOptions={employeeOptions} onClose={() => setViewingEmployee(null)} />}
       {assetEmployee && <AssignmentModal employee={assetEmployee} assets={assetsQuery.data ?? []} canUseAssetRegister={canViewAssets} onClose={() => setAssetEmployee(null)} />}
-      {lifecycleEmployee && <LifecycleModal employee={lifecycleEmployee} onClose={() => setLifecycleEmployee(null)} />}
+      {lifecycleEmployee && <LifecycleModal employee={lifecycleEmployee} employeeOptions={employeeOptions} onClose={() => setLifecycleEmployee(null)} />}
     </div>
   );
 }

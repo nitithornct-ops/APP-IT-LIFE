@@ -11,7 +11,8 @@ import { apiFetch, showToast } from '../services/apiClient';
 import type { MfaPolicyResponse } from '../stores/authContext';
 
 const loginSchema = z.object({
-  email: z.string().trim().email('กรุณากรอกอีเมลให้ถูกต้อง'),
+  // รับได้ทั้งอีเมลและชื่อผู้ใช้ เพราะบัญชีของพนักงานที่ไม่มีอีเมลองค์กรใช้ชื่อผู้ใช้เข้าระบบ
+  identifier: z.string().trim().min(1, 'กรุณากรอกอีเมลหรือชื่อผู้ใช้'),
   password: z.string().min(1, 'กรุณากรอกรหัสผ่าน'),
 });
 
@@ -22,11 +23,11 @@ type LoginForm = z.infer<typeof loginSchema>;
  * มิฉะนั้น POST นี้จะไปกระตุ้นข้อความเขียว "บันทึกข้อมูลเรียบร้อยแล้ว" ของ apiFetch
  * ซึ่งจะขึ้นแม้ตอน login ไม่ผ่าน ขัดกับข้อความแดงที่แสดงอยู่พร้อมกัน
  */
-async function recordLoginAttempt(email: string, success: boolean, failureReason?: string) {
+async function recordLoginAttempt(identifier: string, success: boolean, failureReason?: string) {
   try {
     await apiFetch(
       '/api/v1/auth/login-log',
-      { method: 'POST', body: JSON.stringify({ email, success, failureReason }) },
+      { method: 'POST', body: JSON.stringify({ identifier, success, failureReason }) },
       { silent: true },
     );
   } catch {
@@ -55,14 +56,24 @@ export function LoginPage() {
     }
 
     try {
+      // Supabase Auth รับได้แค่อีเมล จึงต้องถาม Backend ก่อนว่าสิ่งที่ผู้ใช้พิมพ์ผูกกับอีเมลใด
+      // (บัญชีที่ไม่มีอีเมลจริงถูกผูกกับอีเมลภายในที่ผู้ใช้ไม่รู้ค่า) เมื่อไม่พบบัญชี Backend จะคืนอีเมล
+      // ปลอมคงที่กลับมาโดยตั้งใจ เพื่อให้ผลลัพธ์ของ "ไม่มีบัญชีนี้" กับ "รหัสผ่านผิด" แยกกันไม่ออก
+      const { email } = await apiFetch<{ email: string }>(
+        '/api/v1/auth/resolve-login',
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier }) },
+        { silent: true },
+      );
+
       const { error } = await supabase.auth.signInWithPassword({
-        ...values,
+        email,
+        password: values.password,
         options: { captchaToken },
       });
 
       if (error) {
-        await recordLoginAttempt(values.email, false, error.message);
-        setErrorMessage('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+        await recordLoginAttempt(values.identifier, false, error.message);
+        setErrorMessage('อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
         return;
       }
 
@@ -73,11 +84,13 @@ export function LoginPage() {
         return;
       }
 
-      await recordLoginAttempt(values.email, true);
+      await recordLoginAttempt(values.identifier, true);
       showToast('success', 'เข้าสู่ระบบสำเร็จ');
       navigate(redirectTo, { replace: true });
     } catch {
-      setErrorMessage('ตรวจสอบนโยบายความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      // ครอบทั้งการค้นหาบัญชีและการตรวจนโยบาย MFA — ทั้งสองอย่างเป็นการเรียก API ที่ล้มได้
+      // ห้าม fallback ไปเดาว่าสิ่งที่พิมพ์คืออีเมลแล้ว login ต่อ เพราะบัญชีชื่อผู้ใช้จะได้พฤติกรรมคนละแบบ
+      setErrorMessage('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();
     }
@@ -92,17 +105,18 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
           <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              อีเมล
+            <label htmlFor="identifier" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              อีเมล หรือ ชื่อผู้ใช้
             </label>
             <input
-              id="email"
-              type="email"
+              id="identifier"
+              // ไม่ใช้ type="email" แล้ว เพราะช่องนี้รับชื่อผู้ใช้ที่ไม่มี @ ได้ด้วย
+              type="text"
               autoComplete="username"
               className="public-field w-full px-3 py-2 text-sm"
-              {...register('email')}
+              {...register('identifier')}
             />
-            {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
+            {errors.identifier && <p className="mt-1 text-xs text-red-600">{errors.identifier.message}</p>}
           </div>
 
           <div>
@@ -141,12 +155,6 @@ export function LoginPage() {
             ลืมรหัสผ่าน?
           </Link>
         </form>
-
-        <div className="mt-4 border-t border-slate-200 pt-4 text-center dark:border-slate-700">
-          <Link to="/report" className="public-link text-sm">
-            แจ้งปัญหา IT โดยไม่ต้องเข้าสู่ระบบ →
-          </Link>
-        </div>
       </div>
     </main>
   );

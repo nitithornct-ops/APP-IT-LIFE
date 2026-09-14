@@ -7,6 +7,7 @@ import { hasPermission, requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
 import {
   buildSkillMatrix,
+  buildTechnicianRecommendations,
   buildTechnicianSkillProfile,
   SKILL_LEVELS,
   type SkillMatrixResponse,
@@ -16,7 +17,10 @@ import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
-import { saveTechnicianSkillsSchema } from '../validators/technicianSkills';
+import {
+  saveTechnicianSkillsSchema,
+  technicianSkillRecommendationQuerySchema,
+} from '../validators/technicianSkills';
 
 /**
  * Technician Skill Matrix — ระดับทักษะของเจ้าหน้าที่ต่อหมวดหมู่ Ticket
@@ -28,7 +32,7 @@ import { saveTechnicianSkillsSchema } from '../validators/technicianSkills';
 export const technicianSkillsRoute = new Hono<AppEnv>();
 technicianSkillsRoute.use('*', requireAuth);
 
-const SKILL_SELECT = 'technician_id, category_id, level, note, assessed_at';
+const SKILL_SELECT = 'technician_id, category_id, level, note, assessed_at, skill, certification, certification_expiry, product_technology, location, availability';
 const OPEN_TICKET_SELECT = 'assignee_id, category_id, status, due_at';
 const CLOSED_TICKET_SELECT = 'assignee_id, category_id, status, due_at, resolved_at, closed_at, rating';
 /** สถานะปลายทางของ Ticket — ชุดเดียวกับที่ dashboard/analytics ใช้กรอง "งานที่ยังไม่ปิด" */
@@ -63,22 +67,23 @@ async function loadCategories(supabase: SupabaseClient) {
  * จากหน้าจอโดยที่ข้อมูลยังอยู่ในฐานข้อมูล
  *
  * ใช้ Admin client เพราะ RLS ของ profiles ให้เห็นเฉพาะแถวตนเอง (เว้นแต่มี user.manage) แต่ผู้ที่มี
- * technician_skill.view ไม่จำเป็นต้องมีสิทธิ์จัดการบัญชีผู้ใช้ — สิทธิ์ถูกตรวจที่ middleware แล้ว
+ * technician_skill.view ไม่จำเป็นต้องมีสิทธิ์จัดการบัญชีผู้ใช้ — สิทธิ์ของบทบาทที่มี ticket.update
+ * หรือ ticket.assign ถูกตรวจจากฐานข้อมูลแล้ว
  */
 async function loadTechnicianRoster(
   admin: SupabaseClient,
   assessedTechnicianIds: string[],
 ): Promise<{ rows: Row[]; error?: unknown }> {
-  const permissionResult = await admin.from('permissions').select('id').eq('key', 'ticket.update').maybeSingle();
+  const permissionResult = await admin.from('permissions').select('id').in('key', ['ticket.update', 'ticket.assign']);
   if (permissionResult.error) return { rows: [], error: permissionResult.error };
 
   const roleUserIds: string[] = [];
-  const permissionId = permissionResult.data?.id;
-  if (permissionId) {
+  const permissionIds = (permissionResult.data ?? []).map((row: Row) => String(row.id));
+  if (permissionIds.length) {
     const rolePermissionResult = await admin
       .from('role_permissions')
       .select('role_id')
-      .eq('permission_id', permissionId)
+      .in('permission_id', permissionIds)
       .eq('effect', 'allow');
     if (rolePermissionResult.error) return { rows: [], error: rolePermissionResult.error };
 
@@ -192,6 +197,66 @@ technicianSkillsRoute.get('/matrix', requirePermission('technician_skill.view'),
   return c.json(ok(reqId, payload));
 });
 
+/**
+ * แนะนำผู้รับงานสำหรับ Ticket หนึ่งใบ — เป็นเพียง ranking ให้ผู้มอบหมายตัดสินใจเอง
+ * workload ต้องมาจากข้อมูลทั้งองค์กรจริง จึงไม่อนุญาตให้เรียก endpoint นี้ถ้าไม่มี ticket.view_all
+ */
+technicianSkillsRoute.get(
+  '/recommendations',
+  zValidator('query', technicianSkillRecommendationQuerySchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const canAssign = await hasPermission(c, 'ticket.assign');
+    const canViewSkills = await hasPermission(c, 'technician_skill.view');
+    if (!canAssign && !canViewSkills) {
+      return c.json(fail(reqId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดูคำแนะนำผู้รับงาน'), 403);
+    }
+    if (!await hasPermission(c, 'ticket.view_all')) {
+      return c.json(fail(reqId, 'WORKLOAD_PERMISSION_REQUIRED', 'ต้องมีสิทธิ์ดู Ticket ทั้งองค์กรเพื่อให้คำแนะนำคำนึงถึงภาระงานได้'), 403);
+    }
+
+    const query = c.req.valid('query');
+    const admin = createAdminClient(c.env);
+    const supabase = c.get('supabase');
+    const categoryResult = await admin
+      .from('ticket_categories')
+      .select('id, name')
+      .eq('id', query.categoryId)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (categoryResult.error) return dbFailJson(c, 'TICKET_CATEGORY_LOAD_FAILED', categoryResult.error, 'ตรวจสอบหมวดหมู่ Ticket ไม่สำเร็จ');
+    if (!categoryResult.data) return c.json(fail(reqId, 'TICKET_CATEGORY_INVALID', 'ไม่พบหมวดหมู่ Ticket ที่เปิดใช้งาน'), 400);
+
+    const [skillsResult, openTicketsResult, roster] = await Promise.all([
+      admin.from('technician_skills').select(SKILL_SELECT).limit(MAX_ROSTER_SIZE * 50),
+      loadOpenTickets(supabase),
+      loadTechnicianRoster(admin, []),
+    ]);
+    if (skillsResult.error) return dbFailJson(c, 'TECHNICIAN_SKILLS_LOAD_FAILED', skillsResult.error, 'โหลดทักษะเจ้าหน้าที่ไม่สำเร็จ');
+    if (openTicketsResult.error) return dbFailJson(c, 'TECHNICIAN_WORKLOAD_LOAD_FAILED', openTicketsResult.error, 'โหลดภาระงานไม่สำเร็จ');
+    if (roster.error) return dbFailJson(c, 'TECHNICIAN_ROSTER_LOAD_FAILED', roster.error, 'โหลดรายชื่อเจ้าหน้าที่ไม่สำเร็จ');
+
+    const now = new Date();
+    const ranked = buildTechnicianRecommendations({
+      categoryId: query.categoryId,
+      location: query.location,
+      productTechnology: query.productTechnology,
+      minLevel: query.minLevel,
+      limit: query.limit,
+      technicians: roster.rows,
+      skills: (skillsResult.data ?? []) as Row[],
+      openTickets: (openTicketsResult.data ?? []) as Row[],
+      now,
+    });
+    return c.json(ok(reqId, {
+      ...ranked,
+      category: categoryResult.data,
+      workloadSampled: (openTicketsResult.count ?? 0) > (openTicketsResult.data?.length ?? 0),
+      generatedAt: now.toISOString(),
+    }));
+  },
+);
+
 interface ProfilePayload extends TechnicianSkillProfile {
   levels: typeof SKILL_LEVELS;
   workloadAvailable: boolean;
@@ -297,6 +362,12 @@ technicianSkillsRoute.put(
         category_id: skill.categoryId,
         level: skill.level,
         note: skill.note?.trim() ? skill.note.trim() : null,
+        skill: skill.skill?.trim() ? skill.skill.trim() : null,
+        certification: skill.certification?.trim() ? skill.certification.trim() : null,
+        certification_expiry: skill.certificationExpiry || null,
+        product_technology: skill.productTechnology?.trim() ? skill.productTechnology.trim() : null,
+        location: skill.location?.trim() ? skill.location.trim() : null,
+        availability: skill.availability ?? 'available',
         assessed_at: assessedAt,
         assessed_by: actorId ?? null,
         created_by: actorId ?? null,

@@ -21,7 +21,9 @@ import {
   CI_CRITICALITIES,
   CI_DATA_CLASSIFICATIONS,
   CI_ENVIRONMENTS,
+  CI_LIFECYCLE_STAGES,
   CI_NODE_TYPES_ENABLED,
+  CI_OWNER_REVIEW_STATUSES,
   CI_STATUSES,
   CI_TYPES,
   RELATIONSHIP_DIRECTIONS,
@@ -49,6 +51,7 @@ const editSchema = z.object({
   ciType: z.enum(CI_TYPES),
   environment: z.enum(CI_ENVIRONMENTS),
   businessService: z.string().trim().optional(),
+  applicationService: z.string().trim().optional(),
   ownerEmployeeId: z.string().min(1, 'กรุณาเลือกเจ้าของ CI'),
   administratorEmployeeId: z.string().min(1, 'กรุณาเลือกผู้ดูแล CI'),
   criticality: z.enum(CI_CRITICALITIES),
@@ -59,12 +62,16 @@ const editSchema = z.object({
   contractId: z.string().optional(),
   assetId: z.string().optional(),
   cloudRef: z.string().trim().optional(),
+  sourceOfTruth: z.string().trim().optional(),
+  discoverySource: z.string().trim().optional(),
   dataClassification: z.enum(CI_DATA_CLASSIFICATIONS),
   rpoHours: z.coerce.number().nonnegative().optional().or(z.literal('')),
   rtoHours: z.coerce.number().nonnegative().optional().or(z.literal('')),
   backupRequired: z.boolean().optional(),
   backupReference: z.string().trim().optional(),
   location: z.string().trim().optional(),
+  lifecycle: z.enum(CI_LIFECYCLE_STAGES),
+  autoReconciliation: z.boolean(),
   notes: z.string().trim().optional(),
 });
 type EditForm = z.infer<typeof editSchema>;
@@ -83,6 +90,7 @@ function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOp
       ciType: ci.ci_type,
       environment: ci.environment,
       businessService: ci.business_service ?? '',
+      applicationService: ci.application_service ?? '',
       ownerEmployeeId: ci.owner_employee_id ?? '',
       administratorEmployeeId: ci.administrator_employee_id ?? '',
       criticality: ci.criticality,
@@ -93,12 +101,16 @@ function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOp
       contractId: ci.contract_id ?? '',
       assetId: ci.asset_id ?? '',
       cloudRef: ci.cloud_ref ?? '',
+      sourceOfTruth: ci.source_of_truth ?? '',
+      discoverySource: ci.discovery_source ?? '',
       dataClassification: ci.data_classification,
       rpoHours: ci.rpo_hours ?? '',
       rtoHours: ci.rto_hours ?? '',
       backupRequired: ci.backup_required,
       backupReference: ci.backup_reference ?? '',
       location: ci.location ?? '',
+      lifecycle: ci.lifecycle,
+      autoReconciliation: ci.auto_reconciliation,
       notes: ci.notes ?? '',
     },
   });
@@ -119,6 +131,28 @@ function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOp
 
   return (
     <form onSubmit={onSubmit} data-testid="ci-edit-form" className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40" noValidate>
+      <div>
+        <label htmlFor="ed-application-service" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Application Service</label>
+        <input id="ed-application-service" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('applicationService')} />
+      </div>
+      <div>
+        <label htmlFor="ed-lifecycle" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Lifecycle</label>
+        <select id="ed-lifecycle" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('lifecycle')}>
+          {CI_LIFECYCLE_STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+        </select>
+      </div>
+      <div className="flex items-end gap-2 pb-1.5">
+        <input id="ed-auto-reconciliation" type="checkbox" className="h-4 w-4" {...register('autoReconciliation')} />
+        <label htmlFor="ed-auto-reconciliation" className="text-xs font-semibold text-slate-600 dark:text-slate-300">Auto Reconciliation</label>
+      </div>
+      <div className="sm:col-span-2">
+        <label htmlFor="ed-source-of-truth" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Source of Truth</label>
+        <input id="ed-source-of-truth" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('sourceOfTruth')} />
+      </div>
+      <div>
+        <label htmlFor="ed-discovery-source" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Discovery Source</label>
+        <input id="ed-discovery-source" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('discoverySource')} />
+      </div>
       <div className="sm:col-span-2">
         <label htmlFor="ed-name" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อ CI</label>
         <input id="ed-name" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('name')} />
@@ -129,6 +163,10 @@ function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOp
         <select id="ed-type" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('ciType')}>
           {CI_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
+      </div>
+      <div>
+        <label htmlFor="ed-business-service" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Business Service</label>
+        <input id="ed-business-service" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('businessService')} />
       </div>
 
       <div>
@@ -345,6 +383,8 @@ export function ConfigurationItemDetailPage() {
   const [showAddRel, setShowAddRel] = useState(false);
   const [statusValue, setStatusValue] = useState('');
   const [statusReason, setStatusReason] = useState('');
+  const [ownerReviewStatus, setOwnerReviewStatus] = useState('');
+  const [ownerReviewNote, setOwnerReviewNote] = useState('');
 
   const detailQuery = useQuery({
     queryKey: ['cmdb', 'item', id],
@@ -359,6 +399,16 @@ export function ConfigurationItemDetailPage() {
 
   const statusMutation = useCiMutation(id ?? '', '/status');
   const verifyMutation = useCiMutation(id ?? '', '/verify');
+  const ownerReviewMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/cmdb/items/${id}/owner-review`, { method: 'POST', body: JSON.stringify({ status: ownerReviewStatus, note: ownerReviewNote || undefined }) }),
+    onSuccess: () => {
+      setOwnerReviewStatus('');
+      setOwnerReviewNote('');
+      void queryClient.invalidateQueries({ queryKey: ['cmdb', 'item', id] });
+      void queryClient.invalidateQueries({ queryKey: ['cmdb', 'items'] });
+      void queryClient.invalidateQueries({ queryKey: ['cmdb', 'data-quality'] });
+    },
+  });
 
   const relVerifyMutation = useMutation({
     mutationFn: (relId: string) => apiFetch(`/api/v1/cmdb/relationships/${relId}/verify`, { method: 'POST', body: '{}' }),
@@ -467,6 +517,32 @@ export function ConfigurationItemDetailPage() {
           </CardBody>
         </Card>
       </div>
+
+      <Card data-testid="ci-governance-card">
+        <CardHeader>CMDB Governance</CardHeader>
+        <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Info label="Application Service" value={ci.application_service ?? '—'} />
+          <Info label="Source of Truth" value={ci.source_of_truth ?? '—'} />
+          <Info label="Discovery Source" value={ci.discovery_source ?? '—'} />
+          <Info label="Lifecycle" value={ci.lifecycle} />
+          <Info label="Data Quality Score" value={`${ci.data_quality_score}/100`} />
+          <Info label="Auto Reconciliation" value={ci.auto_reconciliation ? 'Enabled' : 'Disabled'} />
+          <Info label="CI Owner Review" value={ci.ci_owner_review_status} />
+          <Info label="Owner Review At" value={ci.ci_owner_review_at ? formatThaiDate(ci.ci_owner_review_at, 'd MMM yyyy HH:mm') : '—'} />
+          <RequirePermission permission="cmdb.manage">
+            <div className="sm:col-span-2 lg:col-span-4">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select value={ownerReviewStatus} onChange={(e) => setOwnerReviewStatus(e.target.value)} data-testid="ci-owner-review-status" className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900">
+                  <option value="">Update owner review...</option>
+                  {CI_OWNER_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+                <input value={ownerReviewNote} onChange={(e) => setOwnerReviewNote(e.target.value)} maxLength={500} placeholder="Review note (optional)" data-testid="ci-owner-review-note" className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
+                <Button size="sm" variant="outline" disabled={!ownerReviewStatus} isLoading={ownerReviewMutation.isPending} data-testid="ci-owner-review-submit" onClick={() => ownerReviewMutation.mutate()}>Save Owner Review</Button>
+              </div>
+            </div>
+          </RequirePermission>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader className="flex items-center justify-between">

@@ -53,19 +53,24 @@ const DOMAINS: Record<string, DomainConfig> = {
       { entity: 'obligations', table: 'compliance_obligations', code: 'obligation_code', prefix: 'OBL', title: 'requirement', status: 'status', owner: 'control_owner', due: 'due_date' },
       { entity: 'assessments', table: 'compliance_assessments', code: 'assessment_code', prefix: 'ASM', title: 'control_description', status: 'result', due: 'next_review_due' },
       { entity: 'corrective-actions', table: 'compliance_corrective_actions', code: 'action_code', prefix: 'CAP', title: 'title', status: 'status', owner: 'owner', due: 'due_date' },
+      { entity: 'annual-attestations', table: 'governance_annual_attestations', code: 'attestation_code', prefix: 'ATT', title: 'scope', status: 'status', owner: 'attestor_email' },
     ],
   },
   privacy: {
-    view: 'privacy.view', manage: 'privacy.manage',
+    view: 'privacy.view', manage: 'privacy.manage', act: 'privacy.manage',
     entities: [
       { entity: 'ropa', table: 'privacy_ropa', code: 'ropa_code', prefix: 'ROPA', title: 'process_name', status: 'status', owner: 'data_owner', due: 'review_date' },
       { entity: 'consents', table: 'privacy_consents', code: 'consent_code', prefix: 'CNS', title: 'purpose', status: 'status' },
       { entity: 'dsr', table: 'privacy_dsr', code: 'request_code', prefix: 'DSR', title: 'request_type', status: 'status', owner: 'owner', due: 'due_date' },
+      { entity: 'dpia', table: 'privacy_dpia_assessments', code: 'dpia_code', prefix: 'DPIA', title: 'processing_description', status: 'status', owner: 'owner', due: 'due_date' },
     ],
   },
   risk: {
-    view: 'risk.view', manage: 'risk.manage',
-    entities: [{ entity: 'risks', table: 'governance_risks', code: 'risk_code', prefix: 'RSK', title: 'title', status: 'status', owner: 'owner', due: 'due_date', score: 'risk_score' }],
+    view: 'risk.view', manage: 'risk.manage', act: 'risk.accept', approve: 'risk.accept',
+    entities: [
+      { entity: 'risks', table: 'governance_risks', code: 'risk_code', prefix: 'RSK', title: 'title', status: 'status', owner: 'owner', due: 'due_date', score: 'risk_score' },
+      { entity: 'risk-acceptances', table: 'governance_risk_acceptances', code: 'acceptance_code', prefix: 'RAK', title: 'rationale', status: 'status', owner: 'requested_by_email', due: 'expires_at' },
+    ],
   },
   'ai-cloud': {
     view: 'ai_cloud.view', manage: 'ai_cloud.manage',
@@ -83,10 +88,11 @@ const DOMAINS: Record<string, DomainConfig> = {
     ],
   },
   evidence: {
-    view: 'evidence.view', act: 'evidence.export',
+    view: 'evidence.view', manage: 'evidence.manage', act: 'audit_management.verify',
     entities: [
       { entity: 'controls', table: 'governance_controls', code: 'control_code', prefix: 'CTL', title: 'title', status: 'status', owner: 'owner', due: 'next_review_date' },
       { entity: 'evidence-items', table: 'governance_evidence_items', code: 'evidence_code', prefix: 'EVD', title: 'title', status: 'status', owner: 'owner', due: 'expires_at' },
+      { entity: 'control-tests', table: 'governance_control_tests', code: 'test_code', prefix: 'TST', title: 'test_procedure', status: 'status', owner: 'tester_email', due: 'test_date' },
     ],
   },
   'audit-management': {
@@ -104,6 +110,7 @@ const DOMAINS: Record<string, DomainConfig> = {
     view: 'operations.view', manage: 'operations.manage',
     entities: [
       { entity: 'employee-lifecycle', table: 'employee_lifecycle_events', code: 'lifecycle_code', prefix: 'JML', title: 'employee_name', status: 'status', owner: 'requested_by_email', due: 'effective_date' },
+      { entity: 'calendar-events', table: 'governance_calendar_events', code: 'event_code', prefix: 'CAL', title: 'title', status: 'status', owner: 'owner', due: 'start_date' },
       { entity: 'retention-runs', table: 'governance_retention_runs', code: 'run_code', prefix: 'RET', title: 'mode', status: 'status', owner: 'requested_by_email' },
       { entity: 'operational-checks', table: 'governance_operational_checks', code: 'check_code', prefix: 'OPS', title: 'check_name', status: 'status', owner: 'checked_by_email' },
     ],
@@ -123,11 +130,15 @@ const DETAIL_LABELS: Record<string, string> = {
   residual_score: 'คะแนนคงเหลือ', vendor: 'ผู้ให้บริการ', provider: 'ผู้ให้บริการ', year: 'ปี', quarter: 'ไตรมาส',
   policy_version: 'เวอร์ชัน', audit_type: 'ประเภท Audit', finding_type: 'ประเภทข้อค้นพบ', version: 'เวอร์ชัน',
   event_type: 'เหตุการณ์', effective_date: 'วันที่มีผล', mode: 'โหมด', attempt_count: 'จำนวนครั้ง', source_module: 'โมดูลต้นทาง',
+  expires_at: 'Evidence Expiry', test_date: 'วันที่ทดสอบ', screening_result: 'ผลคัดกรอง DPIA', risk_level: 'ระดับความเสี่ยง',
+  start_date: 'วันที่เริ่ม', end_date: 'วันที่สิ้นสุด', attestation_year: 'ปีที่รับรอง',
 };
 
 const IGNORED_DETAILS = new Set([
   'id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'deleted_at', 'legacy_id', 'payload',
   'result_payload', 'metadata', 'design_schema', 'verified_by', 'approved_by_id', 'requested_by_id',
+  'law_id', 'obligation_id', 'assessment_id', 'data_asset_id', 'control_id', 'control_test_id', 'finding_id',
+  'risk_id', 'change_request_id', 'audit_id', 'ropa_id', 'employee_id', 'related_record_id',
 ]);
 
 export const governanceRoute = new Hono<AppEnv>();
@@ -157,11 +168,23 @@ function actionsFor(domain: string, entity: string, row: Row, canManage: boolean
     if (status === 'รออนุมัติ' && canAct) actions.push('approve', 'reject');
     if (status === 'อนุมัติแล้ว รอดำเนินการ' && canManage) actions.push('confirm-destroyed');
   }
+  if (domain === 'risk' && entity === 'risk-acceptances') {
+    if (status === 'รออนุมัติ' && canAct && String(row.requested_by_email ?? '').toLowerCase() !== actorEmail.toLowerCase()) actions.push('approve-acceptance', 'reject-acceptance');
+  }
   if (domain === 'privacy' && entity === 'consents' && canManage && status === 'ใช้งาน') actions.push('withdraw');
   if (domain === 'privacy' && entity === 'dsr' && canManage && !/เสร็จสิ้น|ปฏิเสธ/.test(status)) actions.push('complete');
+  if (domain === 'privacy' && entity === 'dpia') {
+    if (status === 'ร่าง' && canManage) actions.push('submit-dpia');
+    if (status === 'รอตรวจ' && canAct) actions.push('approve-dpia', 'reject-dpia');
+  }
   if (domain === 'awareness' && entity === 'training-plans' && canManage && !/เสร็จสิ้น|ยกเลิก/.test(status)) actions.push('complete');
   if (domain === 'compliance' && entity === 'corrective-actions' && canManage && status === 'รอตรวจสอบ' && String(row.owner ?? '').toLowerCase() !== actorEmail.toLowerCase()) actions.push('verify');
   if (domain === 'audit-management' && entity === 'findings' && canAct && status === 'รอตรวจยืนยัน' && String(row.owner ?? '').toLowerCase() !== actorEmail.toLowerCase()) actions.push('verify');
+  if (domain === 'evidence' && entity === 'control-tests' && canAct && status === 'รอตรวจยืนยัน' && String(row.tester_email ?? '').toLowerCase() !== actorEmail.toLowerCase()) actions.push('verify-test');
+  if (domain === 'compliance' && entity === 'annual-attestations') {
+    if (status === 'ร่าง' && canManage) actions.push('submit-attestation');
+    if (status === 'ส่งตรวจ' && canManage && String(row.attestor_email ?? '').toLowerCase() !== actorEmail.toLowerCase()) actions.push('approve-attestation', 'reject-attestation');
+  }
   if (domain === 'integrations' && entity === 'outbox' && canManage) {
     if (/error|dead/.test(status)) actions.push('retry');
     if (/pending|error/.test(status) && !row.result_record_id) actions.push('cancel');
@@ -215,6 +238,51 @@ async function loadDomain(client: SupabaseClient, domain: string, config: Domain
 function domainOrNull(value: string): DomainConfig | null { return Object.prototype.hasOwnProperty.call(DOMAINS, value) ? DOMAINS[value] : null; }
 function entityOrNull(config: DomainConfig, value: string): EntityConfig | null { return config.entities.find((item) => item.entity === value) ?? null; }
 
+governanceRoute.get('/references', async (c) => {
+  const requestId = c.get('requestId');
+  const client = c.get('supabase');
+  const [dataAssets, laws, obligations, assessments, controls, evidenceItems, controlTests, audits, findings, risks, capas, changes, ropa, employees] = await Promise.all([
+    client.from('governance_data_assets').select('id,data_code,data_name,system_name,classification,status').order('data_name').limit(500),
+    client.from('legal_register').select('id,law_code,law_name,short_name,status').order('law_name').limit(500),
+    client.from('compliance_obligations').select('id,obligation_code,law_id,clause,requirement,status').order('obligation_code').limit(500),
+    client.from('compliance_assessments').select('id,assessment_code,obligation_id,result,assessment_date').order('assessment_date', { ascending: false }).limit(500),
+    client.from('governance_controls').select('id,control_code,domain,title,status,owner').order('control_code').limit(500),
+    client.from('governance_evidence_items').select('id,evidence_code,control_id,title,status,expires_at').order('created_at', { ascending: false }).limit(500),
+    client.from('governance_control_tests').select('id,test_code,control_id,test_date,result,status').order('test_date', { ascending: false }).limit(500),
+    client.from('audit_engagements').select('id,audit_code,title,status').order('updated_at', { ascending: false }).limit(500),
+    client.from('audit_findings').select('id,finding_code,title,status,owner').order('updated_at', { ascending: false }).limit(500),
+    client.from('governance_risks').select('id,risk_code,title,status,risk_score').order('updated_at', { ascending: false }).limit(500),
+    client.from('compliance_corrective_actions').select('id,action_code,title,status,owner').order('updated_at', { ascending: false }).limit(500),
+    client.from('change_requests').select('id,change_number,title,status').order('updated_at', { ascending: false }).limit(500),
+    client.from('privacy_ropa').select('id,ropa_code,process_name,status').order('updated_at', { ascending: false }).limit(500),
+    client.from('employees').select('id,employee_code,first_name_th,last_name_th,email,status').order('employee_code').limit(500),
+  ]);
+  const rows = <T>(result: { data: T[] | null; error: unknown }): T[] => result.error ? [] : result.data ?? [];
+  const references = {
+    dataAssets: rows(dataAssets).map((item) => ({ id: item.id, label: `${item.data_code} · ${item.data_name}`, description: `${item.system_name} · ${item.classification} · ${item.status}` })),
+    laws: rows(laws).map((item) => ({ id: item.id, label: `${item.law_name}${item.short_name ? ` (${item.short_name})` : ''}`, description: `${item.law_code} · ${item.status}` })),
+    obligations: rows(obligations).map((item) => ({ id: item.id, label: `${item.obligation_code} · ${item.clause || 'ไม่ระบุมาตรา'}`, description: `${item.requirement} · ${item.status}` })),
+    assessments: rows(assessments).map((item) => ({ id: item.id, label: `${item.assessment_code} · ${item.result}`, description: `${item.assessment_date} · obligation ที่ผูกไว้` })),
+    controls: rows(controls).map((item) => ({ id: item.id, label: `${item.control_code} · ${item.title}`, description: `${item.domain} · Owner: ${item.owner || 'ไม่ระบุ'} · ${item.status}` })),
+    evidenceItems: rows(evidenceItems).map((item) => ({ id: item.id, label: `${item.evidence_code} · ${item.title}`, description: `${item.status}${item.expires_at ? ` · หมดอายุ ${item.expires_at}` : ''}` })),
+    controlTests: rows(controlTests).map((item) => ({ id: item.id, label: `${item.test_code} · ${item.result}`, description: `${item.test_date} · ${item.status}` })),
+    audits: rows(audits).map((item) => ({ id: item.id, label: `${item.audit_code} · ${item.title}`, description: item.status })),
+    findings: rows(findings).map((item) => ({ id: item.id, label: `${item.finding_code} · ${item.title}`, description: `${item.status} · Owner: ${item.owner || 'ไม่ระบุ'}` })),
+    risks: rows(risks).map((item) => ({ id: item.id, label: `${item.risk_code} · ${item.title}`, description: `Score ${item.risk_score} · ${item.status}` })),
+    capas: rows(capas).map((item) => ({ id: item.id, label: `${item.action_code} · ${item.title}`, description: `${item.status} · Owner: ${item.owner || 'ไม่ระบุ'}` })),
+    changes: rows(changes).map((item) => ({ id: item.id, label: `${item.change_number} · ${item.title}`, description: item.status })),
+    ropa: rows(ropa).map((item) => ({ id: item.id, label: `${item.ropa_code} · ${item.process_name}`, description: item.status })),
+    employees: rows(employees).map((item) => ({ id: item.id, label: `${item.employee_code} · ${item.first_name_th} ${item.last_name_th}`.trim(), description: `${item.email || 'ไม่มีอีเมล'} · ${item.status}` })),
+  };
+  const referenceTypeLabels: Record<string, string> = {
+    dataAssets: 'Data Asset', laws: 'กฎหมาย', obligations: 'ข้อกำหนด', assessments: 'Compliance Assessment',
+    controls: 'Control', evidenceItems: 'Evidence', controlTests: 'Control Test', audits: 'Audit', findings: 'Finding',
+    risks: 'Risk', capas: 'CAPA', changes: 'Change', ropa: 'RoPA', employees: 'พนักงาน',
+  };
+  const allRecords = Object.entries(references).flatMap(([type, options]) => options.map((option) => ({ ...option, label: `${referenceTypeLabels[type] ?? type} · ${option.label}` })));
+  return c.json(ok(requestId, { ...references, allRecords }));
+});
+
 governanceRoute.get('/:domain', async (c) => {
   const requestId = c.get('requestId'); const domain = c.req.param('domain'); const config = domainOrNull(domain);
   if (!config) return c.json(fail(requestId, 'GOVERNANCE_DOMAIN_NOT_FOUND', 'ไม่พบโมดูล Governance ที่ระบุ'), 404);
@@ -263,7 +331,27 @@ governanceRoute.post('/:domain/:entity', async (c) => {
     insert.identified_date = now.slice(0, 10);
   }
   if (domain === 'privacy' && entityName === 'consents') insert.status = 'ใช้งาน';
-  if (domain === 'privacy' && entityName === 'dsr') { insert.received_at = now; insert.due_date = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10); }
+  if (domain === 'privacy' && entityName === 'dsr') { insert.received_at = now; insert.due_date = insert.due_date || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10); }
+  if (domain === 'privacy' && entityName === 'dpia') {
+    const [{ data: ropa }, { data: dataAsset }] = await Promise.all([
+      admin.from('privacy_ropa').select('id').eq('id', insert.ropa_id).maybeSingle(),
+      insert.data_asset_id ? admin.from('governance_data_assets').select('id').eq('id', insert.data_asset_id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    if (!ropa) return c.json(fail(requestId, 'ROPA_NOT_FOUND', 'ไม่พบ RoPA ที่เลือก'), 404);
+    if (insert.data_asset_id && !dataAsset) return c.json(fail(requestId, 'DATA_ASSET_NOT_FOUND', 'ไม่พบชุดข้อมูลที่เลือก'), 404);
+    insert.status = 'ร่าง';
+  }
+  if (domain === 'risk' && entityName === 'risk-acceptances') {
+    const { data: risk } = await admin.from('governance_risks').select('id').eq('id', insert.risk_id).maybeSingle();
+    if (!risk) return c.json(fail(requestId, 'RISK_NOT_FOUND', 'ไม่พบความเสี่ยงที่เลือก'), 404);
+    insert.requested_by_id = actorId; insert.requested_by_email = actorEmail; insert.requested_at = now; insert.status = 'รออนุมัติ';
+  }
+  if (domain === 'evidence' && entityName === 'control-tests') {
+    insert.tester_id = actorId; insert.tester_email = actorEmail; insert.status = 'รอตรวจยืนยัน';
+  }
+  if (domain === 'compliance' && entityName === 'annual-attestations') {
+    insert.attestor_id = actorId; insert.attestor_email = actorEmail; insert.status = 'ร่าง';
+  }
   if (domain === 'awareness' && entityName === 'acknowledgements') {
     insert.acknowledger_id = actorId; insert.acknowledger_email = actorEmail; insert.acknowledger_name = insert.signature_name;
     insert.acknowledged_at = now; insert.status = 'รับทราบแล้ว';
@@ -279,6 +367,16 @@ governanceRoute.post('/:domain/:entity', async (c) => {
     if (!employee) return c.json(fail(requestId, 'EMPLOYEE_NOT_FOUND', 'ไม่พบพนักงานที่ระบุ'), 404);
     insert.employee_code = employee.employee_code; insert.employee_name = `${employee.first_name_th} ${employee.last_name_th}`.trim(); insert.employee_email = employee.email;
     insert.requested_by_id = actorId; insert.requested_by_email = actorEmail; insert.status = 'PENDING';
+    if (insert.event_type === 'LEAVER') {
+      const { data: assetReturn, error: assetReturnError } = await admin.rpc('bulk_return_employee_assets', {
+        p_employee_id: employee.id,
+        p_return_date: insert.effective_date,
+        p_return_receiver_employee_id: null,
+        p_reason: 'Employee lifecycle LEAVER started',
+      });
+      if (assetReturnError) return dbFailJson(c, 'EMPLOYEE_OFFBOARDING_ASSET_RETURN_FAILED', assetReturnError);
+      insert.result_detail = { employeeAssetReturn: assetReturn };
+    }
   }
   const { data, error } = await admin.from(entity.table).insert(insert).select('*').single();
   if (error) return dbFailJson(c, 'GOVERNANCE_CREATE_FAILED', error);
@@ -294,10 +392,16 @@ governanceRoute.post('/:domain/:entity/:id/actions/:action', async (c) => {
   if (!config || !entity) return c.json(fail(requestId, 'GOVERNANCE_ENTITY_NOT_FOUND', 'ไม่พบประเภทรายการ Governance ที่ระบุ'), 404);
   // สิทธิ์ต้องมาจากโดเมนที่กำลังทำรายการเสมอ — ห้าม hard-code key ของโดเมนใดโดเมนหนึ่ง
   const actionPermission =
-    action === 'approve' || action === 'reject'
+    action === 'approve' || action === 'reject' || action === 'approve-acceptance' || action === 'reject-acceptance'
       ? config.approve
       : action === 'verify' && domain === 'audit-management'
         ? 'audit_management.verify'
+        : action === 'verify-test' && domain === 'evidence'
+          ? 'audit_management.verify'
+          : action === 'approve-dpia' || action === 'reject-dpia'
+            ? config.act
+            : action === 'approve-attestation' || action === 'reject-attestation'
+              ? config.manage
         : config.manage;
   if (!(await hasPermission(c, actionPermission))) return c.json(fail(requestId, 'FORBIDDEN', 'ไม่มีสิทธิ์ดำเนินการนี้'), 403);
   let json: unknown = {};
@@ -315,7 +419,36 @@ governanceRoute.post('/:domain/:entity/:id/actions/:action', async (c) => {
     await writeAuditLog(c.env, { actorId, actorEmail, action: 'REQUEST_DESTRUCTION', module: 'governance.data-classification', targetTable: requestEntity.table, targetId: data.id, detail: { dataAssetId: id }, requestId });
     return c.json(ok(requestId, normalize(requestEntity, data as Row, domain, true, false, actorEmail)), 201);
   }
-  if (action === 'approve' && current.status === 'รออนุมัติ') Object.assign(update, { status: 'อนุมัติแล้ว รอดำเนินการ', approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
+  if (action === 'approve-acceptance' && domain === 'risk' && entityName === 'risk-acceptances' && current.status === 'รออนุมัติ') {
+    if (current.requested_by_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้ขอ Risk Acceptance ไม่สามารถอนุมัติคำขอของตนเองได้'), 409);
+    Object.assign(update, { status: 'อนุมัติ', approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
+  } else if (action === 'reject-acceptance' && domain === 'risk' && entityName === 'risk-acceptances' && current.status === 'รออนุมัติ') {
+    if (!body.comment?.trim()) return c.json(fail(requestId, 'REJECTION_REASON_REQUIRED', 'กรุณาระบุเหตุผลที่ปฏิเสธ'), 400);
+    if (current.requested_by_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้ขอ Risk Acceptance ไม่สามารถปฏิเสธคำขอของตนเองได้'), 409);
+    Object.assign(update, { status: 'ปฏิเสธ', approval_comment: body.comment, approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
+  } else if (action === 'submit-dpia' && domain === 'privacy' && entityName === 'dpia' && current.status === 'ร่าง') {
+    Object.assign(update, { status: 'รอตรวจ', requested_by_id: actorId, requested_by_email: actorEmail, submitted_at: now });
+  } else if (action === 'approve-dpia' && domain === 'privacy' && entityName === 'dpia' && current.status === 'รอตรวจ') {
+    if (current.created_by === actorId || current.requested_by_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้จัดทำ DPIA ไม่สามารถอนุมัติรายการของตนเองได้'), 409);
+    Object.assign(update, { status: 'อนุมัติ', approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
+  } else if (action === 'reject-dpia' && domain === 'privacy' && entityName === 'dpia' && current.status === 'รอตรวจ') {
+    if (!body.comment?.trim()) return c.json(fail(requestId, 'REJECTION_REASON_REQUIRED', 'กรุณาระบุเหตุผลที่ให้แก้ไข DPIA'), 400);
+    if (current.created_by === actorId || current.requested_by_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้จัดทำ DPIA ไม่สามารถส่งกลับรายการของตนเองได้'), 409);
+    Object.assign(update, { status: 'ต้องแก้ไข', approval_comment: body.comment, approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
+  } else if (action === 'submit-attestation' && domain === 'compliance' && entityName === 'annual-attestations' && current.status === 'ร่าง') {
+    Object.assign(update, { status: 'ส่งตรวจ', submitted_at: now });
+  } else if (action === 'approve-attestation' && domain === 'compliance' && entityName === 'annual-attestations' && current.status === 'ส่งตรวจ') {
+    if (current.attestor_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้ลงนาม Attestation ไม่สามารถอนุมัติของตนเองได้'), 409);
+    Object.assign(update, { status: 'อนุมัติ', reviewed_by: actorId, reviewed_by_email: actorEmail, reviewed_at: now });
+  } else if (action === 'reject-attestation' && domain === 'compliance' && entityName === 'annual-attestations' && current.status === 'ส่งตรวจ') {
+    if (!body.comment?.trim()) return c.json(fail(requestId, 'REJECTION_REASON_REQUIRED', 'กรุณาระบุเหตุผลที่ปฏิเสธ Attestation'), 400);
+    if (current.attestor_id === actorId) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้ลงนาม Attestation ไม่สามารถปฏิเสธของตนเองได้'), 409);
+    Object.assign(update, { status: 'ปฏิเสธ', review_comment: body.comment, reviewed_by: actorId, reviewed_by_email: actorEmail, reviewed_at: now });
+  } else if (action === 'verify-test' && domain === 'evidence' && entityName === 'control-tests' && current.status === 'รอตรวจยืนยัน') {
+    if (current.created_by === actorId || current.tester_id === actorId || String(current.tester_email ?? '').toLowerCase() === actorEmail.toLowerCase()) return c.json(fail(requestId, 'SEGREGATION_OF_DUTIES', 'ผู้ทดสอบไม่สามารถตรวจยืนยันผลทดสอบของตนเองได้'), 409);
+    if (!body.evidenceUrl) return c.json(fail(requestId, 'VERIFICATION_EVIDENCE_REQUIRED', 'กรุณาระบุหลักฐานการตรวจยืนยันแบบ HTTPS'), 400);
+    Object.assign(update, { status: 'ยืนยันแล้ว', verified_by: actorId, verified_by_email: actorEmail, verified_at: now, verification_evidence_url: body.evidenceUrl || null });
+  } else if (action === 'approve' && current.status === 'รออนุมัติ') Object.assign(update, { status: 'อนุมัติแล้ว รอดำเนินการ', approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });
   else if (action === 'reject' && current.status === 'รออนุมัติ') {
     if (!body.comment?.trim()) return c.json(fail(requestId, 'REJECTION_REASON_REQUIRED', 'กรุณาระบุเหตุผลที่ปฏิเสธ'), 400);
     Object.assign(update, { status: 'ปฏิเสธ', approval_comment: body.comment, approved_by_id: actorId, approved_by_email: actorEmail, approved_at: now });

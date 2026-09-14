@@ -1,10 +1,12 @@
-import type { HealthChecks } from '@itlife/shared';
 import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
+import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import type { AppEnv, Bindings } from '../types';
 import { ok } from '../utils/response';
 
 export const healthRoute = new Hono<AppEnv>();
+healthRoute.use('*', edgeRateLimit({ keyFn: (c) => `health:${clientIp(c)}` }));
+healthRoute.use('*', rateLimit({ windowMs: 60_000, max: 30, keyFn: (c) => `health:${clientIp(c)}` }));
 
 /** Process liveness: does not depend on Supabase and is not suitable as a deploy/readiness gate. */
 healthRoute.get('/live', (c) => {
@@ -12,9 +14,7 @@ healthRoute.get('/live', (c) => {
   return c.json(ok(reqId, {
     status: 'ok' as const,
     service: 'itlife-api',
-    environment: c.env.ENVIRONMENT,
     timestamp: new Date().toISOString(),
-    checks: { database: 'not_checked' as const },
   }));
 });
 
@@ -22,11 +22,11 @@ healthRoute.get('/live', (c) => {
 async function checkDatabase(env: Bindings): Promise<'ok' | 'error'> {
   try {
     const admin = createAdminClient(env);
-    const { error } = await admin
+    const { error, count } = await admin
       .from('roles')
       .select('id', { head: true, count: 'exact' })
       .abortSignal(AbortSignal.timeout(3000));
-    return error ? 'error' : 'ok';
+    return error || typeof count !== 'number' ? 'error' : 'ok';
   } catch {
     return 'error';
   }
@@ -34,16 +34,16 @@ async function checkDatabase(env: Bindings): Promise<'ok' | 'error'> {
 
 healthRoute.get('/', async (c) => {
   const reqId = c.get('requestId');
-  const checks: HealthChecks = { database: await checkDatabase(c.env) };
-  const status = checks.database === 'ok' ? ('ok' as const) : ('degraded' as const);
+  const startedAt = Date.now();
+  const databaseOk = await checkDatabase(c.env);
+  const status = databaseOk ? ('ok' as const) : ('degraded' as const);
 
   return c.json(
     ok(reqId, {
       status,
       service: 'itlife-api',
-      environment: c.env.ENVIRONMENT,
       timestamp: new Date().toISOString(),
-      checks,
+      responseTimeMs: Math.max(0, Date.now() - startedAt),
     }),
     status === 'ok' ? 200 : 503,
   );

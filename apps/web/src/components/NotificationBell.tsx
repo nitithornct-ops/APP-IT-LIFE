@@ -7,6 +7,7 @@ import {
   useNotificationsList,
   useUnreadNotificationCount,
 } from '../hooks/useNotifications';
+import { useAuth } from '../stores/authContext';
 import { formatThaiDate } from '../utils/date';
 
 /**
@@ -15,6 +16,7 @@ import { formatThaiDate } from '../utils/date';
  */
 export function NotificationBell() {
   const navigate = useNavigate();
+  const { me } = useAuth();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: unread } = useUnreadNotificationCount();
@@ -31,6 +33,8 @@ export function NotificationBell() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  if (me?.profile.notification_in_app_enabled === false) return null;
 
   const unreadCount = unread?.count ?? 0;
 

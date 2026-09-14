@@ -6,3 +6,4 @@ export * from './schemas/health';
 export * from './schemas/pagination';
 export * from './tickets/rating';
 export * from './utils/csv';
+export * from './utils/vulnerabilityRisk';

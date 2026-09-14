@@ -6,7 +6,9 @@ Rollback owner ต้องตัดสินใจจากผลกระท�
 ## 1. Containment
 
 1. ประกาศ incident และหยุด deployment/cutover เพิ่มเติม
-2. หาก public intake เป็นต้นเหตุ ให้ตั้ง `PUBLIC_TICKET_FORM_ENABLED=false` ที่ Worker production
+2. หากช่องทางรับแจ้งเป็นต้นเหตุ ให้ปิดที่ต้นทางของช่องทางนั้น — LINE portal ปิดด้วย
+   `LINE_LOGIN_ENABLED=false` ที่ Worker production (หน้าแจ้งซ่อมสาธารณะถูกถอดออกจากระบบแล้ว
+   ตั้งแต่ migration 20261012100000 จึงไม่มี kill switch ตัวนั้นอีก)
 3. เก็บ request ID, Worker logs, deployment/version ID และเวลาที่เริ่มมีปัญหา
 4. ห้ามลบ migration history หรือแก้ข้อมูล Production แบบ ad-hoc
 

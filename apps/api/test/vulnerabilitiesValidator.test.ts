@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   createVulnerabilitySchema,
+  createVulnerabilityRetestSchema,
+  importScannerSchema,
   listVulnerabilitiesQuerySchema,
+  requestExceptionSchema,
   setVulnerabilityStatusSchema,
   updateVulnerabilitySchema,
 } from '../src/validators/vulnerabilities';
@@ -42,5 +45,20 @@ describe('vulnerability validators', () => {
   it('coerces pagination and validates list filters', () => {
     expect(listVulnerabilitiesQuerySchema.parse({ page: '2', pageSize: '50', severity: 'สูง' })).toMatchObject({ page: 2, pageSize: 50, severity: 'สูง' });
     expect(listVulnerabilitiesQuerySchema.safeParse({ status: 'ลบแล้ว' }).success).toBe(false);
+  });
+
+  it('validates scanner import, risk signals, and retest evidence', () => {
+    const imported = importScannerSchema.parse({
+      scannerName: 'Nessus',
+      rows: [{ externalId: 'plugin-123', title: 'Remote code execution', cvss: '9.8', epssScore: '0.72', kevListed: 'true', internetFacing: '1' }],
+    });
+    expect(imported.rows[0]).toMatchObject({ cvss: 9.8, epssScore: 0.72, kevListed: true, internetFacing: true });
+    expect(createVulnerabilityRetestSchema.safeParse({ status: 'passed', method: 'Authenticated scan' }).success).toBe(false);
+    expect(createVulnerabilityRetestSchema.safeParse({ status: 'passed', method: 'Authenticated scan', result: 'No longer exploitable', evidenceLink: 'https://evidence.example.test/retest' }).success).toBe(true);
+  });
+
+  it('requires an exception owner and validates exception evidence shape', () => {
+    expect(requestExceptionSchema.safeParse({ reason: 'Vendor patch is not yet available', expiresOn: '2026-12-31' }).success).toBe(false);
+    expect(requestExceptionSchema.safeParse({ reason: 'Vendor patch is not yet available', expiresOn: '2026-12-31', exceptionOwnerId: '00000000-0000-0000-0000-000000000001' }).success).toBe(true);
   });
 });

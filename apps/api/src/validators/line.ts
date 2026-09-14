@@ -1,5 +1,6 @@
 import { ticketRatingDetailsSchema } from '@itlife/shared';
 import { z } from 'zod';
+import { LINE_NOTIFICATION_TYPES } from '../services/lineNotificationPreferences';
 
 export const lineLoginUrlQuerySchema = z.object({
   returnMode: z.enum(['report', 'status', 'kb', 'link']).optional(),
@@ -38,6 +39,18 @@ export const lineTicketMessageSchema = z.object({
   message: z.string().trim().min(1, 'กรุณาพิมพ์ข้อความก่อนส่ง').max(1000, 'ข้อความยาวได้ไม่เกิน 1000 ตัวอักษร'),
 });
 
+export const lineTicketReopenSchema = z.object({
+  reason: z.string().trim().min(1, 'กรุณาระบุเหตุผลที่ยังใช้งานไม่ได้').max(1000),
+});
+
+export const lineLinkConsentSchema = z.object({
+  acknowledged: z.literal(true, { errorMap: () => ({ message: 'กรุณายืนยันการยอมรับการเชื่อมบัญชี LINE ก่อนดำเนินการ' }) }),
+});
+
+export const lineNotificationPreferencesSchema = z.object({
+  disabledTypes: z.array(z.enum(LINE_NOTIFICATION_TYPES)).max(50),
+});
+
 export const lineTicketFeedbackSchema = z.object({
   ratings: ticketRatingDetailsSchema,
   comment: z.string().trim().max(1000).optional(),
@@ -45,6 +58,7 @@ export const lineTicketFeedbackSchema = z.object({
 
 export const lineAdminListQuerySchema = z.object({
   status: z.enum(['Pending', 'Active', 'Suspended', 'Unlinked']).optional(),
+  linkState: z.enum(['Linked', 'Unlinked']).optional(),
 });
 
 export const lineAdminUpdateStatusSchema = z.object({
@@ -53,4 +67,5 @@ export const lineAdminUpdateStatusSchema = z.object({
 
 export const lineAdminUpdateLinkSchema = z.object({
   userId: z.string().uuid('ผู้ใช้ที่เลือกไม่ถูกต้อง').nullable(),
+  consentAcknowledged: z.literal(true, { errorMap: () => ({ message: 'กรุณายืนยันการรับทราบการเชื่อมบัญชี LINE ก่อนบันทึก' }) }),
 });

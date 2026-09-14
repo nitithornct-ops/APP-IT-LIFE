@@ -9,11 +9,22 @@ import { AuthProvider } from './stores/authContext';
 import { ThemeProvider } from './stores/themeContext';
 import { ToastProvider } from './components/ui/Toast';
 
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      refetchOnWindowFocus: false,
+      /**
+       * เดิมปิดไว้ ทำให้งานที่คนอื่นแก้ระหว่างที่เราสลับไปทำอย่างอื่นไม่ขึ้นเลยจนกว่าจะกด F5
+       * ซึ่งเป็นกันทุกคนที่เปิดค้างไว้ (ผู้ใช้แจ้ง 2026-09-09)
+       *
+       * staleTime 30 วินาที ยังกันการยิงซ้ำถี่ ๆ อยู่ — สลับแท็บกลับมาจะดึงใหม่เฉพาะ query
+       * ที่ค้างเกิน 30 วินาทีเท่านั้น ไม่ใช่ทั้งหน้าจอทุกครั้ง
+       */
+      refetchOnWindowFocus: true,
     },
   },
 });

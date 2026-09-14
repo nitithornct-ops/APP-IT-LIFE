@@ -1,8 +1,9 @@
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
+import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSelect';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookMarked, Bug, Hourglass, Loader2, Plus } from 'lucide-react';
+import { BookMarked, Bug, Hourglass, Loader2, Plus, Send } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
@@ -18,6 +19,7 @@ import {
   KNOWN_ERROR_STATUSES,
   PROBLEM_PRIORITIES,
   PROBLEM_STATUSES,
+  RCA_METHODS,
   type KnownError,
   type Problem,
   type ProblemReferences,
@@ -28,24 +30,6 @@ import { knownErrorStatusTone, priorityTone, problemStatusTone } from './problem
 const fieldClass = 'mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40';
 const textAreaClass = `${fieldClass} h-auto min-h-[88px] py-2`;
 const labelClass = 'block text-[13px] font-semibold text-slate-700 dark:text-slate-200';
-
-function commaSeparatedValues(value: string): string[] {
-  return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
-}
-
-function resolveIncidentIds(value: string, references: ProblemReferences): string[] {
-  return commaSeparatedValues(value).map((token) => {
-    const match = references.incidents.find((item) => item.id === token || item.incident_number.toLocaleLowerCase() === token.toLocaleLowerCase());
-    return match?.id ?? token;
-  });
-}
-
-function resolveTicketIds(value: string, references: ProblemReferences): string[] {
-  return commaSeparatedValues(value).map((token) => {
-    const match = references.tickets.find((item) => item.id === token || item.title.toLocaleLowerCase() === token.toLocaleLowerCase());
-    return match?.id ?? token;
-  });
-}
 
 function RequiredMark() {
   return <span className="text-red-500" aria-hidden="true"> *</span>;
@@ -61,15 +45,24 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
     title: '',
     category: '',
     affectedSystem: '',
-    incidentIdsText: '',
-    ticketIdsText: '',
+    incidentIds: [] as string[],
+    ticketIds: [] as string[],
+    configurationItemIds: [] as string[],
+    changeIds: [] as string[],
     impact: '',
     rootCause: '',
     workaround: '',
     permanentFix: '',
+    rcaMethod: '5 Why' as (typeof RCA_METHODS)[number],
+    fiveWhy: Array.from({ length: 5 }, (_, index) => ({ question: `Why ${index + 1}`, answer: '' })),
+    fishbone: { people: '', process: '', technology: '', environment: '', materials: '', measurement: '' },
     ownerId: '',
     priority: 'ปานกลาง',
     status: 'เปิด',
+    reviewMeetingAt: '',
+    reviewMeetingOwnerId: '',
+    reviewMeetingNotes: '',
+    recurrenceCount: 0,
   });
   const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
@@ -83,11 +76,20 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
         rootCause: form.rootCause,
         workaround: form.workaround,
         permanentFix: form.permanentFix,
+        rcaMethod: form.rcaMethod,
+        fiveWhy: form.fiveWhy,
+        fishbone: form.fishbone,
         ownerId: form.ownerId || null,
         priority: form.priority,
         status: form.status,
-        incidentIds: resolveIncidentIds(form.incidentIdsText, references),
-        ticketIds: resolveTicketIds(form.ticketIdsText, references),
+        incidentIds: form.incidentIds,
+        ticketIds: form.ticketIds,
+        configurationItemIds: form.configurationItemIds,
+        changeIds: form.changeIds,
+        reviewMeetingAt: form.reviewMeetingAt ? new Date(form.reviewMeetingAt).toISOString() : '',
+        reviewMeetingOwnerId: form.reviewMeetingOwnerId || null,
+        reviewMeetingNotes: form.reviewMeetingNotes,
+        recurrenceCount: form.recurrenceCount,
       }),
     }),
     onSuccess: () => {
@@ -111,6 +113,10 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
           setError('กรุณากรอกชื่อปัญหา');
           return;
         }
+        if (form.permanentFix.trim() && !form.changeIds.length) {
+          setError('Permanent Fix ต้องผูกกับ Change อย่างน้อย 1 รายการ');
+          return;
+        }
         mutation.mutate();
       }}
     >
@@ -128,16 +134,10 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
           <input value={form.affectedSystem} onChange={(event) => set('affectedSystem', event.target.value)} maxLength={200} className={fieldClass} />
         </label>
 
-        <label className={`${labelClass} sm:col-span-2`}>
-          Incident IDs (คั่น comma)
-          <input value={form.incidentIdsText} onChange={(event) => set('incidentIdsText', event.target.value)} placeholder="เช่น INC-001, INC-002" className={fieldClass} list="problem-incident-options" />
-          <datalist id="problem-incident-options">{references.incidents.map((item) => <option key={item.id} value={item.incident_number}>{item.title}</option>)}</datalist>
-        </label>
-        <label className={`${labelClass} sm:col-span-2`}>
-          Ticket IDs (คั่น comma)
-          <input value={form.ticketIdsText} onChange={(event) => set('ticketIdsText', event.target.value)} placeholder="UUID หรือชื่อ Ticket" className={fieldClass} list="problem-ticket-options" />
-          <datalist id="problem-ticket-options">{references.tickets.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</datalist>
-        </label>
+        <SearchableMultiSelect label="Incidents ที่เกี่ยวข้อง" options={references.incidents.map((item) => ({ id: item.id, label: `${item.incident_number} — ${item.title}`, description: item.status }))} value={form.incidentIds} onChange={(value) => setForm((current) => ({ ...current, incidentIds: value }))} className="sm:col-span-2" testId="problem-create-incidents" />
+        <SearchableMultiSelect label="Tickets ที่เกี่ยวข้อง" options={references.tickets.map((item) => ({ id: item.id, label: item.title, description: item.status }))} value={form.ticketIds} onChange={(value) => setForm((current) => ({ ...current, ticketIds: value }))} className="sm:col-span-2" testId="problem-create-tickets" />
+        <SearchableMultiSelect label="Linked CI" options={references.configurationItems.map((item) => ({ id: item.id, label: `${item.ci_code} — ${item.name}`, description: `${item.ci_type} · ${item.status}` }))} value={form.configurationItemIds} onChange={(value) => setForm((current) => ({ ...current, configurationItemIds: value }))} className="sm:col-span-2" />
+        <SearchableMultiSelect label="Change ที่ผูกกับ Permanent Fix" options={references.changes.map((item) => ({ id: item.id, label: `${item.change_number} — ${item.title}`, description: `${item.status}${item.version ? ` · v${item.version}` : ''}` }))} value={form.changeIds} onChange={(value) => setForm((current) => ({ ...current, changeIds: value }))} className="sm:col-span-2" />
 
         <label className={`${labelClass} sm:col-span-2`}>
           ผลกระทบ
@@ -155,6 +155,12 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
           Permanent Fix
           <textarea value={form.permanentFix} onChange={(event) => set('permanentFix', event.target.value)} rows={3} maxLength={1500} className={textAreaClass} />
         </label>
+
+        <div className="sm:col-span-4 rounded-xl border border-primary-100 bg-primary-50/50 p-4 dark:border-primary-900/50 dark:bg-primary-950/20">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className={labelClass}>RCA Template</p><p className="text-xs text-slate-500">เลือกวิธีวิเคราะห์และบันทึกหลักฐานให้ตรวจสอบย้อนหลังได้</p></div><select value={form.rcaMethod} onChange={(event) => set('rcaMethod', event.target.value as (typeof RCA_METHODS)[number])} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900">{RCA_METHODS.map((method) => <option key={method}>{method}</option>)}</select></div>
+          {form.rcaMethod === '5 Why' && <div className="grid gap-2 sm:grid-cols-2">{form.fiveWhy.map((step, index) => <label key={step.question} className={labelClass}>{step.question}<input value={step.answer} onChange={(event) => setForm((current) => ({ ...current, fiveWhy: current.fiveWhy.map((item, itemIndex) => itemIndex === index ? { ...item, answer: event.target.value } : item) }))} maxLength={1000} className={fieldClass} placeholder="ระบุคำตอบ/หลักฐาน" /></label>)}</div>}
+          {form.rcaMethod === 'Fishbone' && <div className="grid gap-2 sm:grid-cols-3">{(['people', 'process', 'technology', 'environment', 'materials', 'measurement'] as const).map((key) => <label key={key} className={labelClass}>{key}<textarea rows={2} value={form.fishbone[key]} onChange={(event) => setForm((current) => ({ ...current, fishbone: { ...current.fishbone, [key]: event.target.value } }))} maxLength={1000} className={textAreaClass} /></label>)}</div>}
+        </div>
 
         <label className={labelClass}>
           Owner
@@ -175,6 +181,10 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
             {PROBLEM_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>
+        <label className={labelClass}>Recurrence Count<input type="number" min={0} max={100000} value={form.recurrenceCount} onChange={(event) => setForm((current) => ({ ...current, recurrenceCount: Math.max(0, Number(event.target.value) || 0) }))} className={fieldClass} /></label>
+        <label className={labelClass}>Problem Review Meeting<input type="datetime-local" value={form.reviewMeetingAt} onChange={(event) => set('reviewMeetingAt', event.target.value)} className={fieldClass} /></label>
+        <label className={labelClass}>Meeting Owner<select value={form.reviewMeetingOwnerId} onChange={(event) => set('reviewMeetingOwnerId', event.target.value)} className={fieldClass}><option value="">ยังไม่ระบุ</option>{references.owners.map((item) => <option key={item.id} value={item.id}>{item.full_name ?? item.email}</option>)}</select></label>
+        <label className={`${labelClass} sm:col-span-2`}>Meeting Notes<textarea value={form.reviewMeetingNotes} onChange={(event) => set('reviewMeetingNotes', event.target.value)} rows={2} maxLength={1500} className={textAreaClass} /></label>
         <div className="sm:col-span-4"><FormError message={error} /></div>
       </div>
       <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/50">
@@ -298,6 +308,19 @@ function ReferencesState({ isError, onRetry }: { isError: boolean; onRetry: () =
   return <div className="flex min-h-44 items-center justify-center gap-2 p-5 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" />กำลังเตรียมแบบฟอร์ม</div>;
 }
 
+function PublishKnownErrorButton({ item, canManage }: { item: KnownError; canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => apiFetch<{ article: { article_code: string } }>(`/api/v1/problems/known-errors/${item.id}/publish-to-kb`, { method: 'POST' }),
+    onSuccess: () => { setError(null); void queryClient.invalidateQueries({ queryKey: ['known-errors'] }); void queryClient.invalidateQueries({ queryKey: ['knowledge'] }); },
+    onError: (reason) => setError(reason instanceof ApiError ? reason.message : 'เผยแพร่ไป Knowledge Base ไม่สำเร็จ'),
+  });
+  if (item.knowledge_article_ref) return <Link to="/knowledge" className="text-xs text-primary-700 hover:underline dark:text-primary-300">{item.knowledge_article_ref}</Link>;
+  if (!canManage) return <span className="text-xs text-slate-400">ยังไม่เผยแพร่</span>;
+  return <span className="inline-flex flex-col items-end gap-1"><Button size="sm" variant="outline" isLoading={mutation.isPending} onClick={() => mutation.mutate()} data-testid={`known-error-publish-${item.id}`}><Send className="h-3.5 w-3.5" />Publish ไป KB</Button>{error && <span className="max-w-48 text-right text-[11px] text-red-600">{error}</span>}</span>;
+}
+
 function CompactEmpty({ children }: { children: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-card dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{children}</div>;
 }
@@ -404,7 +427,7 @@ export function ProblemsPage() {
                 <td><Link to={`/problems/${item.problem_id}`} className="text-primary-700 hover:underline dark:text-primary-300">{item.problem?.problem_number}</Link></td>
                 <td><b>{item.title}</b><p className="text-xs text-slate-500">{item.symptoms ?? '—'}</p></td>
                 <td className="max-w-sm whitespace-pre-wrap text-xs">{item.workaround}</td>
-                <td className="text-xs">{item.knowledge_article_ref ? <Link to="/knowledge" className="text-primary-700 hover:underline dark:text-primary-300">{item.knowledge_article_ref}</Link> : '—'}</td>
+                <td className="text-xs"><PublishKnownErrorButton item={item} canManage={canManage} /></td>
                 <td><Badge variant={knownErrorStatusTone[item.status]}>{item.status}</Badge></td>
                 <td className="text-right"><RowActions recordLabel={item.known_error_number} actions={[{ kind: 'view', to: `/problems/${item.problem_id}`, label: 'ดู Problem' }, { kind: 'delete', permission: 'problem.manage', deleteEndpoint: `/api/v1/record-deletions/known-errors/${item.id}` }]} /></td>
               </tr>

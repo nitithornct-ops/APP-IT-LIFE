@@ -4,6 +4,7 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { isMfaMandatoryForUser } from '../services/mfaPolicy';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -12,13 +13,44 @@ import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
-import { assignRoleSchema, inviteUserSchema, listUsersQuerySchema, updateUserSchema } from '../validators/users';
+import {
+  userAccessGroupMembershipSchema,
+  userAccessReviewCreateSchema,
+  userAccessReviewDecisionSchema,
+} from '../validators/permissionAdmin';
+import {
+  assignRoleSchema,
+  createLocalUserSchema,
+  inviteUserSchema,
+  listUsersQuerySchema,
+  resetPasswordSchema,
+  updateMfaSchema,
+  updateUserSchema,
+} from '../validators/users';
 
 export const usersRoute = new Hono<AppEnv>();
 
 usersRoute.use('*', requireAuth);
 
-const USER_SORT_COLUMNS = ['full_name', 'email', 'employee_code', 'status', 'created_at'] as const;
+const USER_SORT_COLUMNS = ['full_name', 'email', 'username', 'employee_code', 'status', 'employment_status', 'last_login_at', 'created_at'] as const;
+
+/**
+ * บัญชีที่ไม่มีอีเมลจริงถูกผูกไว้กับอีเมลปลอมโดเมนนี้ (ดู migration 20261013100000) — ใช้เฉพาะเป็น
+ * ตัวระบุภายในของ Supabase Auth เท่านั้น ห้ามนำไปแสดงหรือใช้ติดต่อ
+ */
+const LOCAL_ACCOUNT_EMAIL_DOMAIN = 'no-email.invalid';
+
+usersRoute.get('/options', requireAnyPermission(['role.view', 'role.manage', 'user.manage']), async (c) => {
+  const reqId = c.get('requestId');
+  const { data, error } = await createAdminClient(c.env)
+    .from('profiles')
+    .select('id, full_name, email, username, status')
+    .eq('status', 'active')
+    .order('full_name', { ascending: true })
+    .limit(1000);
+  if (error) return dbFailJson(c, 'USER_OPTIONS_LOAD_FAILED', error, 'ดึงรายชื่อผู้ใช้งานสำหรับ Preview ไม่สำเร็จ');
+  return c.json(ok(reqId, data ?? []));
+});
 
 usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUsersQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
@@ -29,7 +61,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
   let query = createAdminClient(c.env)
     .from('profiles')
     .select(
-      'id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at',
+      'id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, mfa_enabled, last_login_at, last_password_change_at, account_source, employment_status, created_at',
       { count: 'exact' },
     )
     .range(...paginationRange(page, pageSize));
@@ -37,7 +69,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
 
   const safeSearch = search ? cleanSearch(search) : '';
   if (safeSearch) {
-    query = query.or(`full_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`);
+    query = query.or(`full_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,username.ilike.%${safeSearch}%`);
   }
 
   const { data, count, error } = await query;
@@ -46,7 +78,98 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
     return c.json(fail(reqId, 'USERS_LIST_FAILED', 'ดึงรายชื่อผู้ใช้ไม่สำเร็จ'), 400);
   }
 
-  return c.json(ok(reqId, toPaginatedData(data, count, page, pageSize)));
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const managerIds = [...new Set(rows.map((row) => (typeof row.supervisor_id === 'string' ? row.supervisor_id : null)).filter((id): id is string => Boolean(id)))];
+  const managersById = new Map<string, { id: string; full_name: string; email: string }>();
+  if (managerIds.length) {
+    const { data: managers, error: managersError } = await createAdminClient(c.env)
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', managerIds);
+    if (managersError) {
+      return c.json(fail(reqId, 'USERS_MANAGER_LOOKUP_FAILED', 'ดึงข้อมูล Manager ของผู้ใช้งานไม่สำเร็จ'), 400);
+    }
+    for (const manager of managers ?? []) managersById.set(manager.id, manager);
+  }
+
+  const enriched = rows.map((row) => ({
+    ...row,
+    manager: typeof row.supervisor_id === 'string' ? managersById.get(row.supervisor_id) ?? null : null,
+    mfa_status: row.mfa_enabled === true ? 'enabled' : 'disabled',
+  }));
+
+  return c.json(ok(reqId, toPaginatedData(enriched, count, page, pageSize)));
+});
+
+usersRoute.patch('/:id/mfa', requirePermission('user.manage'), zValidator('json', updateMfaSchema, zodValidationHook), async (c) => {
+  const admin = createAdminClient(c.env);
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const targetId = c.req.param('id')!;
+  const { enabled } = c.req.valid('json');
+
+  if (!enabled && targetId === actorId) {
+    return c.json(fail(reqId, 'USER_MFA_SELF_DISABLE_FORBIDDEN', 'ไม่สามารถปิด 2FA ของบัญชีที่กำลังใช้งานอยู่ได้'), 409);
+  }
+
+  const auditBefore = await loadAuditSnapshot(admin, 'profiles', targetId);
+  if (!auditBefore) {
+    return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
+  }
+
+  if (!enabled) {
+    try {
+      if (await isMfaMandatoryForUser(c.env, targetId)) {
+        return c.json(fail(reqId, 'USER_MFA_REQUIRED_BY_POLICY', 'บัญชีนี้ถูกบังคับใช้ 2FA จากบทบาทหรือสิทธิ์ จึงปิดไม่ได้'), 409);
+      }
+    } catch {
+      return c.json(fail(reqId, 'USER_MFA_POLICY_LOOKUP_FAILED', 'ตรวจสอบนโยบาย 2FA ของผู้ใช้งานไม่สำเร็จ กรุณาลองใหม่'), 503);
+    }
+  }
+
+  let removedFactorCount = 0;
+  if (!enabled) {
+    const { data: factorData, error: factorListError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
+    if (factorListError) {
+      return dbFailJson(c, 'USER_MFA_FACTORS_LOAD_FAILED', factorListError, 'โหลดอุปกรณ์ 2FA ของผู้ใช้งานไม่สำเร็จ');
+    }
+
+    for (const factor of factorData?.factors ?? []) {
+      const { error: deleteError } = await admin.auth.admin.mfa.deleteFactor({ userId: targetId, id: factor.id });
+      if (deleteError) {
+        // Keep the profile flag enabled when factor cleanup is incomplete. This fails closed:
+        // the user must enroll again instead of silently losing MFA protection.
+        return dbFailJson(c, 'USER_MFA_FACTOR_DELETE_FAILED', deleteError, 'ปิด 2FA ไม่สำเร็จ อุปกรณ์ยืนยันตัวตนบางรายการยังถูกเก็บไว้');
+      }
+      removedFactorCount += 1;
+    }
+  }
+
+  const { data: updated, error: updateError } = await admin
+    .from('profiles')
+    .update({ mfa_enabled: enabled, updated_by: actorId })
+    .eq('id', targetId)
+    .select('*')
+    .maybeSingle();
+
+  if (updateError || !updated) {
+    return dbFailJson(c, 'USER_MFA_UPDATE_FAILED', updateError, 'บันทึกสถานะ 2FA ของผู้ใช้งานไม่สำเร็จ');
+  }
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: enabled ? 'ENABLE_MFA' : 'DISABLE_MFA',
+    module: 'user',
+    targetTable: 'profiles',
+    targetId,
+    detail: { enabled, removedFactorCount },
+    requestId: reqId,
+    before: auditBefore,
+    after: updated,
+  });
+
+  return c.json(ok(reqId, { id: targetId, enabled: updated.mfa_enabled, removedFactorCount }));
 });
 
 /**
@@ -87,6 +210,12 @@ usersRoute.post('/invite', requirePermission('user.manage'), zValidator('json', 
     }
   }
 
+  const { error: sourceError } = await supabase
+    .from('profiles')
+    .update({ account_source: 'invite', updated_by: actorId })
+    .eq('id', invited.user.id);
+  if (sourceError) profileWarning = profileWarning ?? 'เชิญผู้ใช้สำเร็จ แต่บันทึก Account Source ไม่สำเร็จ';
+
   await writeAuditLog(c.env, {
     actorId,
     actorEmail: c.get('userEmail'),
@@ -101,6 +230,130 @@ usersRoute.post('/invite', requirePermission('user.manage'), zValidator('json', 
   return c.json(ok(reqId, { id: invited.user.id, email: body.email, warning: profileWarning }), 201);
 });
 
+/**
+ * สร้างบัญชีให้ผู้ใช้ที่ไม่มีอีเมลองค์กร — login ด้วย username/password โดยตรง
+ *
+ * ใช้ createUser() แทน inviteUserByEmail() เพราะไม่มีกล่องจดหมายให้ส่งลิงก์เชิญไปตั้งรหัสผ่านเอง
+ * ผู้ดูแลจึงตั้งรหัสผ่านเริ่มต้นให้ในฟอร์มแล้วแจ้งผู้ใช้ด้วยช่องทางอื่น ส่วน email_confirm: true เป็นการ
+ * ยืนยันอีเมลของบัญชีนี้บัญชีเดียวผ่าน Admin API ไม่ได้ไปปิดการยืนยันอีเมลระดับโปรเจกต์
+ * (scripts/check-runtime-gate.mjs ยังบังคับให้ mailer_autoconfirm ปิดอยู่ตามเดิม)
+ *
+ * username ถูกส่งไปกับ user_metadata เพื่อให้ trigger handle_new_user() เขียนลง profiles ในทรานแซกชัน
+ * เดียวกับที่บัญชีเกิด — ถ้าแยกไปเขียนทีหลังแล้วล้ม จะได้บัญชีที่ login ไม่ได้เลย เพราะไม่มีทั้ง username
+ * ให้ค้นและอีเมลที่ผู้ใช้รู้ค่า และการเขียนพร้อมกันยังให้ unique index ปฏิเสธชื่อซ้ำได้ตั้งแต่ต้น
+ */
+usersRoute.post('/local', requirePermission('user.manage'), zValidator('json', createLocalUserSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const body = c.req.valid('json');
+  const admin = createAdminClient(c.env);
+
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email: `${body.username}@${LOCAL_ACCOUNT_EMAIL_DOMAIN}`,
+    password: body.password,
+    email_confirm: true,
+    user_metadata: { full_name: body.fullName, username: body.username },
+  });
+
+  if (createError || !created.user) {
+    // ชื่อผู้ใช้ซ้ำมาถึงตรงนี้ในรูปของ unique violation ที่ trigger โยนออกมา (อีเมลปลอมก็ซ้ำด้วยเช่นกัน)
+    const duplicate = /duplicate key|already (been )?registered|profiles_username_unique_idx/i.test(createError?.message ?? '');
+    if (duplicate) {
+      return c.json(fail(reqId, 'USERNAME_TAKEN', 'ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น'), 409);
+    }
+    return dbFailJson(c, 'USER_LOCAL_CREATE_FAILED', createError, 'สร้างบัญชีผู้ใช้ไม่สำเร็จ');
+  }
+
+  let profileWarning: string | null = null;
+
+  if (body.employeeCode || body.departmentId || body.positionId) {
+    const { error: updateError } = await admin
+      .from('profiles')
+      .update({
+        employee_code: body.employeeCode ?? null,
+        department_id: body.departmentId ?? null,
+        position_id: body.positionId ?? null,
+        account_source: 'local',
+        last_password_change_at: new Date().toISOString(),
+        updated_by: actorId,
+      })
+      .eq('id', created.user.id);
+
+    // ไม่ลบบัญชีที่สร้างสำเร็จแล้วทิ้งเมื่อข้อมูลประกอบล้ม — บัญชีใช้งานได้จริงแล้ว (login ได้ มีสิทธิ์ได้)
+    // และ profiles(id) มีตารางอื่น cascade ตามอยู่จำนวนมาก จึงไม่ควรมี code path ใดลบบัญชีอัตโนมัติ
+    if (updateError) {
+      profileWarning = 'สร้างบัญชีสำเร็จ แต่บันทึกหน่วยงาน/ตำแหน่งเพิ่มเติมไม่สำเร็จ กรุณาแก้ไขภายหลัง';
+    }
+  }
+
+  if (!body.employeeCode && !body.departmentId && !body.positionId) {
+    const { error: sourceError } = await admin
+      .from('profiles')
+      .update({ account_source: 'local', last_password_change_at: new Date().toISOString(), updated_by: actorId })
+      .eq('id', created.user.id);
+    if (sourceError) profileWarning = 'สร้างบัญชีสำเร็จ แต่บันทึก Account Source ไม่สำเร็จ';
+  }
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'CREATE',
+    module: 'user',
+    targetTable: 'profiles',
+    targetId: created.user.id,
+    detail: { username: body.username, mode: 'local' },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, { id: created.user.id, username: body.username, warning: profileWarning }), 201);
+});
+
+/**
+ * ผู้ดูแลตั้งรหัสผ่านใหม่ให้ผู้ใช้
+ *
+ * จำเป็นสำหรับบัญชีแบบ username เพราะ "ลืมรหัสผ่าน" ทางอีเมลใช้ไม่ได้ (อีเมลที่ผูกไว้ส่งไม่ถึงจริง)
+ * และใช้กับบัญชีอีเมลได้ด้วยในกรณีที่ผู้ใช้เข้าถึงกล่องจดหมายของตนเองไม่ได้
+ */
+usersRoute.post('/:id/reset-password', requirePermission('user.manage'), zValidator('json', resetPasswordSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const targetId = c.req.param('id')!;
+  const { password } = c.req.valid('json');
+
+  const { error } = await createAdminClient(c.env).auth.admin.updateUserById(targetId, { password });
+
+  if (error) {
+    return dbFailJson(c, 'USER_PASSWORD_RESET_FAILED', error, 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ');
+  }
+
+  const { error: timestampError } = await createAdminClient(c.env)
+    .from('profiles')
+    .update({ last_password_change_at: new Date().toISOString(), updated_by: actorId })
+    .eq('id', targetId);
+  if (timestampError) {
+    console.error(JSON.stringify({ requestId: reqId, code: 'USER_PASSWORD_CHANGE_TIMESTAMP_FAILED', targetId }));
+  }
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'RESET_PASSWORD',
+    module: 'user',
+    targetTable: 'profiles',
+    targetId,
+    requestId: reqId,
+  });
+
+  await sendNotification(c.env, {
+    recipientId: targetId,
+    type: 'account_security',
+    title: 'รหัสผ่านของท่านถูกตั้งใหม่',
+    body: 'ผู้ดูแลระบบตั้งรหัสผ่านใหม่ให้บัญชีของท่าน หากท่านไม่ได้ร้องขอ กรุณาแจ้งผู้ดูแลระบบทันที',
+  });
+
+  return c.json(ok(reqId, { reset: true }));
+});
+
 usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', updateUserSchema, zodValidationHook), async (c) => {
   const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
@@ -111,11 +364,13 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
   const patch: Record<string, unknown> = { updated_by: actorId };
   if (body.fullName !== undefined) patch.full_name = body.fullName;
   if (body.phone !== undefined) patch.phone = body.phone;
+  if (body.username !== undefined) patch.username = body.username;
   if (body.employeeCode !== undefined) patch.employee_code = body.employeeCode;
   if (body.departmentId !== undefined) patch.department_id = body.departmentId;
   if (body.positionId !== undefined) patch.position_id = body.positionId;
   if (body.supervisorId !== undefined) patch.supervisor_id = body.supervisorId;
   if (body.status !== undefined) patch.status = body.status;
+  if (body.employmentStatus !== undefined) patch.employment_status = body.employmentStatus;
 
   // profiles ปิด UPDATE ของ authenticated แล้ว (20260915100000) จึงเขียนด้วย Admin client
   // หลัง requirePermission('user.manage') ตรวจสิทธิ์เรียบร้อย และบันทึก audit ทุกครั้ง
@@ -147,12 +402,15 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
         console.error(JSON.stringify({ requestId: reqId, code: 'USER_AUTH_STATUS_ROLLBACK_FAILED', targetId }));
       }
     }
+    if (error.code === '23505') {
+      return c.json(fail(reqId, 'USERNAME_TAKEN', 'ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น'), 409);
+    }
     return c.json(fail(reqId, 'USER_UPDATE_FAILED', 'บันทึกข้อมูลผู้ใช้ไม่สำเร็จ'), 400);
   }
 
   const { data } = await supabase
     .from('profiles')
-    .select('id, employee_code, full_name, email, phone, department_id, position_id, supervisor_id, status, created_at')
+    .select('id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, mfa_enabled, last_login_at, last_password_change_at, account_source, employment_status, created_at')
     .eq('id', targetId)
     .maybeSingle();
 
@@ -171,6 +429,198 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
 
   return c.json(ok(reqId, data));
 });
+
+usersRoute.get('/:id/effective-permissions', requireAnyPermission(['role.view', 'role.manage', 'user.manage']), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const targetId = c.req.param('id');
+  const { data, error } = await supabase.rpc('effective_permissions_for_user', { target_user_id: targetId });
+
+  if (error) {
+    return c.json(fail(reqId, 'USER_EFFECTIVE_PERMISSIONS_LOAD_FAILED', 'ดึง Effective Permission ของผู้ใช้งานไม่สำเร็จ'), 400);
+  }
+  return c.json(ok(reqId, data ?? []));
+});
+
+usersRoute.get('/:id/access-groups', requireAnyPermission(['role.view', 'role.manage', 'user.manage']), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const targetId = c.req.param('id');
+  const { data, error } = await supabase
+    .from('access_group_members')
+    .select('id, group_id, user_id, valid_from, valid_until, status, access_groups(id, key, name, description, status)')
+    .eq('user_id', targetId)
+    .order('created_at', { ascending: false });
+
+  if (error) return c.json(fail(reqId, 'USER_ACCESS_GROUPS_LOAD_FAILED', 'ดึงกลุ่มสิทธิ์ของผู้ใช้งานไม่สำเร็จ'), 400);
+  return c.json(ok(reqId, data ?? []));
+});
+
+usersRoute.post(
+  '/:id/access-groups',
+  requirePermission('role.manage'),
+  zValidator('json', userAccessGroupMembershipSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const targetId = c.req.param('id');
+    const body = c.req.valid('json');
+    const { data, error } = await supabase
+      .from('access_group_members')
+      .insert({
+        group_id: body.groupId,
+        user_id: targetId,
+        valid_from: body.validFrom ?? null,
+        valid_until: body.validUntil ?? null,
+        created_by: actorId,
+      })
+      .select('id, group_id, user_id, valid_from, valid_until, status, access_groups(id, key, name, description, status)')
+      .single();
+
+    if (error) return dbFailJson(c, 'USER_ACCESS_GROUP_ASSIGN_FAILED', error);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'ASSIGN_ACCESS_GROUP',
+      module: 'user_access_group',
+      targetTable: 'access_group_members',
+      targetId: data.id,
+      detail: { userId: targetId, ...body },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+usersRoute.delete('/:id/access-groups/:membershipId', requirePermission('role.manage'), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const targetId = c.req.param('id');
+  const membershipId = c.req.param('membershipId');
+  const { error } = await supabase
+    .from('access_group_members')
+    .delete()
+    .eq('id', membershipId)
+    .eq('user_id', targetId);
+  if (error) return dbFailJson(c, 'USER_ACCESS_GROUP_REMOVE_FAILED', error);
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'REMOVE_ACCESS_GROUP',
+    module: 'user_access_group',
+    targetTable: 'access_group_members',
+    targetId: membershipId,
+    detail: { userId: targetId },
+    requestId: reqId,
+  });
+  return c.json(ok(reqId, { removed: true }));
+});
+
+usersRoute.get('/:id/access-review', requireAnyPermission(['role.view', 'role.manage', 'user.manage']), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const targetId = c.req.param('id');
+  const { data, error } = await supabase
+    .from('user_access_reviews')
+    .select('*')
+    .eq('user_id', targetId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return c.json(fail(reqId, 'USER_ACCESS_REVIEW_LOAD_FAILED', 'ดึง User Access Review ไม่สำเร็จ'), 400);
+  return c.json(ok(reqId, data ?? null));
+});
+
+usersRoute.post(
+  '/:id/access-review',
+  requirePermission('role.manage'),
+  zValidator('json', userAccessReviewCreateSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const targetId = c.req.param('id');
+    const body = c.req.valid('json');
+    if (body.reviewerId === targetId) {
+      return c.json(fail(reqId, 'USER_ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN', 'ผู้ถูกทบทวนและผู้ทบทวนต้องเป็นคนละคนกัน'), 400);
+    }
+
+    const { data: snapshot, error: snapshotError } = await supabase.rpc('effective_permissions_for_user', { target_user_id: targetId });
+    if (snapshotError) return c.json(fail(reqId, 'USER_ACCESS_REVIEW_SNAPSHOT_FAILED', 'สร้าง snapshot สิทธิ์สำหรับ Review ไม่สำเร็จ'), 400);
+
+    const { data, error } = await supabase
+      .from('user_access_reviews')
+      .insert({
+        user_id: targetId,
+        reviewer_id: body.reviewerId ?? null,
+        due_at: body.dueAt ?? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+        snapshot: snapshot ?? [],
+        requested_by: actorId,
+      })
+      .select('*')
+      .single();
+    if (error) return dbFailJson(c, 'USER_ACCESS_REVIEW_CREATE_FAILED', error);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'CREATE_ACCESS_REVIEW',
+      module: 'user_access_review',
+      targetTable: 'user_access_reviews',
+      targetId: data.id,
+      detail: { userId: targetId, reviewerId: body.reviewerId ?? null, dueAt: body.dueAt ?? null },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, data), 201);
+  },
+);
+
+usersRoute.patch(
+  '/:id/access-review/:reviewId',
+  requirePermission('role.manage'),
+  zValidator('json', userAccessReviewDecisionSchema, zodValidationHook),
+  async (c) => {
+    const supabase = c.get('supabase');
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const targetId = c.req.param('id');
+    const reviewId = c.req.param('reviewId');
+    const body = c.req.valid('json');
+    const { data: current, error: currentError } = await supabase
+      .from('user_access_reviews')
+      .select('id, user_id, reviewer_id, requested_by, status')
+      .eq('id', reviewId)
+      .eq('user_id', targetId)
+      .maybeSingle();
+    if (currentError || !current) return c.json(fail(reqId, 'USER_ACCESS_REVIEW_NOT_FOUND', 'ไม่พบ User Access Review ที่ระบุ'), 404);
+    if (current.user_id === actorId || current.requested_by === actorId || (current.reviewer_id && current.reviewer_id !== actorId)) {
+      return c.json(fail(reqId, 'USER_ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN', 'ผู้ขอ ผู้ถูกทบทวน และผู้ทบทวนต้องแยกหน้าที่กัน'), 400);
+    }
+    if (current.status !== 'pending') return c.json(fail(reqId, 'USER_ACCESS_REVIEW_ALREADY_DECIDED', 'Review นี้ถูกตัดสินไปแล้ว'), 409);
+
+    const { data, error } = await supabase
+      .from('user_access_reviews')
+      .update({ status: body.status, decision_note: body.decisionNote ?? null, decided_at: new Date().toISOString() })
+      .eq('id', reviewId)
+      .select('*')
+      .single();
+    if (error) return dbFailJson(c, 'USER_ACCESS_REVIEW_DECISION_FAILED', error);
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'DECIDE_ACCESS_REVIEW',
+      module: 'user_access_review',
+      targetTable: 'user_access_reviews',
+      targetId: reviewId,
+      detail: body,
+      requestId: reqId,
+      before: current,
+      after: data,
+    });
+    return c.json(ok(reqId, data));
+  },
+);
 
 usersRoute.get('/:id/roles', requireAnyPermission(['role.view', 'role.manage']), async (c) => {
   const supabase = c.get('supabase');

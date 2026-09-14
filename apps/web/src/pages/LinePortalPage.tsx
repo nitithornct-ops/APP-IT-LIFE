@@ -152,6 +152,12 @@ export function LinePortalPage() {
     await refreshDetail(detail.ticket.id);
   }
 
+  async function reopenTicket(reason: string) {
+    if (!detail) return;
+    await lineApiFetch(`/api/v1/line/tickets/${detail.ticket.id}/reopen`, { method: 'POST', body: JSON.stringify({ reason }) });
+    await refreshDetail(detail.ticket.id);
+  }
+
   async function sendMessage(message: string) {
     if (!detail) return;
     await lineApiFetch(`/api/v1/line/tickets/${detail.ticket.id}/messages`, {
@@ -228,6 +234,7 @@ export function LinePortalPage() {
               onBack={() => { setView({ kind: 'tabs' }); setDetail(null); }}
               onSign={signoff}
               onSendMessage={sendMessage}
+              onReopen={reopenTicket}
             />
           )
         ) : tab === 'knowledge' ? (

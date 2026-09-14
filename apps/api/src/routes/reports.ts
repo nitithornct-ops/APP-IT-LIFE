@@ -2,21 +2,35 @@ import { csvCell } from '@itlife/shared';
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { renderHtmlToPdf } from '../lib/pdf';
-import { renderReportHtml } from '../lib/reportPdfTemplate';
+import { renderExecutivePackHtml, renderReportHtml } from '../lib/reportPdfTemplate';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { writeAuditLog } from '../services/auditService';
-import { buddhistYearFolder, googleDriveConfig, safeDriveName, uploadToDrive } from '../services/googleDriveService';
+import { ticketSlaState } from '../services/ticketSlaStatus';
+import { buddhistYearFolder, googleDriveConfig, safeDriveName, uploadCsvAsGoogleSheet, uploadToDrive } from '../services/googleDriveService';
 import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
-import { reportExportSchema, reportPdfExportSchema, reportRangeQuerySchema } from '../validators/reports';
+import {
+  reportExecutivePackQuerySchema,
+  reportExecutivePackExportSchema,
+  reportExportSchema,
+  reportExecutivePackSnapshotSchema,
+  reportPdfExportSchema,
+  reportRangeQuerySchema,
+  reportSavedFilterQuerySchema,
+  reportSavedFilterSchema,
+  reportSchedulePatchSchema,
+  reportScheduleSchema,
+  reportSnapshotSchema,
+} from '../validators/reports';
 
 type Row = Record<string, unknown>;
-type ReportKey = 'service-desk' | 'requests-workflows' | 'assets-operations' | 'asset-custody' | 'security-resilience' | 'governance-compliance';
+type ReportKey = 'service-desk' | 'requests-workflows' | 'assets-operations' | 'asset-custody' | 'asset-verification' | 'security-resilience' | 'governance-compliance';
 type Tone = 'primary' | 'teal' | 'amber' | 'danger' | 'gray';
 
 interface ReportDefinition {
@@ -35,10 +49,55 @@ interface ReportEntry {
   overdue: boolean;
   warning: boolean;
   critical: boolean;
+  paused: boolean;
   amount?: number;
   rating?: number;
   feedback?: string;
   feedbackAt?: string;
+}
+
+export interface ReportFilters {
+  rangeDays: number;
+  departmentId?: string;
+  ownerId?: string;
+  from?: string;
+  to?: string;
+  comparePrevious?: boolean;
+}
+
+export interface ReportFreshness {
+  source: string;
+  lastUpdatedAt: string | null;
+  status: 'fresh' | 'stale' | 'unknown';
+}
+
+export interface ReportComparison {
+  label: string;
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  deltaPercentage: number | null;
+}
+
+export interface ExecutivePack {
+  reportKey: 'executive-pack';
+  title: string;
+  month: string;
+  periodStart: string;
+  periodEnd: string;
+  generatedAt: string;
+  metrics: ReturnType<typeof metric>[];
+  comparison: ReportComparison[];
+  freshness: ReportFreshness[];
+  sections: Array<{ key: ReportKey; label: string; totalRows: number; metrics: ReturnType<typeof metric>[]; alerts: string[] }>;
+  kpis: Array<{ key: string; label: string; description: string; formula: string; unit: string; target: number | null; direction: string }>;
+}
+
+interface ScheduledArtifact {
+  name: string | null;
+  driveId: string | null;
+  driveUrl: string | null;
+  error: string | null;
 }
 
 export interface CsatEntryInput {
@@ -63,6 +122,7 @@ interface DirectoryEntry {
   name: string;
   code: string;
   department: string;
+  departmentId?: string;
 }
 
 export type Directory = Map<string, DirectoryEntry>;
@@ -105,38 +165,45 @@ function relatedValue(row: Row, key: string, field = 'name'): string {
   return record && typeof record === 'object' && field in record ? String((record as Row)[field] ?? '') : '';
 }
 function person(directory: Directory, id: unknown): DirectoryEntry {
-  return directory.get(String(id ?? '')) ?? { name: '', code: '', department: '' };
+  return directory.get(String(id ?? '')) ?? { name: '', code: '', department: '', departmentId: '' };
 }
 function dateLabel(input: unknown): string {
   if (!input) return '—';
   const date = new Date(String(input));
   return Number.isNaN(date.getTime()) ? String(input) : new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(date);
 }
-function isOverdue(due: unknown, terminal: boolean): boolean {
-  if (!due || terminal) return false;
+function isOverdue(due: unknown, terminal: boolean, paused = false): boolean {
+  if (!due || terminal || paused) return false;
   const time = new Date(String(due)).getTime();
   return Number.isFinite(time) && time < Date.now();
 }
 
 function standardEntry(args: {
   row: Row; source: string; code: string; title: string; status: string; category?: string;
-  owner?: string; due?: unknown; created?: unknown; completed?: unknown; warning?: boolean;
+  owner?: string; ownerId?: unknown; department?: string; departmentId?: unknown;
+  due?: unknown; created?: unknown; completed?: unknown; warning?: boolean; paused?: boolean;
   critical?: boolean; amount?: number; rating?: number; feedback?: string; feedbackAt?: string;
   extraRow?: Record<string, string | number | boolean | null>; terminal?: boolean;
 }): ReportEntry {
   // บางชุดสถานะไม่เข้ากับ TERMINAL (เช่น 'คืนแล้ว' ของทะเบียนคุม) จึงให้แหล่งข้อมูลระบุเองได้
   const terminal = args.terminal ?? TERMINAL.test(args.status);
   const createdAt = args.created ? String(args.created) : new Date(0).toISOString();
+  const inferredOwnerId = args.ownerId ?? args.row.assignee_id ?? args.row.it_handler_id ?? args.row.technician_id
+    ?? args.row.owner_id ?? args.row.operator_id ?? args.row.tester_id ?? args.row.owner_employee_id ?? args.row.employee_id;
+  const inferredDepartmentId = args.departmentId ?? args.row.department_id;
   return {
     row: {
       id: value(args.row, 'id'), source: args.source, code: args.code, title: args.title, status: args.status || '—',
-      category: args.category || '—', owner: args.owner || '—', dueDate: dateLabel(args.due), recordDate: dateLabel(args.created),
+      category: args.category || '—', owner: args.owner || '—', ownerId: inferredOwnerId == null ? null : String(inferredOwnerId),
+      department: args.department || '—', departmentId: inferredDepartmentId == null ? null : String(inferredDepartmentId),
+      dueDate: dateLabel(args.due), recordDate: dateLabel(args.created),
       ...args.extraRow,
     },
     createdAt,
     completedAt: args.completed ? String(args.completed) : undefined,
     terminal,
-    overdue: isOverdue(args.due, terminal),
+    paused: Boolean(args.paused),
+    overdue: isOverdue(args.due, terminal, args.paused),
     warning: Boolean(args.warning),
     critical: Boolean(args.critical),
     amount: args.amount,
@@ -153,7 +220,7 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
     sourcePermissions: ['ticket.view'],
     sources: [{
       permission: 'ticket.view', table: 'tickets', dateColumn: 'created_at', sourceLabel: 'Ticket',
-      select: 'id,ticket_no,title,priority,status,due_at,response_due_at,acknowledged_at,resolved_at,closed_at,rating,feedback,feedback_at,created_at,assignee_id,assignee_name_snapshot,ticket_categories(name)',
+      select: 'id,ticket_no,title,priority,status,due_at,sla_paused_at,response_due_at,acknowledged_at,resolved_at,closed_at,rating,feedback,feedback_at,created_at,assignee_id,assignee_name_snapshot,ticket_categories(name)',
       map: (row) => standardEntry({
         row,
         source: 'Ticket',
@@ -163,6 +230,7 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
         category: relatedValue(row, 'ticket_categories') || value(row, 'priority'),
         owner: value(row, 'assignee_name_snapshot') || value(row, 'assignee_id'),
         due: row.due_at,
+        paused: Boolean(row.sla_paused_at),
         created: row.created_at,
         completed: row.closed_at ?? row.resolved_at,
         critical: value(row, 'priority') === 'วิกฤต',
@@ -174,6 +242,7 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
           rating: row.rating === null ? null : numeric(row, 'rating'),
           feedback: value(row, 'feedback') || '—',
           feedbackDate: dateLabel(row.feedback_at),
+          slaState: row.sla_paused_at ? 'พัก SLA' : ticketSlaState(row),
         },
       }),
     }],
@@ -184,7 +253,7 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
     sourcePermissions: ['service_request.view', 'access_request.view', 'workflow.view'],
     sources: [
       { permission: 'service_request.view', table: 'service_requests', dateColumn: 'created_at', sourceLabel: 'Service Request', select: 'id,service_code,service_name,summary,priority,status,approval_status,due_at,closed_at,completed_at,created_at,assignee_id', map: (row) => standardEntry({ row, source: 'Service Request', code: value(row, 'service_code') || shortId(row, 'SR'), title: value(row, 'summary') || value(row, 'service_name'), status: value(row, 'status'), category: value(row, 'priority'), owner: value(row, 'assignee_id'), due: row.due_at, created: row.created_at, completed: row.closed_at ?? row.completed_at }) },
-      { permission: 'access_request.view', table: 'access_requests', dateColumn: 'created_at', sourceLabel: 'Access Request', select: 'id,request_type,access_level,status,review_due,created_at,approved_at,it_action_at,it_handler_id', map: (row) => standardEntry({ row, source: 'Access Request', code: shortId(row, 'AR'), title: `${value(row, 'request_type')} · ${value(row, 'access_level')}`, status: value(row, 'status'), category: value(row, 'access_level'), owner: value(row, 'it_handler_id'), due: row.review_due, created: row.created_at, completed: row.it_action_at }) },
+      { permission: 'access_request.view', table: 'access_requests', dateColumn: 'created_at', sourceLabel: 'Access Request', select: 'id,request_type,access_level,status,review_due,created_at,approved_at,it_action_at,it_handler_id,lifecycle_event,privileged_access,data_classification,access_control_item:access_control_items!access_requests_access_item_id_fkey(kind,name)', map: (row) => { const item = row.access_control_item as { kind?: string; name?: string } | null; const itemLabel = item?.name ? `${item.kind?.toUpperCase() ?? 'RBAC'} · ${item.name}` : value(row, 'access_level'); return standardEntry({ row, source: 'Access Request', code: shortId(row, 'AR'), title: `${value(row, 'request_type')} · ${itemLabel}`, status: value(row, 'status'), category: itemLabel, owner: value(row, 'it_handler_id'), due: row.review_due, created: row.created_at, completed: row.it_action_at }); } },
       { permission: 'workflow.view', table: 'workflow_instances', dateColumn: 'created_at', sourceLabel: 'Workflow', select: 'id,instance_code,module_key,record_label,status,due_at,started_at,completed_at,created_at,requester_id', map: (row) => standardEntry({ row, source: 'Workflow', code: value(row, 'instance_code'), title: value(row, 'record_label'), status: value(row, 'status'), category: value(row, 'module_key'), owner: value(row, 'requester_id'), due: row.due_at, created: row.started_at ?? row.created_at, completed: row.completed_at }) },
     ],
   },
@@ -194,7 +263,7 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
     sourcePermissions: ['asset.view', 'maintenance.view', 'inventory.view', 'license.view'],
     sources: [
       { permission: 'asset.view', table: 'assets', dateColumn: 'created_at', sourceLabel: 'Asset', currentState: true, directory: true, select: 'id,asset_code,name,asset_type,status,warranty_expire,price,created_at,owner_employee_id', map: (row, directory) => standardEntry({ row, source: 'Asset', code: value(row, 'asset_code'), title: value(row, 'name'), status: value(row, 'status'), category: value(row, 'asset_type'), owner: person(directory, row.owner_employee_id).name, due: row.warranty_expire, created: row.created_at, warning: isOverdue(row.warranty_expire, false), amount: numeric(row, 'price') }) },
-      { permission: 'maintenance.view', table: 'maintenance_plans', dateColumn: 'created_at', sourceLabel: 'Maintenance', currentState: true, directory: true, select: 'id,status,recurrence,plan_date,actual_date,next_due_date,created_at,technician_id,asset_id', map: (row, directory) => standardEntry({ row, source: 'Maintenance', code: shortId(row, 'PM'), title: `แผนบำรุงรักษา ${value(row, 'asset_id').slice(0, 8)}`, status: value(row, 'status'), category: value(row, 'recurrence'), owner: person(directory, row.technician_id).name, due: row.next_due_date ?? row.plan_date, created: row.created_at, completed: row.actual_date }) },
+      { permission: 'maintenance.view', table: 'maintenance_plans', dateColumn: 'created_at', sourceLabel: 'Maintenance', currentState: true, directory: true, select: 'id,status,recurrence,recurrence_basis,original_plan_date,plan_date,actual_date,next_due_date,created_at,technician_id,asset_id', map: (row, directory) => standardEntry({ row, source: 'Maintenance', code: shortId(row, 'PM'), title: `แผนบำรุงรักษา ${value(row, 'asset_id').slice(0, 8)}`, status: value(row, 'status'), category: `${value(row, 'recurrence')} · ยึด${value(row, 'recurrence_basis')}`, owner: person(directory, row.technician_id).name, due: row.next_due_date ?? row.plan_date, created: row.original_plan_date ?? row.created_at, completed: row.actual_date }) },
       { permission: 'inventory.view', table: 'inventory_items', dateColumn: 'created_at', sourceLabel: 'Inventory', currentState: true, select: 'id,item_name,category,unit,stock_qty,min_qty,location,status,unit_price,created_at', map: (row) => standardEntry({ row, source: 'Inventory', code: shortId(row, 'INV'), title: value(row, 'item_name'), status: value(row, 'status'), category: value(row, 'category'), owner: value(row, 'location'), created: row.created_at, warning: numeric(row, 'stock_qty') <= numeric(row, 'min_qty'), amount: numeric(row, 'stock_qty') * numeric(row, 'unit_price') }) },
       { permission: 'license.view', table: 'software_licenses', dateColumn: 'created_at', sourceLabel: 'License', currentState: true, select: 'id,software_name,license_type,total_qty,used_qty,expire_date,vendor_name,status,created_at', map: (row) => standardEntry({ row, source: 'License', code: shortId(row, 'LIC'), title: value(row, 'software_name'), status: value(row, 'status'), category: value(row, 'license_type'), owner: value(row, 'vendor_name'), due: row.expire_date, created: row.created_at, warning: isOverdue(row.expire_date, false) || numeric(row, 'used_qty') >= numeric(row, 'total_qty') }) },
     ],
@@ -241,6 +310,44 @@ export const REPORTS: Record<ReportKey, ReportConfig> = {
         },
       },
     ],
+  },
+  'asset-verification': {
+    key: 'asset-verification', label: 'Asset Verification', sortOrder: 36,
+    description: 'ผลตรวจนับทรัพย์สินจาก Campaign หน้างาน พร้อมสถานที่ ผู้ถือครอง และหลักฐานที่ต้องติดตาม',
+    sourcePermissions: ['asset.view'],
+    columns: [
+      { key: 'campaignCode', label: 'Campaign' }, { key: 'campaignName', label: 'ชื่อ Campaign' },
+      { key: 'code', label: 'รหัสทรัพย์สิน' }, { key: 'title', label: 'ทรัพย์สิน' },
+      { key: 'status', label: 'ผลตรวจ' }, { key: 'expectedLocation', label: 'สถานที่ตามทะเบียน' },
+      { key: 'actualLocation', label: 'สถานที่พบจริง' }, { key: 'expectedCustodian', label: 'ผู้ถือครองตามทะเบียน' },
+      { key: 'actualCustodian', label: 'ผู้ถือครองปัจจุบัน' }, { key: 'recordDate', label: 'วันที่สแกน' },
+      { key: 'note', label: 'หมายเหตุ' },
+    ],
+    sources: [{
+      permission: 'asset.view', table: 'asset_verifications', dateColumn: 'scanned_at', sourceLabel: 'Asset Verification',
+      select: 'id,result,expected_location,actual_location,expected_custodian_employee_id,actual_custodian_employee_id,note,scanned_at,asset:assets!asset_verifications_asset_id_fkey(asset_code,name),campaign:asset_verification_campaigns!asset_verifications_campaign_id_fkey(campaign_code,name)',
+      currentState: false, directory: true,
+      map: (row, directory) => {
+        const asset = row.asset as Row | null;
+        const campaign = row.campaign as Row | null;
+        const result = value(row, 'result');
+        const resultLabels: Record<string, string> = { found: 'พบ / ตรงข้อมูล', not_found: 'ไม่พบ', wrong_location: 'ผิดสถานที่', wrong_custodian: 'ผู้ถือครองผิด' };
+        return standardEntry({
+          row, source: 'Asset Verification', code: value(asset ?? {}, 'asset_code'), title: value(asset ?? {}, 'name'),
+          status: resultLabels[result] ?? result, category: value(campaign ?? {}, 'campaign_code'),
+          owner: person(directory, row.actual_custodian_employee_id).name,
+          created: row.scanned_at,
+          warning: result !== 'found', critical: result === 'not_found',
+          extraRow: {
+            campaignCode: value(campaign ?? {}, 'campaign_code'), campaignName: value(campaign ?? {}, 'name'),
+            expectedLocation: value(row, 'expected_location'), actualLocation: value(row, 'actual_location'),
+            expectedCustodian: person(directory, row.expected_custodian_employee_id).name,
+            actualCustodian: person(directory, row.actual_custodian_employee_id).name,
+            note: value(row, 'note'),
+          },
+        });
+      },
+    }],
   },
   'security-resilience': {
     key: 'security-resilience', label: 'Security & Resilience', sortOrder: 40,
@@ -294,24 +401,36 @@ const DIRECTORY_MAX_ROWS = 5000;
  * ไม่กรอง status active ต่างจาก /options เพราะทะเบียนคุมต้องยังชี้ชื่อคนที่ลาออกไปแล้ว
  * แต่ยังไม่ได้คืนของได้
  */
-async function loadDirectory(c: Context<AppEnv>): Promise<{ directory: Directory; error?: string }> {
-  const { data, error } = await createAdminClient(c.env)
-    .from('employees')
-    .select('id,employee_code,prefix_th,first_name_th,last_name_th,department:departments(name_th)')
-    .limit(DIRECTORY_MAX_ROWS);
-  if (error) return { directory: new Map(), error: error.message };
-  return {
-    directory: new Map(((data ?? []) as unknown as Row[]).map((row) => [value(row, 'id'), {
+async function loadDirectory(client: SupabaseClient): Promise<{ directory: Directory; error?: string }> {
+  const [employeesResult, profilesResult] = await Promise.all([
+    client.from('employees').select('id,employee_code,prefix_th,first_name_th,last_name_th,department_id,department:departments(name_th)').limit(DIRECTORY_MAX_ROWS),
+    client.from('profiles').select('id,employee_code,full_name,department_id,department:departments(name_th)').limit(DIRECTORY_MAX_ROWS),
+  ]);
+  if (employeesResult.error) return { directory: new Map(), error: employeesResult.error.message };
+  if (profilesResult.error) return { directory: new Map(), error: profilesResult.error.message };
+  const directory: Directory = new Map();
+  for (const row of (employeesResult.data ?? []) as unknown as Row[]) {
+    directory.set(value(row, 'id'), {
       name: `${value(row, 'prefix_th')}${value(row, 'first_name_th')} ${value(row, 'last_name_th')}`.trim(),
       code: value(row, 'employee_code'),
       department: relatedValue(row, 'department', 'name_th'),
-    }])),
-  };
+      departmentId: value(row, 'department_id'),
+    });
+  }
+  for (const row of (profilesResult.data ?? []) as unknown as Row[]) {
+    directory.set(value(row, 'id'), {
+      name: value(row, 'full_name'),
+      code: value(row, 'employee_code'),
+      department: relatedValue(row, 'department', 'name_th'),
+      departmentId: value(row, 'department_id'),
+    });
+  }
+  return { directory };
 }
 
-async function availableDefinitions(c: Context<AppEnv>, permissions: Set<string>): Promise<{ definitions: ReportDefinition[]; error?: string }> {
+async function availableDefinitions(client: SupabaseClient, permissions: Set<string>): Promise<{ definitions: ReportDefinition[]; error?: string }> {
   const allowed = Object.values(REPORTS).filter((config) => allowedSources(permissions, config).length > 0);
-  const { data, error } = await c.get('supabase').from('report_definitions').select('key,label,description,required_permissions,sort_order').eq('status', 'active').order('sort_order');
+  const { data, error } = await client.from('report_definitions').select('key,label,description,required_permissions,sort_order').eq('status', 'active').order('sort_order');
   if (error) return { definitions: [], error: error.message };
   const database = new Map((data ?? []).map((row) => [String(row.key), row]));
   return {
@@ -322,24 +441,53 @@ async function availableDefinitions(c: Context<AppEnv>, permissions: Set<string>
   };
 }
 
-async function loadEntries(c: Context<AppEnv>, permissions: Set<string>, config: ReportConfig, rangeDays: number): Promise<{ entries: ReportEntry[]; error?: string }> {
+async function loadEntries(
+  client: SupabaseClient,
+  permissions: Set<string>,
+  config: ReportConfig,
+  filters: ReportFilters,
+  directoryClient: SupabaseClient = client,
+): Promise<{ entries: ReportEntry[]; freshness: ReportFreshness[]; error?: string }> {
   const sources = allowedSources(permissions, config);
-  if (!sources.length) return { entries: [], error: 'ไม่มีสิทธิ์เข้าถึงแหล่งข้อมูลของรายงานนี้' };
-  const since = new Date(Date.now() - rangeDays * 86_400_000).toISOString();
-  const directoryPromise: Promise<{ directory: Directory; error?: string }> = sources.some((source) => source.directory)
-    ? loadDirectory(c)
-    : Promise.resolve({ directory: new Map() });
+  if (!sources.length) return { entries: [], freshness: [], error: 'ไม่มีสิทธิ์เข้าถึงแหล่งข้อมูลของรายงานนี้' };
+  const since = new Date(Date.now() - filters.rangeDays * 86_400_000).toISOString();
+  const directoryPromise: Promise<{ directory: Directory; error?: string }> = loadDirectory(directoryClient);
   const results = await Promise.all(sources.map(async (source) => {
-    let query = c.get('supabase').from(source.table).select(source.select).order(source.dateColumn, { ascending: false }).limit(2000);
-    if (rangeDays > 0 && !source.currentState) query = query.gte(source.dateColumn, since);
+    let query = client.from(source.table).select(source.select).order(source.dateColumn, { ascending: false }).limit(2000);
+    if (filters.from && !source.currentState) query = query.gte(source.dateColumn, `${filters.from}T00:00:00.000Z`);
+    else if (filters.rangeDays > 0 && !source.currentState) query = query.gte(source.dateColumn, since);
+    if (filters.to && !source.currentState) query = query.lt(source.dateColumn, `${filters.to}T00:00:00.000Z`);
     const { data, error } = await query;
     return { source, data: (data ?? []) as unknown as Row[], error };
   }));
   const error = results.find((result) => result.error)?.error;
-  if (error) return { entries: [], error: error.message };
+  if (error) return { entries: [], freshness: [], error: error.message };
   const { directory, error: directoryError } = await directoryPromise;
-  if (directoryError) return { entries: [], error: directoryError };
-  return { entries: results.flatMap((result) => result.data.map((row) => result.source.map(row, directory))) };
+  if (directoryError) return { entries: [], freshness: [], error: directoryError };
+  const freshnessResults = await Promise.all(sources.map(async (source) => {
+    const latest = await client.from(source.table).select('updated_at').order('updated_at', { ascending: false }).limit(1);
+    return { source: source.sourceLabel, lastUpdatedAt: latest.error ? null : (latest.data?.[0] as { updated_at?: string } | undefined)?.updated_at ?? null };
+  }));
+  const now = Date.now();
+  const freshness = freshnessResults.map((item) => ({
+    ...item,
+    status: item.lastUpdatedAt === null ? 'unknown' as const : (now - new Date(item.lastUpdatedAt).getTime() > 86_400_000 ? 'stale' as const : 'fresh' as const),
+  }));
+  const entries = results.flatMap((result) => result.data.map((row) => {
+    const entry = result.source.map(row, directory);
+    const owner = entry.row.ownerId ? person(directory, entry.row.ownerId) : null;
+    if (owner && owner.name) {
+      if (entry.row.owner === '—' || entry.row.owner === entry.row.ownerId) entry.row.owner = owner.name;
+      if (entry.row.department === '—') entry.row.department = owner.department || '—';
+      if (!entry.row.departmentId && owner.departmentId) entry.row.departmentId = owner.departmentId;
+    }
+    return entry;
+  })).filter((entry) => {
+    if (filters.departmentId && String(entry.row.departmentId ?? '') !== filters.departmentId) return false;
+    if (filters.ownerId && String(entry.row.ownerId ?? '') !== filters.ownerId) return false;
+    return true;
+  });
+  return { entries, freshness };
 }
 
 function countBy(entries: ReportEntry[], key: string): { label: string; value: number }[] {
@@ -439,7 +587,13 @@ export function buildCsatAnalytics(entries: CsatEntryInput[], now = new Date()) 
   };
 }
 
-export function buildDataset(config: ReportConfig, definition: ReportDefinition, loaded: ReportEntry[], rangeDays: number) {
+export function buildDataset(
+  config: ReportConfig,
+  definition: ReportDefinition,
+  loaded: ReportEntry[],
+  rangeDays: number,
+  meta: { filters?: ReportFilters; freshness?: ReportFreshness[]; comparison?: ReportComparison[] } = {},
+) {
   // ทะเบียนคุมต้องอ่านเป็นราย "คน" ของทุกชิ้นที่คนเดียวกันถืออยู่ต้องเรียงติดกัน ไม่ใช่ไล่ตามวันที่บันทึก
   const entries = config.key === 'asset-custody'
     ? [...loaded].sort((a, b) => String(a.row.owner).localeCompare(String(b.row.owner), 'th')
@@ -451,10 +605,11 @@ export function buildDataset(config: ReportConfig, definition: ReportDefinition,
   const overdue = entries.filter((entry) => entry.overdue).length;
   const warning = entries.filter((entry) => entry.warning).length;
   const critical = entries.filter((entry) => entry.critical && !entry.terminal).length;
+  const paused = entries.filter((entry) => entry.paused).length;
   const amount = entries.reduce((sum, entry) => sum + (entry.amount ?? 0), 0);
   const ratings = entries.flatMap((entry) => entry.rating === undefined ? [] : [entry.rating]);
   let metrics = [metric('รายการทั้งหมด', entries.length, 'primary'), metric('กำลังดำเนินการ', open, open ? 'amber' : 'gray'), metric('เกินกำหนด', overdue, overdue ? 'danger' : 'teal'), metric('เสร็จสิ้น', completed, 'teal')];
-  if (config.key === 'service-desk') metrics = [metric('Ticket ทั้งหมด', entries.length, 'primary'), metric('งานเปิด', open, open ? 'amber' : 'gray'), metric('เกิน SLA / กำหนด', overdue, overdue ? 'danger' : 'teal'), metric('CSAT เฉลี่ย', ratings.length ? `${(ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)}/5` : '—', 'teal', `${ratings.length} คำตอบ`)];
+  if (config.key === 'service-desk') metrics = [metric('Ticket ทั้งหมด', entries.length, 'primary'), metric('งานเปิด', open, open ? 'amber' : 'gray'), metric('พัก SLA', paused, paused ? 'amber' : 'teal'), metric('เกิน SLA / กำหนด', overdue, overdue ? 'danger' : 'teal'), metric('CSAT เฉลี่ย', ratings.length ? `${(ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)}/5` : '—', 'teal', `${ratings.length} คำตอบ`)];
   if (config.key === 'assets-operations') metrics = [metric('รายการที่ดูแล', entries.length, 'primary'), metric('มูลค่าที่บันทึก', amount.toLocaleString('th-TH', { maximumFractionDigits: 2 }), 'teal', 'บาท'), metric('ต้องติดตาม', warning + overdue, warning + overdue ? 'amber' : 'teal'), metric('เสร็จ/ไม่ใช้งาน', completed, 'gray')];
   if (config.key === 'asset-custody') {
     const held = entries.filter((entry) => entry.row.status === 'ครอบครอง').length;
@@ -478,7 +633,7 @@ export function buildDataset(config: ReportConfig, definition: ReportDefinition,
     { key: 'status', label: 'สถานะ' }, { key: 'category', label: 'ประเภท/ระดับ' }, { key: 'owner', label: 'ผู้รับผิดชอบ' },
     { key: 'dueDate', label: 'ครบกำหนด' }, { key: 'recordDate', label: 'วันที่บันทึก' },
   ];
-  if (config.key === 'service-desk') columns.push({ key: 'rating', label: 'CSAT' }, { key: 'feedback', label: 'ความคิดเห็น' });
+  if (config.key === 'service-desk') columns.push({ key: 'slaState', label: 'สถานะ SLA' }, { key: 'rating', label: 'CSAT' }, { key: 'feedback', label: 'ความคิดเห็น' });
   const csatEntries: CsatEntryInput[] = entries.map((entry) => ({
     id: String(entry.row.id ?? ''), code: String(entry.row.code ?? ''), title: String(entry.row.title ?? ''),
     category: String(entry.row.category ?? '—'), owner: String(entry.row.owner ?? '—'), rating: entry.rating,
@@ -486,6 +641,7 @@ export function buildDataset(config: ReportConfig, definition: ReportDefinition,
   }));
   return {
     definition, metrics, alerts,
+    summary: { total: entries.length, open, overdue, critical },
     breakdowns: config.key === 'asset-custody'
       ? [{ label: 'แยกตามหน่วยงาน', items: countBy(entries, 'department') }, { label: 'แยกตามประเภททรัพย์สิน', items: countBy(entries, 'category') }]
       : [{ label: 'แยกตามแหล่งข้อมูล', items: countBy(entries, 'source') }, { label: 'แยกตามสถานะ', items: countBy(entries, 'status') }],
@@ -493,6 +649,7 @@ export function buildDataset(config: ReportConfig, definition: ReportDefinition,
     trendLabels: config.key === 'asset-custody' ? { primary: 'รับมอบ', secondary: 'คืน' } : { primary: 'สร้าง', secondary: 'เสร็จสิ้น' },
     columns,
     rows: entries.map((entry) => entry.row), totalRows: entries.length, rangeDays, generatedAt: new Date().toISOString(),
+    ...meta,
     csat: config.key === 'service-desk' ? buildCsatAnalytics(csatEntries) : undefined,
   };
 }
@@ -506,59 +663,498 @@ export function reportCsv(dataset: ReturnType<typeof buildDataset>): string {
   return [header, ...lines].join('\r\n');
 }
 
-async function datasetFor(c: Context<AppEnv>, key: string, rangeDays: number) {
+function executivePackCsv(pack: ExecutivePack): string {
+  const lines = [
+    ['ประเภท', 'รายการ', 'ค่า', 'หมายเหตุ'],
+    ...pack.metrics.map((item) => ['Executive KPI', item.label, item.value, item.note ?? '']),
+    ...pack.sections.flatMap((section) => [
+      ['Report Section', section.label, section.totalRows, ''],
+      ...section.metrics.map((item) => [section.label, item.label, item.value, item.note ?? '']),
+    ]),
+  ];
+  return lines.map((line) => line.map((value) => csvCell(value)).join(',')).join('\r\n');
+}
+
+async function createScheduledArtifact(
+  env: AppEnv['Bindings'],
+  reportKey: string,
+  dataset: unknown,
+  format: 'CSV' | 'PDF' | 'PRINT',
+  saveToDrive: boolean,
+  now: Date,
+): Promise<ScheduledArtifact> {
+  if (!saveToDrive || format === 'PRINT') return { name: null, driveId: null, driveUrl: null, error: null };
+  const stamp = now.toISOString().slice(0, 10);
+  const baseName = safeDriveName(`${reportKey}-${stamp}`, 'scheduled-report');
+  if (format === 'CSV') {
+    const csv = reportKey === 'executive-pack'
+      ? executivePackCsv(dataset as ExecutivePack)
+      : reportCsv(dataset as ReturnType<typeof buildDataset>);
+    const result = await uploadCsvAsGoogleSheet(env, { name: `${baseName}.csv`, csv }, fetch, now);
+    return result.ok
+      ? { name: result.file.name, driveId: result.file.id, driveUrl: result.file.webViewLink, error: null }
+      : { name: null, driveId: null, driveUrl: null, error: result.message };
+  }
+  if (!env.MYBROWSER) return { name: null, driveId: null, driveUrl: null, error: 'ยังไม่ได้ตั้งค่า Browser Rendering สำหรับ Scheduled PDF' };
+  const html = reportKey === 'executive-pack'
+    ? renderExecutivePackHtml(dataset as ExecutivePack)
+    : renderReportHtml(dataset as ReturnType<typeof buildDataset>);
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await renderHtmlToPdf(env.MYBROWSER, html);
+  } catch (error) {
+    return { name: null, driveId: null, driveUrl: null, error: error instanceof Error ? error.message : 'สร้าง Scheduled PDF ไม่สำเร็จ' };
+  }
+  const result = await uploadToDrive(env, {
+    name: safeDriveName(`${baseName}.pdf`, 'scheduled-report.pdf'),
+    contentType: 'application/pdf',
+    content: pdfBytes,
+    subFolder: buddhistYearFolder(now),
+  });
+  return result.ok
+    ? { name: result.file.name, driveId: result.file.id, driveUrl: result.file.webViewLink, error: null }
+    : { name: null, driveId: null, driveUrl: null, error: result.message };
+}
+
+function numericMetricValue(value: string | number): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const match = String(value).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function compareDatasets(current: ReturnType<typeof buildDataset>, previous: ReturnType<typeof buildDataset>): ReportComparison[] {
+  return current.metrics.map((metric) => {
+    const currentValue = numericMetricValue(metric.value);
+    const previousValue = numericMetricValue(previous.metrics.find((item) => item.label === metric.label)?.value ?? '');
+    const delta = currentValue === null || previousValue === null ? null : currentValue - previousValue;
+    return {
+      label: metric.label,
+      current: currentValue,
+      previous: previousValue,
+      delta,
+      deltaPercentage: delta === null || previousValue === null || previousValue === 0 ? null : Number(((delta / Math.abs(previousValue)) * 100).toFixed(1)),
+    };
+  });
+}
+
+function previousPeriodFilters(filters: ReportFilters): ReportFilters {
+  if (filters.from && filters.to) {
+    const from = new Date(`${filters.from}T00:00:00.000Z`);
+    const to = new Date(`${filters.to}T00:00:00.000Z`);
+    const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86_400_000));
+    return { ...filters, from: new Date(from.getTime() - days * 86_400_000).toISOString().slice(0, 10), to: filters.from };
+  }
+  if (filters.rangeDays <= 0) return { ...filters, comparePrevious: false };
+  const currentEnd = new Date();
+  const currentStart = new Date(currentEnd.getTime() - filters.rangeDays * 86_400_000);
+  return { ...filters, from: new Date(currentStart.getTime() - filters.rangeDays * 86_400_000).toISOString().slice(0, 10), to: currentStart.toISOString().slice(0, 10) };
+}
+
+async function datasetFor(c: Context<AppEnv>, key: string, filters: ReportFilters) {
   const config = REPORTS[key as ReportKey];
   if (!config) return { status: 404 as const, error: 'ไม่พบรายงานที่ระบุ' };
   const permissionResult = await permissionSet(c);
   if (permissionResult.error) return { status: 400 as const, error: permissionResult.error };
-  const definitions = await availableDefinitions(c, permissionResult.permissions);
+  const definitions = await availableDefinitions(c.get('supabase'), permissionResult.permissions);
   if (definitions.error) return { status: 400 as const, error: definitions.error };
   const definition = definitions.definitions.find((item) => item.key === config.key);
   if (!definition) return { status: 403 as const, error: 'ไม่มีสิทธิ์เข้าถึงแหล่งข้อมูลของรายงานนี้' };
-  const loaded = await loadEntries(c, permissionResult.permissions, config, rangeDays);
+  const loaded = await loadEntries(c.get('supabase'), permissionResult.permissions, config, filters, createAdminClient(c.env));
   if (loaded.error) return { status: 400 as const, error: loaded.error };
-  return { status: 200 as const, dataset: buildDataset(config, definition, loaded.entries, rangeDays) };
+  const dataset = buildDataset(config, definition, loaded.entries, filters.rangeDays, { filters, freshness: loaded.freshness });
+  if (filters.comparePrevious !== false && (filters.rangeDays > 0 || Boolean(filters.from && filters.to))) {
+    const previousFilters = previousPeriodFilters(filters);
+    const previousLoaded = await loadEntries(c.get('supabase'), permissionResult.permissions, config, previousFilters, createAdminClient(c.env));
+    if (!previousLoaded.error) {
+      const previous = buildDataset(config, definition, previousLoaded.entries, previousFilters.rangeDays);
+      dataset.comparison = compareDatasets(dataset, previous);
+    }
+  }
+  return { status: 200 as const, dataset };
+}
+
+function monthBounds(month: string): { start: string; end: string; previousStart: string; previousEnd: string; days: number } {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const endDate = new Date(Date.UTC(year, monthNumber, 1));
+  const previousStart = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return {
+    start: startDate.toISOString().slice(0, 10),
+    end: endDate.toISOString().slice(0, 10),
+    previousStart: previousStart.toISOString().slice(0, 10),
+    previousEnd: startDate.toISOString().slice(0, 10),
+    days: Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000),
+  };
+}
+
+export async function buildExecutivePack(
+  client: SupabaseClient,
+  permissions: Set<string>,
+  month: string,
+  directoryClient: SupabaseClient = client,
+): Promise<ExecutivePack> {
+  const bounds = monthBounds(month);
+  const definitions = await availableDefinitions(client, permissions);
+  if (definitions.error) throw new Error(definitions.error);
+  const sections: ExecutivePack['sections'] = [];
+  const freshnessMap = new Map<string, ReportFreshness>();
+  let total = 0;
+  let open = 0;
+  let overdue = 0;
+  let critical = 0;
+  let previousTotal = 0;
+  let previousOpen = 0;
+  let previousOverdue = 0;
+  let previousCritical = 0;
+
+  for (const definition of definitions.definitions) {
+    const config = REPORTS[definition.key];
+    const current = await loadEntries(client, permissions, config, { rangeDays: bounds.days, from: bounds.start, to: bounds.end, comparePrevious: false }, directoryClient);
+    if (current.error) continue;
+    const previous = await loadEntries(client, permissions, config, { rangeDays: bounds.days, from: bounds.previousStart, to: bounds.previousEnd, comparePrevious: false }, directoryClient);
+    const dataset = buildDataset(config, definition, current.entries, bounds.days, { filters: { rangeDays: bounds.days, from: bounds.start, to: bounds.end, comparePrevious: false }, freshness: current.freshness });
+    for (const item of current.freshness) freshnessMap.set(item.source, item);
+    sections.push({ key: definition.key, label: definition.label, totalRows: dataset.totalRows, metrics: dataset.metrics, alerts: dataset.alerts });
+    total += dataset.summary.total;
+    open += dataset.summary.open;
+    overdue += dataset.summary.overdue;
+    critical += dataset.summary.critical;
+    if (!previous.error) {
+      const previousDataset = buildDataset(config, definition, previous.entries, bounds.days);
+      previousTotal += previousDataset.summary.total;
+      previousOpen += previousDataset.summary.open;
+      previousOverdue += previousDataset.summary.overdue;
+      previousCritical += previousDataset.summary.critical;
+    }
+  }
+
+  const thaiMonth = new Intl.DateTimeFormat('th-TH', { month: 'long', timeZone: 'Asia/Bangkok' }).format(new Date(`${bounds.start}T12:00:00.000Z`));
+  const buddhistYear = Number(month.slice(0, 4)) + 543;
+  const comparison: ReportComparison[] = [
+    { label: 'รายการรวม', current: total, previous: previousTotal, delta: total - previousTotal, deltaPercentage: previousTotal ? Number((((total - previousTotal) / Math.abs(previousTotal)) * 100).toFixed(1)) : null },
+    { label: 'รายการคงค้าง', current: open, previous: previousOpen, delta: open - previousOpen, deltaPercentage: previousOpen ? Number((((open - previousOpen) / Math.abs(previousOpen)) * 100).toFixed(1)) : null },
+    { label: 'เกินกำหนด', current: overdue, previous: previousOverdue, delta: overdue - previousOverdue, deltaPercentage: previousOverdue ? Number((((overdue - previousOverdue) / Math.abs(previousOverdue)) * 100).toFixed(1)) : null },
+    { label: 'ความเสี่ยงสูง/วิกฤต', current: critical, previous: previousCritical, delta: critical - previousCritical, deltaPercentage: previousCritical ? Number((((critical - previousCritical) / Math.abs(previousCritical)) * 100).toFixed(1)) : null },
+  ];
+  const { data: kpiRows, error: kpiError } = await client.from('report_kpi_definitions').select('key,label,description,formula,unit,target,direction').eq('status', 'active').order('sort_order');
+  if (kpiError) throw new Error(kpiError.message);
+  return {
+    reportKey: 'executive-pack',
+    title: `รายงานผลการดำเนินงานด้านเทคโนโลยีสารสนเทศ ประจำเดือน ${thaiMonth} ${buddhistYear}`,
+    month,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+    generatedAt: new Date().toISOString(),
+    metrics: [
+      metric('รายการรวม', total, 'primary', 'ทุกรายงานที่ผู้ใช้เข้าถึงได้'),
+      metric('รายการคงค้าง', open, open ? 'amber' : 'teal'),
+      metric('เกินกำหนด', overdue, overdue ? 'danger' : 'teal'),
+      metric('ความเสี่ยงสูง/วิกฤต', critical, critical ? 'danger' : 'teal'),
+    ],
+    comparison,
+    freshness: [...freshnessMap.values()],
+    sections,
+    kpis: ((kpiRows ?? []) as unknown as ExecutivePack['kpis']),
+  };
+}
+
+export async function generateScheduledSnapshot(
+  env: AppEnv['Bindings'],
+  schedule: { report_key: string; filters?: unknown; created_by?: string | null; format?: 'CSV' | 'PDF' | 'PRINT'; save_to_drive?: boolean },
+  now = new Date(),
+): Promise<{ id: string; title: string; artifact: ScheduledArtifact }> {
+  const admin = createAdminClient(env);
+  const permissions = new Set(Object.values(REPORTS).flatMap((config) => config.sourcePermissions));
+  const stored = schedule.filters && typeof schedule.filters === 'object' ? schedule.filters as Partial<ReportFilters> : {};
+  const filters: ReportFilters = {
+    rangeDays: Number.isInteger(stored.rangeDays) ? Number(stored.rangeDays) : 30,
+    departmentId: stored.departmentId,
+    ownerId: stored.ownerId,
+    from: stored.from,
+    to: stored.to,
+    comparePrevious: stored.comparePrevious ?? true,
+  };
+  let title: string;
+  let dataset: unknown;
+  let periodStart: string | null = filters.from ?? null;
+  let periodEnd: string | null = filters.to ?? null;
+  let snapshotKind: 'scheduled' | 'executive_pack' = 'scheduled';
+  if (schedule.report_key === 'executive-pack') {
+    const month = now.toISOString().slice(0, 7);
+    const pack = await buildExecutivePack(admin, permissions, month, admin);
+    title = pack.title;
+    dataset = pack;
+    periodStart = pack.periodStart;
+    periodEnd = pack.periodEnd;
+    snapshotKind = 'executive_pack';
+  } else {
+    const config = REPORTS[schedule.report_key as ReportKey];
+    if (!config) throw new Error('ไม่พบรายงานที่กำหนดเวลาไว้');
+    const definitions = await availableDefinitions(admin, permissions);
+    const definition = definitions.definitions.find((item) => item.key === config.key);
+    if (!definition) throw new Error('ไม่พบ definition ของรายงานที่กำหนดเวลาไว้');
+    const loaded = await loadEntries(admin, permissions, config, filters, admin);
+    if (loaded.error) throw new Error(loaded.error);
+    dataset = buildDataset(config, definition, loaded.entries, filters.rangeDays, { filters, freshness: loaded.freshness });
+    title = `${definition.label} Snapshot`;
+  }
+  const { data, error } = await admin.from('report_snapshots').insert({ report_key: schedule.report_key, snapshot_kind: snapshotKind, title, period_start: periodStart, period_end: periodEnd, filters, dataset, generated_at: now.toISOString(), created_by: schedule.created_by ?? null }).select('id').single();
+  if (error) throw new Error(error.message);
+  const artifact = await createScheduledArtifact(env, schedule.report_key, dataset, schedule.format ?? 'PDF', schedule.save_to_drive ?? false, now);
+  return { id: String(data.id), title, artifact };
 }
 
 reportsRoute.get('/', zValidator('query', reportRangeQuerySchema, zodValidationHook), async (c) => {
   const requestId = c.get('requestId'); const { rangeDays } = c.req.valid('query');
   const permissionResult = await permissionSet(c);
   if (permissionResult.error) return c.json(fail(requestId, 'REPORT_PERMISSIONS_LOAD_FAILED', permissionResult.error), 400);
-  const result = await availableDefinitions(c, permissionResult.permissions);
+  const result = await availableDefinitions(c.get('supabase'), permissionResult.permissions);
   if (result.error) return c.json(fail(requestId, 'REPORT_DEFINITIONS_LOAD_FAILED', result.error), 400);
   return c.json(ok(requestId, { definitions: result.definitions, metrics: [metric('รายงานที่เข้าถึงได้', result.definitions.length, 'primary')], alerts: [], rangeDays, generatedAt: new Date().toISOString() }));
 });
 
+reportsRoute.get('/options', async (c) => {
+  const requestId = c.get('requestId');
+  const admin = createAdminClient(c.env);
+  const [directoryResult, departmentsResult] = await Promise.all([
+    loadDirectory(admin),
+    admin.from('departments').select('id,name_th').eq('status', 'active').order('name_th'),
+  ]);
+  if (directoryResult.error) return c.json(fail(requestId, 'REPORT_OPTIONS_LOAD_FAILED', directoryResult.error), 400);
+  if (departmentsResult.error) return c.json(fail(requestId, 'REPORT_OPTIONS_LOAD_FAILED', departmentsResult.error.message), 400);
+  const owners = [...directoryResult.directory.entries()]
+    .map(([id, person]) => ({ id, label: person.name || person.code || id, departmentId: person.departmentId || null }))
+    .filter((item) => item.label)
+    .sort((a, b) => a.label.localeCompare(b.label, 'th'));
+  return c.json(ok(requestId, {
+    departments: (departmentsResult.data ?? []).map((row) => ({ id: String(row.id), label: String(row.name_th) })),
+    owners,
+  }));
+});
+
+reportsRoute.get('/saved-filters', zValidator('query', reportSavedFilterQuerySchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const { reportKey } = c.req.valid('query');
+  let query = c.get('supabase').from('report_saved_filters').select('id,report_key,name,filters,is_shared,created_at,updated_at').order('updated_at', { ascending: false });
+  if (reportKey) query = query.eq('report_key', reportKey);
+  const { data, error } = await query;
+  if (error) return c.json(fail(requestId, 'REPORT_SAVED_FILTERS_LOAD_FAILED', error.message), 400);
+  return c.json(ok(requestId, (data ?? []).map((row) => ({ id: row.id, reportKey: row.report_key, name: row.name, filters: row.filters, isShared: row.is_shared, createdAt: row.created_at, updatedAt: row.updated_at }))));
+});
+
+reportsRoute.post('/saved-filters', zValidator('json', reportSavedFilterSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const body = c.req.valid('json');
+  if (body.reportKey !== 'executive-pack' && !REPORTS[body.reportKey as ReportKey]) return c.json(fail(requestId, 'REPORT_NOT_FOUND', 'ไม่พบรายงานที่ระบุ'), 404);
+  const { data, error } = await c.get('supabase').from('report_saved_filters').insert({ report_key: body.reportKey, name: body.name, filters: body.filters, is_shared: body.isShared, owner_id: c.get('userId') }).select('id,report_key,name,filters,is_shared,created_at,updated_at').single();
+  if (error) return c.json(fail(requestId, 'REPORT_SAVED_FILTER_CREATE_FAILED', error.message), 400);
+  return c.json(ok(requestId, { id: data.id, reportKey: data.report_key, name: data.name, filters: data.filters, isShared: data.is_shared, createdAt: data.created_at, updatedAt: data.updated_at }), 201);
+});
+
+reportsRoute.delete('/saved-filters/:id', async (c) => {
+  const requestId = c.get('requestId');
+  const { error } = await c.get('supabase').from('report_saved_filters').delete().eq('id', c.req.param('id')).eq('owner_id', c.get('userId'));
+  if (error) return c.json(fail(requestId, 'REPORT_SAVED_FILTER_DELETE_FAILED', error.message), 400);
+  return c.json(ok(requestId, { deleted: true }));
+});
+
+function scheduleDto(row: Row) {
+  return {
+    id: String(row.id), reportKey: String(row.report_key), name: String(row.name), frequency: String(row.frequency),
+    dayOfWeek: row.day_of_week === null ? null : Number(row.day_of_week), dayOfMonth: row.day_of_month === null ? null : Number(row.day_of_month),
+    runHour: Number(row.run_hour), timezone: String(row.timezone), format: String(row.format), saveToDrive: Boolean(row.save_to_drive),
+    filters: row.filters ?? {}, enabled: Boolean(row.enabled), nextRunAt: String(row.next_run_at), lastRunAt: row.last_run_at ? String(row.last_run_at) : null,
+  };
+}
+
+function zonedParts(date: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { year: value('year'), month: value('month'), day: value('day'), hour: value('hour'), minute: value('minute'), second: value('second') };
+}
+
+function zonedWallToUtc(wall: Date, timeZone: string): Date {
+  let guess = wall.getTime();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const actual = zonedParts(new Date(guess), timeZone);
+    const actualWall = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    guess += wall.getTime() - actualWall;
+  }
+  return new Date(guess);
+}
+
+export function nextScheduleAt(schedule: { frequency: 'weekly' | 'monthly'; dayOfWeek?: number; dayOfMonth?: number; runHour: number; timezone?: string }, from = new Date()): string {
+  let timeZone = schedule.timezone ?? 'Asia/Bangkok';
+  try { zonedParts(from, timeZone); } catch { timeZone = 'UTC'; }
+  const local = zonedParts(from, timeZone);
+  const candidate = new Date(Date.UTC(local.year, local.month - 1, local.day, schedule.runHour, 0, 0));
+  if (schedule.frequency === 'weekly') {
+    const localWeekday = new Date(Date.UTC(local.year, local.month - 1, local.day)).getUTCDay();
+    const target = schedule.dayOfWeek ?? 1;
+    const delta = (target - localWeekday + 7) % 7;
+    candidate.setUTCDate(candidate.getUTCDate() + delta);
+    if (delta === 0 && zonedWallToUtc(candidate, timeZone) <= from) candidate.setUTCDate(candidate.getUTCDate() + 7);
+  } else {
+    const target = Math.min(schedule.dayOfMonth ?? 1, 28);
+    candidate.setUTCDate(target);
+    if (zonedWallToUtc(candidate, timeZone) <= from) candidate.setUTCMonth(candidate.getUTCMonth() + 1);
+  }
+  return zonedWallToUtc(candidate, timeZone).toISOString();
+}
+
+reportsRoute.get('/schedules', async (c) => {
+  const requestId = c.get('requestId');
+  const { data, error } = await c.get('supabase').from('report_schedules').select('id,report_key,name,frequency,day_of_week,day_of_month,run_hour,timezone,format,save_to_drive,filters,enabled,next_run_at,last_run_at').order('next_run_at');
+  if (error) return c.json(fail(requestId, 'REPORT_SCHEDULES_LOAD_FAILED', error.message), 400);
+  return c.json(ok(requestId, (data ?? []).map((row) => scheduleDto(row as unknown as Row))));
+});
+
+reportsRoute.post('/schedules', requirePermission('report.schedule'), zValidator('json', reportScheduleSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const body = c.req.valid('json');
+  if (body.reportKey !== 'executive-pack' && !REPORTS[body.reportKey as ReportKey]) return c.json(fail(requestId, 'REPORT_NOT_FOUND', 'ไม่พบรายงานที่ระบุ'), 404);
+  const nextRunAt = nextScheduleAt(body);
+  const { data, error } = await c.get('supabase').from('report_schedules').insert({
+    report_key: body.reportKey, name: body.name, frequency: body.frequency, day_of_week: body.dayOfWeek ?? null, day_of_month: body.dayOfMonth ?? null,
+    run_hour: body.runHour, timezone: body.timezone, format: body.format, save_to_drive: body.saveToDrive, filters: body.filters, enabled: body.enabled,
+    next_run_at: nextRunAt, created_by: c.get('userId'), updated_by: c.get('userId'),
+  }).select('id,report_key,name,frequency,day_of_week,day_of_month,run_hour,timezone,format,save_to_drive,filters,enabled,next_run_at,last_run_at').single();
+  if (error) return c.json(fail(requestId, 'REPORT_SCHEDULE_CREATE_FAILED', error.message), 400);
+  return c.json(ok(requestId, scheduleDto(data as unknown as Row)), 201);
+});
+
+reportsRoute.patch('/schedules/:id', requirePermission('report.schedule'), zValidator('json', reportSchedulePatchSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const { data: existing, error: loadError } = await c.get('supabase').from('report_schedules').select('*').eq('id', c.req.param('id')).eq('created_by', c.get('userId')).maybeSingle();
+  if (loadError) return c.json(fail(requestId, 'REPORT_SCHEDULE_LOAD_FAILED', loadError.message), 400);
+  if (!existing) return c.json(fail(requestId, 'REPORT_SCHEDULE_NOT_FOUND', 'ไม่พบกำหนดการรายงาน'), 404);
+  const body = c.req.valid('json');
+  const merged = {
+    reportKey: body.reportKey ?? existing.report_key, name: body.name ?? existing.name, frequency: body.frequency ?? existing.frequency,
+    dayOfWeek: body.dayOfWeek ?? existing.day_of_week ?? undefined, dayOfMonth: body.dayOfMonth ?? existing.day_of_month ?? undefined,
+    runHour: body.runHour ?? existing.run_hour, timezone: body.timezone ?? existing.timezone, format: body.format ?? existing.format,
+    saveToDrive: body.saveToDrive ?? existing.save_to_drive, filters: body.filters ?? existing.filters, enabled: body.enabled ?? existing.enabled,
+  };
+  const validated = reportScheduleSchema.safeParse(merged);
+  if (!validated.success) return c.json(fail(requestId, 'REPORT_SCHEDULE_INVALID', 'รูปแบบกำหนดการรายงานไม่ถูกต้อง'), 400);
+  const patch = validated.data;
+  const update = {
+    report_key: patch.reportKey, name: patch.name, frequency: patch.frequency, day_of_week: patch.dayOfWeek ?? null, day_of_month: patch.dayOfMonth ?? null,
+    run_hour: patch.runHour, timezone: patch.timezone, format: patch.format, save_to_drive: patch.saveToDrive, filters: patch.filters, enabled: patch.enabled,
+    next_run_at: nextScheduleAt(patch), updated_by: c.get('userId'),
+  };
+  const { data, error } = await c.get('supabase').from('report_schedules').update(update).eq('id', c.req.param('id')).eq('created_by', c.get('userId')).select('id,report_key,name,frequency,day_of_week,day_of_month,run_hour,timezone,format,save_to_drive,filters,enabled,next_run_at,last_run_at').single();
+  if (error) return c.json(fail(requestId, 'REPORT_SCHEDULE_UPDATE_FAILED', error.message), 400);
+  return c.json(ok(requestId, scheduleDto(data as unknown as Row)));
+});
+
+reportsRoute.delete('/schedules/:id', requirePermission('report.schedule'), async (c) => {
+  const requestId = c.get('requestId');
+  const { error } = await c.get('supabase').from('report_schedules').delete().eq('id', c.req.param('id')).eq('created_by', c.get('userId'));
+  if (error) return c.json(fail(requestId, 'REPORT_SCHEDULE_DELETE_FAILED', error.message), 400);
+  return c.json(ok(requestId, { deleted: true }));
+});
+
+reportsRoute.get('/snapshots', async (c) => {
+  const requestId = c.get('requestId');
+  const reportKey = c.req.query('reportKey');
+  let query = c.get('supabase').from('report_snapshots').select('id,report_key,snapshot_kind,title,period_start,period_end,generated_at,created_at').order('created_at', { ascending: false }).limit(100);
+  if (reportKey) query = query.eq('report_key', reportKey);
+  const { data, error } = await query;
+  if (error) return c.json(fail(requestId, 'REPORT_SNAPSHOTS_LOAD_FAILED', error.message), 400);
+  return c.json(ok(requestId, (data ?? []).map((row) => ({ id: row.id, reportKey: row.report_key, snapshotKind: row.snapshot_kind, title: row.title, periodStart: row.period_start, periodEnd: row.period_end, generatedAt: row.generated_at, createdAt: row.created_at }))));
+});
+
+reportsRoute.get('/executive-pack', zValidator('query', reportExecutivePackQuerySchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const permissionResult = await permissionSet(c);
+  if (permissionResult.error) return c.json(fail(requestId, 'REPORT_PERMISSIONS_LOAD_FAILED', permissionResult.error), 400);
+  try {
+    const pack = await buildExecutivePack(c.get('supabase'), permissionResult.permissions, c.req.valid('query').month, createAdminClient(c.env));
+    return c.json(ok(requestId, pack));
+  } catch (error) {
+    return c.json(fail(requestId, 'EXECUTIVE_PACK_LOAD_FAILED', error instanceof Error ? error.message : 'สร้าง Executive Pack ไม่สำเร็จ'), 400);
+  }
+});
+
+reportsRoute.post('/executive-pack/snapshots', requirePermission('report.export'), zValidator('json', reportExecutivePackSnapshotSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const permissionResult = await permissionSet(c);
+  if (permissionResult.error) return c.json(fail(requestId, 'REPORT_PERMISSIONS_LOAD_FAILED', permissionResult.error), 400);
+  const body = c.req.valid('json');
+  try {
+    const pack = await buildExecutivePack(c.get('supabase'), permissionResult.permissions, body.month, createAdminClient(c.env));
+    const { data, error } = await createAdminClient(c.env).from('report_snapshots').insert({ report_key: 'executive-pack', snapshot_kind: 'executive_pack', title: body.title ?? pack.title, period_start: pack.periodStart, period_end: pack.periodEnd, filters: body, dataset: pack, generated_at: pack.generatedAt, created_by: c.get('userId') }).select('id,report_key,snapshot_kind,title,period_start,period_end,generated_at,created_at').single();
+    if (error) return c.json(fail(requestId, 'REPORT_SNAPSHOT_SAVE_FAILED', error.message), 400);
+    return c.json(ok(requestId, { id: data.id, reportKey: data.report_key, snapshotKind: data.snapshot_kind, title: data.title, periodStart: data.period_start, periodEnd: data.period_end, generatedAt: data.generated_at, createdAt: data.created_at }), 201);
+  } catch (error) {
+    return c.json(fail(requestId, 'EXECUTIVE_PACK_SNAPSHOT_FAILED', error instanceof Error ? error.message : 'บันทึก Executive Pack ไม่สำเร็จ'), 400);
+  }
+});
+
+reportsRoute.post('/executive-pack/exports/pdf', requirePermission('report.export'), zValidator('json', reportExecutivePackExportSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  if (!c.env.MYBROWSER) return c.json(fail(requestId, 'PDF_EXPORT_NOT_CONFIGURED', 'ยังไม่ได้ตั้งค่า Browser Rendering สำหรับสร้าง PDF'), 503);
+  const permissionResult = await permissionSet(c);
+  if (permissionResult.error) return c.json(fail(requestId, 'REPORT_PERMISSIONS_LOAD_FAILED', permissionResult.error), 400);
+  const body = c.req.valid('json');
+  try {
+    const pack = await buildExecutivePack(c.get('supabase'), permissionResult.permissions, body.month, createAdminClient(c.env));
+    const pdfBytes = await renderHtmlToPdf(c.env.MYBROWSER, renderExecutivePackHtml(pack));
+    const filters: ReportFilters = { rangeDays: 0, from: pack.periodStart, to: pack.periodEnd, comparePrevious: true };
+    const logError = await logExport(c, 'executive-pack', 'PDF', filters, pack.sections.reduce((sum, section) => sum + section.totalRows, 0));
+    if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
+    const filename = `executive-pack-${body.month}.pdf`;
+    const drive = body.saveToDrive ? await copyReportPdfToDrive(c, filename, pdfBytes) : null;
+    return c.json(ok(requestId, { filename, pdfBase64: Buffer.from(pdfBytes).toString('base64'), drive: drive?.file ?? null, driveError: drive?.error ?? null }));
+  } catch (error) {
+    console.error(JSON.stringify({ requestId, code: 'EXECUTIVE_PACK_PDF_FAILED', message: error instanceof Error ? error.message : String(error) }));
+    return c.json(fail(requestId, 'EXECUTIVE_PACK_PDF_FAILED', 'สร้าง PDF Executive Pack ไม่สำเร็จ'), 502);
+  }
+});
+
+reportsRoute.post('/:key/snapshots', requirePermission('report.export'), zValidator('json', reportSnapshotSchema, zodValidationHook), async (c) => {
+  const requestId = c.get('requestId');
+  const key = c.req.param('key') ?? '';
+  const body = c.req.valid('json');
+  const result = await datasetFor(c, key, body);
+  if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_SNAPSHOT_FAILED', result.error), result.status);
+  const title = body.title ?? `${result.dataset.definition.label} Snapshot`;
+  const { data, error } = await createAdminClient(c.env).from('report_snapshots').insert({ report_key: key, snapshot_kind: body.snapshotKind, title, period_start: body.from ?? null, period_end: body.to ?? null, filters: body, dataset: result.dataset, generated_at: result.dataset.generatedAt, created_by: c.get('userId') }).select('id,report_key,snapshot_kind,title,period_start,period_end,generated_at,created_at').single();
+  if (error) return c.json(fail(requestId, 'REPORT_SNAPSHOT_SAVE_FAILED', error.message), 400);
+  return c.json(ok(requestId, { id: data.id, reportKey: data.report_key, snapshotKind: data.snapshot_kind, title: data.title, periodStart: data.period_start, periodEnd: data.period_end, generatedAt: data.generated_at, createdAt: data.created_at }), 201);
+});
+
 reportsRoute.get('/:key', zValidator('query', reportRangeQuerySchema, zodValidationHook), async (c) => {
-  const requestId = c.get('requestId'); const result = await datasetFor(c, c.req.param('key') ?? '', c.req.valid('query').rangeDays);
+  const requestId = c.get('requestId'); const result = await datasetFor(c, c.req.param('key') ?? '', c.req.valid('query'));
   if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_LOAD_FAILED', result.error), result.status);
   return c.json(ok(requestId, result.dataset));
 });
 
-async function logExport(c: Context<AppEnv>, key: string, format: 'CSV' | 'PRINT' | 'PDF', rangeDays: number, rowCount: number) {
+async function logExport(c: Context<AppEnv>, key: string, format: 'CSV' | 'PRINT' | 'PDF', filters: ReportFilters, rowCount: number) {
   const admin = createAdminClient(c.env);
   const exportCode = `RPT-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${randomCodeSuffix()}`;
-  const { error } = await admin.from('report_exports').insert({ export_code: exportCode, report_key: key, format, filters: { rangeDays }, row_count: rowCount, actor_id: c.get('userId'), actor_email: c.get('userEmail') });
+  const { error } = await admin.from('report_exports').insert({ export_code: exportCode, report_key: key, format, filters, row_count: rowCount, actor_id: c.get('userId'), actor_email: c.get('userEmail') });
   if (error) return error.message;
-  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: `REPORT_EXPORT_${format}`, module: 'report', targetTable: 'report_definitions', targetId: key, detail: { exportCode, rangeDays, rowCount }, requestId: c.get('requestId') });
+  await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: `REPORT_EXPORT_${format}`, module: 'report', targetTable: 'report_definitions', targetId: key, detail: { exportCode, filters, rowCount }, requestId: c.get('requestId') });
   return null;
 }
 
 reportsRoute.post('/:key/exports/csv', requirePermission('report.export'), zValidator('json', reportExportSchema, zodValidationHook), async (c) => {
-  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays } = c.req.valid('json');
-  const result = await datasetFor(c, key, rangeDays);
+  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const filters = c.req.valid('json');
+  const result = await datasetFor(c, key, filters);
   if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_EXPORT_FAILED', result.error), result.status);
-  const logError = await logExport(c, key, 'CSV', rangeDays, result.dataset.totalRows);
+  const logError = await logExport(c, key, 'CSV', filters, result.dataset.totalRows);
   if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
   const stamp = new Date().toISOString().slice(0, 10);
   return c.json(ok(requestId, { filename: `${key}-${stamp}.csv`, csv: reportCsv(result.dataset) }));
 });
 
 reportsRoute.post('/:key/exports/print', requirePermission('report.export'), zValidator('json', reportExportSchema, zodValidationHook), async (c) => {
-  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays } = c.req.valid('json');
-  const result = await datasetFor(c, key, rangeDays);
+  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const filters = c.req.valid('json');
+  const result = await datasetFor(c, key, filters);
   if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_EXPORT_FAILED', result.error), result.status);
-  const logError = await logExport(c, key, 'PRINT', rangeDays, result.dataset.totalRows);
+  const logError = await logExport(c, key, 'PRINT', filters, result.dataset.totalRows);
   if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
   return c.json(ok(requestId, { recorded: true, generatedAt: result.dataset.generatedAt }));
 });
@@ -613,9 +1209,10 @@ async function copyReportPdfToDrive(
  * browser print dialog. Not locally testable — see lib/pdf.ts's header comment.
  */
 reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zValidator('json', reportPdfExportSchema, zodValidationHook), async (c) => {
-  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays, saveToDrive } = c.req.valid('json');
+  const requestId = c.get('requestId'); const key = c.req.param('key') ?? ''; const { rangeDays, saveToDrive, ...filterOptions } = c.req.valid('json');
+  const filters = { rangeDays, ...filterOptions };
   if (!c.env.MYBROWSER) return c.json(fail(requestId, 'PDF_EXPORT_NOT_CONFIGURED', 'ยังไม่ได้ตั้งค่า Browser Rendering สำหรับสร้าง PDF'), 503);
-  const result = await datasetFor(c, key, rangeDays);
+  const result = await datasetFor(c, key, filters);
   if (!result.dataset) return c.json(fail(requestId, result.status === 404 ? 'REPORT_NOT_FOUND' : 'REPORT_EXPORT_FAILED', result.error), result.status);
 
   let pdfBytes: Uint8Array;
@@ -626,7 +1223,7 @@ reportsRoute.post('/:key/exports/pdf', requirePermission('report.export'), zVali
     return c.json(fail(requestId, 'PDF_RENDER_FAILED', 'สร้าง PDF ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 502);
   }
 
-  const logError = await logExport(c, key, 'PDF', rangeDays, result.dataset.totalRows);
+  const logError = await logExport(c, key, 'PDF', filters, result.dataset.totalRows);
   if (logError) return c.json(fail(requestId, 'REPORT_EXPORT_LOG_FAILED', logError), 400);
 
   const stamp = new Date().toISOString().slice(0, 10);

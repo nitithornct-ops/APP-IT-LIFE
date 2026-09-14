@@ -342,6 +342,21 @@ describe('DataTable', () => {
     expect(localStorage.length).toBe(before);
   });
 
+  it('แสดงทุกคอลัมน์ได้จากปุ่มกลางของทุกตาราง', () => {
+    localStorage.setItem('itlife-table:complete-columns', JSON.stringify({ hidden: ['Status'] }));
+    render(
+      <DataTable tableId="complete-columns">
+        <thead><tr><th>Name</th><th>Status</th></tr></thead>
+        <tbody><tr><td>Asset 1</td><td>Active</td></tr></tbody>
+      </DataTable>,
+    );
+
+    expect(screen.getByText('Status', { selector: 'th' })).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'แสดงทั้งหมด' }));
+    expect(screen.getByText('Status', { selector: 'th' })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem('itlife-table:complete-columns') ?? '{}')).toEqual({ hidden: [], pageSize: 10 });
+  });
+
   it('ค่าที่เสียใน localStorage ไม่ทำให้ตารางพัง', () => {
     localStorage.setItem('itlife-table:broken', '{ not json');
     render(

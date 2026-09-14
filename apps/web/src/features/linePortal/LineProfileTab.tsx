@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ApiError } from '../../services/apiClient';
 import { lineApiFetch } from '../../services/lineApiClient';
 import { initialsOf } from './linePortalText';
+import { LineNotificationPreferences } from './LineNotificationPreferences';
 import type { LinePortalProfile } from './types';
 
 const FRIEND_STATUS_TEXT: Record<string, string> = {
@@ -136,6 +137,8 @@ export function LineProfileTab({ profile, onProfileSaved, onLogout }: {
           ให้เข้าระบบ LIFE IT บนคอมพิวเตอร์ แล้วไปที่ “โปรไฟล์ของฉัน” เพื่อกดเชื่อมบัญชี LINE นี้เข้ากับบัญชีผู้ใช้ของท่าน
         </p>
       )}
+
+      <LineNotificationPreferences />
 
       <p className="px-5 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
         {FRIEND_STATUS_TEXT[profile.friendStatus] ?? 'เพิ่มเพื่อนกับ LINE OA ของ LIFE IT เพื่อรับแจ้งเตือนความคืบหน้าทาง LINE'}

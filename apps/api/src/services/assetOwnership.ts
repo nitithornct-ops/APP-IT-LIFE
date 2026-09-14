@@ -31,6 +31,7 @@ interface AssignPatchInput {
 /** ยืม/มอบหมายให้พนักงาน → สถานะ "ใช้งานอยู่" พร้อมบันทึกวันที่เริ่มถือครอง */
 export function buildAssignPatch(input: AssignPatchInput): Record<string, unknown> {
   return {
+    lifecycle_status: 'checked_out',
     status: 'ใช้งานอยู่',
     owner_employee_id: input.toEmployeeId,
     department_id: input.departmentId || input.employeeDepartmentId,
@@ -44,6 +45,7 @@ export function buildAssignPatch(input: AssignPatchInput): Record<string, unknow
 /** คืนของ → กลับเป็น "พร้อมใช้งาน" และล้างผู้ถือครองทั้งหมด ไม่ใช่แค่เปลี่ยนสถานะ */
 export function buildReturnPatch(input: { location?: string; actorId: string }): Record<string, unknown> {
   return {
+    lifecycle_status: 'returned',
     status: 'พร้อมใช้งาน',
     owner_employee_id: null,
     department_id: null,

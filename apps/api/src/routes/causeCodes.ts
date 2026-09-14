@@ -17,8 +17,8 @@ import { createCauseCodeSchema, listCauseCodesQuerySchema, updateCauseCodeSchema
  */
 
 const SELECT =
-  'id, code, name, description, category_id, is_active, sort_order, created_at, updated_at, ' +
-  'category:ticket_categories!ticket_cause_codes_category_id_fkey(id, name)';
+  'id, code, name, description, category_id, is_active, sort_order, effective_date, created_at, updated_at, ' +
+  'category:ticket_categories!ticket_cause_codes_category_id_fkey(id, code, name)';
 
 export const causeCodesRoute = new Hono<AppEnv>();
 causeCodesRoute.use('*', requireAuth);
@@ -63,6 +63,7 @@ causeCodesRoute.post(
         description: body.description ?? null,
         category_id: body.categoryId ?? null,
         sort_order: body.sortOrder ?? 100,
+        effective_date: body.effectiveDate ?? undefined,
         created_by: actorId,
       })
       .select(SELECT)
@@ -104,6 +105,7 @@ causeCodesRoute.patch(
     if (body.categoryId !== undefined) patch.category_id = body.categoryId ?? null;
     if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
     if (body.isActive !== undefined) patch.is_active = body.isActive;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
 
     const auditBefore = await loadAuditSnapshot(supabase, 'ticket_cause_codes', id);
     const { data, error } = await supabase.from('ticket_cause_codes').update(patch).eq('id', id).select(SELECT).maybeSingle();

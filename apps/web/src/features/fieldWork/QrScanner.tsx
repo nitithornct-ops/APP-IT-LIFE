@@ -39,7 +39,15 @@ function cameraSupported(): boolean {
 
 const SCAN_INTERVAL_MS = 400;
 
-export function QrScanner({ onDetected, busy = false }: { onDetected: (raw: string) => void; busy?: boolean }) {
+export function QrScanner({
+  onDetected,
+  busy = false,
+  formats = ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+}: {
+  onDetected: (raw: string) => void;
+  busy?: boolean;
+  formats?: string[];
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -83,7 +91,7 @@ export function QrScanner({ onDetected, busy = false }: { onDetected: (raw: stri
         setCameraState('unsupported');
         return;
       }
-      const detector = new Detector({ formats: ['qr_code'] });
+      const detector = new Detector({ formats });
       setCameraState('scanning');
 
       timerRef.current = window.setInterval(async () => {
@@ -105,7 +113,7 @@ export function QrScanner({ onDetected, busy = false }: { onDetected: (raw: stri
       stopCamera();
       setCameraState((error as DOMException)?.name === 'NotAllowedError' ? 'denied' : 'error');
     }
-  }, [onDetected, stopCamera]);
+  }, [formats, onDetected, stopCamera]);
 
   const submitManual = () => {
     const value = manualCode.trim();

@@ -1,6 +1,7 @@
 /** ตรงกับ apps/api/src/services/technicianSkillService.ts — ระดับ null คือ "ยังไม่ประเมิน" ไม่ใช่ 0 */
 
 export type SkillCoverageRisk = 'covered' | 'single' | 'uncovered';
+export type TechnicianAvailability = 'available' | 'limited' | 'unavailable';
 
 export interface SkillLevelDefinition {
   level: number;
@@ -14,6 +15,12 @@ export interface SkillMatrixCell {
   note: string | null;
   assessedAt: string | null;
   openTickets: number;
+  skill?: string | null;
+  certification?: string | null;
+  certificationExpiry?: string | null;
+  productTechnology?: string | null;
+  location?: string | null;
+  availability?: TechnicianAvailability;
 }
 
 export interface SkillMatrixTechnician {
@@ -62,6 +69,31 @@ export interface SkillMatrixResponse {
   generatedAt: string;
 }
 
+export interface TechnicianSkillRecommendation {
+  technicianId: string;
+  name: string;
+  email: string | null;
+  skill: string | null;
+  proficiency: number;
+  certification: string | null;
+  certificationExpiry: string | null;
+  productTechnology: string | null;
+  location: string | null;
+  availability: TechnicianAvailability;
+  workload: { open: number; overdue: number };
+  score: number;
+  reasons: string[];
+}
+
+export interface TechnicianSkillRecommendationResponse {
+  recommendations: TechnicianSkillRecommendation[];
+  category: { id: string; name: string };
+  considered: number;
+  excluded: { unassessed: number; belowMinimum: number; unavailable: number };
+  workloadSampled: boolean;
+  generatedAt: string;
+}
+
 export interface TechnicianSkillRow {
   categoryId: string;
   name: string;
@@ -69,6 +101,12 @@ export interface TechnicianSkillRow {
   note: string | null;
   assessedAt: string | null;
   openTickets: number;
+  skill?: string | null;
+  certification?: string | null;
+  certificationExpiry?: string | null;
+  productTechnology?: string | null;
+  location?: string | null;
+  availability?: TechnicianAvailability;
 }
 
 export interface TechnicianSkillProfile {
@@ -98,5 +136,15 @@ export interface TechnicianSkillProfile {
 }
 
 export interface SaveTechnicianSkillsInput {
-  skills: Array<{ categoryId: string; level: number | null; note?: string }>;
+  skills: Array<{
+    categoryId: string;
+    level: number | null;
+    skill?: string;
+    certification?: string;
+    certificationExpiry?: string | null;
+    productTechnology?: string;
+    location?: string;
+    availability?: TechnicianAvailability;
+    note?: string;
+  }>;
 }

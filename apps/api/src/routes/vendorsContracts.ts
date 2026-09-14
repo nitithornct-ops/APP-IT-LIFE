@@ -1,7 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
-import { hashVendorPassword } from '../lib/vendorPortalAuth';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
@@ -26,7 +25,6 @@ import {
 } from '../validators/vendorsContracts';
 import {
   createVendorPortalAccountSchema,
-  resetVendorPortalPasswordSchema,
   setVendorPortalAccountStatusSchema,
 } from '../validators/vendorPortal';
 
@@ -43,12 +41,41 @@ const VENDOR_SELECT =
   'contracts(id, contract_number, name, status, end_date)';
 const CONTRACT_SELECT =
   '*, vendor:vendors!contracts_vendor_id_fkey(id, vendor_code, name, status), ' +
-  'owner:profiles!contracts_owner_id_fkey(id, full_name, email)';
+  'owner:profiles!contracts_owner_id_fkey(id, full_name, email), ' +
+  'dpa_attachment:file_attachments!contracts_dpa_attachment_id_fkey(id, original_filename, mime_type, size_bytes, created_at), ' +
+  'contract_assets(asset:assets(id, asset_code, name)), ' +
+  'contract_licenses(license:software_licenses(id, software_name, license_type)), ' +
+  'contract_configuration_items(configuration_item:configuration_items(id, ci_code, name))';
 
 function generatedVendorCode(): string {
   const now = new Date();
   const month = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   return `VND-${month}-${randomCodeSuffix()}`;
+}
+
+interface ContractLinkInput {
+  linkedAssetIds?: string[];
+  linkedLicenseIds?: string[];
+  linkedConfigurationItemIds?: string[];
+}
+
+async function syncContractLinks(admin: ReturnType<typeof createAdminClient>, contractId: string, input: ContractLinkInput) {
+  const linkTables = [
+    ['contract_assets', 'asset_id', input.linkedAssetIds],
+    ['contract_licenses', 'license_id', input.linkedLicenseIds],
+    ['contract_configuration_items', 'configuration_item_id', input.linkedConfigurationItemIds],
+  ] as const;
+  for (const [table, foreignKey, ids] of linkTables) {
+    if (ids === undefined) continue;
+    const { error: deleteError } = await admin.from(table).delete().eq('contract_id', contractId);
+    if (deleteError) return deleteError;
+    if (ids.length) {
+      const rows = ids.map((id) => ({ contract_id: contractId, [foreignKey]: id }));
+      const { error: insertError } = await admin.from(table).insert(rows);
+      if (insertError) return insertError;
+    }
+  }
+  return null;
 }
 
 vendorsRoute.get('/options', async (c) => {
@@ -66,7 +93,7 @@ vendorsRoute.get('/references', requirePermission('vendor.manage'), async (c) =>
 });
 
 const VENDOR_PORTAL_ACCOUNT_SELECT =
-  'id, vendor_id, email, full_name, position, status, failed_login_count, locked_until, last_login_at, created_at, updated_at';
+  'id, vendor_id, username, email, full_name, position, status, invite_status, invited_at, accepted_at, mfa_enrolled_at, last_login_at, created_at, updated_at';
 
 vendorsRoute.get('/:id/portal-accounts', requirePermission('vendor.manage'), async (c) => {
   const reqId = c.get('requestId');
@@ -88,16 +115,32 @@ vendorsRoute.post('/:id/portal-accounts', requirePermission('vendor.manage'), zV
   if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'ต้องเปิดใช้งานบริษัทก่อนสร้างบัญชี Portal'), 409);
   const { data, error } = await admin.from('vendor_portal_accounts').insert({
     vendor_id: vendor.id,
+    username: body.username,
     email: body.email,
     full_name: body.fullName,
     position: body.position || null,
-    password_hash: await hashVendorPassword(body.password),
+    invite_status: 'Pending',
+    invited_at: new Date().toISOString(),
     created_by: actorId,
     updated_by: actorId,
   }).select(VENDOR_PORTAL_ACCOUNT_SELECT).single();
-  if (error || !data) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_CREATE_FAILED', error, error?.code === '23505' ? 'อีเมลนี้มีบัญชีของบริษัทแล้ว' : 'สร้างบัญชีบริษัทไม่สำเร็จ');
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code, email: body.email }, requestId: reqId });
-  return c.json(ok(reqId, data), 201);
+  if (error || !data) return dbFailJson(c, 'VENDOR_PORTAL_ACCOUNT_CREATE_FAILED', error, error?.code === '23505' ? 'Username นี้มีบัญชีของบริษัทแล้ว' : 'สร้างบัญชีบริษัทไม่สำเร็จ');
+  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(body.email, {
+    data: { account_type: 'vendor_portal', full_name: body.fullName, vendor_id: vendor.id, username: body.username },
+    redirectTo: `${(c.env.PUBLIC_APP_URL?.trim() || new URL(c.req.url).origin).replace(/\/$/, '')}/vendor/portal/accept-invite`,
+  });
+  if (inviteError || !invited.user) {
+    await admin.from('vendor_portal_accounts').delete().eq('id', data.id);
+    return dbFailJson(c, 'VENDOR_PORTAL_INVITE_FAILED', inviteError, 'เธชเนเธ Invite เนเธกเนเธชเธณเน€เธฃเนเธ เธเธฃเธธเธ“เธฒเธ•เธฃเธงเธ SMTP เธเธญเธ Supabase');
+  }
+  const { data: linked, error: linkError } = await admin.from('vendor_portal_accounts').update({ auth_user_id: invited.user.id }).eq('id', data.id).select(VENDOR_PORTAL_ACCOUNT_SELECT).single();
+  if (linkError || !linked) {
+    await admin.auth.admin.deleteUser(invited.user.id);
+    await admin.from('vendor_portal_accounts').delete().eq('id', data.id);
+    return dbFailJson(c, 'VENDOR_PORTAL_INVITE_LINK_FAILED', linkError, 'เธชเธฃเนเธฒเธ Invite เนเธกเนเธชเธณเน€เธฃเนเธ');
+  }
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE_AND_INVITE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: linked.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code, username: body.username, email: body.email }, requestId: reqId });
+  return c.json(ok(reqId, linked), 201);
 });
 
 vendorsRoute.post('/:id/portal-accounts/:accountId/status', requirePermission('vendor.manage'), zValidator('json', setVendorPortalAccountStatusSchema, zodValidationHook), async (c) => {
@@ -121,12 +164,13 @@ vendorsRoute.post('/:id/portal-accounts/:accountId/status', requirePermission('v
   return c.json(ok(reqId, data));
 });
 
-vendorsRoute.post('/:id/portal-accounts/:accountId/reset-password', requirePermission('vendor.manage'), zValidator('json', resetVendorPortalPasswordSchema, zodValidationHook), async (c) => {
+vendorsRoute.post('/:id/portal-accounts/:accountId/reset-password', requirePermission('vendor.manage'), async (c) => {
   const reqId = c.get('requestId');
-  const actorId = c.get('userId');
-  const admin = createAdminClient(c.env);
+  return c.json(fail(reqId, 'VENDOR_PORTAL_PASSWORD_RESET_RETIRED', 'เธฃเธฐเธเธเธเธตเนเนเธกเนเธญเธเธธเธเธฒเธ•เนเธซเน Admin เธ•เธฑเนเธเธฃเธซเธฑเธชเธเธนเนเนเธเน เนเธซเนเธชเนเธ Invite เนเธซเธกเนเนเธ—เธ'), 410);
+  /*
   const { data, error } = await admin.from('vendor_portal_accounts').update({
     password_hash: await hashVendorPassword(c.req.valid('json').password),
+    must_change_password: true,
     failed_login_count: 0,
     locked_until: null,
     updated_by: actorId,
@@ -136,7 +180,38 @@ vendorsRoute.post('/:id/portal-accounts/:accountId/reset-password', requirePermi
   const { data: sessions } = await admin.from('vendor_portal_sessions').select('id').eq('account_id', data.id).is('revoked_at', null);
   if (sessions?.length) await admin.from('vendor_portal_sessions').update({ revoked_at: new Date().toISOString() }).in('id', sessions.map((session) => session.id));
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'RESET_PASSWORD', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: c.req.param('id') }, requestId: reqId });
-  return c.json(ok(reqId, data));
+  */
+});
+
+vendorsRoute.post('/:id/portal-accounts/:accountId/invite', requirePermission('vendor.manage'), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const admin = createAdminClient(c.env);
+  const { data: vendor } = await admin.from('vendors').select('id, vendor_code, name, status').eq('id', c.req.param('id')).maybeSingle();
+  const { data: account } = await admin.from('vendor_portal_accounts').select('id, auth_user_id, email, username, full_name, vendor_id').eq('id', c.req.param('accountId')).eq('vendor_id', c.req.param('id')).maybeSingle();
+  if (!vendor || !account) return c.json(fail(reqId, 'VENDOR_PORTAL_ACCOUNT_NOT_FOUND', 'ไม่พบบัญชี Vendor Portal'), 404);
+  if (vendor.status !== 'Active') return c.json(fail(reqId, 'VENDOR_INACTIVE', 'Vendor นี้ยังไม่ Active'), 409);
+
+  // Revoking the old Auth identity also invalidates its sessions and MFA factors.
+  if (account.auth_user_id) {
+    const { error: deleteError } = await admin.auth.admin.deleteUser(account.auth_user_id);
+    if (deleteError) return dbFailJson(c, 'VENDOR_PORTAL_INVITE_REVOKE_FAILED', deleteError, 'ยกเลิก Invite เดิมไม่สำเร็จ');
+  }
+  const invitedAt = new Date().toISOString();
+  const { error: resetError } = await admin.from('vendor_portal_accounts').update({
+    auth_user_id: null, invite_status: 'Pending', invited_at: invitedAt, accepted_at: null, mfa_enrolled_at: null, updated_by: actorId,
+  }).eq('id', account.id);
+  if (resetError) return dbFailJson(c, 'VENDOR_PORTAL_INVITE_RESET_FAILED', resetError, 'เตรียมบัญชีเพื่อส่ง Invite ใหม่ไม่สำเร็จ');
+
+  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(account.email, {
+    data: { account_type: 'vendor_portal', full_name: account.full_name, vendor_id: vendor.id, username: account.username },
+    redirectTo: `${(c.env.PUBLIC_APP_URL?.trim() || new URL(c.req.url).origin).replace(/\/$/, '')}/vendor/portal/accept-invite`,
+  });
+  if (inviteError || !invited.user) return dbFailJson(c, 'VENDOR_PORTAL_INVITE_FAILED', inviteError, 'ส่ง Invite ไม่สำเร็จ กรุณาตรวจ SMTP ของ Supabase');
+  const { data: linked, error: linkError } = await admin.from('vendor_portal_accounts').update({ auth_user_id: invited.user.id }).eq('id', account.id).select(VENDOR_PORTAL_ACCOUNT_SELECT).single();
+  if (linkError || !linked) return dbFailJson(c, 'VENDOR_PORTAL_INVITE_LINK_FAILED', linkError, 'เชื่อมบัญชีกับ Invite ไม่สำเร็จ');
+  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'RESEND_INVITE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: account.id, detail: { vendorId: vendor.id, vendorCode: vendor.vendor_code }, requestId: reqId });
+  return c.json(ok(reqId, linked));
 });
 
 vendorsRoute.get('/', zValidator('query', listVendorsQuerySchema, zodValidationHook), async (c) => {
@@ -163,6 +238,13 @@ vendorsRoute.post('/', requirePermission('vendor.manage'), zValidator('json', cr
     vendor_code: generatedVendorCode(), name: body.name, service_type: body.serviceType,
     service_scope: body.serviceScope || null, contact_person: body.contactPerson || null,
     phone: body.phone || null, email: body.email || null, contact_info: body.contactInfo || null,
+    criticality_tier: body.criticalityTier, vendor_risk_assessment: body.vendorRiskAssessment || null,
+    security_assessment: body.securityAssessment || null, dpa_status: body.dpaStatus, nda_status: body.ndaStatus,
+    data_access: body.dataAccess || null, systems_accessed: body.systemsAccessed,
+    sla: body.sla || null, incident_contact: body.incidentContact || null, escalation_contact: body.escalationContact || null,
+    performance_review: body.performanceReview || null, annual_review: body.annualReview || null,
+    performance_review_date: body.performanceReviewDate || null,
+    annual_review_date: body.annualReviewDate || null,
     owner_id: body.ownerId ?? actorId, notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(VENDOR_SELECT).single();
   if (error) {
@@ -193,7 +275,13 @@ vendorsRoute.patch('/:id', requirePermission('vendor.manage'), zValidator('json'
   const actorId = c.get('userId');
   const body = c.req.valid('json');
   const patch: Record<string, unknown> = { updated_by: actorId };
-  const fields = { name: 'name', serviceType: 'service_type', serviceScope: 'service_scope', contactPerson: 'contact_person', phone: 'phone', email: 'email', contactInfo: 'contact_info', ownerId: 'owner_id', notes: 'notes' } as const;
+  const fields = {
+    name: 'name', serviceType: 'service_type', serviceScope: 'service_scope', contactPerson: 'contact_person', phone: 'phone', email: 'email', contactInfo: 'contact_info',
+    ownerId: 'owner_id', criticalityTier: 'criticality_tier', vendorRiskAssessment: 'vendor_risk_assessment', securityAssessment: 'security_assessment',
+    dpaStatus: 'dpa_status', ndaStatus: 'nda_status', dataAccess: 'data_access', systemsAccessed: 'systems_accessed', sla: 'sla',
+    incidentContact: 'incident_contact', escalationContact: 'escalation_contact', performanceReview: 'performance_review', annualReview: 'annual_review',
+    performanceReviewDate: 'performance_review_date', annualReviewDate: 'annual_review_date', notes: 'notes',
+  } as const;
   for (const [input, column] of Object.entries(fields)) {
     const value = body[input as keyof typeof body];
     if (value !== undefined) patch[column] = value === '' ? null : value;
@@ -244,13 +332,16 @@ contractsRoute.get('/options', async (c) => {
 contractsRoute.get('/references', requirePermission('contract.manage'), async (c) => {
   const reqId = c.get('requestId');
   const admin = createAdminClient(c.env);
-  const [vendors, owners] = await Promise.all([
+  const [vendors, owners, assets, licenses, configurationItems] = await Promise.all([
     admin.from('vendors').select('id, vendor_code, name, status').order('name').limit(2000),
     admin.from('profiles').select('id, full_name, email').eq('status', 'active').order('full_name').limit(1000),
+    admin.from('assets').select('id, asset_code, name').order('name').limit(2000),
+    admin.from('software_licenses').select('id, software_name, license_type').order('software_name').limit(2000),
+    admin.from('configuration_items').select('id, ci_code, name').order('name').limit(2000),
   ]);
-  const error = vendors.error ?? owners.error;
+  const error = vendors.error ?? owners.error ?? assets.error ?? licenses.error ?? configurationItems.error;
   if (error) return c.json(fail(reqId, 'CONTRACT_REFERENCES_FAILED', 'ดึงข้อมูลอ้างอิงไม่สำเร็จ'), 400);
-  return c.json(ok(reqId, { vendors: vendors.data ?? [], owners: owners.data ?? [] }));
+  return c.json(ok(reqId, { vendors: vendors.data ?? [], owners: owners.data ?? [], assets: assets.data ?? [], licenses: licenses.data ?? [], configurationItems: configurationItems.data ?? [] }));
 });
 
 contractsRoute.post('/check-expiry', requirePermission('contract.manage'), async (c) => {
@@ -312,11 +403,19 @@ contractsRoute.post('/', requirePermission('contract.manage'), zValidator('json'
     contract_number: body.contractNumber, name: body.name, vendor_id: body.vendorId,
     contract_type: body.contractType, service_scope: body.serviceScope || null, key_terms: body.keyTerms || null,
     start_date: body.startDate || null, end_date: body.endDate || null, contract_value: body.contractValue ?? null,
-    currency: body.currency, owner_id: body.ownerId ?? actorId, renewal_notice_days: body.renewalNoticeDays,
+    currency: body.currency, owner_id: body.ownerId ?? actorId, budget: body.budget ?? null, annual_cost: body.annualCost ?? null,
+    auto_renewal: body.autoRenewal, renewal_notice_days: body.renewalNoticeDays, sla_ola: body.slaOla || null,
+    dpa_attachment_id: body.dpaAttachmentId ?? null, security_clause: body.securityClause || null,
+    renewal_decision: body.renewalDecision, termination_checklist: body.terminationChecklist,
     status: body.status, notes: body.notes || null, created_by: actorId, updated_by: actorId,
   }).select(CONTRACT_SELECT).single();
   if (error) return dbFailJson(c, 'CONTRACT_CREATE_FAILED', error, error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : undefined);
   const dataRow = data as unknown as { id: string; contract_number: string };
+  const linkError = await syncContractLinks(createAdminClient(c.env), dataRow.id, body);
+  if (linkError) {
+    await createAdminClient(c.env).from('contracts').delete().eq('id', dataRow.id);
+    return dbFailJson(c, 'CONTRACT_LINKS_CREATE_FAILED', linkError, 'บันทึกการเชื่อมโยงทรัพย์สินกับสัญญาไม่สำเร็จ');
+  }
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'CREATE', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: { contractNumber: dataRow.contract_number, vendorId: body.vendorId }, requestId: reqId });
   return c.json(ok(reqId, data), 201);
 });
@@ -326,7 +425,12 @@ contractsRoute.patch('/:id', requirePermission('contract.manage'), zValidator('j
   const actorId = c.get('userId');
   const body = c.req.valid('json');
   const patch: Record<string, unknown> = { updated_by: actorId };
-  const fields = { contractNumber: 'contract_number', name: 'name', vendorId: 'vendor_id', contractType: 'contract_type', serviceScope: 'service_scope', keyTerms: 'key_terms', startDate: 'start_date', endDate: 'end_date', contractValue: 'contract_value', currency: 'currency', ownerId: 'owner_id', renewalNoticeDays: 'renewal_notice_days', status: 'status', notes: 'notes' } as const;
+  const fields = {
+    contractNumber: 'contract_number', name: 'name', vendorId: 'vendor_id', contractType: 'contract_type', serviceScope: 'service_scope', keyTerms: 'key_terms',
+    startDate: 'start_date', endDate: 'end_date', contractValue: 'contract_value', currency: 'currency', ownerId: 'owner_id', budget: 'budget', annualCost: 'annual_cost',
+    autoRenewal: 'auto_renewal', renewalNoticeDays: 'renewal_notice_days', slaOla: 'sla_ola', dpaAttachmentId: 'dpa_attachment_id', securityClause: 'security_clause',
+    renewalDecision: 'renewal_decision', terminationChecklist: 'termination_checklist', status: 'status', notes: 'notes',
+  } as const;
   for (const [input, column] of Object.entries(fields)) {
     const value = body[input as keyof typeof body];
     if (value !== undefined) patch[column] = value === '' ? null : value;
@@ -337,6 +441,10 @@ contractsRoute.patch('/:id', requirePermission('contract.manage'), zValidator('j
   if (error) return dbFailJson(c, 'CONTRACT_UPDATE_FAILED', error, error.code === '23505' ? 'เลขที่สัญญานี้มีอยู่แล้ว' : undefined);
   if (!data) return c.json(fail(reqId, 'CONTRACT_NOT_FOUND', 'ไม่พบสัญญา'), 404);
   const dataRow = data as unknown as { id: string };
+  if (body.linkedAssetIds !== undefined || body.linkedLicenseIds !== undefined || body.linkedConfigurationItemIds !== undefined) {
+    const linkError = await syncContractLinks(createAdminClient(c.env), c.req.param('id')!, body);
+    if (linkError) return dbFailJson(c, 'CONTRACT_LINKS_UPDATE_FAILED', linkError, 'บันทึกการเชื่อมโยงทรัพย์สินกับสัญญาไม่สำเร็จ');
+  }
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'contract', targetTable: 'contracts', targetId: dataRow.id, detail: body, requestId: reqId , before: auditBefore, after: data });
   return c.json(ok(reqId, data));
 });

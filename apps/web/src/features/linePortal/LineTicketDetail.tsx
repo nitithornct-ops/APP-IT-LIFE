@@ -3,6 +3,7 @@ import { AlertTriangle, FileText, Headset, Loader2, MessageCircle, Paperclip, Se
 import { useState } from 'react';
 import { RequesterInfoCard } from '../../components/tickets/RequesterInfoCard';
 import { RequesterSignoffCard } from '../../components/tickets/RequesterSignoffCard';
+import { RequesterReopenCard } from '../../components/tickets/RequesterReopenCard';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { ApiError } from '../../services/apiClient';
@@ -30,11 +31,12 @@ function worklogAuthor(log: LineTicketWorklog): string {
   return log.actor?.full_name ? `${log.actor.full_name} · ทีม IT` : log.actor_label ?? 'ทีม IT';
 }
 
-export function LineTicketDetail({ detail, onBack, onSign, onSendMessage }: {
+export function LineTicketDetail({ detail, onBack, onSign, onSendMessage, onReopen }: {
   detail: LineTicketDetailData;
   onBack: () => void;
   onSign: (file: File, ratings: TicketRatingDetails, feedback?: string) => Promise<void>;
   onSendMessage: (message: string) => Promise<void>;
+  onReopen: (reason: string) => Promise<void>;
 }) {
   const { ticket } = detail;
   const [message, setMessage] = useState('');
@@ -43,7 +45,7 @@ export function LineTicketDetail({ detail, onBack, onSign, onSendMessage }: {
 
   const timeline = detail.worklogs.filter((log) => log.entry_type !== 'comment');
   const conversation = detail.worklogs.filter((log) => log.entry_type === 'comment');
-  const sla = ticketSlaBadge(ticket.due_at, ticket.status);
+  const sla = ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || Boolean(ticket.sla_paused_at));
   const flowIndex = getTicketFlowIndex(ticket.status, timeline);
   const interrupted = isTicketFlowInterrupted(ticket.status);
   const conversationLocked = CONVERSATION_LOCKED_STATUSES.includes(ticket.status);
@@ -194,6 +196,7 @@ export function LineTicketDetail({ detail, onBack, onSign, onSendMessage }: {
           rating={ticket.rating}
           onSign={onSign}
         />
+        {(ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') && <RequesterReopenCard onSubmit={onReopen} />}
 
         <section className={CARD} aria-labelledby="line-ticket-conversation">
           <div className="flex items-center justify-between gap-3">

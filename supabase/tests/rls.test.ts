@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 117 permissions', async () => {
+  it('seeds 9 roles and 126 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(117);
+    expect((permissions.rows[0] as { count: number }).count).toBe(126);
   });
 });
 
@@ -1035,12 +1035,12 @@ describe('assets / asset_movements / maintenance_plans / pm_checklist_templates 
   it('software_licenses: check constraint rejects used_qty > total_qty; license.manage gates writes', async () => {
     await expect(
       asServiceRole(db, async () =>
-        db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('เกินจำนวน', 5, 10)`),
+        db.query(`insert into public.software_licenses (software_name, product_name, total_qty, used_qty) values ('เกินจำนวน', 'เกินจำนวน', 5, 10)`),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/software_licenses_used_le_total/);
 
     const inserted = await asUser(db, TECHNICIAN_ID, async () =>
-      db.query(`insert into public.software_licenses (software_name, total_qty, used_qty) values ('Adobe Acrobat Pro', 10, 4) returning id, license_code, expiry_notice_days`),
+      db.query(`insert into public.software_licenses (software_name, product_name, total_qty, used_qty) values ('Adobe Acrobat Pro', 'Adobe Acrobat Pro', 10, 4) returning id, license_code, expiry_notice_days`),
     );
     expect(inserted.rows).toHaveLength(1);
     expect((inserted.rows[0] as { license_code: string }).license_code).toMatch(/^LIC-/);
@@ -1048,18 +1048,18 @@ describe('assets / asset_movements / maintenance_plans / pm_checklist_templates 
 
     await expect(
       asServiceRole(db, async () =>
-        db.query(`insert into public.software_licenses (software_name, start_date, expire_date) values ('วันผิด', '2026-12-31', '2026-01-01')`),
+        db.query(`insert into public.software_licenses (software_name, product_name, start_date, expire_date) values ('วันผิด', 'วันผิด', '2026-12-31', '2026-01-01')`),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/software_licenses_date_range_valid/);
     await expect(
       asServiceRole(db, async () =>
-        db.query(`insert into public.software_licenses (software_name, expiry_notice_days) values ('แจ้งเตือนผิด', 3651)`),
+        db.query(`insert into public.software_licenses (software_name, product_name, expiry_notice_days) values ('แจ้งเตือนผิด', 'แจ้งเตือนผิด', 3651)`),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/software_licenses_expiry_notice_days_check/);
 
     await expect(
-      asUser(db, AUDITOR_ID, async () => db.query(`insert into public.software_licenses (software_name) values ('ห้ามเพิ่ม')`)),
-    ).rejects.toThrow();
+      asUser(db, AUDITOR_ID, async () => db.query(`insert into public.software_licenses (software_name, product_name) values ('ห้ามเพิ่ม', 'ห้ามเพิ่ม')`)),
+    ).rejects.toThrow(/row-level security/);
   });
 
   it('employee_assignments: select allowed via employee.manage OR asset.view, write requires employee.manage only', async () => {
@@ -1473,7 +1473,24 @@ describe('problems / known_errors RLS (Phase 6 Module 11 Problem)', () => {
     await expect(
       asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด' where id = $1`, [problemId])),
     ).rejects.toThrow();
-    const closed = await asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด', closed_at = now(), permanent_fix = 'แก้ถาวรแล้ว' where id = $1 returning closed_at`, [problemId]));
+
+    const change = await asServiceRole(db, async () => db.query(
+      `insert into public.change_requests
+        (change_number, title, system_affected, description, requester_id, risk_level)
+       values ('CHG-PRB-RLS-001', 'แก้สาเหตุถาวร', 'ระบบทดสอบ', 'ติดตั้ง patch', $1, 'ต่ำ') returning id`,
+      [TECHNICIAN_ID],
+    ));
+    const changeId = (change.rows[0] as { id: string }).id;
+    await asServiceRole(db, async () => {
+      await db.query(`update public.change_requests set test_result = 'ผ่าน', test_passed = true, test_signoff_by = $1, test_signoff_at = now(), status = 'ผ่านการทดสอบ' where id = $2`, [SECOND_TECHNICIAN_ID, changeId]);
+      await db.query(`update public.change_requests set approver_id = $1, approve_date = now(), approve_result = 'อนุมัติ', status = 'อนุมัติแล้ว' where id = $2`, [CHANGE_APPROVER_ID, changeId]);
+      await db.query(`update public.change_requests set deploy_by = $1, deploy_date = now(), version = 'v1.0.0', status = 'ติดตั้งใช้งานแล้ว' where id = $2`, [SUPER_ADMIN_ID, changeId]);
+    });
+    await asUser(db, TECHNICIAN_ID, async () => {
+      await db.query(`insert into public.problem_changes (problem_id, change_id, created_by) values ($1, $2, $3)`, [problemId, changeId, TECHNICIAN_ID]);
+      await db.query(`update public.problems set permanent_fix = 'แก้ถาวรแล้ว', change_verified_at = now(), change_verified_by = $1, change_verification_notes = 'ตรวจหลังติดตั้งแล้ว' where id = $2`, [TECHNICIAN_ID, problemId]);
+    });
+    const closed = await asUser(db, TECHNICIAN_ID, async () => db.query(`update public.problems set status = 'ปิด', closed_at = now() where id = $1 returning closed_at`, [problemId]));
     expect(closed.rows).toHaveLength(1);
   });
 });

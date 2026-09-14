@@ -8,6 +8,7 @@ import {
   CirclePlay,
   Clock3,
   Download,
+  FilePlus2,
   Gauge,
   Grid2X2,
   Kanban,
@@ -45,6 +46,7 @@ import { TaskCalendarView } from './TaskCalendarView';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { TaskKanbanBoard } from './TaskKanbanBoard';
 import { TaskTodayView } from './TaskTodayView';
+import { TaskTemplatesPanel } from './TaskTemplatesPanel';
 import { TASK_CATEGORIES, TASK_PRIORITIES, TASK_STATUSES, TASK_TYPES, priorityTone, statusTone, taskTypeLabel } from './taskDisplay';
 
 type View = 'list' | 'kanban' | 'calendar' | 'table';
@@ -174,7 +176,11 @@ function TaskPreviewPane({ task, onClose, onOpenDetail }: { task: Task; onClose:
           <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><dt className="text-[10px] text-slate-400">Checklist</dt><dd className="mt-1 font-mono font-semibold text-slate-700 dark:text-slate-200">{checklistDone} / {checklist.length}</dd></div>
           <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><dt className="text-[10px] text-slate-400">หมวดหมู่</dt><dd className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{task.category}</dd></div>
           <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><dt className="text-[10px] text-slate-400">ทำซ้ำ</dt><dd className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{task.recurrence}</dd></div>
+          <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><dt className="text-[10px] text-slate-400">เวลา (ชม.)</dt><dd className="mt-1 font-mono font-semibold text-slate-700 dark:text-slate-200">{task.actual_hours ?? 0} / {task.estimate_hours ?? '—'}</dd></div>
+          <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><dt className="text-[10px] text-slate-400">การเชื่อมโยง</dt><dd className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{task.dependencies.length} ก่อนหน้า · {task.relations.length} รายการ</dd></div>
         </dl>
+
+        {task.blocked_reason && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><span className="font-semibold">Blocked:</span> {task.blocked_reason}</p>}
 
         {checklist.length > 0 && (
           <section className="border-y border-hairline-row py-3 dark:border-white/[.07]">
@@ -211,6 +217,7 @@ export function TasksPage() {
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [createModal, setCreateModal] = useState<{ dueDate?: string } | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const debouncedSearch = useDebouncedValue(search, 350);
@@ -342,7 +349,7 @@ export function TasksPage() {
         title="งานของฉัน"
         description="งานที่คุณเป็นเจ้าของ จัดลำดับ ติดตาม และอัปเดตได้จากหน้าจอเดียว"
         leading={<ListTodo className="h-5 w-5" aria-hidden="true" />}
-        secondaryActions={<Button type="button" size="sm" variant="outline" onClick={exportCsv}><Download className="h-4 w-4" aria-hidden="true" /> CSV</Button>}
+        secondaryActions={<><Button type="button" size="sm" variant="outline" onClick={() => setShowTemplates(true)}><FilePlus2 className="h-4 w-4" aria-hidden="true" /> Templates</Button><Button type="button" size="sm" variant="outline" onClick={exportCsv}><Download className="h-4 w-4" aria-hidden="true" /> CSV</Button></>}
         primaryAction={<Button type="button" size="sm" onClick={() => setCreateModal({})}><Plus className="h-4 w-4" aria-hidden="true" /> สร้างงานใหม่</Button>}
       />
 
@@ -456,6 +463,7 @@ export function TasksPage() {
       </section>
 
       {createModal && <CreateTaskModal initialDueDate={createModal.dueDate} onClose={() => setCreateModal(null)} onCreated={() => { setCreateModal(null); setToast({ tone: 'success', message: 'สร้างงานสำเร็จ' }); }} />}
+      {showTemplates && <TaskTemplatesPanel onClose={() => setShowTemplates(false)} onApplied={() => { setShowTemplates(false); setToast({ tone: 'success', message: 'สร้างงานจาก Template สำเร็จ' }); }} />}
       {detailTaskId && <TaskDetailPanel taskId={detailTaskId} onClose={() => setDetailTaskId(null)} onDeleted={() => { setSelectedTaskId(null); setToast({ tone: 'success', message: 'ลบงานสำเร็จ' }); }} />}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>

@@ -1,6 +1,53 @@
 import type { Bindings } from '../types';
+import { INTEGRATION_RETENTION_DAYS } from './integrationRetentionService';
 
 export type IntegrationStatus = 'active' | 'disabled' | 'incomplete' | 'unavailable' | 'degraded';
+
+export interface NotificationRuleRow {
+  id: string;
+  rule_code: string;
+  event_key: string;
+  module_key: string;
+  severity: string;
+  channel: string;
+  recipient: string;
+  template_id: string | null;
+  enabled: boolean;
+  quiet_hours: Record<string, unknown>;
+  retry_policy: Record<string, unknown>;
+  fallback_channel: string | null;
+  escalation_after_minutes: number | null;
+  escalation_recipient: string | null;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationTemplateRow {
+  id: string;
+  template_key: string;
+  name: string;
+  channel: string;
+  subject: string | null;
+  body: string;
+  variables: string[];
+  version: number;
+  status: string;
+}
+
+export interface IntegrationChannelConfigRow {
+  channel_key: string;
+  enabled: boolean;
+  secret_reference: string | null;
+  webhook_signing_enabled: boolean;
+  idempotency_enabled: boolean;
+  rate_limit_per_minute: number;
+  last_latency_ms: number | null;
+  last_successful_delivery_at: string | null;
+  last_tested_at: string | null;
+  last_test_status: string | null;
+  last_test_error: string | null;
+}
 
 export interface IntegrationOutboxRow {
   id: string;
@@ -35,6 +82,10 @@ interface IntegrationCenterInput {
   activeLineUsers: number;
   outboxRows: IntegrationOutboxRow[];
   lineRows: LineDeliveryRow[];
+  ruleRows?: NotificationRuleRow[];
+  templateRows?: NotificationTemplateRow[];
+  channelRows?: IntegrationChannelConfigRow[];
+  deadLetterCount?: number;
 }
 
 function enabled(value: string | undefined): boolean {
@@ -58,6 +109,16 @@ function safeError(value: string | null): string | null {
 function configurationStatus(isEnabled: boolean, required: Array<string | undefined>): IntegrationStatus {
   if (!isEnabled) return 'disabled';
   return required.every((value) => Boolean(value?.trim())) ? 'active' : 'incomplete';
+}
+
+function channelLabel(channel: string): string {
+  return {
+    'in-app': 'In-app Notification',
+    'line-messaging': 'LINE Messaging API',
+    smtp: 'SMTP / Email',
+    teams: 'Microsoft Teams',
+    webhook: 'Generic Webhook',
+  }[channel] ?? channel;
 }
 
 export function buildIntegrationCenter(input: IntegrationCenterInput) {
@@ -108,6 +169,54 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
     },
   ] satisfies Array<{ id: string; name: string; status: IntegrationStatus; description: string; delivered24h: number | null; detail: string }>;
 
+  const channelConfigs = new Map((input.channelRows ?? []).map((row) => [row.channel_key, row]));
+  const enrichedChannels = channels.map((channel) => {
+    const config = channelConfigs.get(channel.id);
+    const status = config && !config.enabled && channel.status === 'active' ? 'disabled' : channel.status;
+    return {
+      ...channel,
+      status,
+      // Keep the action visible for every configured channel. Channels without a
+      // runtime adapter return UNAVAILABLE from the test endpoint instead of
+      // hiding the operational state from administrators.
+      testable: true,
+      secretReference: config?.secret_reference ?? null,
+      webhookSigningEnabled: config?.webhook_signing_enabled ?? false,
+      idempotencyEnabled: config?.idempotency_enabled ?? true,
+      rateLimitPerMinute: config?.rate_limit_per_minute ?? null,
+      latencyMs: config?.last_latency_ms ?? null,
+      lastSuccessfulDeliveryAt: config?.last_successful_delivery_at ?? null,
+      lastTestedAt: config?.last_tested_at ?? null,
+      lastTestStatus: config?.last_test_status ?? null,
+      lastTestError: safeError(config?.last_test_error ?? null),
+    };
+  });
+
+  const templateNames = new Map((input.templateRows ?? []).map((template) => [template.id, template.name]));
+  const configuredRules = input.ruleRows?.map((row) => {
+    const ruleChannel = enrichedChannels.find((channel) => channel.id === row.channel);
+    return {
+      id: row.id,
+      ruleCode: row.rule_code,
+      event: row.event_key,
+      module: row.module_key,
+      severity: row.severity,
+      channel: channelLabel(row.channel),
+      channelKey: row.channel,
+      recipients: row.recipient,
+      template: row.template_id ? templateNames.get(row.template_id) ?? row.template_id : null,
+      enabled: row.enabled,
+      quietHours: row.quiet_hours,
+      retryPolicy: row.retry_policy,
+      fallbackChannel: row.fallback_channel ? channelLabel(row.fallback_channel) : null,
+      escalationAfterMinutes: row.escalation_after_minutes,
+      escalationRecipient: row.escalation_recipient,
+      priority: row.priority,
+      status: row.enabled ? (ruleChannel?.status ?? 'unavailable') : 'disabled',
+      managedBy: 'database' as const,
+    };
+  });
+
   const outboxEvents = input.outboxRows.map((row) => ({
     id: row.id,
     source: 'outbox' as const,
@@ -146,6 +255,10 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
   return {
     generatedAt: (input.now ?? new Date()).toISOString(),
     canManage: input.canManage,
+    retention: {
+      days: INTEGRATION_RETENTION_DAYS,
+      scope: 'ลบอัตโนมัติเฉพาะเหตุการณ์ที่จบงานแล้ว ไม่รวม Audit Log และข้อมูลธุรกิจ',
+    },
     summary: {
       activeChannels: channels.filter((channel) => channel.status === 'active').length,
       delivered24h: input.notifications24h + input.lineSuccess24h,
@@ -161,8 +274,14 @@ export function buildIntegrationCenter(input: IntegrationCenterInput) {
       dead: input.outboxCounts.DEAD ?? 0,
       cancelled: input.outboxCounts.CANCELLED ?? 0,
     },
-    channels,
-    rules: [
+    channels: enrichedChannels,
+    templates: input.templateRows ?? [],
+    observability: {
+      idempotency: 'integration_outbox.idempotency_key is unique',
+      deadLetterCount: input.deadLetterCount ?? input.outboxCounts.DEAD ?? 0,
+      configuredChannels: enrichedChannels.filter((channel) => channel.secretReference || channel.id === 'in-app').length,
+    },
+    rules: configuredRules ?? [
       { id: 'ticket-created-team', event: 'Ticket ใหม่จาก Public / LINE Portal', channel: 'LINE Messaging API', recipients: 'ห้องทีม IT', status: lineMessagingStatus, managedBy: 'code' },
       { id: 'ticket-status-requester', event: 'สถานะ Ticket เปลี่ยน', channel: 'LINE Messaging API', recipients: 'ผู้แจ้งผ่าน LINE', status: lineMessagingStatus, managedBy: 'code' },
       { id: 'linked-user-notification', event: 'การแจ้งเตือนผู้ใช้จากทุกโมดูล', channel: 'In-app + LINE Messaging API', recipients: 'ผู้ใช้ที่เชื่อมบัญชี LINE สถานะ Active', status: lineMessagingStatus, managedBy: 'code' },

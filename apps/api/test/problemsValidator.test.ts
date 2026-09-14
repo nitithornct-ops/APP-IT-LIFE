@@ -1,27 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { createKnownErrorSchema, createProblemSchema, updateProblemSchema } from '../src/validators/problems';
+import {
+  createCorrectiveActionSchema,
+  createProblemSchema,
+  updateProblemSchema,
+} from '../src/validators/problems';
 
-describe('Problem validators', () => {
-  it('accepts a normalized Problem with Incident/Ticket UUID links', () => {
-    expect(createProblemSchema.safeParse({
-      title: 'ระบบล่มซ้ำทุกวันจันทร์', priority: 'สูง', status: 'กำลังวิเคราะห์',
-      incidentIds: ['00000000-0000-0000-0000-000000000001'],
-      ticketIds: ['00000000-0000-0000-0000-000000000002'],
-    }).success).toBe(true);
+const id = '00000000-0000-4000-8000-000000000001';
+
+describe('Problem governance validators', () => {
+  it('requires a Change when a Permanent Fix is recorded', () => {
+    expect(createProblemSchema.safeParse({ title: 'ปัญหา', permanentFix: 'แก้ถาวรแล้ว' }).success).toBe(false);
+    expect(createProblemSchema.safeParse({ title: 'ปัญหา', permanentFix: 'แก้ถาวรแล้ว', changeIds: [id], configurationItemIds: [id], rcaMethod: '5 Why', fiveWhy: [{ question: 'Why 1', answer: 'เพราะระบบล่ม' }] }).success).toBe(true);
+    expect(updateProblemSchema.safeParse({ permanentFix: 'แก้ถาวรแล้ว' }).success).toBe(false);
   });
 
-  it('rejects invalid priority and malformed references', () => {
-    expect(createProblemSchema.safeParse({ title: 'ปัญหา', priority: 'เร่งด่วน', incidentIds: ['bad-id'] }).success).toBe(false);
+  it('requires a linked Change when moving a Problem to closed state', () => {
+    expect(updateProblemSchema.safeParse({ status: 'ปิด' }).success).toBe(false);
+    expect(updateProblemSchema.safeParse({ status: 'ปิด', changeIds: [id] }).success).toBe(true);
   });
 
-  it('requires a non-empty Problem update', () => {
-    expect(updateProblemSchema.safeParse({}).success).toBe(false);
-    expect(updateProblemSchema.safeParse({ rootCause: 'สาเหตุหลัก' }).success).toBe(true);
-  });
-
-  it('requires Problem, title and workaround for a Known Error', () => {
-    const valid = { problemId: '00000000-0000-0000-0000-000000000001', title: 'Memory leak', workaround: 'Restart service' };
-    expect(createKnownErrorSchema.safeParse(valid).success).toBe(true);
-    expect(createKnownErrorSchema.safeParse({ ...valid, workaround: '' }).success).toBe(false);
+  it('requires verification evidence for a completed child action', () => {
+    expect(createCorrectiveActionSchema.safeParse({ title: 'เพิ่ม monitoring', status: 'เสร็จสิ้น' }).success).toBe(false);
+    expect(createCorrectiveActionSchema.safeParse({ title: 'เพิ่ม monitoring', status: 'เสร็จสิ้น', verificationNotes: 'ตรวจ alert แล้ว' }).success).toBe(true);
   });
 });

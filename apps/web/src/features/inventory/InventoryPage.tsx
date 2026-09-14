@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FormModal } from '../../components/ui/Modal';
-import { AlertTriangle, KeyRound, Loader2, PackageSearch, Plus, ShoppingCart, X } from 'lucide-react';
+import { AlertTriangle, Archive, Barcode, ClipboardCheck, ClipboardList, KeyRound, Loader2, MapPin, PackageSearch, Plus, RefreshCw, ShoppingCart, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../stores/authContext';
+import { FormModal } from '../../components/ui/Modal';
 import { RequirePermission } from '../../components/RequirePermission';
 import { RowActions } from '../../components/table/RowActions';
 import { Badge } from '../../components/ui/Badge';
@@ -13,270 +14,157 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { QueryError } from '../../components/ui/QueryError';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { PaginatedResult } from '../../types/admin';
-import type { InventoryItem, InventoryTransaction } from '../../types/assets';
+import type { InventoryAdjustmentRequest, InventoryCycleCountCampaign, InventoryCycleCountLine, InventoryItem, InventoryPurchaseReceipt, InventoryRequest, InventoryTransaction } from '../../types/assets';
 import { formatThaiDate } from '../../utils/date';
 
-function CreateItemForm({ onClose }: { onClose: () => void }) {
+type InventoryOptions = {
+  warehouses: { id: string; code: string; name: string }[];
+  bins: { id: string; warehouse_id: string; code: string; name: string | null }[];
+  vendors: { id: string; vendor_code: string; name: string; status: string }[];
+};
+
+const fieldClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
+const errorText = (error: unknown, fallback: string) => error instanceof ApiError ? error.message : fallback;
+
+function CreateItemForm({ onClose, options }: { onClose: () => void; options?: InventoryOptions }) {
   const queryClient = useQueryClient();
-  const [itemName, setItemName] = useState('');
-  const [category, setCategory] = useState('');
-  const [unit, setUnit] = useState('');
-  const [stockQty, setStockQty] = useState('0');
-  const [minQty, setMinQty] = useState('0');
-  const [location, setLocation] = useState('');
-  const [unitPrice, setUnitPrice] = useState('');
+  const [values, setValues] = useState({ itemName: '', category: '', unit: '', stockQty: '0', minQty: '0', reorderPoint: '0', reorderQty: '', location: '', barcode: '', unitPrice: '', vendorId: '', warehouseId: '', binId: '', lowStockNotificationEnabled: true, valuationMethod: 'STANDARD' as 'STANDARD' | 'MOVING_AVERAGE' });
   const [serverError, setServerError] = useState<string | null>(null);
-
+  const set = (key: keyof typeof values, value: string | boolean) => setValues((current) => ({ ...current, [key]: value }));
   const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/v1/inventory-items', {
-        method: 'POST',
-        body: JSON.stringify({
-          itemName,
-          category: category || undefined,
-          unit,
-          stockQty: Number(stockQty) || 0,
-          minQty: Number(minQty) || 0,
-          location: location || undefined,
-          unitPrice: unitPrice ? Number(unitPrice) : undefined,
-        }),
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
-      onClose();
-    },
-    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'เพิ่มรายการไม่สำเร็จ'),
+    mutationFn: () => apiFetch('/api/v1/inventory-items', { method: 'POST', body: JSON.stringify({
+      itemName: values.itemName, category: values.category || undefined, unit: values.unit, stockQty: Number(values.stockQty) || 0,
+      minQty: Number(values.minQty) || 0, reorderPoint: Number(values.reorderPoint) || 0, reorderQty: values.reorderQty ? Number(values.reorderQty) : undefined,
+      location: values.location || undefined, barcode: values.barcode || undefined, unitPrice: values.unitPrice ? Number(values.unitPrice) : undefined,
+      vendorId: values.vendorId || undefined, warehouseId: values.warehouseId || undefined, binId: values.binId || undefined,
+      lowStockNotificationEnabled: values.lowStockNotificationEnabled, valuationMethod: values.valuationMethod,
+    }) }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['inventory-items'] }); onClose(); },
+    onError: (error) => setServerError(errorText(error, 'เพิ่มรายการไม่สำเร็จ')),
   });
-
+  const bins = options?.bins.filter((bin) => !values.warehouseId || bin.warehouse_id === values.warehouseId) ?? [];
   return (
-    <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <div className="flex items-center justify-between sm:col-span-3">
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">เพิ่มรายการ Inventory</h3>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" aria-hidden="true" /></button>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อรายการ</label>
-        <input data-testid="inv-create-name" value={itemName} onChange={(e) => setItemName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">หมวดหมู่</label>
-        <input value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">หน่วยนับ</label>
-        <input data-testid="inv-create-unit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ชิ้น / กล่อง / ม้วน" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สต็อกเริ่มต้น</label>
-        <input type="number" value={stockQty} onChange={(e) => setStockQty(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สต็อกขั้นต่ำ</label>
-        <input type="number" value={minQty} onChange={(e) => setMinQty(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ราคา/หน่วย (บาท)</label>
-        <input type="number" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่จัดเก็บ</label>
-        <input value={location} onChange={(e) => setLocation(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
-      </div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div><label className="mb-1 block text-xs font-semibold">ชื่อรายการ *</label><input data-testid="inv-create-name" className={fieldClass} value={values.itemName} onChange={(event) => set('itemName', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">หมวดหมู่</label><input className={fieldClass} value={values.category} onChange={(event) => set('category', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">หน่วยนับ *</label><input data-testid="inv-create-unit" className={fieldClass} placeholder="ชิ้น / กล่อง" value={values.unit} onChange={(event) => set('unit', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">สต็อกเริ่มต้น</label><input type="number" min="0" className={fieldClass} value={values.stockQty} onChange={(event) => set('stockQty', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">Stock ต่ำสุด</label><input type="number" min="0" className={fieldClass} value={values.minQty} onChange={(event) => set('minQty', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">Reorder Point</label><input type="number" min="0" className={fieldClass} value={values.reorderPoint} onChange={(event) => set('reorderPoint', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">จำนวนแนะนำให้สั่ง</label><input type="number" min="0" className={fieldClass} value={values.reorderQty} onChange={(event) => set('reorderQty', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">Unit Price (บาท)</label><input type="number" min="0" step="0.01" className={fieldClass} value={values.unitPrice} onChange={(event) => set('unitPrice', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">Barcode</label><input className={fieldClass} value={values.barcode} onChange={(event) => set('barcode', event.target.value)} /></div>
+      <div><label className="mb-1 block text-xs font-semibold">Vendor</label><select className={fieldClass} value={values.vendorId} onChange={(event) => set('vendorId', event.target.value)}><option value="">ไม่ระบุ</option>{options?.vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} · {vendor.name}</option>)}</select></div>
+      <div><label className="mb-1 block text-xs font-semibold">Warehouse</label><select className={fieldClass} value={values.warehouseId} onChange={(event) => { set('warehouseId', event.target.value); set('binId', ''); }}><option value="">ไม่ระบุ</option>{options?.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></div>
+      <div><label className="mb-1 block text-xs font-semibold">Bin</label><select className={fieldClass} value={values.binId} onChange={(event) => set('binId', event.target.value)}><option value="">ไม่ระบุ</option>{bins.map((bin) => <option key={bin.id} value={bin.id}>{bin.code}{bin.name ? ` · ${bin.name}` : ''}</option>)}</select></div>
+      <div><label className="mb-1 block text-xs font-semibold">Valuation</label><select className={fieldClass} value={values.valuationMethod} onChange={(event) => set('valuationMethod', event.target.value as 'STANDARD' | 'MOVING_AVERAGE')}><option value="STANDARD">Standard cost</option><option value="MOVING_AVERAGE">Moving average</option></select></div>
+      <div className="sm:col-span-2"><label className="mb-1 block text-xs font-semibold">สถานที่เดิม / หมายเหตุสถานที่</label><input className={fieldClass} value={values.location} onChange={(event) => set('location', event.target.value)} /></div>
+      <label className="flex items-center gap-2 self-end pb-2 text-xs font-semibold"><input type="checkbox" checked={values.lowStockNotificationEnabled} onChange={(event) => set('lowStockNotificationEnabled', event.target.checked)} /> แจ้งเตือนเมื่อถึง Reorder Point</label>
       {serverError && <p className="text-xs text-red-600 sm:col-span-3">{serverError}</p>}
-      <div className="sm:col-span-3">
-        <Button size="sm" isLoading={mutation.isPending} disabled={!itemName.trim() || !unit.trim()} data-testid="inv-create-submit" onClick={() => mutation.mutate()}>
-          บันทึกรายการ
-        </Button>
-      </div>
+      <div className="flex gap-2 sm:col-span-3"><Button size="sm" isLoading={mutation.isPending} disabled={!values.itemName.trim() || !values.unit.trim()} data-testid="inv-create-submit" onClick={() => mutation.mutate()}><Plus className="h-4 w-4" />บันทึกรายการ</Button><Button size="sm" variant="outline" onClick={onClose}>ยกเลิก</Button></div>
     </div>
   );
 }
 
 function ItemActions({ item }: { item: InventoryItem }) {
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<null | 'in' | 'out' | 'adjust' | 'ledger'>(null);
+  const [mode, setMode] = useState<null | 'in' | 'out' | 'adjust' | 'reserve' | 'request' | 'ledger'>(null);
   const [qty, setQty] = useState('');
   const [notes, setNotes] = useState('');
+  const [ticketId, setTicketId] = useState('');
+  const [taskId, setTaskId] = useState('');
   const [counted, setCounted] = useState(String(item.stock_qty));
-
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
-
-  const txMutation = useMutation({
-    mutationFn: (transactionType: 'IN' | 'OUT') =>
-      apiFetch(`/api/v1/inventory-items/${item.id}/transactions`, { method: 'POST', body: JSON.stringify({ transactionType, qty: Number(qty), notes: notes || undefined }) }),
-    onSuccess: () => { setMode(null); setQty(''); setNotes(''); invalidate(); },
-  });
-  const adjustMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/inventory-items/${item.id}/adjust`, { method: 'POST', body: JSON.stringify({ counted: Number(counted), notes: notes || undefined }) }),
-    onSuccess: () => { setMode(null); setNotes(''); invalidate(); },
-  });
-  const ledgerQuery = useQuery({
-    queryKey: ['inventory-transactions', item.id],
-    queryFn: () => apiFetch<InventoryTransaction[]>(`/api/v1/inventory-items/${item.id}/transactions`),
-    enabled: mode === 'ledger',
-  });
-
-  return (
-    <div>
-      <div className="flex flex-wrap gap-2">
-        <button type="button" data-testid={`inv-action-in-${item.id}`} onClick={() => setMode(mode === 'in' ? null : 'in')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">รับเข้า</button>
-        <button type="button" data-testid={`inv-action-out-${item.id}`} onClick={() => setMode(mode === 'out' ? null : 'out')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">เบิกออก</button>
-        <button type="button" data-testid={`inv-action-adjust-${item.id}`} onClick={() => setMode(mode === 'adjust' ? null : 'adjust')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">ตรวจนับ</button>
-        <button type="button" data-testid={`inv-action-ledger-${item.id}`} onClick={() => setMode(mode === 'ledger' ? null : 'ledger')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">ประวัติ</button>
-        <RowActions recordLabel={item.item_name} actions={[
-          { kind: 'delete', permission: 'inventory.manage', deleteEndpoint: `/api/v1/record-deletions/inventory-items/${item.id}` },
-        ]} />
-      </div>
-
-      {(mode === 'in' || mode === 'out') && (
-        <div className="mt-2 flex items-center gap-2">
-          <input type="number" min="0" step="0.01" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="จำนวน" className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="หมายเหตุ" className="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
-          <Button
-            size="sm"
-            isLoading={txMutation.isPending}
-            disabled={!qty || Number(qty) <= 0}
-            data-testid={`inv-tx-submit-${item.id}`}
-            onClick={() => txMutation.mutate(mode === 'in' ? 'IN' : 'OUT')}
-          >
-            บันทึก
-          </Button>
-        </div>
-      )}
-
-      {mode === 'adjust' && (
-        <div className="mt-2 flex items-center gap-2">
-          <input type="number" min="0" value={counted} onChange={(e) => setCounted(e.target.value)} className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="หมายเหตุ" className="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
-          <Button size="sm" isLoading={adjustMutation.isPending} data-testid={`inv-adjust-submit-${item.id}`} onClick={() => adjustMutation.mutate()}>
-            บันทึกผลนับ
-          </Button>
-        </div>
-      )}
-
-      {mode === 'ledger' && (
-        <div className="mt-2 max-h-48 overflow-y-auto text-xs">
-          {ledgerQuery.isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
-          {(ledgerQuery.data ?? []).map((tx) => (
-            <div key={tx.id} className="flex items-center justify-between border-b border-slate-100 py-1 dark:border-slate-700">
-              <span>{formatThaiDate(tx.created_at, 'd MMM yyyy HH:mm')}</span>
-              <span>{tx.transaction_type} {tx.qty}</span>
-              <span className="text-slate-400">คงเหลือ {tx.balance_after}</span>
-            </div>
-          ))}
-        </div>
-      )}
+  const invalidate = () => { void queryClient.invalidateQueries({ queryKey: ['inventory-items'] }); void queryClient.invalidateQueries({ queryKey: ['inventory-queues'] }); };
+  const txMutation = useMutation({ mutationFn: (transactionType: 'IN' | 'OUT') => apiFetch(`/api/v1/inventory-items/${item.id}/transactions`, { method: 'POST', body: JSON.stringify({ transactionType, qty: Number(qty), notes: notes || undefined, ticketId: ticketId || undefined, taskId: taskId || undefined }) }), onSuccess: () => { setMode(null); setQty(''); setNotes(''); setTicketId(''); setTaskId(''); invalidate(); } });
+  const adjustMutation = useMutation({ mutationFn: () => apiFetch(`/api/v1/inventory-items/${item.id}/adjust`, { method: 'POST', body: JSON.stringify({ counted: Number(counted), notes: notes || undefined }) }), onSuccess: () => { setMode(null); setNotes(''); invalidate(); } });
+  const reserveMutation = useMutation({ mutationFn: () => apiFetch('/api/v1/inventory-items/reservations', { method: 'POST', body: JSON.stringify({ itemId: item.id, qty: Number(qty), notes: notes || undefined, ticketId: ticketId || undefined, taskId: taskId || undefined }) }), onSuccess: () => { setMode(null); setQty(''); setNotes(''); setTicketId(''); setTaskId(''); invalidate(); } });
+  const requestMutation = useMutation({ mutationFn: () => apiFetch('/api/v1/inventory-items/requests', { method: 'POST', body: JSON.stringify({ purpose: notes || undefined, ticketId: ticketId || undefined, taskId: taskId || undefined, lines: [{ itemId: item.id, qty: Number(qty) }] }) }), onSuccess: () => { setMode(null); setQty(''); setNotes(''); setTicketId(''); setTaskId(''); invalidate(); } });
+  const ledgerQuery = useQuery({ queryKey: ['inventory-transactions', item.id], queryFn: () => apiFetch<InventoryTransaction[]>(`/api/v1/inventory-items/${item.id}/transactions`), enabled: mode === 'ledger' });
+  const toggle = (next: typeof mode) => setMode(mode === next ? null : next);
+  return <div>
+    <div className="flex flex-wrap gap-2">
+      <button type="button" data-testid={`inv-action-in-${item.id}`} onClick={() => toggle('in')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">รับเข้า</button>
+      <button type="button" data-testid={`inv-action-out-${item.id}`} onClick={() => toggle('out')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">เบิกออก</button>
+      <button type="button" data-testid={`inv-action-adjust-${item.id}`} onClick={() => toggle('adjust')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">ขอปรับยอด</button>
+      <button type="button" onClick={() => toggle('reserve')} className="rounded-full border border-indigo-300 px-3 py-1 text-xs text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">จองของ</button>
+      <button type="button" onClick={() => toggle('request')} className="rounded-full border border-teal-300 px-3 py-1 text-xs text-teal-700 dark:border-teal-700 dark:text-teal-300">ขอเบิก</button>
+      <button type="button" data-testid={`inv-action-ledger-${item.id}`} onClick={() => toggle('ledger')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">Ledger</button>
+      <RowActions recordLabel={item.item_name} actions={[{ kind: 'delete', permission: 'inventory.manage', deleteEndpoint: `/api/v1/record-deletions/inventory-items/${item.id}` }]} />
     </div>
-  );
+    {(mode === 'in' || mode === 'out' || mode === 'reserve' || mode === 'request') && <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-5">
+      <input type="number" min="0" step="0.01" value={qty} onChange={(event) => setQty(event.target.value)} placeholder="จำนวน" className={fieldClass} />
+      <input value={ticketId} onChange={(event) => setTicketId(event.target.value)} placeholder="Ticket ID (ถ้ามี)" className={fieldClass} />
+      <input value={taskId} onChange={(event) => setTaskId(event.target.value)} placeholder="Task ID (ถ้ามี)" className={fieldClass} />
+      <input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={mode === 'request' ? 'วัตถุประสงค์' : 'หมายเหตุ'} className={fieldClass} />
+      <Button size="sm" isLoading={txMutation.isPending || reserveMutation.isPending || requestMutation.isPending} disabled={!qty || Number(qty) <= 0} data-testid={mode === 'in' || mode === 'out' ? `inv-tx-submit-${item.id}` : undefined} onClick={() => mode === 'in' || mode === 'out' ? txMutation.mutate(mode === 'in' ? 'IN' : 'OUT') : mode === 'reserve' ? reserveMutation.mutate() : requestMutation.mutate()}>{mode === 'reserve' ? 'ยืนยันจอง' : mode === 'request' ? 'ส่งคำขอ' : 'บันทึก'}</Button>
+    </div>}
+    {mode === 'adjust' && <div className="mt-2 grid grid-cols-[120px_minmax(0,1fr)_auto] gap-2"><input type="number" min="0" value={counted} onChange={(event) => setCounted(event.target.value)} className={fieldClass} /><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="เหตุผลการปรับยอด" className={fieldClass} /><Button size="sm" isLoading={adjustMutation.isPending} data-testid={`inv-adjust-submit-${item.id}`} onClick={() => adjustMutation.mutate()}>ส่งอนุมัติ</Button></div>}
+    {mode === 'ledger' && <div className="mt-2 max-h-48 overflow-y-auto text-xs"><p className="mb-1 text-slate-500">ยอดคงเหลือหลังรายการ และ reference Ticket/Task</p>{ledgerQuery.isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}{(ledgerQuery.data ?? []).map((tx) => <div key={tx.id} className="grid grid-cols-[150px_90px_1fr] border-b border-slate-100 py-1 dark:border-slate-700"><span>{formatThaiDate(tx.created_at, 'd MMM yyyy HH:mm')}</span><span>{tx.transaction_type} {tx.qty}</span><span className="text-slate-400">คงเหลือ {tx.balance_after}{tx.ticket_id ? ` · Ticket ${tx.ticket_id}` : ''}{tx.task_id ? ` · Task ${tx.task_id}` : ''}</span></div>)}</div>}
+  </div>;
+}
+
+function QueuePanel({ canApprove, canManage }: { canApprove: boolean; canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const requestsQuery = useQuery({ queryKey: ['inventory-queues', 'requests'], queryFn: () => apiFetch<PaginatedResult<InventoryRequest>>('/api/v1/inventory-items/requests?page=1&pageSize=50') });
+  const adjustmentsQuery = useQuery({ queryKey: ['inventory-queues', 'adjustments'], queryFn: () => apiFetch<InventoryAdjustmentRequest[]>('/api/v1/inventory-items/adjustment-requests') });
+  const decisionMutation = useMutation({ mutationFn: ({ kind, id, approved }: { kind: 'request' | 'adjustment'; id: string; approved: boolean }) => apiFetch(`/api/v1/inventory-items/${kind === 'request' ? 'requests' : 'adjustment-requests'}/${id}/decision`, { method: 'POST', body: JSON.stringify({ approved }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['inventory-queues'] }); void queryClient.invalidateQueries({ queryKey: ['inventory-items'] }); } });
+  const fulfillMutation = useMutation({ mutationFn: (id: string) => apiFetch(`/api/v1/inventory-items/requests/${id}/fulfill`, { method: 'POST', body: '{}' }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['inventory-queues'] }); void queryClient.invalidateQueries({ queryKey: ['inventory-items'] }); } });
+  const requests = requestsQuery.data?.items ?? [];
+  const adjustments = adjustmentsQuery.data ?? [];
+  return <Card><CardHeader className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary-600" />คำขอเบิกและอนุมัติปรับยอด</CardHeader><CardBody className="space-y-4">
+    {requestsQuery.isLoading || adjustmentsQuery.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+    <div><p className="mb-2 text-xs font-bold">คำขอเบิก {requests.filter((request) => request.status === 'PENDING').length} รายการรอพิจารณา</p>{requests.length === 0 && <p className="text-xs text-slate-500">ยังไม่มีคำขอเบิก</p>}{requests.slice(0, 5).map((request) => <div key={request.id} className="mb-2 rounded-lg border border-slate-200 p-2 text-xs dark:border-slate-700"><div className="flex justify-between gap-2"><span className="font-semibold">{request.request_no}</span><Badge variant={request.status === 'PENDING' ? 'warning' : request.status === 'APPROVED' ? 'success' : 'neutral'}>{request.status}</Badge></div><p className="mt-1 text-slate-500">ผู้เบิก: {request.requester_id}<br />{request.purpose ?? 'ไม่ระบุวัตถุประสงค์'}</p><div className="mt-2 flex gap-2">{canApprove && request.status === 'PENDING' && <><Button size="sm" variant="success" isLoading={decisionMutation.isPending} onClick={() => decisionMutation.mutate({ kind: 'request', id: request.id, approved: true })}>อนุมัติ</Button><Button size="sm" variant="danger" isLoading={decisionMutation.isPending} onClick={() => decisionMutation.mutate({ kind: 'request', id: request.id, approved: false })}>ปฏิเสธ</Button></>}{canManage && request.status === 'APPROVED' && <Button size="sm" isLoading={fulfillMutation.isPending} onClick={() => fulfillMutation.mutate(request.id)}>จ่ายของ</Button>}</div></div>)}</div>
+    <div><p className="mb-2 text-xs font-bold">Stock Adjustment Approval {adjustments.filter((adjustment) => adjustment.status === 'PENDING').length} รายการ</p>{adjustments.slice(0, 5).map((adjustment) => <div key={adjustment.id} className="mb-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2 text-xs dark:border-amber-900 dark:bg-amber-950/20"><div className="flex justify-between"><span>Item {adjustment.item_id}</span><Badge variant={adjustment.status === 'PENDING' ? 'warning' : adjustment.status === 'APPROVED' ? 'success' : 'neutral'}>{adjustment.status}</Badge></div><p className="mt-1 text-slate-500">{adjustment.current_qty} → {adjustment.counted_qty} (variance {adjustment.variance})</p>{canApprove && adjustment.status === 'PENDING' && <div className="mt-2 flex gap-2"><Button size="sm" variant="success" isLoading={decisionMutation.isPending} onClick={() => decisionMutation.mutate({ kind: 'adjustment', id: adjustment.id, approved: true })}>อนุมัติ</Button><Button size="sm" variant="danger" isLoading={decisionMutation.isPending} onClick={() => decisionMutation.mutate({ kind: 'adjustment', id: adjustment.id, approved: false })}>ปฏิเสธ</Button></div>}</div>)}</div>
+  </CardBody></Card>;
+}
+
+function PurchaseReceiptPanel({ items, options }: { items: InventoryItem[]; options?: InventoryOptions }) {
+  const queryClient = useQueryClient();
+  const [receiptNo, setReceiptNo] = useState('');
+  const [itemId, setItemId] = useState(items[0]?.id ?? '');
+  const [qty, setQty] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [vendorId, setVendorId] = useState('');
+  const receiptsQuery = useQuery({ queryKey: ['inventory-receipts'], queryFn: () => apiFetch<PaginatedResult<InventoryPurchaseReceipt>>('/api/v1/inventory-items/purchase-receipts?page=1&pageSize=5') });
+  const mutation = useMutation({ mutationFn: async () => { const receipt = await apiFetch<InventoryPurchaseReceipt>('/api/v1/inventory-items/purchase-receipts', { method: 'POST', body: JSON.stringify({ receiptNo, vendorId: vendorId || undefined, lines: [{ itemId, qty: Number(qty), unitPrice: Number(unitPrice) || 0 }] }) }); await apiFetch(`/api/v1/inventory-items/purchase-receipts/${receipt.id}/post`, { method: 'POST', body: '{}' }); }, onSuccess: () => { setReceiptNo(''); setQty(''); setUnitPrice(''); void queryClient.invalidateQueries({ queryKey: ['inventory-items'] }); void queryClient.invalidateQueries({ queryKey: ['inventory-receipts'] }); } });
+  return <Card><CardHeader className="flex items-center gap-2"><Archive className="h-4 w-4 text-primary-600" />Purchase Receipt</CardHeader><CardBody className="space-y-3"><div className="grid grid-cols-2 gap-2"><input className={fieldClass} placeholder="เลขที่ใบรับซื้อ *" value={receiptNo} onChange={(event) => setReceiptNo(event.target.value)} /><select className={fieldClass} value={vendorId} onChange={(event) => setVendorId(event.target.value)}><option value="">ไม่ระบุ Vendor</option>{options?.vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select><select className={fieldClass} value={itemId} onChange={(event) => setItemId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.item_name}</option>)}</select><input type="number" min="0" className={fieldClass} placeholder="จำนวน" value={qty} onChange={(event) => setQty(event.target.value)} /><input type="number" min="0" step="0.01" className={fieldClass} placeholder="ราคาต่อหน่วย" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} /><Button size="sm" isLoading={mutation.isPending} disabled={!receiptNo.trim() || !itemId || !qty || Number(qty) <= 0} onClick={() => mutation.mutate()}>รับเข้าและ Post</Button></div><div className="space-y-1 text-xs">{(receiptsQuery.data?.items ?? []).map((receipt) => <div key={receipt.id} className="flex justify-between border-b border-slate-100 py-1 dark:border-slate-700"><span>{receipt.receipt_no}</span><span>{receipt.status} · {Number(receipt.total_amount).toLocaleString('th-TH')} บาท</span></div>)}</div></CardBody></Card>;
+}
+
+function CycleCountPanel({ items, options }: { items: InventoryItem[]; options?: InventoryOptions }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
+  const [campaignId, setCampaignId] = useState('');
+  const [counts, setCounts] = useState<Record<string, string>>({});
+  const campaignsQuery = useQuery({ queryKey: ['inventory-cycle-counts'], queryFn: () => apiFetch<InventoryCycleCountCampaign[]>('/api/v1/inventory-items/cycle-count-campaigns') });
+  const detailQuery = useQuery({ queryKey: ['inventory-cycle-count-detail', campaignId], queryFn: () => apiFetch<{ campaign: InventoryCycleCountCampaign; lines: InventoryCycleCountLine[] }>(`/api/v1/inventory-items/cycle-count-campaigns/${campaignId}`), enabled: Boolean(campaignId) });
+  const createMutation = useMutation({ mutationFn: () => apiFetch<{ campaign: InventoryCycleCountCampaign }>('/api/v1/inventory-items/cycle-count-campaigns', { method: 'POST', body: JSON.stringify({ name, warehouseId: warehouseId || undefined, itemIds: items.map((item) => item.id) }) }), onSuccess: (data) => { setName(''); setCampaignId(data.campaign.id); void queryClient.invalidateQueries({ queryKey: ['inventory-cycle-counts'] }); } });
+  const countMutation = useMutation({ mutationFn: ({ itemId, countedQty }: { itemId: string; countedQty: number }) => apiFetch(`/api/v1/inventory-items/cycle-count-campaigns/${campaignId}/count`, { method: 'POST', body: JSON.stringify({ itemId, countedQty }) }), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['inventory-cycle-count-detail', campaignId] }) });
+  const completeMutation = useMutation({ mutationFn: () => apiFetch(`/api/v1/inventory-items/cycle-count-campaigns/${campaignId}/complete`, { method: 'POST', body: '{}' }), onSuccess: () => { setCampaignId(''); void queryClient.invalidateQueries({ queryKey: ['inventory-cycle-counts'] }); void queryClient.invalidateQueries({ queryKey: ['inventory-queues'] }); } });
+  return <Card><CardHeader className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-primary-600" />Cycle Count Campaign</CardHeader><CardBody className="space-y-3"><div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px_auto]"><input className={fieldClass} placeholder="ชื่อแคมเปญนับรอบ" value={name} onChange={(event) => setName(event.target.value)} /><select className={fieldClass} value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}><option value="">ทุก Warehouse</option>{options?.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select><Button size="sm" disabled={!name.trim() || !items.length} isLoading={createMutation.isPending} onClick={() => createMutation.mutate()}>สร้าง Campaign</Button></div><div className="flex flex-wrap gap-2">{(campaignsQuery.data ?? []).map((campaign) => <button type="button" key={campaign.id} onClick={() => setCampaignId(campaign.id)} className={`rounded-full border px-3 py-1 text-xs ${campaign.id === campaignId ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-slate-300'}`}>{campaign.campaign_code} · {campaign.status}</button>)}</div>{detailQuery.data && <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="text-xs font-bold">{detailQuery.data.campaign.name} · กรอกผลนับจริง</p>{detailQuery.data.lines.map((line) => { const item = items.find((candidate) => candidate.id === line.item_id); return <div key={line.id} className="grid grid-cols-[1fr_100px_auto] items-center gap-2 text-xs"><span>{item?.item_name ?? line.item_id}<br /><span className="text-slate-500">ระบบ {line.system_qty} · variance {line.variance ?? '—'}</span></span><input type="number" min="0" className={fieldClass} value={counts[line.item_id] ?? String(line.counted_qty ?? line.system_qty)} onChange={(event) => setCounts((current) => ({ ...current, [line.item_id]: event.target.value }))} /><Button size="sm" variant="outline" isLoading={countMutation.isPending} onClick={() => countMutation.mutate({ itemId: line.item_id, countedQty: Number(counts[line.item_id] ?? line.counted_qty ?? line.system_qty) })}>บันทึก</Button></div>; })}<Button size="sm" disabled={detailQuery.data.lines.some((line) => line.counted_qty == null)} isLoading={completeMutation.isPending} onClick={() => completeMutation.mutate()}>ปิด Campaign และสร้างคำขอปรับยอด</Button></div>}</CardBody></Card>;
 }
 
 export function InventoryPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('inventory.manage');
+  const canApprove = hasPermission('inventory.approve');
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items', search, lowStockOnly],
-    queryFn: () =>
-      apiFetch<PaginatedResult<InventoryItem>>(
-        `/api/v1/inventory-items?page=1&pageSize=50${search ? `&search=${encodeURIComponent(search)}` : ''}${lowStockOnly ? '&lowStockOnly=true' : ''}`,
-      ),
-  });
-
+  const itemsQuery = useQuery({ queryKey: ['inventory-items', search, lowStockOnly], queryFn: () => apiFetch<PaginatedResult<InventoryItem>>(`/api/v1/inventory-items?page=1&pageSize=50${search ? `&search=${encodeURIComponent(search)}` : ''}${lowStockOnly ? '&lowStockOnly=true' : ''}`) });
+  const optionsQuery = useQuery({ queryKey: ['inventory-options'], queryFn: () => apiFetch<InventoryOptions>('/api/v1/inventory-items/options'), enabled: canManage || canApprove });
+  const lowCheckMutation = useMutation({ mutationFn: () => apiFetch<{ lowItems: number; notified: number }>('/api/v1/inventory-items/low-stock/check', { method: 'POST', body: '{}' }) });
   const items = itemsQuery.data?.items ?? [];
-  const lowCount = items.filter((i) => i.low).length;
-  const totalValue = items.reduce((sum, i) => sum + i.value, 0);
-  const outOfStockCount = items.filter((i) => i.stock_qty <= 0).length;
-  const reorderTotal = items.filter((i) => i.low).reduce((sum, i) => sum + (i.reorder_qty ?? Math.max(0, i.min_qty - i.stock_qty)), 0);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Inventory" title="Inventory — อะไหล่/วัสดุสิ้นเปลือง" description="เบิก-รับ-ตรวจนับสต็อกอะไหล่และวัสดุสิ้นเปลือง" />
-        <RequirePermission permission="inventory.manage">
-          <Button size="sm" onClick={() => setShowCreate((v) => !v)} data-testid="inv-create-toggle">
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            เพิ่มรายการ
-          </Button>
-        </RequirePermission>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard icon={<PackageSearch className="h-5 w-5" aria-hidden="true" />} label="รายการทั้งหมด (หน้านี้)" value={items.length} tone="primary" />
-        <StatCard icon={<PackageSearch className="h-5 w-5" aria-hidden="true" />} label="ใกล้หมด (หน้านี้)" value={lowCount} tone="amber" />
-        <StatCard icon={<PackageSearch className="h-5 w-5" aria-hidden="true" />} label="มูลค่าสต็อก (หน้านี้)" value={totalValue.toLocaleString('th-TH')} tone="teal" />
-      </div>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <Card className="min-w-0">
-        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-          <span>รายการ Inventory</span>
-          <button
-            type="button"
-            onClick={() => setLowStockOnly((v) => !v)}
-            className={`rounded-full px-3 py-1 text-xs ${lowStockOnly ? 'bg-primary-700 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}
-          >
-            ใกล้หมดเท่านั้น
-          </button>
-        </CardHeader>
-        <CardBody>
-          {showCreate && <FormModal title="เพิ่มรายการคลัง" description="บันทึกอะไหล่หรือวัสดุเข้าสู่ทะเบียนคลัง" size="lg" onClose={() => setShowCreate(false)}><CreateItemForm onClose={() => setShowCreate(false)} /></FormModal>}
-
-          <input
-            type="search"
-            placeholder="ค้นหาชื่อรายการ หรือหมวดหมู่..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          />
-
-          {itemsQuery.isLoading && (
-            <div className="flex justify-center py-8" role="status">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
-            </div>
-          )}
-          {itemsQuery.isError && <QueryError title="โหลดรายการคลังไม่สำเร็จ" error={itemsQuery.error} onRetry={() => void itemsQuery.refetch()} isRetrying={itemsQuery.isFetching} />}
-          {itemsQuery.data && items.length === 0 && <EmptyState icon={<PackageSearch className="h-10 w-10" aria-hidden="true" />} title="ไม่พบรายการ" />}
-
-          <div className="flex flex-col gap-2">
-            {items.map((item) => (
-              <div key={item.id} data-testid={`inv-row-${item.id}`} className={`rounded-lg border p-3 ${item.stock_qty <= 0 ? 'border-red-200 bg-red-50/40 shadow-[inset_3px_0_0_#dc2626] dark:border-red-900 dark:bg-red-950/10' : item.low ? 'border-amber-200 bg-amber-50/30 shadow-[inset_3px_0_0_#d97706] dark:border-amber-900 dark:bg-amber-950/10' : 'border-slate-100 dark:border-slate-700'}`}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-slate-800 dark:text-slate-200">
-                      {item.item_name} {item.low && <Badge variant="warning">ใกล้หมด</Badge>}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {item.category ?? 'ไม่ระบุหมวดหมู่'} · คงเหลือ {item.stock_qty} {item.unit} (ขั้นต่ำ {item.min_qty})
-                    </p>
-                  </div>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">{item.value.toLocaleString('th-TH')} บาท</span>
-                </div>
-                <RequirePermission permission="inventory.manage">
-                  <div className="mt-2">
-                    <ItemActions item={item} />
-                  </div>
-                </RequirePermission>
-              </div>
-            ))}
-          </div>
-        </CardBody>
-      </Card>
-
-      <aside className="flex min-w-0 flex-col gap-3" aria-label="สรุปการจัดซื้อคลัง">
-        <Card>
-          <CardHeader className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-primary-600" /><span>แผนเติมสต็อก</span></CardHeader>
-          <CardBody className="space-y-3">
-            <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/20"><p className="text-[10px] font-semibold text-red-700 dark:text-red-300">หมดสต็อก</p><p className="mt-1 font-mono text-xl font-bold text-red-700 dark:text-red-300">{outOfStockCount}</p></div><div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/20"><p className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">ต่ำกว่าขั้นต่ำ</p><p className="mt-1 font-mono text-xl font-bold text-amber-700 dark:text-amber-300">{lowCount}</p></div></div>
-            <div><p className="text-xs font-semibold text-slate-700 dark:text-slate-200">รายการที่ควรเติมก่อน</p><div className="mt-2 space-y-2">{items.filter((item) => item.low).slice(0, 4).map((item) => <div key={item.id} className="flex items-start justify-between gap-3 text-xs"><div className="min-w-0"><p className="truncate font-semibold">{item.item_name}</p><p className="text-[10px] text-slate-500">คงเหลือ {item.stock_qty} / ขั้นต่ำ {item.min_qty}</p></div><span className="shrink-0 font-mono text-amber-700">+{item.reorder_qty ?? Math.max(0, item.min_qty - item.stock_qty)}</span></div>)}{lowCount === 0 && <p className="text-xs text-slate-500">สต็อกทุกรายการอยู่เหนือจุดสั่งซื้อ</p>}</div></div>
-          </CardBody>
-        </Card>
-
-        {lowCount > 0 && <div className="rounded-[10px] border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />รวมเป็นใบขอซื้อเดียว</p><p className="mt-2 text-xs leading-5 text-slate-700 dark:text-slate-300">มี {lowCount} รายการที่ควรเติม รวมจำนวนแนะนำ {reorderTotal.toLocaleString('th-TH')} หน่วย ตรวจสอบหน่วยนับก่อนจัดทำใบขอซื้อ</p><button type="button" onClick={() => setLowStockOnly(true)} className="mt-3 text-xs font-bold text-primary-700 hover:underline dark:text-primary-300">ตรวจรายการใกล้หมด</button></div>}
-
-        <Link to="/software-licenses" className="rounded-[10px] border border-slate-200 bg-white p-4 transition hover:border-primary-300 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100"><KeyRound className="h-4 w-4 text-primary-600" />ลิขสิทธิ์ซอฟต์แวร์</p><p className="mt-2 text-xs text-slate-500">ตรวจสิทธิ์คงเหลือ การใช้เกิน และรอบต่ออายุ</p></Link>
-      </aside>
-      </div>
-    </div>
-  );
+  const lowCount = items.filter((item) => item.low).length;
+  const totalValue = items.reduce((sum, item) => sum + item.value, 0);
+  const reservedTotal = items.reduce((sum, item) => sum + item.reserved_qty, 0);
+  const outOfStockCount = items.filter((item) => item.stock_qty <= 0).length;
+  const reorderTotal = items.filter((item) => item.low).reduce((sum, item) => sum + (item.reorder_qty ?? Math.max(0, item.reorder_point - item.stock_qty)), 0);
+  return <div className="flex flex-col gap-4">
+    <div className="flex flex-wrap items-center justify-between gap-3"><PageTitle eyebrow="ทรัพย์สินและโครงสร้างพื้นฐาน / Inventory" title="Inventory — อะไหล่และวัสดุสิ้นเปลือง" description="ติดตามยอดจริง ยอดพร้อมจ่าย การจอง คำขอเบิก และหลักฐานการเคลื่อนไหว" /><RequirePermission permission="inventory.manage"><Button size="sm" onClick={() => setShowCreate(true)} data-testid="inv-create-toggle"><Plus className="h-4 w-4" />เพิ่มรายการ</Button></RequirePermission></div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><StatCard icon={<PackageSearch className="h-5 w-5" />} label="รายการทั้งหมด" value={items.length} tone="primary" /><StatCard icon={<AlertTriangle className="h-5 w-5" />} label="ถึง Reorder Point" value={lowCount} tone="amber" /><StatCard icon={<ClipboardList className="h-5 w-5" />} label="ยอดจอง" value={reservedTotal} tone="teal" /><StatCard icon={<ShoppingCart className="h-5 w-5" />} label="มูลค่าสต็อก" value={totalValue.toLocaleString('th-TH')} tone="teal" /></div>
+    {showCreate && <FormModal title="เพิ่มรายการคลัง" description="ตั้งค่า Reorder Point, Barcode, Vendor และตำแหน่งจัดเก็บ" size="xl" onClose={() => setShowCreate(false)}><CreateItemForm onClose={() => setShowCreate(false)} options={optionsQuery.data} /></FormModal>}
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><Card className="min-w-0"><CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>รายการ Inventory</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setLowStockOnly((current) => !current)} className={`rounded-full px-3 py-1 text-xs ${lowStockOnly ? 'bg-primary-700 text-white' : 'border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>เฉพาะต่ำกว่า Reorder</button><RequirePermission permission="inventory.manage"><Button size="sm" variant="outline" isLoading={lowCheckMutation.isPending} onClick={() => lowCheckMutation.mutate()}><RefreshCw className="h-3.5 w-3.5" />เช็คแจ้งเตือนต่ำ</Button></RequirePermission></div></CardHeader><CardBody><input type="search" placeholder="ค้นหาชื่อ หมวดหมู่ หรือ Barcode..." value={search} onChange={(event) => setSearch(event.target.value)} className={`${fieldClass} mb-3 max-w-md`} />{itemsQuery.isLoading && <div className="flex justify-center py-8" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div>}{itemsQuery.error && <QueryError title="โหลดรายการไม่สำเร็จ" error={itemsQuery.error} onRetry={() => void itemsQuery.refetch()} isRetrying={itemsQuery.isFetching} />}{itemsQuery.data && items.length === 0 && <EmptyState icon={<PackageSearch className="h-10 w-10" />} title="ไม่พบรายการ" />}{<div className="flex flex-col gap-2">{items.map((item) => <div key={item.id} data-testid={`inv-row-${item.id}`} className={`rounded-lg border p-3 ${item.stock_qty <= 0 ? 'border-red-200 bg-red-50/40 shadow-[inset_3px_0_0_#dc2626] dark:border-red-900 dark:bg-red-950/10' : item.low ? 'border-amber-200 bg-amber-50/30 shadow-[inset_3px_0_0_#d97706] dark:border-amber-900 dark:bg-amber-950/10' : 'border-slate-100 dark:border-slate-700'}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium text-slate-800 dark:text-slate-200">{item.item_name} {item.low && <Badge variant="warning">ต่ำกว่า Reorder</Badge>}</p><p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400"><span>คงเหลือ {item.stock_qty} {item.unit}</span><span className="font-semibold text-teal-700 dark:text-teal-300">พร้อมจ่าย {item.available_qty}</span><span>จอง {item.reserved_qty}</span><span>Reorder {item.reorder_point}</span>{item.barcode && <span className="inline-flex items-center gap-1"><Barcode className="h-3 w-3" />{item.barcode}</span>}{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}</p><p className="mt-1 text-[11px] text-slate-400">Vendor: {item.vendor_id ?? '—'} · Warehouse/Bin: {item.warehouse_id ?? '—'} / {item.bin_id ?? '—'} · Valuation: {item.valuation_method}</p></div><span className="shrink-0 text-sm text-slate-500">{item.value.toLocaleString('th-TH')} บาท</span></div><RequirePermission permission="inventory.manage"><div className="mt-2"><ItemActions item={item} /></div></RequirePermission></div>)}</div>}</CardBody></Card><aside className="flex min-w-0 flex-col gap-3"><Card><CardHeader className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-primary-600" />Replenishment & Notification</CardHeader><CardBody className="space-y-3"><div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/20"><p className="text-[10px] font-semibold text-red-700">หมดสต็อก</p><p className="mt-1 font-mono text-xl font-bold text-red-700">{outOfStockCount}</p></div><div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/20"><p className="text-[10px] font-semibold text-amber-700">ควรสั่งเพิ่ม</p><p className="mt-1 font-mono text-xl font-bold text-amber-700">{reorderTotal}</p></div></div>{items.filter((item) => item.low).slice(0, 5).map((item) => <div key={item.id} className="flex justify-between gap-3 text-xs"><span className="truncate">{item.item_name}<br /><span className="text-slate-500">{item.stock_qty} / {item.reorder_point} {item.unit}</span></span><span className="font-mono text-amber-700">+{item.reorder_qty ?? Math.max(0, item.reorder_point - item.stock_qty)}</span></div>)}{lowCount === 0 && <p className="text-xs text-slate-500">สต็อกทุกตัวสูงกว่าจุดสั่งซื้อ</p>}</CardBody></Card><RequirePermission permission="inventory.view"><QueuePanel canApprove={canApprove} canManage={canManage} /></RequirePermission><RequirePermission permission="inventory.manage"><PurchaseReceiptPanel items={items} options={optionsQuery.data} /><CycleCountPanel items={items} options={optionsQuery.data} /></RequirePermission><Link to="/software-licenses" className="rounded-[10px] border border-slate-200 bg-white p-4 transition hover:border-primary-300 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold"><KeyRound className="h-4 w-4 text-primary-600" />Software License</p><p className="mt-2 text-xs text-slate-500">ตรวจสิทธิ์คงเหลือและต้นทุนซอฟต์แวร์</p></Link></aside></div>
+    <div className="grid gap-3 md:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold"><UserRound className="h-4 w-4 text-primary-600" />ผู้เบิกและ Reference</p><p className="mt-2 text-xs text-slate-500">ทุกคำขอเก็บผู้เบิก พร้อม Ticket/Task ที่เกี่ยวข้อง และการจ่ายของจะสร้าง OUT ใน Ledger อัตโนมัติ</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold"><MapPin className="h-4 w-4 text-primary-600" />Warehouse / Bin</p><p className="mt-2 text-xs text-slate-500">รองรับการแยกคลังและช่องจัดเก็บ โดยยังคงเก็บ location เดิมเพื่อความเข้ากันได้</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="flex items-center gap-2 text-xs font-bold"><ClipboardCheck className="h-4 w-4 text-primary-600" />Audit-ready</p><p className="mt-2 text-xs text-slate-500">ADJUST ต้องผ่าน approval และ Cycle Count ที่มี variance จะสร้างคำขอปรับยอดต่อให้ตรวจสอบ</p></div></div>
+  </div>;
 }

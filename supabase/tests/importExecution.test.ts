@@ -198,6 +198,30 @@ describe('Phase 7 import execution (pglite, real accumulated schema)', () => {
     });
   });
 
+  it('preserves original audit evidence on retry while importing new audit rows', async () => {
+    const auditRow = { LogID: 'AT-RETRY', Timestamp: '2026-01-01T00:00:00Z', Action: 'login', Module: 'auth', Result: 'Success', Detail: 'original evidence' };
+    await asServiceRole(db, async () => {
+      const first = await executeImportPlan(
+        buildImportPlan({ AuditTrail: [auditRow] }, migrationManifest), db as unknown as Queryable, fakeAuthAdmin,
+      );
+      expect(first.failed).toEqual([]);
+      const original = await db.query(`select * from public.audit_logs where legacy_source = 'AuditTrail' and legacy_id = 'AT-RETRY'`);
+      expect(original.rows).toHaveLength(1);
+
+      const retry = await executeImportPlan(
+        buildImportPlan({ AuditTrail: [
+          { ...auditRow, Detail: 'changed evidence' },
+          { ...auditRow, LogID: 'AT-NEW' },
+        ] }, migrationManifest), db as unknown as Queryable, fakeAuthAdmin,
+      );
+      expect(retry.failed).toEqual([]);
+      const preserved = await db.query(`select * from public.audit_logs where legacy_source = 'AuditTrail' and legacy_id = 'AT-RETRY'`);
+      expect(preserved.rows).toEqual(original.rows);
+      const added = await db.query(`select id from public.audit_logs where legacy_source = 'AuditTrail' and legacy_id = 'AT-NEW'`);
+      expect(added.rows).toHaveLength(1);
+    });
+  });
+
   it('rolls back the whole batch when one operation fails, leaving no partial rows behind', async () => {
     const workbook: LegacyWorkbook = {
       TicketCategories: [

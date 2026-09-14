@@ -31,6 +31,7 @@ function makeMe(profile: Partial<MeProfile> = {}): MeResponse {
       employee_code: 'EMP-001',
       full_name: 'สมชาย ใจดี',
       email: 'somchai@life.local',
+      username: null,
       phone: null,
       department_id: null,
       position_id: null,

@@ -17,6 +17,7 @@ import { QueryError } from '../../components/ui/QueryError';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { RequesterSignoffCard } from '../../components/tickets/RequesterSignoffCard';
+import { RequesterReopenCard } from '../../components/tickets/RequesterReopenCard';
 import { OutsourceSubmissionCard } from '../../components/tickets/OutsourceSubmissionCard';
 import { useAuth } from '../../stores/authContext';
 import { ApiError, apiFetch } from '../../services/apiClient';
@@ -25,6 +26,7 @@ import type { ContractVendorRef } from '../../types/vendorsContracts';
 import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, type Incident } from '../../types/incidents';
 import { formatThaiDate } from '../../utils/date';
 import { TicketConversationPanel } from './TicketConversationPanel';
+import { TechnicianRecommendationPanel } from '../technicianSkills/TechnicianRecommendationPanel';
 import { isConversationEntry } from './ticketConversation';
 import { TicketFeedbackPanel } from './TicketFeedbackPanel';
 import { TicketSignaturePanel } from './TicketSignaturePanel';
@@ -61,11 +63,21 @@ const updateSchema = z.object({
   outsourceName: z.string().trim().optional(),
   outsourceVendorId: z.string().optional(),
   outsourceIssueNo: z.string().trim().optional(),
+  waitingReason: z.string().trim().optional(),
+  waitingOwnerId: z.string().optional(),
+  waitingFollowUpAt: z.string().optional(),
 });
 
 type TicketWorkUpdate = z.infer<typeof updateSchema>;
 
-function ticketWorkDefaults(ticket: Pick<TicketDetail, 'status' | 'assignee_id' | 'resolution' | 'outsource_vendor_id' | 'outsource_name' | 'outsource_issue_no'>): TicketWorkUpdate {
+function localDateTime(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function ticketWorkDefaults(ticket: Pick<TicketDetail, 'status' | 'assignee_id' | 'resolution' | 'outsource_vendor_id' | 'outsource_name' | 'outsource_issue_no' | 'waiting_reason' | 'waiting_owner_id' | 'waiting_follow_up_at'>): TicketWorkUpdate {
   return {
     status: ticket.status,
     assigneeId: ticket.assignee_id ?? '',
@@ -75,13 +87,16 @@ function ticketWorkDefaults(ticket: Pick<TicketDetail, 'status' | 'assignee_id' 
     outsourceVendorId: ticket.outsource_vendor_id ?? '',
     outsourceName: ticket.outsource_name ?? '',
     outsourceIssueNo: ticket.outsource_issue_no ?? '',
+    waitingReason: ticket.waiting_reason ?? '',
+    waitingOwnerId: ticket.waiting_owner_id ?? '',
+    waitingFollowUpAt: localDateTime(ticket.waiting_follow_up_at),
   };
 }
 
 /** Mirrors the API's state-specific requirements so staff get feedback before a round trip. */
 function validateTicketWorkUpdateRequirements(
   values: TicketWorkUpdate,
-  ticket: Pick<TicketDetail, 'resolution' | 'outsource_name'>,
+  ticket: Pick<TicketDetail, 'resolution' | 'outsource_name' | 'waiting_reason' | 'waiting_owner_id' | 'waiting_follow_up_at'>,
 ): string | null {
   if (values.status === 'เสร็จสิ้น' && !values.resolution?.trim() && !ticket.resolution?.trim()) {
     return 'กรุณาระบุผลการแก้ไขก่อนส่งให้ผู้แจ้งตรวจรับ';
@@ -92,16 +107,20 @@ function validateTicketWorkUpdateRequirements(
   if (values.status === 'ส่งต่อ Outsource' && !values.outsourceVendorId && !values.outsourceName?.trim() && !ticket.outsource_name?.trim()) {
     return 'กรุณาระบุชื่อผู้ให้บริการภายนอก';
   }
+  if ((values.status === 'รออะไหล่' || values.status === 'รอผู้ใช้งาน') && (!values.waitingReason?.trim() || !values.waitingOwnerId || !values.waitingFollowUpAt)) {
+    return 'กรุณาระบุเหตุผล ผู้ติดตาม และวันติดตามเมื่อพัก Ticket';
+  }
   return null;
 }
 
-export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }: { ticket: TicketDetail; staff: AssignableStaff[]; vendors: ContractVendorRef[]; focusOnLoad?: boolean }) {
+export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, canRecommend = false }: { ticket: TicketDetail; staff: AssignableStaff[]; vendors: ContractVendorRef[]; focusOnLoad?: boolean; canRecommend?: boolean }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     reset,
     formState: { isSubmitting },
   } = useForm<TicketWorkUpdate>({
@@ -109,6 +128,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
     defaultValues: ticketWorkDefaults(ticket),
   });
   const selectedStatus = watch('status');
+  const selectedAssigneeId = watch('assigneeId');
 
   useEffect(() => {
     reset(ticketWorkDefaults(ticket));
@@ -194,6 +214,15 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
             </select>
           </div>
 
+          <TechnicianRecommendationPanel
+            categoryId={ticket.category_id}
+            location={ticket.location}
+            productTechnology={ticket.erp_module}
+            enabled={canRecommend}
+            selectedAssigneeId={selectedAssigneeId}
+            onSelect={(technicianId) => setValue('assigneeId', technicianId, { shouldDirty: true, shouldValidate: true })}
+          />
+
           <div className="col-span-full">
             <label htmlFor="upd-note" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               บันทึกเพิ่มเติม
@@ -260,6 +289,29 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false }:
                 />
               </div>
             </>
+          )}
+
+          {(selectedStatus === 'รออะไหล่' || selectedStatus === 'รอผู้ใช้งาน') && (
+            <div className="col-span-full rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-950/20">
+              <p className="mb-2 text-xs font-bold text-amber-900 dark:text-amber-200">ข้อมูลการพัก SLA</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="sm:col-span-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  รออะไร <span className="text-red-600">*</span>
+                  <textarea rows={2} maxLength={1000} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('waitingReason')} />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  ผู้ติดตาม <span className="text-red-600">*</span>
+                  <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('waitingOwnerId')}>
+                    <option value="">— เลือกผู้ติดตาม —</option>
+                    {staff.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  วันติดตาม <span className="text-red-600">*</span>
+                  <input type="datetime-local" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('waitingFollowUpAt')} />
+                </label>
+              </div>
+            </div>
           )}
 
           {selectedStatus === 'ยกเลิก' && (
@@ -363,6 +415,7 @@ export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const { me, hasPermission } = useAuth();
+  const queryClient = useQueryClient();
 
   const ticketQuery = useQuery({
     queryKey: ['tickets', id],
@@ -384,6 +437,17 @@ export function TicketDetailPage() {
     queryKey: ['ticket-rating-criteria', 'active'],
     queryFn: () => apiFetch<TicketRatingCriterion[]>('/api/v1/ticket-rating-criteria'),
     enabled: !!id,
+  });
+  const [pmToLink, setPmToLink] = useState('');
+  const pmLinkMutation = useMutation({
+    mutationFn: async ({ ticketId, planId, method }: { ticketId: string; planId: string; method: 'POST' | 'DELETE' }) => apiFetch(
+      method === 'POST' ? `/api/v1/tickets/${ticketId}/pm-links` : `/api/v1/tickets/${ticketId}/pm-links/${planId}`,
+      { method, ...(method === 'POST' ? { body: JSON.stringify({ maintenancePlanId: planId, relationship: 'root_cause' }) } : {}) },
+    ),
+    onSuccess: (_data, variables) => {
+      setPmToLink('');
+      void queryClient.invalidateQueries({ queryKey: ['tickets', variables.ticketId] });
+    },
   });
 
   if (ticketQuery.isLoading) {
@@ -408,6 +472,9 @@ export function TicketDetailPage() {
   const ticket = ticketQuery.data;
   const canManage = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canUpdateWork = canManage && !LOCKED_TICKET_STATUSES.includes(ticket.status);
+  const canRecommendTechnician = hasPermission('ticket.assign')
+    && hasPermission('ticket.view_all')
+    && hasPermission('technician_skill.view');
   const canComment = hasPermission('ticket.comment');
   const canInternalNote = hasPermission('ticket.internal_note') && hasPermission('ticket.update');
   const canManageSignature = hasPermission('ticket.update');
@@ -419,6 +486,7 @@ export function TicketDetailPage() {
     hasPermission('ticket.escalate') &&
     !ticket.incident_id &&
     !['ปิดงาน', 'ยกเลิก', 'ยกระดับเป็น Incident'].includes(ticket.status);
+  const canLinkPm = hasPermission('ticket.update') && hasPermission('maintenance.view');
   // บทสนทนาย้ายไปอยู่ในห้องแชทแล้ว ไทม์ไลน์จึงเหลือเฉพาะเหตุการณ์การดำเนินงาน
   const timelineLogs = ticket.worklogs.filter((log) => !isConversationEntry(log));
   const ratingBreakdown = ticket.rating_criteria_snapshot?.length
@@ -438,7 +506,7 @@ export function TicketDetailPage() {
         meta={<>
           <StatusBadge display={{ label: ticketStatusLabel[ticket.status], tone: ticketStatusTone[ticket.status] }} />
           <Badge variant="secondary">{ticket.priority}</Badge>
-          <SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status)} fallback={ticket.due_at ? `ครบกำหนด ${formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm')}` : 'ไม่กำหนด SLA'} />
+          <SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || ticket.sla_state === 'paused')} fallback={ticket.due_at ? `ครบกำหนด ${formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm')}` : 'ไม่กำหนด SLA'} />
         </>}
         secondaryActions={<>
           <Link to="/tickets" className="inline-flex min-h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:bg-slate-800 dark:text-primary-300">
@@ -453,7 +521,7 @@ export function TicketDetailPage() {
 
       <DetailLayout
         aside={<>
-          {canUpdateWork && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} focusOnLoad={searchParams.get('action') === 'edit'} />}
+          {canUpdateWork && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} focusOnLoad={searchParams.get('action') === 'edit'} canRecommend={canRecommendTechnician} />}
           {/* ทางลัดไปจอมือถือหน้างาน — บันทึกผล ตัดอะไหล่ และแนบรูปในหน้าเดียวโดยไม่ต้องสลับหลายหน้า */}
           {canUpdateWork && (
             <Link
@@ -479,6 +547,9 @@ export function TicketDetailPage() {
               <InfoRow label="แจ้งเมื่อ" value={formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')} />
               <InfoRow label="กำหนดตอบกลับ" value={ticket.response_due_at ? formatThaiDate(ticket.response_due_at, 'd MMM yyyy HH:mm') : null} />
               <InfoRow label="กำหนดแก้ไข" value={ticket.due_at ? formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm') : null} />
+              {ticket.sla_paused_at && <InfoRow label="พัก SLA ตั้งแต่" value={formatThaiDate(ticket.sla_paused_at, 'd MMM yyyy HH:mm')} />}
+              {ticket.waiting_reason && <InfoRow label="เหตุผลที่รอ" value={ticket.waiting_reason} />}
+              {ticket.waiting_follow_up_at && <InfoRow label="ติดตามครั้งถัดไป" value={formatThaiDate(ticket.waiting_follow_up_at, 'd MMM yyyy HH:mm')} />}
               {ticket.reopen_count > 0 && <InfoRow label="เปิดงานซ้ำ" value={`${ticket.reopen_count} ครั้ง`} />}
               {ticket.outsource_name && <InfoRow label="Outsource" value={`${ticket.outsource_name} (${ticket.outsource_issue_no ?? '-'})`} />}
             </CardBody>
@@ -528,7 +599,7 @@ export function TicketDetailPage() {
             canManage={canManageSignature}
           />
           {ticket.outsource_vendor_id && <OutsourceSubmissionCard ticketId={ticket.id} canReview={canUpdateWork} />}
-          {(isRequester || ticket.requester_signature_url) && (
+           {(isRequester || ticket.requester_signature_url) && (
             <RequesterSignoffCard
               status={ticket.status}
               signatureUrl={ticket.requester_signature_url}
@@ -543,9 +614,18 @@ export function TicketDetailPage() {
                 if (feedback) body.set('feedback', feedback);
                 await apiFetch(`/api/v1/tickets/${ticket.id}/requester-signoff`, { method: 'POST', body });
                 await ticketQuery.refetch();
-              }}
-            />
-          )}
+               }}
+             />
+           )}
+           {isRequester && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') && (
+             <RequesterReopenCard
+               onSubmit={async (reason) => {
+                 await apiFetch(`/api/v1/tickets/${ticket.id}/requester-reopen`, { method: 'POST', body: JSON.stringify({ reason }) });
+                 await ticketQuery.refetch();
+                 void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+               }}
+             />
+           )}
         </>}
       >
           <Card>
@@ -590,6 +670,48 @@ export function TicketDetailPage() {
           {canEscalate && <EscalateIncidentPanel ticket={ticket} />}
           {ticket.incident_id && (
             <Card><CardHeader>Incident ที่เชื่อมโยง</CardHeader><CardBody><Link to={`/incidents/${ticket.incident_id}`} className="text-primary-700 hover:underline dark:text-primary-300">เปิด Incident จาก Ticket นี้</Link></CardBody></Card>
+          )}
+          {(ticket.related_problems?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>ปัญหาที่เกิดซ้ำ / Problem ที่เชื่อมโยง</CardHeader>
+              <CardBody className="space-y-2">
+                {ticket.related_problems?.map((problem) => <Link key={problem.id} to={`/problems/${problem.id}`} className="block rounded-lg border border-slate-200 p-3 hover:border-primary-300 dark:border-slate-700"><p className="text-xs font-mono text-primary-700 dark:text-primary-300">{problem.problem_number}</p><p className="mt-1 text-sm font-semibold">{problem.title}</p><p className="mt-1 text-xs text-slate-500">สถานะ {problem.status}</p></Link>)}
+              </CardBody>
+            </Card>
+          )}
+          {(ticket.related_pm?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>ประวัติ PM ของอุปกรณ์</CardHeader>
+              <CardBody className="space-y-2">
+                {canLinkPm && (ticket.related_pm?.length ?? 0) > 0 && (
+                  <div className="rounded-lg border border-dashed border-primary-200 bg-primary-50/50 p-3 dark:border-primary-800 dark:bg-primary-950/20">
+                    <p className="text-xs font-semibold text-primary-800 dark:text-primary-200">ผูก Ticket กับรอบ PM ที่พบปัญหา</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <select aria-label="เลือกรอบ PM ที่จะผูก" value={pmToLink} onChange={(event) => setPmToLink(event.target.value)} className="min-h-10 min-w-[220px] flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900">
+                        <option value="">เลือกรอบ PM</option>
+                        {ticket.related_pm?.filter((pm) => !ticket.related_pm_links?.some((link) => link.maintenance_plan_id === pm.id)).map((pm) => <option key={pm.id} value={pm.id}>{formatThaiDate(pm.plan_date, 'd MMM yyyy')} · {pm.status}</option>)}
+                      </select>
+                      <Button size="sm" variant="outline" disabled={!pmToLink || pmLinkMutation.isPending} isLoading={pmLinkMutation.isPending} onClick={() => pmToLink && pmLinkMutation.mutate({ ticketId: ticket.id, planId: pmToLink, method: 'POST' })}>ผูก PM</Button>
+                    </div>
+                  </div>
+                )}
+                {(ticket.related_pm_links?.length ?? 0) > 0 && (
+                  <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">PM ที่ผูกกับ Ticket นี้โดยตรง</p>
+                    {ticket.related_pm_links?.map((link) => <div key={link.maintenance_plan_id} className="flex items-center justify-between gap-2 text-sm"><span>{link.maintenance_plan ? `${formatThaiDate(link.maintenance_plan.plan_date, 'd MMM yyyy')} · ${link.maintenance_plan.status} · ${link.maintenance_plan.result || 'ยังไม่มีผลตรวจ'}` : link.maintenance_plan_id}</span>{canLinkPm && <Button size="sm" variant="ghost" disabled={pmLinkMutation.isPending} onClick={() => pmLinkMutation.mutate({ ticketId: ticket.id, planId: link.maintenance_plan_id, method: 'DELETE' })}>ยกเลิกการผูก</Button>}</div>)}
+                  </div>
+                )}
+                {ticket.related_pm?.slice(0, 5).map((pm) => <div key={pm.id} className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700"><p className="font-semibold">{formatThaiDate(pm.plan_date, 'd MMM yyyy')} · {pm.status}</p><p className="mt-1 text-xs text-slate-500">ผลตรวจ: {pm.result || 'ยังไม่มีผลตรวจ'}{pm.actual_date ? ` · ทำเมื่อ ${formatThaiDate(pm.actual_date, 'd MMM yyyy')}` : ''}</p></div>)}
+              </CardBody>
+            </Card>
+          )}
+          {(ticket.sla_rounds?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>ประวัติ SLA แยกตามรอบ</CardHeader>
+              <CardBody className="space-y-2">
+                {ticket.sla_rounds?.map((round) => <div key={round.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900/50"><span className="font-semibold">รอบที่ {round.round_no} · {round.status}</span><span className="text-slate-500">พัก {round.paused_minutes} นาที · {round.resolution_sla_met === null ? 'ยังไม่สรุปผล' : round.resolution_sla_met ? 'ไม่เกิน SLA' : 'เกิน SLA'}</span></div>)}
+              </CardBody>
+            </Card>
           )}
           {canRate && <TicketFeedbackPanel ticketId={ticket.id} />}
           {ticket.rating && (

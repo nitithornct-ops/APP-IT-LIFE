@@ -44,6 +44,7 @@ export const listTicketsQuerySchema = listQuerySchema.extend({
   search: z.string().trim().max(120).optional(),
   assigneeId: z.string().uuid().optional(),
   mine: z.enum(['true', 'false']).optional(),
+  queue: z.enum(['unassigned', 'near_sla', 'overdue', 'waiting_follow_up', 'awaiting_acceptance', 'paused']).optional(),
 });
 
 export type ListTicketsQuery = z.infer<typeof listTicketsQuerySchema>;
@@ -53,7 +54,7 @@ export type ListTicketsQuery = z.infer<typeof listTicketsQuerySchema>;
  * เพราะแต่ละอย่างต้องการข้อมูลเฉพาะใบ (ผลการแก้ไข เหตุผลยกเลิก ชื่อผู้ให้บริการ)
  * ถ้าให้กรอกครั้งเดียวแล้วใช้กับทุกใบ จะได้ข้อมูลที่ดูเหมือนครบแต่ไม่ตรงกับงานจริง
  */
-export const BULK_TICKET_STATUSES = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'] as const;
+export const BULK_TICKET_STATUSES = ['รับเรื่องแล้ว', 'กำลังดำเนินการ'] as const;
 
 export const bulkUpdateTicketsSchema = z
   .object({
@@ -93,6 +94,19 @@ export const updateTicketSchema = z.object({
   outsourceName: z.string().trim().max(200).optional(),
   outsourceVendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
   outsourceIssueNo: z.string().trim().max(120).optional(),
+  waitingReason: z.string().trim().max(1000).optional(),
+  waitingOwnerId: z.string().uuid().optional(),
+  waitingFollowUpAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันติดตามไม่ถูกต้อง').optional(),
+});
+
+export const requesterReopenTicketSchema = z.object({
+  reason: z.string().trim().min(1, 'กรุณาระบุเหตุผลที่ยังใช้งานไม่ได้').max(2000),
+});
+
+export const linkTicketMaintenancePlanSchema = z.object({
+  maintenancePlanId: z.string().uuid(),
+  relationship: z.enum(['root_cause', 'related', 'follow_up']).default('root_cause'),
+  notes: z.string().trim().max(1000).optional(),
 });
 
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;

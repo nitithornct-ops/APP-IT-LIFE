@@ -8,6 +8,8 @@ import type { SkillCoverageRisk, SkillLevelDefinition } from '../../types/techni
  * งานที่ค้างอยู่ ไม่ใช่ข้อสรุปว่าเจ้าหน้าที่คนนั้นทำไม่ได้
  */
 const LEVEL_CHIP_CLASSES: Record<number, string> = {
+  5: 'bg-primary-800 text-white dark:bg-primary-500 dark:text-slate-950',
+  4: 'bg-primary-500 text-white dark:bg-primary-600',
   3: 'bg-primary-700 text-white dark:bg-primary-600',
   2: 'bg-primary-200 text-primary-900 dark:bg-primary-900/60 dark:text-primary-100',
   1: 'bg-slate-100 text-slate-700 dark:bg-white/[.10] dark:text-slate-200',

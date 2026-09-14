@@ -11,6 +11,12 @@ import type { TechnicianSkillProfile } from '../../types/technicianSkills';
 import { formatThaiDate } from '../../utils/date';
 import { numberOrDash, skillChipClass, skillChipText, skillLevelLabel } from './skillDisplay';
 
+const AVAILABILITY_LABEL: Record<string, string> = {
+  available: 'พร้อมรับงาน',
+  limited: 'พร้อมแบบจำกัด',
+  unavailable: 'ไม่พร้อม',
+};
+
 /**
  * แผงทักษะ ภาระงาน และผลงานย้อนหลังของเจ้าหน้าที่หนึ่งคน (design handoff หัวข้อ 3h)
  *
@@ -74,10 +80,16 @@ export function TechnicianSkillPanel({ technicianId }: { technicianId?: string }
                       <span className="sr-only">{skillLevelLabel(profile.levels, skill.level)}</span>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-semibold text-ink-heading dark:text-slate-100">{skill.name}</span>
+                      <span className="block truncate text-[12.5px] font-semibold text-ink-heading dark:text-slate-100">{skill.skill || skill.name}</span>
                       <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">
                         {skill.note || skillLevelLabel(profile.levels, skill.level)}
                       </span>
+                      {(skill.productTechnology || skill.location || skill.certification || skill.availability) && (
+                        <span className="block truncate text-[10px] text-slate-400 dark:text-slate-500">
+                          {[skill.productTechnology, skill.location, skill.certification, skill.availability ? AVAILABILITY_LABEL[skill.availability] : null].filter(Boolean).join(' · ')}
+                          {skill.certificationExpiry ? ` · หมดอายุ ${skill.certificationExpiry}` : ''}
+                        </span>
+                      )}
                     </span>
                     {profile.workloadAvailable && skill.openTickets > 0 && (
                       <Badge variant={skill.level === null ? 'warning' : 'secondary'}>งานค้าง {skill.openTickets}</Badge>

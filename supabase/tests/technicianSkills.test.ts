@@ -116,6 +116,27 @@ describe('technician_skills write access', () => {
     );
     expect(saved.rows[0].level).toBe(2);
 
+    await asUser(db, ADMIN_ID, async () => db.query(
+      `update public.technician_skills
+       set skill = 'Network Operations', certification = 'CCNA', certification_expiry = '2027-12-31',
+           product_technology = 'Cisco', location = 'สำนักงานใหญ่', availability = 'limited', level = 5
+       where technician_id = $1 and category_id = $2`,
+      [ADMIN_ID, categoryId],
+    ));
+    const metadata = await asServiceRole(db, async () => db.query<{ skill: string; certification: string; certification_expiry: Date; product_technology: string; location: string; availability: string; level: number }>(
+      'select skill, certification, certification_expiry, product_technology, location, availability, level from public.technician_skills where technician_id = $1',
+      [ADMIN_ID],
+    ));
+    expect(metadata.rows[0]).toMatchObject({
+      skill: 'Network Operations',
+      certification: 'CCNA',
+      certification_expiry: new Date('2027-12-31T00:00:00.000Z'),
+      product_technology: 'Cisco',
+      location: 'สำนักงานใหญ่',
+      availability: 'limited',
+      level: 5,
+    });
+
     // ถอนผลประเมินคือการลบแถว ไม่ใช่ตั้งค่าเป็น 0 — ตารางกลับไปเป็น "ยังไม่ประเมิน"
     await asUser(db, ADMIN_ID, async () => db.query('delete from public.technician_skills where technician_id = $1', [ADMIN_ID]));
     const removed = await asUser(db, ADMIN_ID, async () =>
@@ -126,8 +147,8 @@ describe('technician_skills write access', () => {
 });
 
 describe('technician_skills data rules', () => {
-  it('accepts only levels 1-3', async () => {
-    for (const level of [0, 4]) {
+  it('accepts only levels 1-5', async () => {
+    for (const level of [0, 6]) {
       await expect(
         asServiceRole(db, async () =>
           db.query('insert into public.technician_skills (technician_id, category_id, level) values ($1, $2, $3)', [MANAGER_ID, categoryId, level]),
@@ -144,14 +165,15 @@ describe('technician_skills data rules', () => {
     ).rejects.toThrow();
   });
 
-  it('drops assessments when the category is removed so no orphan level survives', async () => {
+  it('blocks removal of a referenced category and requires Inactive instead', async () => {
     await asServiceRole(db, async () => {
       const category = await db.query<{ id: string }>(`insert into public.ticket_categories (name) values ('หมวดชั่วคราว') returning id`);
       const temporaryId = category.rows[0].id;
       await db.query('insert into public.technician_skills (technician_id, category_id, level) values ($1, $2, 2)', [MANAGER_ID, temporaryId]);
-      await db.query('delete from public.ticket_categories where id = $1', [temporaryId]);
+      await expect(db.query('delete from public.ticket_categories where id = $1', [temporaryId])).rejects.toThrow(/MASTER_DATA_IN_USE/);
+      await db.query("update public.ticket_categories set status = 'inactive' where id = $1", [temporaryId]);
       const remaining = await db.query('select 1 from public.technician_skills where category_id = $1', [temporaryId]);
-      expect(remaining.rows).toHaveLength(0);
+      expect(remaining.rows).toHaveLength(1);
     });
   });
 });

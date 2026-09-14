@@ -22,13 +22,7 @@ export interface Bindings {
   LINE_DEFAULT_TO?: string;
   /** Cloudflare Browser Rendering — declared in wrangler.toml's [browser] block, not a secret. Used for PDF report exports (R-13). */
   MYBROWSER?: BrowserWorker;
-  /** Kill switch for the public no-login ticket report page (routes/publicTickets.ts) — unset/anything but 'false' means enabled. */
-  PUBLIC_TICKET_FORM_ENABLED?: string;
-  /** Existing Turnstile widget secret. Store only as a Worker secret; never commit a value. */
-  TURNSTILE_SECRET?: string;
-  /** Deployment-specific frontend hostnames accepted from Siteverify, comma separated. */
-  TURNSTILE_HOSTNAMES?: string;
-  /** Cloudflare edge rate limiter for unauthenticated endpoints. Local tests may omit it. */
+  /** Cloudflare edge rate limiter for the remaining unauthenticated endpoints (LINE portal, public KB, vendor forms). Local tests may omit it. */
   PUBLIC_RATE_LIMITER?: RateLimit;
   /**
    * ส่งออกไป Google Drive/Sheets (services/googleDriveService.ts) — ปิดเป็นค่าเริ่มต้น
@@ -39,6 +33,10 @@ export interface Bindings {
   GOOGLE_SA_PRIVATE_KEY?: string;
   /** โฟลเดอร์ปลายทางใน Shared Drive ที่ Service Account เป็นสมาชิก */
   GOOGLE_DRIVE_FOLDER_ID?: string;
+  SMTP_HEALTHCHECK_URL?: string;
+  STATUS_SLO_TARGET_PERCENT?: string;
+  STATUS_SLA_TARGET_PERCENT?: string;
+  STATUS_RESPONSE_TIME_TARGET_MS?: string;
 }
 
 export interface LineUserProfile {
@@ -52,6 +50,8 @@ export interface LineUserProfile {
   department: string | null;
   link_status: string | null;
   friend_status: string | null;
+  last_used_at?: string | null;
+  linked_at?: string | null;
 }
 
 export interface VendorPortalProfile {
@@ -59,9 +59,11 @@ export interface VendorPortalProfile {
   vendorId: string;
   vendorCode: string;
   vendorName: string;
+  username: string;
   email: string;
   fullName: string;
   position: string | null;
+  mustChangePassword: boolean;
 }
 
 /** ค่าที่ middleware แนบไว้บน Hono Context ระหว่างการประมวลผล request */
@@ -75,10 +77,12 @@ export interface Variables {
   authAal: string | null;
   /** Whether Supabase reports at least one verified MFA factor for this user. */
   hasVerifiedMfa: boolean;
+  /** Per-account MFA switch resolved from the caller's profile. */
+  mfaEnabled: boolean;
   /** LINE session — ตั้งค่าโดย requireLineSession/requireUsableLineSession ใน routes/line.ts เท่านั้น */
   lineSession?: { token: string; user: LineUserProfile };
   /** Company session — never shares the internal Supabase JWT/RBAC context. */
-  vendorSession?: { token: string; profile: VendorPortalProfile };
+  vendorSession?: { token: string; sessionId: string; profile: VendorPortalProfile };
 }
 
 export interface AppEnv {

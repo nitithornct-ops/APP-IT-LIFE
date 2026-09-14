@@ -23,12 +23,14 @@ import type { EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
 import type { CmdbDataQuality, ConfigurationItem } from '../../types/cmdb';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
-import { CI_CRITICALITIES, CI_ENVIRONMENTS, CI_STATUSES, CI_TYPES, ciStatusTone, criticalityTone, employeeName } from './cmdbDisplay';
+import { CI_CRITICALITIES, CI_ENVIRONMENTS, CI_LIFECYCLE_STAGES, CI_STATUSES, CI_TYPES, ciStatusTone, criticalityTone, employeeName } from './cmdbDisplay';
 
 const createCiSchema = z.object({
   name: z.string().trim().min(1, 'กรุณากรอกชื่อ CI'),
   ciType: z.enum(CI_TYPES),
   environment: z.enum(CI_ENVIRONMENTS),
+  businessService: z.string().trim().optional(),
+  applicationService: z.string().trim().optional(),
   ownerEmployeeId: z.string().min(1, 'กรุณาเลือกเจ้าของ CI'),
   administratorEmployeeId: z.string().min(1, 'กรุณาเลือกผู้ดูแล CI'),
   criticality: z.enum(CI_CRITICALITIES).optional(),
@@ -36,6 +38,10 @@ const createCiSchema = z.object({
   vendorId: z.string().optional(),
   contractId: z.string().optional(),
   ipAddress: z.string().trim().optional(),
+  sourceOfTruth: z.string().trim().optional(),
+  discoverySource: z.string().trim().optional(),
+  lifecycle: z.enum(CI_LIFECYCLE_STAGES).optional(),
+  autoReconciliation: z.boolean().optional(),
   location: z.string().trim().optional(),
 });
 type CreateCiForm = z.infer<typeof createCiSchema>;
@@ -70,6 +76,33 @@ function CreateCiForm({ employees, assetOptions, vendorOptions, contractOptions,
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
+      </div>
+
+      <div>
+        <label htmlFor="ci-business-service" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Business Service</label>
+        <input id="ci-business-service" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('businessService')} />
+      </div>
+      <div>
+        <label htmlFor="ci-application-service" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Application Service</label>
+        <input id="ci-application-service" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('applicationService')} />
+      </div>
+      <div>
+        <label htmlFor="ci-lifecycle" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Lifecycle</label>
+        <select id="ci-lifecycle" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('lifecycle')}>
+          {CI_LIFECYCLE_STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+        </select>
+      </div>
+      <div className="sm:col-span-2">
+        <label htmlFor="ci-source-of-truth" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Source of Truth</label>
+        <input id="ci-source-of-truth" placeholder="CMDB register, repository, vendor portal..." className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('sourceOfTruth')} />
+      </div>
+      <div>
+        <label htmlFor="ci-discovery-source" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Discovery Source</label>
+        <input id="ci-discovery-source" placeholder="Manual, agent, cloud scan..." className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('discoverySource')} />
+      </div>
+      <div className="flex items-end gap-2 pb-1.5 sm:col-span-3">
+        <input id="ci-auto-reconciliation" type="checkbox" className="h-4 w-4" {...register('autoReconciliation')} />
+        <label htmlFor="ci-auto-reconciliation" className="text-xs font-semibold text-slate-600 dark:text-slate-300">Auto Reconciliation</label>
       </div>
 
       <div className="sm:col-span-2">
@@ -185,7 +218,15 @@ function DataQualityPanel() {
         <ShieldAlert className="h-4 w-4" aria-hidden="true" />
         <span>คุณภาพข้อมูล CMDB (Data Quality)</span>
       </CardHeader>
-      <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Average Data Quality Score</p>
+          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.averageScore}/100</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Low Score (&lt;70)</p>
+          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.lowScoreCount}</p>
+        </div>
         <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <p className="text-xs text-slate-500 dark:text-slate-400">ยังไม่เคยตรวจสอบ (Verify)</p>
           <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{dq.unverifiedCount}</p>
@@ -206,9 +247,9 @@ function DataQualityPanel() {
 function ImpactMap({ items }: { items: ConfigurationItem[] }) {
   const layers = [
     { label: 'BUSINESS SERVICE', types: ['Business Service'] },
-    { label: 'APPLICATION', types: ['Application', 'Website', 'API'] },
+    { label: 'APPLICATION', types: ['Application', 'Application Service', 'Website', 'API'] },
     { label: 'COMPUTE & DATA', types: ['Server', 'VM', 'Database', 'Cloud Service'] },
-    { label: 'DEVICE & NETWORK', types: ['Network Device', 'Firewall', 'Switch', 'Access Point'] },
+    { label: 'DEVICE & NETWORK', types: ['Network', 'Network Device', 'Firewall', 'Switch', 'Access Point'] },
   ];
 
   return (
@@ -391,6 +432,7 @@ export function CmdbPage() {
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{employeeName(c.owner)}</td>
                       <td className="px-2 py-2">
                         <Badge variant={ciStatusTone[c.status]}>{c.status}</Badge>
+                        <p className="mt-1 text-[10px] text-slate-400">{c.lifecycle} · DQ {c.data_quality_score}/100</p>
                       </td>
                       <td className="px-2 py-2 text-right">
                         <RowActions recordLabel={c.ci_code} actions={[

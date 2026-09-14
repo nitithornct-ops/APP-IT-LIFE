@@ -31,4 +31,8 @@ describe('evaluateMfaPolicy', () => {
   it('allows AAL1 for an ordinary account without a factor or privileged permission', () => {
     expect(evaluateMfaPolicy(['user'], ['ticket.view'], false)).toEqual({ required: false, reason: null });
   });
+
+  it('requires MFA for an ordinary account when its per-user switch is enabled', () => {
+    expect(evaluateMfaPolicy(['user'], ['ticket.view'], false, true)).toEqual({ required: true, reason: 'user_enabled' });
+  });
 });

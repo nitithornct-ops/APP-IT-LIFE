@@ -13,7 +13,6 @@ import { LoginPage } from './pages/LoginPage';
 import { MfaChallengePage } from './pages/MfaChallengePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { PublicTicketPortalPage } from './pages/PublicTicketPortalPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { VendorFormPortalPage } from './pages/VendorFormPortalPage';
 
@@ -28,6 +27,7 @@ const SettingsPage = lazy(() => import('./features/admin/SettingsPage').then((m)
 const IntegrationCenterPage = lazy(() => import('./features/admin/IntegrationCenterPage').then((m) => ({ default: m.IntegrationCenterPage })));
 const TechnicianSkillMatrixPage = lazy(() => import('./features/technicianSkills/TechnicianSkillMatrixPage').then((m) => ({ default: m.TechnicianSkillMatrixPage })));
 const AssetScanPage = lazy(() => import('./features/fieldWork/AssetScanPage').then((m) => ({ default: m.AssetScanPage })));
+const AssetVerificationPage = lazy(() => import('./features/fieldWork/AssetVerificationPage').then((m) => ({ default: m.AssetVerificationPage })));
 const FieldCloseTicketPage = lazy(() => import('./features/fieldWork/FieldCloseTicketPage').then((m) => ({ default: m.FieldCloseTicketPage })));
 const MasterDataPage = lazy(() =>
   import('./features/admin/MasterDataPage').then((m) => ({ default: m.MasterDataPage })),
@@ -121,7 +121,9 @@ const FormManagementPage = lazy(() =>
 );
 // เครื่องมือ PDF ลาก pdf-lib กับ pdf.js มาด้วย จึงต้องอยู่นอก bundle หลักเสมอ
 const PdfToolsPage = lazy(() => import('./features/pdfTools/PdfToolsPage').then((m) => ({ default: m.PdfToolsPage })));
+const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage').then((m) => ({ default: m.SystemStatusPage })));
 const VendorPortalPage = lazy(() => import('./pages/VendorPortalPage').then((m) => ({ default: m.VendorPortalPage })));
+const VendorPortalInvitePage = lazy(() => import('./pages/VendorPortalInvitePage').then((m) => ({ default: m.VendorPortalInvitePage })));
 
 function LazyPageFallback() {
   return (
@@ -146,11 +148,11 @@ export function App() {
       <Route path="/health" element={<HealthPage />} />
       <Route path="/line" element={<LinePortalPage />} />
       <Route path="/line/callback" element={<LineCallbackPage />} />
-      <Route path="/report" element={<PublicTicketPortalPage />} />
       <Route path="/vendor/forms" element={<VendorFormPortalPage />} />
       {/* Compatibility only for links issued before token fragments were introduced. New links never use this route. */}
       <Route path="/vendor/forms/:token" element={<VendorFormPortalPage />} />
       <Route path="/vendor/portal" element={<Suspense fallback={<LazyPageFallback />}><VendorPortalPage /></Suspense>} />
+      <Route path="/vendor/portal/accept-invite" element={<Suspense fallback={<LazyPageFallback />}><VendorPortalInvitePage /></Suspense>} />
 
       <Route
         element={
@@ -163,7 +165,14 @@ export function App() {
         <Route path="/war-room" element={<ProtectedRoute permission="dashboard.view"><WarRoomPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
-        <Route path="/system-status" element={<HealthPage standalone={false} />} />
+        <Route
+          path="/system-status"
+          element={
+            <Suspense fallback={<LazyPageFallback />}>
+              <SystemStatusPage />
+            </Suspense>
+          }
+        />
         {/* เครื่องมือช่วยงานเอกสารที่ทำงานในเบราว์เซอร์ล้วน ๆ ไม่อ่านหรือเขียนข้อมูลของระบบ */}
         <Route
           path="/pdf-tools"
@@ -568,7 +577,7 @@ export function App() {
         <Route
           path="/admin/access-registry"
           element={
-            <ProtectedRoute permission="access_registry.manage">
+            <ProtectedRoute anyPermission={['access_registry.manage', 'access_registry.review', 'audit.view']}>
               <Suspense fallback={<LazyPageFallback />}>
                 <AccessRegistryPage />
               </Suspense>
@@ -637,6 +646,16 @@ export function App() {
         />
         <Route
           path="/field/scan"
+          element={
+            <ProtectedRoute permission="asset.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <AssetVerificationPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/field/repair"
           element={
             <ProtectedRoute permission="asset.view">
               <Suspense fallback={<LazyPageFallback />}>

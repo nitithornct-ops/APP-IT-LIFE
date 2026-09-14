@@ -46,6 +46,13 @@ describe('Outsource company portal database controls', () => {
     expect(sessions.rows).toHaveLength(0);
   });
 
+  it('requires a password change before a new or migrated active portal account can access tickets', async () => {
+    const account = await asServiceRole(db, async () => db.query<{ must_change_password: boolean }>(
+      'select must_change_password from public.vendor_portal_accounts where id = $1', [accountId],
+    ));
+    expect(account.rows).toEqual([{ must_change_password: true }]);
+  });
+
   it('increments failed logins atomically, locks at five, and refuses a racing success', async () => {
     const failedAt = '2026-09-02T10:00:00.000Z';
     const attempts = await asServiceRole(db, async () => Promise.all(

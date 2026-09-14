@@ -88,7 +88,10 @@ function formatBangkokTime(value: FormValue): string {
 
 function signatureHtml(signatureUrl: string | null | undefined): string {
   if (!signatureUrl || !/^https:\/\//i.test(signatureUrl)) return '—';
-  return `<img src="${escapeHtml(signatureUrl)}" alt="ลายเซ็นรับรอง Ticket" style="max-height:72px;max-width:180px;object-fit:contain">`;
+  // Use an explicit width because the form HTML sanitizer only keeps bounded
+  // width/height values. A max-width/max-height pair is removed during
+  // sanitization, which makes the stored signature render at its source size.
+  return `<img src="${escapeHtml(signatureUrl)}" alt="ลายเซ็นรับรอง Ticket" style="width:180px;height:auto;display:block;margin-left:0;margin-right:auto">`;
 }
 
 /**

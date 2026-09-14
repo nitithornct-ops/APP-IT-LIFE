@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const BACKUP_TYPES = ['Full', 'Incremental', 'Differential', 'System Snapshot'] as const;
 export const BACKUP_RESULTS = ['สำเร็จ', 'สำเร็จบางส่วน', 'ล้มเหลว'] as const;
+export const BACKUP_SCHEDULES = ['ทุก 15 นาที', 'ทุกชั่วโมง', 'ทุก 6 ชั่วโมง', 'ทุกวัน', 'ทุกสัปดาห์', 'ทุกเดือน'] as const;
+export const BACKUP_POLICY_STATUSES = ['active', 'inactive'] as const;
 export const RECOVERY_RESULTS = ['ผ่าน', 'ผ่านบางส่วน', 'ไม่ผ่าน'] as const;
 export const BCP_STATUSES = ['ใช้งาน', 'ระงับ', 'ยกเลิก'] as const;
 export const LOG_FREQUENCIES = ['รายวัน', 'รายสัปดาห์', 'รายเดือน', 'รายไตรมาส'] as const;
@@ -15,6 +17,10 @@ const optionalHttps = z.union([
 ]).optional();
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const nonEmptyPatch = <T extends z.ZodTypeAny>(schema: T) => schema.refine((value) => Object.keys(value as object).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
+const optionalNumber = z.preprocess(
+  (value) => value === '' || value === null || value === undefined ? undefined : value,
+  z.coerce.number().nonnegative().optional(),
+);
 
 const backupObject = z.object({
   systemName: z.string().trim().min(1).max(120),
@@ -49,6 +55,9 @@ const recoveryObject = z.object({
   nextTestDue: optionalDate,
   evidenceLink: optionalHttps,
   findings: optionalText(2000),
+  restoreVerified: z.boolean().optional(),
+  restoreVerifiedAt: z.union([z.string().datetime({ offset: true }), z.literal('')]).optional(),
+  restoreVerificationNotes: optionalText(1000),
   notes: optionalText(1000),
 });
 const refineRecoveryDates = (value: { testDate?: string; nextTestDue?: string }, ctx: z.RefinementCtx) => {
@@ -63,11 +72,16 @@ const bcpObject = z.object({
   lastReviewDate: optionalDate,
   nextReviewDue: optionalDate,
   documentLink: optionalHttps,
+  drExerciseSchedule: optionalText(500),
+  lastDrExerciseDate: optionalDate,
+  nextDrExerciseDue: optionalDate,
+  drExerciseResult: z.enum(['ผ่าน', 'ผ่านบางส่วน', 'ไม่ผ่าน', 'ยังไม่ได้ทดสอบ']).optional(),
   status: z.enum(BCP_STATUSES),
   notes: optionalText(1000),
 });
-const refineBcpDates = (value: { lastReviewDate?: string; nextReviewDue?: string }, ctx: z.RefinementCtx) => {
+const refineBcpDates = (value: { lastReviewDate?: string; nextReviewDue?: string; lastDrExerciseDate?: string; nextDrExerciseDue?: string }, ctx: z.RefinementCtx) => {
   if (value.lastReviewDate && value.nextReviewDue && value.nextReviewDue < value.lastReviewDate) ctx.addIssue({ code: 'custom', path: ['nextReviewDue'], message: 'รอบทบทวนถัดไปต้องไม่ก่อนวันที่ทบทวนล่าสุด' });
+  if (value.lastDrExerciseDate && value.nextDrExerciseDue && value.nextDrExerciseDue < value.lastDrExerciseDate) ctx.addIssue({ code: 'custom', path: ['nextDrExerciseDue'], message: 'รอบ DR Exercise ถัดไปต้องไม่ก่อนวันที่ทดสอบล่าสุด' });
 };
 const bcpBase = bcpObject.superRefine(refineBcpDates);
 
@@ -81,6 +95,61 @@ const loggingSystemBase = z.object({
   retentionPeriod: optionalText(100),
   status: z.enum(['ใช้งาน', 'ระงับ']),
   notes: optionalText(1000),
+});
+
+const backupPolicyObjectBase = z.object({
+  configurationItemId: z.string().uuid(),
+  expectedBackupPolicy: z.string().trim().min(1).max(500),
+  rtoTargetHours: optionalNumber,
+  rpoTargetHours: optionalNumber,
+  backupSchedule: z.enum(BACKUP_SCHEDULES),
+  scheduleIntervalMinutes: z.coerce.number().int().min(5).max(525600),
+  storageCapacityBytes: optionalNumber,
+  storageUsedBytes: optionalNumber,
+  storageAlertThresholdPercent: z.coerce.number().min(1).max(100).optional(),
+  restoreVerificationRequired: z.boolean().optional(),
+  alertsEnabled: z.boolean().optional(),
+  missedBackupAlert: z.boolean().optional(),
+  failureAlert: z.boolean().optional(),
+  autoCreateIncident: z.boolean().optional(),
+  ownerId: optionalUuid,
+  status: z.enum(['active', 'inactive']),
+  notes: optionalText(1000),
+});
+const refineBackupPolicy = (value: { storageCapacityBytes?: number; storageUsedBytes?: number }, ctx: z.RefinementCtx) => {
+  if (value.storageCapacityBytes !== undefined && value.storageUsedBytes !== undefined && value.storageUsedBytes > value.storageCapacityBytes) {
+    ctx.addIssue({ code: 'custom', path: ['storageUsedBytes'], message: 'พื้นที่ที่ใช้ต้องไม่มากกว่าความจุทั้งหมด' });
+  }
+};
+
+const backupImportItem = z.object({
+  sourceRunId: z.string().trim().min(1).max(250),
+  backupCode: optionalText(250),
+  configurationItemId: optionalUuid,
+  ciCode: optionalText(120),
+  systemName: optionalText(120),
+  backupType: z.enum(BACKUP_TYPES).default('System Snapshot'),
+  backupDate: optionalDate,
+  backupStartedAt: z.union([z.string().datetime({ offset: true }), z.literal('')]).optional(),
+  backupCompletedAt: z.union([z.string().datetime({ offset: true }), z.literal('')]).optional(),
+  result: z.enum(BACKUP_RESULTS),
+  dataSize: optionalText(80),
+  dataSizeBytes: optionalNumber,
+  storageLocation: optionalText(300),
+  storageUsedBytes: optionalNumber,
+  storageCapacityBytes: optionalNumber,
+  checksum: optionalText(128),
+  rowCount: z.coerce.number().int().min(0).optional(),
+  evidenceLink: optionalHttps,
+  notes: optionalText(1000),
+});
+
+export const createBackupPolicySchema = backupPolicyObjectBase.superRefine(refineBackupPolicy);
+export const updateBackupPolicySchema = nonEmptyPatch(backupPolicyObjectBase.partial().superRefine(refineBackupPolicy));
+export const createBackupImportSchema = z.object({
+  sourceSystem: z.string().trim().min(1).max(150),
+  idempotencyKey: z.string().trim().min(1).max(250),
+  items: z.array(backupImportItem).min(1).max(500),
 });
 
 const logReviewObject = z.object({

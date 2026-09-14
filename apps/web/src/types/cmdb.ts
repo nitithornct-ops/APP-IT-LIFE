@@ -1,13 +1,17 @@
 export const CI_TYPES = [
   'Server', 'VM', 'Database', 'Application', 'Website', 'Network Device', 'Firewall',
   'Switch', 'Access Point', 'Domain', 'SSL Certificate', 'API', 'Cloud Service',
-  'Backup Job', 'Business Service', 'Other',
+  'Backup Job', 'Business Service', 'Application Service', 'Network', 'Other',
 ] as const;
 export const CI_ENVIRONMENTS = ['Production', 'UAT', 'Development', 'DR', 'Shared', 'N/A'] as const;
 export const CI_CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ลับมาก'] as const;
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
+export const CI_LIFECYCLE_STAGES = ['Planned', 'In Development', 'In Service', 'Maintenance', 'Retired'] as const;
+export const CI_OWNER_REVIEW_STATUSES = ['Pending', 'Reviewed', 'Needs Update'] as const;
 export type CiStatus = (typeof CI_STATUSES)[number];
+export type CiLifecycleStage = (typeof CI_LIFECYCLE_STAGES)[number];
+export type CiOwnerReviewStatus = (typeof CI_OWNER_REVIEW_STATUSES)[number];
 
 /** node type ที่มีตารางจริงให้เลือกตอนนี้ — Cloud/Backup รอโมดูลถัดไป */
 export const CI_NODE_TYPES_ENABLED = ['CI', 'Asset', 'Vendor', 'Contract', 'Incident', 'Change'] as const;
@@ -37,6 +41,7 @@ export interface ConfigurationItem {
   ci_type: (typeof CI_TYPES)[number];
   environment: (typeof CI_ENVIRONMENTS)[number];
   business_service: string | null;
+  application_service: string | null;
   owner_employee_id: string | null;
   owner: EmployeeRef | null;
   administrator_employee_id: string | null;
@@ -54,12 +59,20 @@ export interface ConfigurationItem {
   asset_id: string | null;
   asset: { id: string; asset_code: string; name: string } | null;
   cloud_ref: string | null;
+  source_of_truth: string | null;
+  discovery_source: string | null;
   data_classification: (typeof CI_DATA_CLASSIFICATIONS)[number];
   rpo_hours: number | null;
   rto_hours: number | null;
   backup_required: boolean;
   backup_reference: string | null;
   location: string | null;
+  lifecycle: CiLifecycleStage;
+  data_quality_score: number;
+  auto_reconciliation: boolean;
+  ci_owner_review_status: CiOwnerReviewStatus;
+  ci_owner_review_at: string | null;
+  ci_owner_review_by: string | null;
   status: CiStatus;
   status_reason: string | null;
   last_verified_at: string | null;
@@ -115,6 +128,9 @@ export interface CiOption {
 }
 
 export interface CmdbDataQuality {
+  averageScore: number;
+  lowScoreCount: number;
+  lowScoreSample: { id: string; ci_code: string; name: string; data_quality_score: number }[];
   unverifiedCount: number;
   unverifiedSample: { id: string; ci_code: string; name: string; status: string }[];
   incompleteCount: number;

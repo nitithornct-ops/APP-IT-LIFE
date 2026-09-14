@@ -17,6 +17,7 @@ describe('Ticket Form Studio document', () => {
     expect(html).toContain('&lt;script&gt;สมชาย&lt;/script&gt;');
     expect(html).toContain('ERP validation ผิด');
     expect(html).toContain('alt="ลายเซ็นรับรอง Ticket"');
+    expect(html).toContain('style="width:180px;height:auto;display:block;margin-left:0;margin-right:auto"');
     expect(html).toContain('https://signed.test/vendor.png');
   });
 

@@ -36,6 +36,7 @@ const TICKET: FieldCloseTicket = {
 beforeEach(() => {
   mocks.permissions = ['inventory.manage'];
   mocks.apiFetch.mockImplementation((path: string) => {
+    if (path === '/api/v1/tickets/assignable-staff') return Promise.resolve([{ id: 'staff-1', full_name: 'ช่างทดสอบ' }]);
     if (path.startsWith('/api/v1/tickets/ticket-1') && !path.includes('inventory')) return Promise.resolve(TICKET);
     if (path.startsWith('/api/v1/cause-codes')) {
       return Promise.resolve([
@@ -121,6 +122,7 @@ describe('FieldCloseTicketPage', () => {
   it('tells the technician which steps already saved when a later step fails', async () => {
     mocks.apiFetch.mockImplementation((path: string, init?: { method?: string }) => {
       if (init?.method === 'PATCH') return Promise.reject(new Error('เปลี่ยนสถานะไม่สำเร็จ'));
+      if (path === '/api/v1/tickets/assignable-staff') return Promise.resolve([{ id: 'staff-1', full_name: 'ช่างทดสอบ' }]);
       if (path.startsWith('/api/v1/tickets/ticket-1')) return Promise.resolve(TICKET);
       if (path.startsWith('/api/v1/cause-codes')) {
       return Promise.resolve([
@@ -143,6 +145,9 @@ describe('FieldCloseTicketPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /สาย HDMI/ })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /สาย HDMI/ }));
     fireEvent.click(screen.getByRole('radio', { name: /รออะไหล่/ }));
+    fireEvent.change(screen.getByLabelText(/รออะไร/), { target: { value: 'รอสาย HDMI ใหม่' } });
+    fireEvent.change(screen.getByLabelText(/ผู้ติดตาม/), { target: { value: 'staff-1' } });
+    fireEvent.change(screen.getByLabelText(/วันติดตาม/), { target: { value: '2026-09-12T10:00' } });
     fireEvent.click(screen.getByRole('button', { name: 'บันทึกและแจ้งผู้ใช้' }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('เปลี่ยนสถานะไม่สำเร็จ'));

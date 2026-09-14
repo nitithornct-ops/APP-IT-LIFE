@@ -7,6 +7,7 @@ afterEach(cleanup);
 
 const data: IntegrationCenterResponse = {
   generatedAt: '2026-08-23T08:00:00.000Z', canManage: true,
+  retention: { days: 90, scope: 'ลบอัตโนมัติเฉพาะเหตุการณ์ที่จบงานแล้ว ไม่รวม Audit Log และข้อมูลธุรกิจ' },
   summary: { activeChannels: 2, delivered24h: 17, failed24h: 1, outboxWaiting: 1, outboxFailed: 1 },
   outbox: { pending: 1, processing: 0, completed: 12, error: 1, dead: 0, cancelled: 0 },
   channels: [
@@ -28,6 +29,7 @@ describe('IntegrationCenterPanel', () => {
     expect(screen.getByText('สถานะ Ticket เปลี่ยน')).toBeInTheDocument();
     expect(screen.getByText('INT-001')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+    expect(screen.getByText(/เก็บ 90 วัน/)).toBeInTheDocument();
     expect(screen.getByText(/ยังไม่มีตาราง Notification Rule/)).toBeInTheDocument();
   });
 });
