@@ -6,6 +6,8 @@ import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
+import { automateServiceRequest } from '../services/serviceRequestAutomationService';
+import { sendNotification } from '../services/notificationService';
 import { createSignedUrl, deleteFile, uploadFile } from '../services/storageService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
@@ -25,15 +27,49 @@ filesRoute.use('*', requireAuth);
 
 const MAX_UPLOAD_REQUEST_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
 
-type AttachmentMeta = {
-  module: 'ticket' | 'service_request';
-  targetTable: 'tickets' | 'service_requests';
-  targetId: string;
-};
+type AttachmentMeta =
+  | { module: 'ticket'; targetTable: 'tickets'; targetId: string }
+  | { module: 'service_request'; targetTable: 'service_requests'; targetId: string }
+  | { module: 'asset'; targetTable: 'assets'; targetId: string }
+  | { module: 'asset_verification'; targetTable: 'asset_verifications'; targetId: string }
+  | { module: 'contract'; targetTable: 'contracts'; targetId: string }
+  | { module: 'employee_assignment'; targetTable: 'employee_assignments'; targetId: string }
+  | { module: 'asset_loan'; targetTable: 'asset_loans'; targetId: string; stage: 'before' | 'after' };
 
 async function hasPermission(supabase: SupabaseClient, key: string): Promise<boolean> {
   const { data } = await supabase.rpc('has_permission', { permission_key_input: key });
   return data === true;
+}
+
+function attachmentMetaFromRow(row: {
+  module: string;
+  target_table: string | null;
+  target_id: string | null;
+  asset_loan_stage: string | null;
+}): AttachmentMeta | null {
+  if (!row.target_id) return null;
+  if (row.module === 'ticket' && row.target_table === 'tickets') {
+    return { module: 'ticket', targetTable: 'tickets', targetId: row.target_id };
+  }
+  if (row.module === 'service_request' && row.target_table === 'service_requests') {
+    return { module: 'service_request', targetTable: 'service_requests', targetId: row.target_id };
+  }
+  if (row.module === 'asset' && row.target_table === 'assets') {
+    return { module: 'asset', targetTable: 'assets', targetId: row.target_id };
+  }
+  if (row.module === 'asset_verification' && row.target_table === 'asset_verifications') {
+    return { module: 'asset_verification', targetTable: 'asset_verifications', targetId: row.target_id };
+  }
+  if (row.module === 'contract' && row.target_table === 'contracts') {
+    return { module: 'contract', targetTable: 'contracts', targetId: row.target_id };
+  }
+  if (row.module === 'employee_assignment' && row.target_table === 'employee_assignments') {
+    return { module: 'employee_assignment', targetTable: 'employee_assignments', targetId: row.target_id };
+  }
+  if (row.module === 'asset_loan' && row.target_table === 'asset_loans' && (row.asset_loan_stage === 'before' || row.asset_loan_stage === 'after')) {
+    return { module: 'asset_loan', targetTable: 'asset_loans', targetId: row.target_id, stage: row.asset_loan_stage };
+  }
+  return null;
 }
 
 /** ตรวจ record จริง ไม่เชื่อ module/table/id จาก client และไม่อาศัย RLS ที่กว้างกว่าสิทธิ์เขียนไฟล์ */
@@ -56,6 +92,38 @@ async function canAccessTarget(
     if (!data) return false;
     if (data.requester_id === userId || data.assignee_id === userId) return true;
     return hasPermission(userScoped, action === 'view' ? 'service_request.view' : 'service_request.update');
+  }
+
+  if (meta.module === 'asset' && meta.targetTable === 'assets') {
+    const { data } = await admin.from('assets').select('id').eq('id', meta.targetId).maybeSingle();
+    if (!data) return false;
+    return hasPermission(userScoped, action === 'view' ? 'asset.view' : 'asset.update');
+  }
+
+  if (meta.module === 'asset_verification' && meta.targetTable === 'asset_verifications') {
+    const { data } = await admin.from('asset_verifications').select('id').eq('id', meta.targetId).maybeSingle();
+    if (!data) return false;
+    return hasPermission(userScoped, action === 'view' ? 'asset.view' : 'asset.update');
+  }
+
+  if (meta.module === 'contract' && meta.targetTable === 'contracts') {
+    const { data } = await admin.from('contracts').select('id').eq('id', meta.targetId).maybeSingle();
+    if (!data) return false;
+    return hasPermission(userScoped, action === 'view' ? 'contract.view' : 'contract.manage');
+  }
+
+  if (meta.module === 'employee_assignment' && meta.targetTable === 'employee_assignments') {
+    const { data } = await admin.from('employee_assignments').select('id').eq('id', meta.targetId).maybeSingle();
+    if (!data) return false;
+    return hasPermission(userScoped, action === 'view' ? 'employee.manage' : 'employee.manage');
+  }
+
+  if (meta.module === 'asset_loan' && meta.targetTable === 'asset_loans') {
+    const { data } = await admin.from('asset_loans').select('id').eq('id', meta.targetId).maybeSingle();
+    if (!data) return false;
+    return action === 'view'
+      ? hasPermission(userScoped, 'asset.view')
+      : (await hasPermission(userScoped, 'asset.transfer')) || hasPermission(userScoped, 'asset.update');
   }
 
   return false;
@@ -95,6 +163,7 @@ filesRoute.post(
     module: body.module,
     targetTable: body.targetTable,
     targetId: body.targetId,
+    stage: body.stage,
   });
   if (!metaResult.success) {
     const details = metaResult.error.issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message }));
@@ -143,6 +212,7 @@ filesRoute.post(
       module: metaResult.data.module,
       target_table: metaResult.data.targetTable ?? null,
       target_id: metaResult.data.targetId ?? null,
+      asset_loan_stage: metaResult.data.module === 'asset_loan' ? metaResult.data.stage : null,
       uploaded_by: userId,
     })
     .select()
@@ -166,6 +236,19 @@ filesRoute.post(
 
   const signed = await createSignedUrl(admin, uploaded.path, 300);
 
+  if (metaResult.data.module === 'service_request') {
+    const automation = await automateServiceRequest(c.env, metaResult.data.targetId, userId);
+    if (automation.assigneeId) {
+      await sendNotification(c.env, {
+        recipientId: automation.assigneeId,
+        type: 'service_request_assigned',
+        title: 'ได้รับมอบหมายคำขอบริการ',
+        body: automation.fulfillmentTaskId ? 'ระบบสร้างงานใน My Work ให้แล้ว' : null,
+        link: `/service-requests/${metaResult.data.targetId}`,
+      });
+    }
+  }
+
   return c.json(ok(reqId, { ...data, signedUrl: 'url' in signed ? signed.url : null }), 201);
   },
 );
@@ -180,22 +263,14 @@ filesRoute.get('/:id/signed-url', zValidator('query', signedUrlQuerySchema, zodV
   const { expiresIn } = c.req.valid('query');
 
   const { data, error } = await admin.from('file_attachments')
-    .select('storage_path, uploaded_by, module, target_table, target_id').eq('id', id).maybeSingle();
+    .select('storage_path, uploaded_by, module, target_table, target_id, asset_loan_stage').eq('id', id).maybeSingle();
   if (error || !data) {
     return c.json(fail(reqId, 'FILE_NOT_FOUND', 'ไม่พบไฟล์นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   }
 
   const ownsFile = data.uploaded_by === userId;
-  const targetAllowed = data.target_id && (
-    (data.module === 'ticket' && data.target_table === 'tickets')
-    || (data.module === 'service_request' && data.target_table === 'service_requests')
-  )
-    ? await canAccessTarget(admin, userScoped, userId, {
-      module: data.module as AttachmentMeta['module'],
-      targetTable: data.target_table as AttachmentMeta['targetTable'],
-      targetId: data.target_id,
-    }, 'view')
-    : false;
+  const targetMeta = attachmentMetaFromRow(data);
+  const targetAllowed = targetMeta ? await canAccessTarget(admin, userScoped, userId, targetMeta, 'view') : false;
   if (!ownsFile && !targetAllowed) {
     return c.json(fail(reqId, 'FILE_NOT_FOUND', 'ไม่พบไฟล์นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   }
@@ -216,22 +291,14 @@ filesRoute.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   const { data, error } = await admin.from('file_attachments')
-    .select('storage_path, uploaded_by, module, target_table, target_id').eq('id', id).maybeSingle();
+    .select('storage_path, uploaded_by, module, target_table, target_id, asset_loan_stage').eq('id', id).maybeSingle();
   if (error || !data) {
     return c.json(fail(reqId, 'FILE_NOT_FOUND', 'ไม่พบไฟล์นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   }
 
   const ownsFile = data.uploaded_by === userId;
-  const targetAllowed = data.target_id && (
-    (data.module === 'ticket' && data.target_table === 'tickets')
-    || (data.module === 'service_request' && data.target_table === 'service_requests')
-  )
-    ? await canAccessTarget(admin, userScoped, userId, {
-      module: data.module as AttachmentMeta['module'],
-      targetTable: data.target_table as AttachmentMeta['targetTable'],
-      targetId: data.target_id,
-    }, 'write')
-    : false;
+  const targetMeta = attachmentMetaFromRow(data);
+  const targetAllowed = targetMeta ? await canAccessTarget(admin, userScoped, userId, targetMeta, 'write') : false;
   if (!ownsFile && !targetAllowed) {
     return c.json(fail(reqId, 'FILE_NOT_FOUND', 'ไม่พบไฟล์นี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
   }

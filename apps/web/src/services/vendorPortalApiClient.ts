@@ -1,25 +1,21 @@
 import { ApiError, requestApiData } from './apiClient';
+import { supabase } from '../lib/supabase';
 
-let csrfToken: string | null = null;
-let bootstrapPromise: Promise<void> | null = null;
-
-export function setVendorPortalCsrfToken(token: string): void {
-  csrfToken = token;
+export function setVendorPortalCsrfToken(_token: string): void {
+  // Compatibility no-op for clients that still import this helper during rollout.
 }
 
 export function clearVendorSessionToken(): void {
-  csrfToken = null;
-  bootstrapPromise = null;
+  // Vendor Portal sessions are managed by Supabase Auth, not application cookies.
 }
 
 export async function vendorPortalApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!path.endsWith('/bootstrap') && !csrfToken) await bootstrapVendorPortal();
   const headers = new Headers(init?.headers);
   if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const method = (init?.method ?? 'GET').toUpperCase();
-  if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) headers.set('x-vendor-csrf', csrfToken);
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`);
   try {
-    return await requestApiData<T>(path, { ...init, credentials: 'include', headers });
+    return await requestApiData<T>(path, { ...init, headers });
   } catch (error) {
     if (error instanceof ApiError && error.code === 'VENDOR_SESSION_REQUIRED') clearVendorSessionToken();
     throw error;
@@ -27,11 +23,6 @@ export async function vendorPortalApiFetch<T>(path: string, init?: RequestInit):
 }
 
 export async function bootstrapVendorPortal(): Promise<void> {
-  if (csrfToken) return;
-  if (!bootstrapPromise) {
-    bootstrapPromise = requestApiData<{ enabled: boolean; csrfToken: string }>('/api/v1/vendor-portal/bootstrap', { credentials: 'include' })
-      .then((result) => setVendorPortalCsrfToken(result.csrfToken));
-  }
-  await bootstrapPromise;
+  await requestApiData<{ enabled: boolean }>('/api/v1/vendor-portal/bootstrap');
 }
 

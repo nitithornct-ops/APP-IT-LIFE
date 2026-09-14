@@ -138,9 +138,14 @@ async function runOp(db: Queryable, idMap: IdMap, op: SqlOp): Promise<void> {
   const conflictClause = usesNaturalKey ? `(${conflictColumns.join(', ')})` : `(${conflictColumns.join(', ')}) where legacy_id is not null`;
   const updateSet = columns.filter((c) => !conflictColumns.includes(c)).map((c) => `${c} = excluded.${c}`);
   const returningColumn = usesNaturalKey ? conflictColumns[0]! : 'id';
+  // Audit evidence is immutable, including on retries of a legacy import.
+  // Keep the original row instead of triggering an UPDATE on conflict.
+  const conflictAction = op.table === 'audit_logs' || op.table === 'login_logs'
+    ? 'do nothing'
+    : `do update set ${updateSet.join(', ')}`;
   const sql = `insert into public.${op.table} (${columns.join(', ')})
     values (${columns.map((_, i) => `$${i + 1}`).join(', ')})
-    on conflict ${conflictClause} do update set ${updateSet.join(', ')}
+    on conflict ${conflictClause} ${conflictAction}
     returning ${returningColumn}`;
   const result = await db.query<Record<string, string>>(sql, Object.values(values));
   const id = result.rows[0]?.[returningColumn];

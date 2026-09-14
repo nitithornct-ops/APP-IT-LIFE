@@ -5,6 +5,7 @@ import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
+import { randomCodeSuffix } from '../utils/recordCode';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -48,6 +49,8 @@ departmentsRoute.post('/', requirePermission('department.manage'), zValidator('j
       name_th: body.nameTh,
       name_en: body.nameEn ?? null,
       parent_department_id: body.parentDepartmentId ?? null,
+      effective_date: body.effectiveDate ?? undefined,
+      sort_order: body.sortOrder ?? undefined,
       created_by: actorId,
     })
     .select()
@@ -87,6 +90,8 @@ departmentsRoute.patch(
     if (body.nameTh !== undefined) patch.name_th = body.nameTh;
     if (body.nameEn !== undefined) patch.name_en = body.nameEn;
     if (body.parentDepartmentId !== undefined) patch.parent_department_id = body.parentDepartmentId;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
     if (body.status !== undefined) patch.status = body.status;
 
     const auditBefore = await loadAuditSnapshot(supabase, 'departments', id);
@@ -135,7 +140,7 @@ positionsRoute.post('/', requirePermission('position.manage'), zValidator('json'
 
   const { data, error } = await supabase
     .from('positions')
-    .insert({ code: body.code, name_th: body.nameTh, name_en: body.nameEn ?? null, created_by: actorId })
+    .insert({ code: body.code, name_th: body.nameTh, name_en: body.nameEn ?? null, effective_date: body.effectiveDate ?? undefined, sort_order: body.sortOrder ?? undefined, created_by: actorId })
     .select()
     .single();
 
@@ -167,7 +172,9 @@ positionsRoute.patch('/:id', requirePermission('position.manage'), zValidator('j
   const patch: Record<string, unknown> = { updated_by: actorId };
   if (body.code !== undefined) patch.code = body.code;
   if (body.nameTh !== undefined) patch.name_th = body.nameTh;
-  if (body.nameEn !== undefined) patch.name_en = body.nameEn;
+    if (body.nameEn !== undefined) patch.name_en = body.nameEn;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
   if (body.status !== undefined) patch.status = body.status;
 
   const auditBefore = await loadAuditSnapshot(supabase, 'positions', id);
@@ -221,6 +228,7 @@ ticketCategoriesRoute.post(
     const { data, error } = await supabase
       .from('ticket_categories')
       .insert({
+        code: body.code ?? `TC-${randomCodeSuffix()}`,
         name: body.name,
         default_priority: body.defaultPriority ?? undefined,
         response_sla_hours: body.responseSlaHours ?? null,
@@ -228,6 +236,8 @@ ticketCategoriesRoute.post(
         sla_hours: body.slaHours ?? null,
         is_security_default: body.isSecurityDefault ?? false,
         notes: body.notes ?? null,
+        effective_date: body.effectiveDate ?? undefined,
+        sort_order: body.sortOrder ?? undefined,
         created_by: actorId,
       })
       .select()
@@ -264,6 +274,7 @@ ticketCategoriesRoute.patch(
     const body = c.req.valid('json');
 
     const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.code !== undefined) patch.code = body.code;
     if (body.name !== undefined) patch.name = body.name;
     if (body.defaultPriority !== undefined) patch.default_priority = body.defaultPriority;
     if (body.responseSlaHours !== undefined) patch.response_sla_hours = body.responseSlaHours;
@@ -272,6 +283,8 @@ ticketCategoriesRoute.patch(
     if (body.isSecurityDefault !== undefined) patch.is_security_default = body.isSecurityDefault;
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
 
     const auditBefore = await loadAuditSnapshot(supabase, 'ticket_categories', id);
     const { data, error } = await supabase.from('ticket_categories').update(patch).eq('id', id).select().single();
@@ -325,9 +338,12 @@ assetCategoriesRoute.post(
     const { data, error } = await supabase
       .from('asset_categories')
       .insert({
+        code: body.code ?? body.codePrefix.toUpperCase(),
         name: body.name,
         code_prefix: body.codePrefix,
         notes: body.notes ?? null,
+        effective_date: body.effectiveDate ?? undefined,
+        sort_order: body.sortOrder ?? undefined,
         created_by: actorId,
       })
       .select()
@@ -364,10 +380,13 @@ assetCategoriesRoute.patch(
     const body = c.req.valid('json');
 
     const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.code !== undefined) patch.code = body.code;
     if (body.name !== undefined) patch.name = body.name;
     if (body.codePrefix !== undefined) patch.code_prefix = body.codePrefix;
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
 
     const auditBefore = await loadAuditSnapshot(supabase, 'asset_categories', id);
     const { data, error } = await supabase.from('asset_categories').update(patch).eq('id', id).select().single();
@@ -420,7 +439,7 @@ accessSystemsRoute.post(
 
     const { data, error } = await supabase
       .from('access_systems')
-      .insert({ name: body.name, notes: body.notes ?? null, created_by: actorId })
+      .insert({ code: body.code ?? `SYS-${randomCodeSuffix()}`, name: body.name, notes: body.notes ?? null, effective_date: body.effectiveDate ?? undefined, sort_order: body.sortOrder ?? undefined, created_by: actorId })
       .select()
       .single();
 
@@ -455,9 +474,12 @@ accessSystemsRoute.patch(
     const body = c.req.valid('json');
 
     const patch: Record<string, unknown> = { updated_by: actorId };
+    if (body.code !== undefined) patch.code = body.code;
     if (body.name !== undefined) patch.name = body.name;
     if (body.notes !== undefined) patch.notes = body.notes;
     if (body.status !== undefined) patch.status = body.status;
+    if (body.effectiveDate !== undefined) patch.effective_date = body.effectiveDate;
+    if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder;
 
     const auditBefore = await loadAuditSnapshot(supabase, 'access_systems', id);
     const { data, error } = await supabase.from('access_systems').update(patch).eq('id', id).select().single();

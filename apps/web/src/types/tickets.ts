@@ -32,6 +32,12 @@ export interface TicketListItem {
   is_security: boolean;
   incident_id: string | null;
   due_at: string | null;
+  sla_paused_at?: string | null;
+  sla_paused_minutes?: number;
+  waiting_follow_up_at?: string | null;
+  waiting_since?: string | null;
+  is_sla_paused?: boolean;
+  sla_state?: 'paused' | 'overdue' | 'due_soon' | 'on_track' | 'unconfigured';
   created_at: string;
   outsource_name: string | null;
   ticket_categories: { name: string } | null;
@@ -42,6 +48,8 @@ export interface TicketListItem {
 export interface TicketSummary {
   open: number;
   overdue: number;
+  paused: number;
+  awaitingAcceptance: number;
   security: number;
   averageRating: number | null;
   ratingCount: number;
@@ -86,6 +94,16 @@ export interface TicketDetail extends TicketListItem {
   response_sla_hours: number | null;
   resolution_sla_hours: number | null;
   response_due_at: string | null;
+  started_at?: string | null;
+  first_response_at?: string | null;
+  sla_paused_at?: string | null;
+  sla_paused_minutes?: number;
+  waiting_reason?: string | null;
+  waiting_owner_id?: string | null;
+  waiting_follow_up_at?: string | null;
+  waiting_since?: string | null;
+  is_sla_paused?: boolean;
+  sla_state?: 'paused' | 'overdue' | 'due_soon' | 'on_track' | 'unconfigured';
   description: string;
   acknowledged_at: string | null;
   resolved_at: string | null;
@@ -114,6 +132,69 @@ export interface TicketDetail extends TicketListItem {
   assignee: { full_name: string; email: string } | null;
   attachments: TicketAttachment[];
   worklogs: TicketWorklog[];
+  sla_rounds?: TicketSlaRound[];
+  related_pm?: TicketRelatedPm[];
+  related_pm_links?: TicketRelatedPmLink[];
+  related_problems?: TicketRelatedProblem[];
+}
+
+export interface TicketSlaRound {
+  id: string;
+  round_no: number;
+  opened_at: string;
+  closed_at: string | null;
+  status: string;
+  response_sla_hours: number | null;
+  resolution_sla_hours: number | null;
+  response_due_at: string | null;
+  resolution_due_at: string | null;
+  paused_minutes: number;
+  paused_at: string | null;
+  response_met_at: string | null;
+  resolved_at: string | null;
+  response_sla_met: boolean | null;
+  resolution_sla_met: boolean | null;
+  is_inferred: boolean;
+}
+
+export interface TicketRelatedPm {
+  id: string;
+  status: string;
+  plan_date: string;
+  actual_date: string | null;
+  next_due_date: string | null;
+  result: string | null;
+  notes: string | null;
+  asset_id: string | null;
+}
+
+export interface TicketRelatedPmLink {
+  ticket_id: string;
+  maintenance_plan_id: string;
+  relationship: 'root_cause' | 'related' | 'follow_up';
+  notes: string | null;
+  created_at: string;
+  maintenance_plan: TicketRelatedPm | null;
+}
+
+export interface TicketRelatedProblem {
+  id: string;
+  problem_number: string;
+  title: string;
+  status: string;
+  root_cause: string | null;
+  workaround: string | null;
+  permanent_fix: string | null;
+}
+
+export interface TicketQueueSummary {
+  unassigned: number;
+  nearSla: number;
+  overdue: number;
+  waitingFollowUp: number;
+  awaitingAcceptance: number;
+  paused: number;
+  generatedAt: string;
 }
 
 export interface AssignableStaff {

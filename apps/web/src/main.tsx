@@ -9,6 +9,10 @@ import { AuthProvider } from './stores/authContext';
 import { ThemeProvider } from './stores/themeContext';
 import { ToastProvider } from './components/ui/Toast';
 
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

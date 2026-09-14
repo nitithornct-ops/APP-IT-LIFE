@@ -1,5 +1,7 @@
 # Production Deployment Runbook
 
+> Current release choice: `fresh-start`. This release does not import legacy data; the production workflow starts with empty application data and still requires a real `migration_approval_ref` plus the protected `production` environment approval. Do not create a rehearsal report unless a real legacy import is planned.
+
 เอกสารนี้เป็น gate สำหรับ Production ของ LIFE IT Smart Service Center การ deploy จริงทำผ่าน
 GitHub Actions workflow `Deploy Production` จาก branch `master` เท่านั้น และต้องใช้ GitHub
 Environment ชื่อ `production` ที่กำหนด required reviewers ไว้แล้ว

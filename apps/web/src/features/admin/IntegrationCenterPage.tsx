@@ -11,6 +11,7 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { IntegrationCenterResponse, IntegrationChannel, IntegrationEvent, IntegrationStatus } from '../../types/integrations';
 import { formatThaiDateTime } from '../../utils/date';
+import { NotificationRulesPanel } from './NotificationRulesPanel';
 
 const STATUS_COPY: Record<IntegrationStatus, { label: string; badge: 'success' | 'warning' | 'danger' | 'secondary'; dot: string }> = {
   active: { label: 'พร้อมใช้งาน', badge: 'success', dot: 'bg-success-600' },
@@ -40,11 +41,15 @@ function eventBadge(status: string): 'success' | 'warning' | 'danger' | 'seconda
   return 'secondary';
 }
 
-function ChannelCard({ channel }: { channel: IntegrationChannel }) {
+function ChannelCard({ channel, onTestConnection, testPending }: { channel: IntegrationChannel; onTestConnection?: (channelId: string) => void; testPending?: boolean }) {
   const Icon = CHANNEL_ICONS[channel.id] ?? Link2;
   const status = STATUS_COPY[channel.status];
+  const canTest = channel.testable === true && onTestConnection;
   return (
-    <article className={`rounded-[10px] border bg-white p-3.5 dark:bg-slate-900/50 ${channel.status === 'degraded' ? 'border-danger-300 dark:border-danger-700' : 'border-hairline dark:border-white/[.08]'}`}>
+    <>
+      {canTest && <Button className="mb-2 w-full" size="sm" variant="outline" isLoading={testPending} onClick={() => onTestConnection?.(channel.id)}>Test connection</Button>}
+      <article className={`rounded-[10px] border bg-white p-3.5 dark:bg-slate-900/50 ${channel.status === 'degraded' ? 'border-danger-300 dark:border-danger-700' : 'border-hairline dark:border-white/[.08]'}`}>
+      {(channel.rateLimitPerMinute || channel.latencyMs !== null || channel.secretReference || channel.webhookSigningEnabled) && <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] text-slate-500"><span className="rounded bg-slate-100 px-1.5 py-1 dark:bg-slate-800">rate {channel.rateLimitPerMinute ?? '—'}/min</span><span className="rounded bg-slate-100 px-1.5 py-1 dark:bg-slate-800">latency {channel.latencyMs === null || channel.latencyMs === undefined ? '—' : `${channel.latencyMs}ms`}</span>{channel.idempotencyEnabled !== false && <span className="rounded bg-teal-50 px-1.5 py-1 text-teal-700 dark:bg-teal-950/30 dark:text-teal-300">idempotent</span>}{channel.webhookSigningEnabled && <span className="rounded bg-violet-50 px-1.5 py-1 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">signed</span>}{channel.secretReference && <span className="rounded bg-amber-50 px-1.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">secret ref: {channel.secretReference}</span>}{channel.lastSuccessfulDeliveryAt && <span className="rounded bg-emerald-50 px-1.5 py-1 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">last success {new Date(channel.lastSuccessfulDeliveryAt).toLocaleString()}</span>}</div>}
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-950/50 dark:text-primary-300"><Icon className="h-4.5 w-4.5" /></div>
         <div className="min-w-0 flex-1">
@@ -56,7 +61,8 @@ function ChannelCard({ channel }: { channel: IntegrationChannel }) {
         <span className="text-slate-400">{channel.detail}</span>
         {channel.delivered24h !== null && <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{channel.delivered24h.toLocaleString('th-TH')} / 24ชม.</span>}
       </div>
-    </article>
+      </article>
+    </>
   );
 }
 
@@ -93,7 +99,7 @@ function RecentEventRow({ event, onAction, pending }: { event: IntegrationEvent;
   );
 }
 
-export function IntegrationCenterPanel({ data, onAction, actionPending = false }: { data: IntegrationCenterResponse; onAction?: (event: IntegrationEvent, action: string) => void; actionPending?: boolean }) {
+export function IntegrationCenterPanel({ data, onAction, actionPending = false, onTestConnection, connectionTestPending = false }: { data: IntegrationCenterResponse; onAction?: (event: IntegrationEvent, action: string) => void; actionPending?: boolean; onTestConnection?: (channelId: string) => void; connectionTestPending?: boolean }) {
   return (
     <div className="space-y-4" data-testid="integration-center-panel">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
@@ -105,21 +111,23 @@ export function IntegrationCenterPanel({ data, onAction, actionPending = false }
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[296px_minmax(0,1fr)_320px]">
-        <Card className="h-fit"><CardHeader className="flex items-center gap-2"><Link2 className="h-4 w-4 text-primary-600" />ช่องทางเชื่อมต่อ</CardHeader><CardBody className="space-y-2.5">{data.channels.map((channel) => <ChannelCard key={channel.id} channel={channel} />)}</CardBody></Card>
+        <Card className="h-fit"><CardHeader className="flex items-center gap-2"><Link2 className="h-4 w-4 text-primary-600" />ช่องทางเชื่อมต่อ</CardHeader><CardBody className="space-y-2.5">{data.channels.map((channel) => <ChannelCard key={channel.id} channel={channel} onTestConnection={onTestConnection} testPending={connectionTestPending} />)}</CardBody></Card>
 
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><BellRing className="h-4 w-4 text-primary-600" />กติกาแจ้งเตือนที่ใช้งานจริง</span><Badge variant="secondary"><Code2 className="h-3 w-3" />จัดการจาก Source Code</Badge></CardHeader>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><BellRing className="h-4 w-4 text-primary-600" />กติกาแจ้งเตือนที่ใช้งานจริง</span><Badge variant="secondary">{data.templates ? 'จัดการจาก Notification Rules table' : <><Code2 className="h-3 w-3" />จัดการจาก Source Code</>}</Badge></CardHeader>
           <div className="overflow-x-auto">
             <table className="min-w-[620px] w-full text-left">
               <thead className="bg-slate-50 font-mono text-[10px] uppercase tracking-wider text-slate-400 dark:bg-slate-900/50"><tr><th className="px-4 py-2.5">เหตุการณ์</th><th className="px-3 py-2.5">ช่องทาง</th><th className="px-3 py-2.5">ผู้รับ</th><th className="px-3 py-2.5">สถานะ</th></tr></thead>
               <tbody>{data.rules.map((rule) => <tr key={rule.id} className="border-t border-slate-100 text-xs dark:border-white/[.07]"><td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{rule.event}</td><td className="px-3 py-3 text-slate-600 dark:text-slate-300">{rule.channel}</td><td className="px-3 py-3 text-slate-500">{rule.recipients}</td><td className="px-3 py-3"><Badge variant={STATUS_COPY[rule.status].badge}>{STATUS_COPY[rule.status].label}</Badge></td></tr>)}</tbody>
             </table>
           </div>
-          <div className="flex gap-2 border-t border-blue-100 bg-blue-50 px-4 py-3 text-[11px] leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><p>กฎเหล่านี้สะท้อน flow ที่มีในระบบจริง ปัจจุบันยังไม่มีตาราง Notification Rule จึงไม่แสดง toggle ที่กดแล้วไม่เกิดผล</p></div>
+          <div className="flex gap-2 border-t border-blue-100 bg-blue-50 px-4 py-3 text-[11px] leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><p>{data.templates ? 'กฎอ่านจากฐานข้อมูลและแก้ไขได้จากแผงด้านล่าง การเปลี่ยนแปลงมี audit trail และไม่เปิดเผย secret' : 'กฎเหล่านี้สะท้อน flow ที่มีในระบบจริง ปัจจุบันยังไม่มีตาราง Notification Rule จึงไม่แสดง toggle ที่กดแล้วไม่เกิดผล'}</p></div>
         </Card>
 
         <div className="space-y-4"><LineMessagePreview /><Card><CardHeader className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary-600" />สถานะ Integration Outbox</CardHeader><CardBody className="grid grid-cols-2 gap-2 text-xs">{Object.entries(data.outbox).map(([key, value]) => <div key={key} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900"><p className="font-mono text-[10px] uppercase text-slate-400">{key}</p><p className="mt-1 font-mono text-lg font-bold text-slate-800 dark:text-slate-100">{value}</p></div>)}</CardBody></Card></div>
       </div>
+
+      {data.templates !== undefined && <NotificationRulesPanel data={data} />}
 
       <Card className="overflow-hidden">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary-600" />เหตุการณ์ล่าสุด</span><div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] font-normal text-slate-400"><span>เก็บ {data.retention.days} วัน · ลบงานที่จบแล้วอัตโนมัติ</span><span>อัปเดต {formatThaiDateTime(data.generatedAt)}</span></div></CardHeader>
@@ -137,6 +145,10 @@ export function IntegrationCenterPage() {
     mutationFn: ({ event, action }: { event: IntegrationEvent; action: string }) => apiFetch(`/api/v1/governance/integrations/outbox/${event.id}/actions/${action}`, { method: 'POST', body: '{}' }),
     onSuccess: async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['admin', 'integration-center'] }), queryClient.invalidateQueries({ queryKey: ['governance', 'integrations'] })]); },
   });
+  const connectionTestMutation = useMutation({
+    mutationFn: (channel: string) => apiFetch<{ status: string; message: string }>(`/api/v1/integrations/channels/${encodeURIComponent(channel)}/test`, { method: 'POST', body: '{}' }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['admin', 'integration-center'] }); },
+  });
 
   return (
     <div className="space-y-5">
@@ -144,7 +156,8 @@ export function IntegrationCenterPage() {
       {overviewQuery.isLoading && <div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></div>}
       {overviewQuery.isError && <EmptyState icon={<ExternalLink className="h-10 w-10" />} title="โหลด Integration Center ไม่สำเร็จ" message={errorText(overviewQuery.error)} action={<Button onClick={() => void overviewQuery.refetch()}>ลองอีกครั้ง</Button>} />}
       {actionMutation.isError && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700 dark:bg-danger-950/30 dark:text-danger-200" role="alert">{errorText(actionMutation.error)}</p>}
-      {overviewQuery.data && <IntegrationCenterPanel data={overviewQuery.data} actionPending={actionMutation.isPending} onAction={(event, action) => actionMutation.mutate({ event, action })} />}
+      {connectionTestMutation.isError && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700 dark:bg-danger-950/30 dark:text-danger-200" role="alert">{errorText(connectionTestMutation.error)}</p>}
+      {overviewQuery.data && <IntegrationCenterPanel data={overviewQuery.data} actionPending={actionMutation.isPending} onAction={(event, action) => actionMutation.mutate({ event, action })} connectionTestPending={connectionTestMutation.isPending} onTestConnection={(channel) => connectionTestMutation.mutate(channel)} />}
     </div>
   );
 }

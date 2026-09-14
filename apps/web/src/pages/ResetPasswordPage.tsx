@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { PublicBrand } from '../components/PublicBrand';
 import { supabase } from '../lib/supabase';
+import { apiFetch } from '../services/apiClient';
 
 const resetPasswordSchema = z
   .object({
@@ -48,6 +49,13 @@ export function ResetPasswordPage() {
     if (error) {
       setSubmitError('ตั้งรหัสผ่านใหม่ไม่สำเร็จ ลิงก์อาจหมดอายุแล้ว กรุณาขอลิงก์ใหม่');
       return;
+    }
+
+    try {
+      await apiFetch('/api/v1/auth/password-change-log', { method: 'POST' }, { silent: true });
+    } catch {
+      // The Auth password update already succeeded. Keep the recovery flow usable if
+      // the audit timestamp endpoint is temporarily unavailable.
     }
 
     setSuccess(true);

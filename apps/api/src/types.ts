@@ -33,6 +33,10 @@ export interface Bindings {
   GOOGLE_SA_PRIVATE_KEY?: string;
   /** โฟลเดอร์ปลายทางใน Shared Drive ที่ Service Account เป็นสมาชิก */
   GOOGLE_DRIVE_FOLDER_ID?: string;
+  SMTP_HEALTHCHECK_URL?: string;
+  STATUS_SLO_TARGET_PERCENT?: string;
+  STATUS_SLA_TARGET_PERCENT?: string;
+  STATUS_RESPONSE_TIME_TARGET_MS?: string;
 }
 
 export interface LineUserProfile {
@@ -46,6 +50,8 @@ export interface LineUserProfile {
   department: string | null;
   link_status: string | null;
   friend_status: string | null;
+  last_used_at?: string | null;
+  linked_at?: string | null;
 }
 
 export interface VendorPortalProfile {

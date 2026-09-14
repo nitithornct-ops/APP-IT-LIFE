@@ -29,11 +29,11 @@ beforeAll(async () => {
 afterAll(async () => { await db.close(); });
 
 describe('Module 20 Report Center controls', () => {
-  it('seeds six governed standard reports', async () => {
+  it('seeds seven governed standard reports', async () => {
     const result = await db.query('select key,status from public.report_definitions order by sort_order');
-    expect(result.rows).toHaveLength(6);
+    expect(result.rows).toHaveLength(7);
     expect(result.rows.map((row) => (row as { key: string }).key)).toEqual([
-      'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'security-resilience', 'governance-compliance',
+      'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'asset-verification', 'security-resilience', 'governance-compliance',
     ]);
     expect(result.rows.every((row) => (row as { status: string }).status === 'active')).toBe(true);
   });
@@ -54,7 +54,7 @@ describe('Module 20 Report Center controls', () => {
 
   it('protects definitions with report.view RLS', async () => {
     const visible = await asUser(db, TECHNICIAN_ID, async () => db.query('select key from public.report_definitions'));
-    expect(visible.rows).toHaveLength(6);
+    expect(visible.rows).toHaveLength(7);
     const hidden = await asUser(db, USER_ID, async () => db.query('select key from public.report_definitions'));
     expect(hidden.rows).toHaveLength(0);
   });
@@ -94,6 +94,41 @@ describe('Module 20 Report Center controls', () => {
     await expect(asServiceRole(db, async () => db.query(
       `insert into public.report_exports(export_code,report_key,format,actor_id) values ('RPT-BAD','service-desk','XLSX',$1)`,
       [TECHNICIAN_ID],
+    ))).rejects.toThrow();
+  });
+
+  it('supports governed saved filters, schedules, snapshots and KPI definitions', async () => {
+    const permissions = await asUser(db, TECHNICIAN_ID, async () => db.query(
+      `select public.has_permission('report.schedule') as schedule`,
+    ));
+    expect(permissions.rows).toEqual([{ schedule: true }]);
+
+    const savedFilter = await asUser(db, TECHNICIAN_ID, async () => db.query<{ name: string }>(
+      `insert into public.report_saved_filters(owner_id,report_key,name,filters)
+       values ($1,'service-desk','Open tickets','{"rangeDays":30,"comparePrevious":true}')
+       returning name`,
+      [TECHNICIAN_ID],
+    ));
+    expect(savedFilter.rows).toEqual([{ name: 'Open tickets' }]);
+
+    const schedule = await asUser(db, TECHNICIAN_ID, async () => db.query<{ id: string }>(
+      `insert into public.report_schedules(created_by,report_key,name,frequency,day_of_month,next_run_at)
+       values ($1,'executive-pack','Monthly pack','monthly',1,now()) returning id`,
+      [TECHNICIAN_ID],
+    ));
+    expect(schedule.rows).toHaveLength(1);
+
+    const kpis = await asUser(db, TECHNICIAN_ID, async () => db.query('select key from public.report_kpi_definitions order by sort_order'));
+    expect(kpis.rows).toHaveLength(5);
+
+    const scheduleId = (schedule.rows[0] as { id: string }).id;
+    await asServiceRole(db, async () => db.query(
+      `insert into public.report_schedule_runs(schedule_id,scheduled_for) values ($1,'2026-08-01T08:00:00Z')`,
+      [scheduleId],
+    ));
+    await expect(asServiceRole(db, async () => db.query(
+      `insert into public.report_schedule_runs(schedule_id,scheduled_for) values ($1,'2026-08-01T08:00:00Z')`,
+      [scheduleId],
     ))).rejects.toThrow();
   });
 });

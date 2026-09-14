@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSkillMatrix, buildTechnicianSkillProfile } from '../src/services/technicianSkillService';
+import { buildSkillMatrix, buildTechnicianRecommendations, buildTechnicianSkillProfile } from '../src/services/technicianSkillService';
 import { saveTechnicianSkillsSchema } from '../src/validators/technicianSkills';
 
 const CATEGORIES = [
@@ -66,19 +66,20 @@ describe('technician skill matrix', () => {
     expect(matrix.lastAssessedAt).toBe('2026-08-05T00:00:00.000Z');
   });
 
-  it('ignores rows whose level is outside the 1-3 scale the table allows', () => {
+  it('ignores rows whose level is outside the 1-5 scale the table allows', () => {
     const matrix = buildSkillMatrix({
       categories: CATEGORIES,
       technicians: TECHNICIANS,
       skills: [
         { technician_id: 'tech-1', category_id: 'cat-net', level: 0, note: null, assessed_at: null },
         { technician_id: 'tech-1', category_id: 'cat-pc', level: 9, note: null, assessed_at: null },
+        { technician_id: 'tech-1', category_id: 'cat-db', level: 5, note: null, assessed_at: null },
       ],
       openTickets: [],
       now: NOW,
     });
 
-    expect(matrix.summary.assessedCells).toBe(0);
+    expect(matrix.summary.assessedCells).toBe(1);
   });
 
   it('sorts the roster by how much of it has actually been assessed', () => {
@@ -189,18 +190,74 @@ describe('technician skill profile', () => {
 describe('technician skill payload validation', () => {
   const categoryId = '11111111-1111-4111-8111-111111111111';
 
-  it('accepts levels 1-3 and an explicit null that withdraws an assessment', () => {
+  it('accepts levels 1-5 and an explicit null that withdraws an assessment', () => {
     expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 3 }] }).success).toBe(true);
+    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 5 }] }).success).toBe(true);
     expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: null }] }).success).toBe(true);
+    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 4, certification: 'CCNA', certificationExpiry: '2027-12-31', productTechnology: 'Cisco', location: 'สำนักงานใหญ่', availability: 'limited' }] }).success).toBe(true);
   });
 
   it('rejects levels outside the scale, duplicate categories, and empty payloads', () => {
     expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 0 }] }).success).toBe(false);
-    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 4 }] }).success).toBe(false);
+    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 6 }] }).success).toBe(false);
+    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 4, certificationExpiry: '2026-02-30' }] }).success).toBe(false);
+    expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 4, availability: 'away' }] }).success).toBe(false);
     expect(saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 2.5 }] }).success).toBe(false);
     expect(saveTechnicianSkillsSchema.safeParse({ skills: [] }).success).toBe(false);
     expect(
       saveTechnicianSkillsSchema.safeParse({ skills: [{ categoryId, level: 1 }, { categoryId, level: 2 }] }).success,
     ).toBe(false);
+  });
+});
+
+describe('technician recommendations', () => {
+  it('ranks a slightly less skilled available technician above an overloaded expert', () => {
+    const result = buildTechnicianRecommendations({
+      categoryId: 'cat-net',
+      technicians: [
+        { id: 'tech-expert', full_name: 'Expert', email: 'expert@life.local' },
+        { id: 'tech-available', full_name: 'Available', email: 'available@life.local' },
+      ],
+      skills: [
+        { technician_id: 'tech-expert', category_id: 'cat-net', level: 5, skill: 'Network', availability: 'available' },
+        { technician_id: 'tech-available', category_id: 'cat-net', level: 4, skill: 'Network', availability: 'available' },
+      ],
+      openTickets: [
+        ...Array.from({ length: 8 }, () => ({ assignee_id: 'tech-expert', category_id: 'cat-net', due_at: '2026-08-20T00:00:00.000Z' })),
+      ],
+      minLevel: 2,
+      now: NOW,
+    });
+
+    expect(result.recommendations.map((item) => item.technicianId)).toEqual(['tech-available', 'tech-expert']);
+    expect(result.recommendations[0].workload).toEqual({ open: 0, overdue: 0 });
+    expect(result.recommendations[1].workload).toEqual({ open: 8, overdue: 8 });
+  });
+
+  it('uses metadata matches and excludes unassessed, below-minimum, and unavailable people', () => {
+    const result = buildTechnicianRecommendations({
+      categoryId: 'cat-net',
+      location: 'สำนักงานใหญ่',
+      productTechnology: 'Cisco',
+      technicians: [
+        { id: 'match', full_name: 'Match', email: null },
+        { id: 'unassessed', full_name: 'Unassessed', email: null },
+        { id: 'junior', full_name: 'Junior', email: null },
+        { id: 'away', full_name: 'Away', email: null },
+      ],
+      skills: [
+        { technician_id: 'match', category_id: 'cat-net', level: 3, skill: 'Network', product_technology: 'Cisco switching', location: 'สำนักงานใหญ่', certification: 'CCNA', certification_expiry: '2027-12-31', availability: 'available' },
+        { technician_id: 'junior', category_id: 'cat-net', level: 1, availability: 'available' },
+        { technician_id: 'away', category_id: 'cat-net', level: 5, availability: 'unavailable' },
+      ],
+      openTickets: [],
+      minLevel: 2,
+      now: NOW,
+    });
+
+    expect(result.recommendations).toHaveLength(1);
+    expect(result.recommendations[0]).toMatchObject({ technicianId: 'match', score: 75 });
+    expect(result.recommendations[0].reasons).toEqual(expect.arrayContaining(['ตรงพื้นที่ปฏิบัติงาน', 'ตรง Product/Technology', 'Certification ยังไม่หมดอายุ']));
+    expect(result.excluded).toEqual({ unassessed: 1, belowMinimum: 1, unavailable: 1 });
   });
 });

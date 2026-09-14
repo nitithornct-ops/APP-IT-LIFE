@@ -1,6 +1,6 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
-export const FORM_MODULE_KEYS = ['ticket', 'asset_borrow'] as const;
+export const FORM_MODULE_KEYS = ['ticket', 'incident', 'change', 'contract', 'audit', 'risk', 'service_request', 'asset_borrow', 'custom'] as const;
 export type FormModuleKey = (typeof FORM_MODULE_KEYS)[number];
 
 export const FORM_MODULES: ReadonlyArray<{
@@ -21,6 +21,13 @@ export const FORM_MODULES: ReadonlyArray<{
     description: 'แบบฟอร์มหลักสำหรับรายการยืมทรัพย์สิน',
     legacyTemplateCode: 'ASSET-BORROW',
   },
+  { key: 'incident', label: 'Incident / เหตุการณ์', description: 'แบบฟอร์มสำหรับการจัดการ Incident', legacyTemplateCode: 'FORM-INCIDENT' },
+  { key: 'change', label: 'Change / การเปลี่ยนแปลง', description: 'แบบฟอร์มสำหรับ Change Request', legacyTemplateCode: 'FORM-CHANGE' },
+  { key: 'contract', label: 'Contract / สัญญา', description: 'แบบฟอร์มสำหรับ Contract', legacyTemplateCode: 'FORM-CONTRACT' },
+  { key: 'audit', label: 'Audit / การตรวจสอบ', description: 'แบบฟอร์มสำหรับ Audit', legacyTemplateCode: 'FORM-AUDIT' },
+  { key: 'risk', label: 'Risk / ความเสี่ยง', description: 'แบบฟอร์มสำหรับ Governance Risk', legacyTemplateCode: 'FORM-RISK' },
+  { key: 'service_request', label: 'Service Request / คำขอบริการ', description: 'แบบฟอร์มสำหรับ Service Request', legacyTemplateCode: 'FORM-SERVICE-REQUEST' },
+  { key: 'custom', label: 'Custom / Generic', description: 'แบบฟอร์มกลางที่ผูกกับ Record ใดก็ได้', legacyTemplateCode: 'FORM-CUSTOM' },
 ];
 
 /** Resolve the module default while retaining a safe fallback for older databases. */

@@ -6,7 +6,7 @@ import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, KeyRound, Loader2, Plus, ShieldX, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
@@ -18,7 +18,7 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
-import type { AccessRequestListItem, AccessRequestStatus, AccessSystem } from '../../types/accessRequests';
+import type { AccessAction, AccessControlItem, AccessPersonOption, AccessRequestListItem, AccessRequestStatus, AccessSystem, LifecycleEvent } from '../../types/accessRequests';
 import { formatThaiDate } from '../../utils/date';
 
 const REQUEST_STATUSES: AccessRequestStatus[] = ['รออนุมัติจากหัวหน้างาน', 'รอส่วนงานไอทีดำเนินการ', 'เสร็จสิ้น', 'ปฏิเสธ'];
@@ -34,26 +34,90 @@ function StatusBadge({ status }: { status: AccessRequestStatus }) {
   return <Badge variant={statusTone[status]}>{status}</Badge>;
 }
 
+const ACCESS_ACTIONS: AccessAction[] = ['read', 'create', 'update', 'delete', 'approve'];
+const ACTION_LABELS: Record<AccessAction, string> = { read: 'Read', create: 'Create', update: 'Update', delete: 'Delete', approve: 'Approve' };
+const lifecycleLabels: Record<LifecycleEvent, string> = { manual: 'คำขอทั่วไป', joiner: 'Joiner — เริ่มงาน', mover: 'Mover — ย้ายบทบาท/หน่วยงาน', leaver: 'Leaver — พ้นสภาพ' };
+
 const submitSchema = z.object({
   systemId: z.string().min(1, 'กรุณาเลือกระบบงาน'),
-  accessLevel: z.enum(['Standard', 'Admin']),
+  accessItemId: z.string().min(1, 'กรุณาเลือก Role / Profile / Group / Entitlement'),
+  requestedActions: z.array(z.enum(['read', 'create', 'update', 'delete', 'approve'])).min(1, 'กรุณาเลือกสิทธิ์การทำรายการอย่างน้อย 1 รายการ'),
+  temporaryAccess: z.boolean(),
+  startAt: z.string().min(1, 'กรุณาระบุวันที่เริ่ม'),
+  expiresAt: z.string().optional(),
+  businessReason: z.string().trim().min(1, 'กรุณาระบุเหตุผลทางธุรกิจ'),
   requestType: z.enum(['ขอเพิ่มสิทธิ์', 'เพิกถอนสิทธิ์']),
-  reason: z.string().trim().min(1, 'กรุณาระบุเหตุผล'),
+  lifecycleEvent: z.enum(['manual', 'joiner', 'mover', 'leaver']),
+  subjectUserId: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.temporaryAccess && !value.expiresAt) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expiresAt'], message: 'Temporary Access ต้องระบุวันหมดอายุ' });
+  if (!value.temporaryAccess && value.expiresAt) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expiresAt'], message: 'สิทธิ์ถาวรไม่ควรมีวันหมดอายุ' });
+  if (value.lifecycleEvent === 'joiner' && value.requestType === 'เพิกถอนสิทธิ์') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['requestType'], message: 'Joiner ต้องเป็นคำขอเพิ่มสิทธิ์' });
+  if (value.lifecycleEvent === 'leaver' && value.requestType !== 'เพิกถอนสิทธิ์') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['requestType'], message: 'Leaver ต้องเป็นคำขอเพิกถอนสิทธิ์' });
 });
 
 type SubmitForm = z.infer<typeof submitSchema>;
 
-function SubmitAccessRequestForm({ systems, onClose }: { systems: AccessSystem[]; onClose: () => void }) {
+function localDateTimeValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function SubmitAccessRequestForm({
+  systems,
+  items,
+  people,
+  canSelectSubject,
+  onClose,
+}: {
+  systems: AccessSystem[];
+  items: AccessControlItem[];
+  people: AccessPersonOption[];
+  canSelectSubject: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting },
-  } = useForm<SubmitForm>({ resolver: zodResolver(submitSchema), defaultValues: { requestType: 'ขอเพิ่มสิทธิ์' } });
+  } = useForm<SubmitForm>({
+    resolver: zodResolver(submitSchema),
+    defaultValues: {
+      requestType: 'ขอเพิ่มสิทธิ์',
+      lifecycleEvent: 'manual',
+      requestedActions: [],
+      temporaryAccess: false,
+      startAt: localDateTimeValue(new Date()),
+    },
+  });
+
+  const selectedSystemId = watch('systemId');
+  const selectedItemId = watch('accessItemId');
+  const temporaryAccess = watch('temporaryAccess');
+  const lifecycleEvent = watch('lifecycleEvent');
+  const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId && item.system_id === selectedSystemId) ?? null, [items, selectedItemId, selectedSystemId]);
+  const systemItems = useMemo(() => items.filter((item) => item.system_id === selectedSystemId && item.status === 'active'), [items, selectedSystemId]);
+
+  useEffect(() => {
+    const current = getValues('requestedActions');
+    setValue('requestedActions', current.filter((action) => selectedItem?.permission_actions.includes(action) ?? false), { shouldValidate: true });
+  }, [getValues, selectedItem, setValue]);
 
   const mutation = useMutation({
-    mutationFn: (values: SubmitForm) => apiFetch('/api/v1/access-requests', { method: 'POST', body: JSON.stringify(values) }),
+    mutationFn: (values: SubmitForm) => apiFetch('/api/v1/access-requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...values,
+        startAt: new Date(values.startAt).toISOString(),
+        expiresAt: values.temporaryAccess && values.expiresAt ? new Date(values.expiresAt).toISOString() : null,
+        subjectUserId: values.subjectUserId || undefined,
+      }),
+    }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['access-requests'] });
       onClose();
@@ -73,6 +137,25 @@ function SubmitAccessRequestForm({ systems, onClose }: { systems: AccessSystem[]
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
+
+      {canSelectSubject && (
+        <div className="sm:col-span-2">
+          <label htmlFor="ar-subject" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            ผู้รับสิทธิ์ (JML / ขอแทน)
+          </label>
+          <select
+            id="ar-subject"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+            {...register('subjectUserId')}
+          >
+            <option value="">— ตัวฉันเอง —</option>
+            {people.map((person) => (
+              <option key={person.id} value={person.id}>{person.full_name} ({person.email}){person.status === 'inactive' ? ' · inactive' : ''}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">การยื่นแทนผู้อื่นใช้สำหรับ Joiner / Mover / Leaver และต้องมีสิทธิ์เจ้าหน้าที่</p>
+        </div>
+      )}
 
       <div>
         <label htmlFor="ar-system" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -94,20 +177,45 @@ function SubmitAccessRequestForm({ systems, onClose }: { systems: AccessSystem[]
       </div>
 
       <div>
-        <label htmlFor="ar-level" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-          ระดับสิทธิ์
+        <label htmlFor="ar-item" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+          Role / Profile / Group / Entitlement
         </label>
         <select
-          id="ar-level"
+          id="ar-item"
           className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          {...register('accessLevel')}
+          {...register('accessItemId')}
         >
-          <option value="Standard">Standard (ผู้ใช้งานทั่วไป)</option>
-          <option value="Admin">Admin (ผู้ดูแล)</option>
+          <option value="">— เลือกสิทธิ์ที่กำหนดไว้ —</option>
+          {systemItems.map((item) => (
+            <option key={item.id} value={item.id}>{item.kind.toUpperCase()} · {item.name} ({item.code})</option>
+          ))}
         </select>
+        {errors.accessItemId && <p className="mt-1 text-xs text-red-600">{errors.accessItemId.message}</p>}
       </div>
 
-      <div className="sm:col-span-2">
+      <div>
+        <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ขอบเขตการทำรายการ</span>
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+          {ACCESS_ACTIONS.map((action) => (
+            <label key={action} className={`flex items-center gap-2 text-xs ${selectedItem?.permission_actions.includes(action) ? 'text-slate-700 dark:text-slate-200' : 'text-slate-300 dark:text-slate-600'}`}>
+              <input type="checkbox" value={action} disabled={!selectedItem?.permission_actions.includes(action)} {...register('requestedActions')} />
+              {ACTION_LABELS[action]}
+            </label>
+          ))}
+        </div>
+        {errors.requestedActions && <p className="mt-1 text-xs text-red-600">{errors.requestedActions.message}</p>}
+      </div>
+
+      {selectedItem && (
+        <div className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-3">
+          <div><span className="text-slate-500">Data Classification</span><div className="font-semibold">{selectedItem.data_classification}</div></div>
+          <div><span className="text-slate-500">System Owner</span><div className="font-semibold">{selectedItem.system_owner?.full_name ?? 'กำหนดใน master data'}</div></div>
+          <div><span className="text-slate-500">Approver</span><div className="font-semibold">{selectedItem.default_approver?.full_name ?? 'หัวหน้างานของผู้รับสิทธิ์'}</div></div>
+          {selectedItem.privileged_access && <div className="sm:col-span-3 rounded-md bg-amber-50 p-2 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Privileged Access — ต้องใช้ MFA และผู้ดำเนินการต้องแยกจากผู้อนุมัติ</div>}
+        </div>
+      )}
+
+      <div>
         <label htmlFor="ar-type" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
           ประเภทคำขอ
         </label>
@@ -119,19 +227,54 @@ function SubmitAccessRequestForm({ systems, onClose }: { systems: AccessSystem[]
           <option value="ขอเพิ่มสิทธิ์">ขอเพิ่มสิทธิ์</option>
           <option value="เพิกถอนสิทธิ์">เพิกถอนสิทธิ์</option>
         </select>
+        {errors.requestType && <p className="mt-1 text-xs text-red-600">{errors.requestType.message}</p>}
+      </div>
+
+      <div>
+        <label htmlFor="ar-lifecycle" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+          JML / Lifecycle Event
+        </label>
+        <select
+          id="ar-lifecycle"
+          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+          {...register('lifecycleEvent')}
+          onChange={(event) => {
+            const next = event.target.value as LifecycleEvent;
+            setValue('lifecycleEvent', next, { shouldValidate: true });
+            if (next === 'joiner') setValue('requestType', 'ขอเพิ่มสิทธิ์', { shouldValidate: true });
+            if (next === 'leaver') setValue('requestType', 'เพิกถอนสิทธิ์', { shouldValidate: true });
+          }}
+        >
+          {Object.entries(lifecycleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        {lifecycleEvent === 'leaver' && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Leaver จะเพิกถอนสิทธิ์ของผู้รับสิทธิ์เมื่อ IT ดำเนินการสำเร็จ</p>}
+      </div>
+
+      <div>
+        <label htmlFor="ar-start" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">วันที่เริ่มมีสิทธิ์</label>
+        <input id="ar-start" type="datetime-local" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('startAt')} />
+        {errors.startAt && <p className="mt-1 text-xs text-red-600">{errors.startAt.message}</p>}
+      </div>
+
+      <div>
+        <label className="mb-1 flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+          <input type="checkbox" {...register('temporaryAccess')} /> Temporary Access
+        </label>
+        <input id="ar-expires" type="datetime-local" disabled={!temporaryAccess} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:disabled:bg-slate-800" {...register('expiresAt')} />
+        {errors.expiresAt && <p className="mt-1 text-xs text-red-600">{errors.expiresAt.message}</p>}
       </div>
 
       <div className="sm:col-span-2">
         <label htmlFor="ar-reason" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-          เหตุผล
+          เหตุผลทางธุรกิจ
         </label>
         <textarea
           id="ar-reason"
           rows={3}
           className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
-          {...register('reason')}
+          {...register('businessReason')}
         />
-        {errors.reason && <p className="mt-1 text-xs text-red-600">{errors.reason.message}</p>}
+        {errors.businessReason && <p className="mt-1 text-xs text-red-600">{errors.businessReason.message}</p>}
       </div>
 
       {serverError && <p className="text-xs text-red-600 sm:col-span-2">{serverError}</p>}
@@ -159,6 +302,17 @@ export function AccessRequestsPage() {
     queryFn: () => apiFetch<AccessSystem[]>('/api/v1/access-systems'),
   });
 
+  const itemsQuery = useQuery({
+    queryKey: ['access-control-items'],
+    queryFn: () => apiFetch<AccessControlItem[]>('/api/v1/access-control-items'),
+  });
+  const canSelectSubject = hasPermission('access_request.process') || hasPermission('access_registry.manage') || hasPermission('user.manage');
+  const peopleQuery = useQuery({
+    queryKey: ['access-request-subject-options'],
+    queryFn: () => apiFetch<AccessPersonOption[]>('/api/v1/access-requests/subject-options'),
+    enabled: canSelectSubject,
+  });
+
   const requestsQuery = useQuery({
     queryKey: ['access-requests', page, pageSize, status, mineOnly, pendingApprovalOnly],
     queryFn: () =>
@@ -168,6 +322,7 @@ export function AccessRequestsPage() {
   });
 
   const activeSystems = (systemsQuery.data ?? []).filter((s) => s.status === 'active');
+  const activeItems = (itemsQuery.data ?? []).filter((item) => item.status === 'active');
   const visibleRequests = requestsQuery.data?.items ?? [];
   const pendingCount = visibleRequests.filter((request) => request.status === 'รออนุมัติจากหัวหน้างาน' || request.status === 'รอส่วนงานไอทีดำเนินการ').length;
   const completedCount = visibleRequests.filter((request) => request.status === 'เสร็จสิ้น').length;
@@ -232,10 +387,12 @@ export function AccessRequestsPage() {
               disabled={!requestsQuery.data?.items.length}
               fileName={`access-requests-page-${page}.csv`}
               getRows={() => [
-                ['ระบบงาน', 'ระดับสิทธิ์', 'ประเภท', 'สถานะ', 'ยื่นเมื่อ'],
+                ['ระบบงาน', 'Role / Profile / Group / Entitlement', 'Actions', 'Lifecycle', 'ประเภท', 'สถานะ', 'ยื่นเมื่อ'],
                 ...(requestsQuery.data?.items ?? []).map((r) => [
                   r.access_systems?.name ?? '',
-                  r.access_level,
+                  r.access_control_item?.name ?? r.access_level ?? '',
+                  r.requested_actions.join(', '),
+                  r.lifecycle_event,
                   r.request_type,
                   r.status,
                   formatThaiDate(r.created_at, 'd MMM yyyy HH:mm'),
@@ -245,7 +402,7 @@ export function AccessRequestsPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {showCreate && <FormModal title="ยื่นคำขอสิทธิ์ระบบ" description="ระบุระบบและระดับสิทธิ์ที่ต้องการ" size="lg" onClose={() => setShowCreate(false)}><SubmitAccessRequestForm systems={activeSystems} onClose={() => setShowCreate(false)} /></FormModal>}
+          {showCreate && <FormModal title="ยื่นคำขอสิทธิ์ระบบ" description="เลือกสิทธิ์จาก RBAC catalog และระบุช่วงเวลาการใช้งาน" size="lg" onClose={() => setShowCreate(false)}><SubmitAccessRequestForm systems={activeSystems} items={activeItems} people={peopleQuery.data ?? []} canSelectSubject={canSelectSubject} onClose={() => setShowCreate(false)} /></FormModal>}
 
           {requestsQuery.isLoading && (
             <div className="flex justify-center py-8" role="status">
@@ -263,7 +420,8 @@ export function AccessRequestsPage() {
                 <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-2 py-2">ระบบงาน</th>
-                    <th className="px-2 py-2">ระดับ</th>
+                    <th className="px-2 py-2">RBAC item / Actions</th>
+                    <th className="px-2 py-2">Lifecycle</th>
                     <th className="px-2 py-2">ประเภท</th>
                     <th className="px-2 py-2">สถานะ</th>
                     <th className="px-2 py-2">ยื่นเมื่อ</th>
@@ -280,8 +438,10 @@ export function AccessRequestsPage() {
                         {r.requester_id === me?.profile.id && <span className="ml-1 text-xs text-slate-400">(ของฉัน)</span>}
                       </td>
                       <td className="px-2 py-2">
-                        <Badge variant="secondary">{r.access_level}</Badge>
+                        <Badge variant="secondary">{r.access_control_item?.name ?? r.access_level ?? '—'}</Badge>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{r.requested_actions.join(', ') || 'legacy'}</div>
                       </td>
+                      <td className="px-2 py-2 text-xs text-slate-500 dark:text-slate-400">{lifecycleLabels[r.lifecycle_event]}</td>
                       <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{r.request_type}</td>
                       <td className="px-2 py-2">
                         <StatusBadge status={r.status} />

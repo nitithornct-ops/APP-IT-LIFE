@@ -10,15 +10,20 @@
 
 type Row = Record<string, unknown>;
 
-/** สามระดับตามที่ migration 20260916100000 กำหนดไว้ — ที่เดียวที่แปลระดับเป็นคำอธิบาย */
+/** ระดับ 1–5 — ที่เดียวที่แปลระดับเป็นคำอธิบายให้ทั้ง matrix และตัวจัดอันดับใช้ร่วมกัน */
 export const SKILL_LEVELS = [
   { level: 1, label: 'ช่วยงานภายใต้การกำกับ', short: 'ช่วยงานได้' },
   { level: 2, label: 'ทำงานได้ด้วยตนเอง', short: 'ทำเองได้' },
-  { level: 3, label: 'เชี่ยวชาญ/สอนงานได้', short: 'เชี่ยวชาญ' },
+  { level: 3, label: 'ทำงานได้คล่องและแก้ปัญหาได้', short: 'คล่อง' },
+  { level: 4, label: 'เชี่ยวชาญ/แก้ปัญหาซับซ้อนได้', short: 'เชี่ยวชาญ' },
+  { level: 5, label: 'ผู้เชี่ยวชาญ/สอนงานและวางมาตรฐานได้', short: 'ผู้เชี่ยวชาญ' },
 ] as const;
 
 /** ระดับต่ำสุดที่ถือว่ารับงานหมวดนั้นเองได้โดยไม่ต้องมีคนกำกับ */
 export const INDEPENDENT_LEVEL = 2;
+
+export const TECHNICIAN_AVAILABILITY = ['available', 'limited', 'unavailable'] as const;
+export type TechnicianAvailability = (typeof TECHNICIAN_AVAILABILITY)[number];
 
 export interface SkillMatrixCell {
   categoryId: string;
@@ -26,6 +31,12 @@ export interface SkillMatrixCell {
   note: string | null;
   assessedAt: string | null;
   openTickets: number;
+  skill?: string | null;
+  certification?: string | null;
+  certificationExpiry?: string | null;
+  productTechnology?: string | null;
+  location?: string | null;
+  availability?: TechnicianAvailability;
 }
 
 export interface SkillMatrixTechnician {
@@ -77,6 +88,12 @@ export interface TechnicianSkillProfile {
     note: string | null;
     assessedAt: string | null;
     openTickets: number;
+    skill?: string | null;
+    certification?: string | null;
+    certificationExpiry?: string | null;
+    productTechnology?: string | null;
+    location?: string | null;
+    availability?: TechnicianAvailability;
   }>;
   assessedCount: number;
   averageLevel: number | null;
@@ -95,6 +112,29 @@ export interface TechnicianSkillProfile {
     averageRating: number | null;
     ratedCount: number;
   };
+}
+
+export interface TechnicianSkillRecommendation {
+  technicianId: string;
+  name: string;
+  email: string | null;
+  skill: string | null;
+  proficiency: number;
+  certification: string | null;
+  certificationExpiry: string | null;
+  productTechnology: string | null;
+  location: string | null;
+  availability: TechnicianAvailability;
+  workload: { open: number; overdue: number };
+  score: number;
+  reasons: string[];
+}
+
+export interface TechnicianSkillRecommendationResponse {
+  recommendations: TechnicianSkillRecommendation[];
+  considered: number;
+  excluded: { unassessed: number; belowMinimum: number; unavailable: number };
+  generatedAt: string;
 }
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -163,6 +203,23 @@ interface SkillRow {
   level: number;
   note: string | null;
   assessedAt: string | null;
+  skill: string | null;
+  certification: string | null;
+  certificationExpiry: string | null;
+  productTechnology: string | null;
+  location: string | null;
+  availability: TechnicianAvailability;
+}
+
+function nullableText(row: Row, key: string): string | null {
+  const value = text(row, key).trim();
+  return value || null;
+}
+
+function availability(value: unknown): TechnicianAvailability {
+  return TECHNICIAN_AVAILABILITY.includes(String(value) as TechnicianAvailability)
+    ? String(value) as TechnicianAvailability
+    : 'available';
 }
 
 function normalizeSkills(rows: Row[]): SkillRow[] {
@@ -173,8 +230,14 @@ function normalizeSkills(rows: Row[]): SkillRow[] {
       level: Number(row.level ?? 0),
       note: row.note ? String(row.note) : null,
       assessedAt: row.assessed_at ? String(row.assessed_at) : null,
+      skill: nullableText(row, 'skill'),
+      certification: nullableText(row, 'certification'),
+      certificationExpiry: row.certification_expiry ? String(row.certification_expiry) : null,
+      productTechnology: nullableText(row, 'product_technology'),
+      location: nullableText(row, 'location'),
+      availability: availability(row.availability),
     }))
-    .filter((skill) => skill.technicianId && skill.categoryId && skill.level >= 1 && skill.level <= 3);
+    .filter((skill) => skill.technicianId && skill.categoryId && skill.level >= 1 && skill.level <= 5);
 }
 
 /** จำนวน Ticket ที่ยังไม่ปิด แยกตาม "ผู้รับผิดชอบ + หมวดหมู่" ใช้ทั้งในตารางและในหน้าโปรไฟล์ */
@@ -230,6 +293,12 @@ export function buildSkillMatrix(args: {
           note: skill?.note ?? null,
           assessedAt: skill?.assessedAt ?? null,
           openTickets: openByTechnicianCategory.get(`${id}::${category.id}`) ?? 0,
+          skill: skill?.skill ?? null,
+          certification: skill?.certification ?? null,
+          certificationExpiry: skill?.certificationExpiry ?? null,
+          productTechnology: skill?.productTechnology ?? null,
+          location: skill?.location ?? null,
+          availability: skill?.availability ?? 'available',
         };
       });
       const assessed = cells.filter((cell) => cell.level !== null);
@@ -312,6 +381,12 @@ export function buildTechnicianSkillProfile(args: {
       note: skill?.note ?? null,
       assessedAt: skill?.assessedAt ?? null,
       openTickets: openByCategory.get(`${args.technicianId}::${category.id}`) ?? 0,
+      skill: skill?.skill ?? null,
+      certification: skill?.certification ?? null,
+      certificationExpiry: skill?.certificationExpiry ?? null,
+      productTechnology: skill?.productTechnology ?? null,
+      location: skill?.location ?? null,
+      availability: skill?.availability ?? 'available',
     };
   });
 
@@ -394,4 +469,122 @@ export function buildTechnicianSkillProfile(args: {
       ratedCount: allRatings.length,
     },
   };
+}
+
+function comparable(value: string | null | undefined): string {
+  return String(value ?? '').trim().toLocaleLowerCase('th-TH');
+}
+
+function matchesSearch(value: string | null, query: string | null | undefined): boolean {
+  const normalizedQuery = comparable(query);
+  return Boolean(normalizedQuery) && comparable(value).includes(normalizedQuery);
+}
+
+function certificationIsCurrent(expiry: string | null, now: Date): boolean {
+  if (!expiry) return false;
+  const parsed = validDate(`${expiry}T23:59:59Z`);
+  return Boolean(parsed && parsed.getTime() >= now.getTime());
+}
+
+/**
+ * จัดอันดับผู้รับงานจากข้อมูลที่ประเมินจริง โดยไม่เปลี่ยน assignee ให้เอง
+ *
+ * คะแนนให้น้ำหนัก proficiency/availability ก่อน แล้วหักตามงานค้างและงานเกินกำหนด
+ * อย่างชัดเจน เพื่อไม่ให้คนที่เก่งที่สุดแต่กำลังล้นงานถูกดันขึ้นมาโดยอัตโนมัติ
+ */
+export function buildTechnicianRecommendations(args: {
+  categoryId: string;
+  technicians: Row[];
+  skills: Row[];
+  openTickets: Row[];
+  location?: string | null;
+  productTechnology?: string | null;
+  minLevel?: number;
+  limit?: number;
+  now?: Date;
+}): { recommendations: TechnicianSkillRecommendation[]; considered: number; excluded: { unassessed: number; belowMinimum: number; unavailable: number } } {
+  const now = args.now ?? new Date();
+  const minLevel = Math.min(5, Math.max(1, Math.trunc(args.minLevel ?? 2)));
+  const limit = Math.min(10, Math.max(1, Math.trunc(args.limit ?? 5)));
+  const skills = normalizeSkills(args.skills);
+  const skillByTechnician = new Map(
+    skills
+      .filter((skill) => skill.categoryId === args.categoryId)
+      .map((skill) => [skill.technicianId, skill]),
+  );
+  const workloadByTechnician = new Map<string, { open: number; overdue: number }>();
+
+  for (const ticket of args.openTickets) {
+    const technicianId = text(ticket, 'assignee_id');
+    if (!technicianId) continue;
+    const current = workloadByTechnician.get(technicianId) ?? { open: 0, overdue: 0 };
+    current.open += 1;
+    const dueAt = validDate(ticket.due_at);
+    if (dueAt && dueAt.getTime() < now.getTime()) current.overdue += 1;
+    workloadByTechnician.set(technicianId, current);
+  }
+
+  const excluded = { unassessed: 0, belowMinimum: 0, unavailable: 0 };
+  const candidates: TechnicianSkillRecommendation[] = [];
+
+  for (const technician of args.technicians) {
+    const technicianId = text(technician, 'id');
+    if (!technicianId) continue;
+    const skill = skillByTechnician.get(technicianId);
+    if (!skill) {
+      excluded.unassessed += 1;
+      continue;
+    }
+    if (skill.level < minLevel) {
+      excluded.belowMinimum += 1;
+      continue;
+    }
+    if (skill.availability === 'unavailable') {
+      excluded.unavailable += 1;
+      continue;
+    }
+
+    const workload = workloadByTechnician.get(technicianId) ?? { open: 0, overdue: 0 };
+    const locationMatch = matchesSearch(skill.location, args.location);
+    const productMatch = matchesSearch(skill.productTechnology, args.productTechnology);
+    const currentCertification = certificationIsCurrent(skill.certificationExpiry, now);
+    const availabilityScore = skill.availability === 'available' ? 20 : 8;
+    const workloadPenalty = Math.min(workload.open, 12) * 2 + Math.min(workload.overdue, 5) * 5;
+    const score = Math.max(0, Math.round(
+      skill.level * 10
+      + availabilityScore
+      + (locationMatch ? 10 : 0)
+      + (productMatch ? 10 : 0)
+      + (currentCertification ? 5 : 0)
+      - workloadPenalty,
+    ));
+    const reasons = [
+      `Proficiency ${skill.level}/5`,
+      skill.availability === 'available' ? 'พร้อมรับงาน' : 'พร้อมรับงานแบบจำกัด',
+      `งานค้าง ${workload.open}${workload.overdue ? ` · เกินกำหนด ${workload.overdue}` : ''}`,
+    ];
+    if (locationMatch) reasons.push('ตรงพื้นที่ปฏิบัติงาน');
+    if (productMatch) reasons.push('ตรง Product/Technology');
+    if (currentCertification) reasons.push('Certification ยังไม่หมดอายุ');
+    if (skill.certification && !currentCertification) reasons.push('ตรวจสอบ Certification เพิ่มเติม');
+
+    candidates.push({
+      technicianId,
+      name: text(technician, 'full_name') || text(technician, 'email') || 'ไม่ระบุชื่อ',
+      email: technician.email ? String(technician.email) : null,
+      skill: skill.skill,
+      proficiency: skill.level,
+      certification: skill.certification,
+      certificationExpiry: skill.certificationExpiry,
+      productTechnology: skill.productTechnology,
+      location: skill.location,
+      availability: skill.availability,
+      workload,
+      score,
+      reasons,
+    });
+  }
+
+  candidates.sort((a, b) => b.score - a.score || a.workload.open - b.workload.open || a.workload.overdue - b.workload.overdue || a.name.localeCompare(b.name, 'th'));
+  return { recommendations: candidates.slice(0, limit), considered: args.technicians.length, excluded };
 }

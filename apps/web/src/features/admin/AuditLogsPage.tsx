@@ -1,9 +1,10 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { Badge } from '../../components/ui/Badge';
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, FileClock, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { AlertTriangle, Archive, CheckCircle2, FileClock, Fingerprint, Loader2, LogIn, Search, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, StatCard } from '../../components/ui/Card';
@@ -13,9 +14,42 @@ import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AuditLogItem, AuditOverview, LoginLogItem, PaginatedResult } from '../../types/admin';
 import { formatThaiDate } from '../../utils/date';
+import { useAuth } from '../../stores/authContext';
 import { auditChanges, auditChangesText, auditContext, auditFieldLabel, auditSummary, auditValueText, hasAuditDetail } from './auditDisplay';
 
 type LogTab = 'audit' | 'login';
+
+interface AuditControls {
+  retention: { audit_retention_days: number; login_retention_days: number; archive_after_days: number; legal_hold: boolean } | null;
+  archive: { auditRows: number; loginRows: number };
+  integrity: { auditHashed: number; auditTotal: number; loginHashed: number; loginTotal: number };
+  openAlertCount: number;
+  alerts: Array<{ id: string; alert_type: string; severity: string; title: string; message: string; event_count: number; last_seen_at: string }>;
+}
+
+interface EvidencePackageResult {
+  filename: string;
+  content: string;
+  checksum: string;
+  rowCounts: Record<string, number>;
+}
+
+interface IntegrityResult {
+  checkedAt: string;
+  algorithm: string;
+  status: 'PASS' | 'WARN' | 'FAIL';
+  audit: { total: number; verified: number; tampered: number; unverified: number };
+  login: { total: number; verified: number; tampered: number; unverified: number };
+}
+
+function downloadText(content: string, fileName: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 const resultTone: Record<AuditLogItem['result'], 'success' | 'warning' | 'danger'> = {
   success: 'success',
@@ -57,6 +91,21 @@ function AuditDetailModal({ log, onClose }: { log: AuditLogItem; onClose: () => 
           <div key={label}>
             <dt className="text-xs font-semibold text-slate-400">{label}</dt>
             <dd className="mt-1 break-all font-medium text-slate-700 dark:text-slate-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm md:grid-cols-4 dark:border-slate-700">
+        {[
+          ['Event Category', log.event_category ?? 'system'],
+          ['Privileged Action', log.privileged_action ? 'Yes' : 'No'],
+          ['Request ID', log.request_id ?? '—'],
+          ['Correlation ID', log.correlation_id ?? log.request_id ?? '—'],
+          ['Hash', log.entry_hash ? `${log.hash_algorithm ?? 'sha256'}:${log.entry_hash.slice(0, 16)}…` : 'legacy / unverified'],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs font-semibold text-slate-400">{label}</dt>
+            <dd className="mt-1 break-all font-mono text-xs font-medium text-slate-700 dark:text-slate-200">{value}</dd>
           </div>
         ))}
       </dl>
@@ -112,15 +161,22 @@ function AuditDetailModal({ log, onClose }: { log: AuditLogItem; onClose: () => 
 }
 
 export function AuditLogsPage() {
-  const table = useTableParams<'tab' | 'from' | 'to' | 'actor' | 'module' | 'action' | 'result'>({
-    filters: ['tab', 'from', 'to', 'actor', 'module', 'action', 'result'],
+  const table = useTableParams<'tab' | 'from' | 'to' | 'actor' | 'module' | 'action' | 'result' | 'eventCategory' | 'privileged' | 'eventType'>({
+    filters: ['tab', 'from', 'to', 'actor', 'module', 'action', 'result', 'eventCategory', 'privileged', 'eventType'],
   });
   const { page, pageSize } = table;
-  const { from, to, actor, module, action, result } = table.filters;
+  const { from, to, actor, module, action, result, eventCategory, privileged, eventType } = table.filters;
   const tab: LogTab = table.filters.tab === 'login' ? 'login' : 'audit';
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  const { hasPermission } = useAuth();
+  const canExportEvidence = hasPermission('evidence.export');
+  const canVerifyIntegrity = hasPermission('audit_management.verify');
+  const canArchive = hasPermission('audit_management.manage');
+  const [evidenceMonth, setEvidenceMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [archiveCutoff, setArchiveCutoff] = useState('');
+
+  const filterQueryString = useMemo(() => {
+    const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     if (actor.trim()) params.set(tab === 'audit' ? 'actor' : 'email', actor.trim());
@@ -128,9 +184,21 @@ export function AuditLogsPage() {
       if (module.trim()) params.set('module', module.trim());
       if (action.trim()) params.set('action', action.trim());
       if (result) params.set('result', result);
-    } else if (result) params.set('success', result);
+      if (eventCategory) params.set('eventCategory', eventCategory);
+      if (privileged) params.set('privileged', privileged);
+    } else {
+      if (result) params.set('success', result);
+      if (eventType) params.set('eventType', eventType);
+    }
     return params.toString();
-  }, [action, actor, from, module, page, pageSize, result, tab, to]);
+  }, [action, actor, eventCategory, eventType, from, module, privileged, result, tab, to]);
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams(filterQueryString);
+    params.set('page', String(page));
+    params.set('pageSize', String(pageSize));
+    return params.toString();
+  }, [filterQueryString, page, pageSize]);
 
   const overviewQuery = useQuery({
     queryKey: ['admin', 'audit-overview'],
@@ -142,10 +210,27 @@ export function AuditLogsPage() {
       ? apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs?${queryString}`)
       : apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs/login-logs?${queryString}`),
   });
+  const controlsQuery = useQuery({
+    queryKey: ['admin', 'audit-controls'],
+    queryFn: () => apiFetch<AuditControls>('/api/v1/audit-logs/controls'),
+  });
+  const integrityQuery = useQuery({
+    queryKey: ['admin', 'audit-integrity'],
+    enabled: false,
+    queryFn: () => apiFetch<IntegrityResult>('/api/v1/audit-logs/integrity'),
+  });
+  const evidenceMutation = useMutation({
+    mutationFn: () => apiFetch<EvidencePackageResult>(`/api/v1/audit-logs/evidence-package?month=${encodeURIComponent(evidenceMonth)}`),
+    onSuccess: (result) => downloadText(result.content, result.filename, 'application/json;charset=utf-8'),
+  });
+  const archiveMutation = useMutation({
+    mutationFn: () => apiFetch<{ audit_archived: number; login_archived: number }>('/api/v1/audit-logs/archive', { method: 'POST', body: JSON.stringify({ cutoff: new Date(`${archiveCutoff}T23:59:59+07:00`).toISOString() }) }),
+    onSuccess: () => { setArchiveCutoff(''); void controlsQuery.refetch(); },
+  });
 
   // สลับแท็บแล้วต้องล้างตัวกรองที่มีเฉพาะแท็บเดิม ไม่งั้น query จะพกค่าที่อีกแท็บไม่รู้จักติดไปด้วย
   const switchTab = (next: LogTab) => {
-    table.setFilters({ tab: next === 'audit' ? '' : next, actor: '', module: '', action: '', result: '' });
+    table.setFilters({ tab: next === 'audit' ? '' : next, actor: '', module: '', action: '', result: '', eventCategory: '', privileged: '', eventType: '' });
   };
 
   return (
@@ -162,6 +247,37 @@ export function AuditLogsPage() {
         </div>
       )}
 
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardBody className="space-y-3">
+            <div className="flex items-center gap-2"><Fingerprint className="h-5 w-5 text-primary-600" /><h2 className="font-bold text-slate-800 dark:text-slate-100">Audit Controls</h2></div>
+            {controlsQuery.isLoading && <Loader2 className="h-5 w-5 animate-spin text-primary-600" />}
+            {controlsQuery.data && <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-slate-500">Hash coverage</p><p className="font-semibold">{controlsQuery.data.integrity.auditHashed + controlsQuery.data.integrity.loginHashed} / {controlsQuery.data.integrity.auditTotal + controlsQuery.data.integrity.loginTotal}</p></div>
+              <div><p className="text-xs text-slate-500">Open alerts</p><p className="font-semibold text-amber-700">{controlsQuery.data.openAlertCount}</p></div>
+              <div><p className="text-xs text-slate-500">Retention</p><p className="font-semibold">{controlsQuery.data.retention?.audit_retention_days ?? '—'}d audit · {controlsQuery.data.retention?.login_retention_days ?? '—'}d login</p></div>
+              <div><p className="text-xs text-slate-500">Archive</p><p className="font-semibold">{controlsQuery.data.archive.auditRows + controlsQuery.data.archive.loginRows} rows · after {controlsQuery.data.retention?.archive_after_days ?? '—'}d</p></div>
+            </div>}
+            {controlsQuery.data?.alerts.slice(0, 3).map((alert) => <div key={alert.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><p className="font-semibold">{alert.title} · {alert.event_count}</p><p>{alert.message}</p></div>)}
+            {canArchive && <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3 dark:border-slate-700"><label className="text-xs font-semibold text-slate-500">Archive rows before<input type="date" value={archiveCutoff} onChange={(event) => setArchiveCutoff(event.target.value)} className="mt-1 block rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label><Button size="sm" variant="outline" disabled={!archiveCutoff} isLoading={archiveMutation.isPending} onClick={() => archiveMutation.mutate()}><Archive className="h-4 w-4" />Archive evidence</Button></div>}
+            {archiveMutation.isSuccess && <p className="text-xs text-emerald-700">Archived successfully; source rows remain immutable and online.</p>}
+            {archiveMutation.error && <p className="text-xs font-semibold text-red-600" role="alert">{errorText(archiveMutation.error)}</p>}
+            {canVerifyIntegrity && <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" isLoading={integrityQuery.isFetching} onClick={() => integrityQuery.refetch()}><CheckCircle2 className="h-4 w-4" />Verify Integrity</Button>{integrityQuery.data && <Badge variant={integrityQuery.data.status === 'PASS' ? 'success' : integrityQuery.data.status === 'WARN' ? 'warning' : 'danger'}>{integrityQuery.data.status} · {integrityQuery.data.audit.verified + integrityQuery.data.login.verified} verified</Badge>}</div>}
+            {integrityQuery.error && <p className="text-xs font-semibold text-red-600" role="alert">{errorText(integrityQuery.error)}</p>}
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="space-y-3">
+            <div className="flex items-center gap-2"><Archive className="h-5 w-5 text-primary-600" /><h2 className="font-bold text-slate-800 dark:text-slate-100">Audit Evidence Package</h2></div>
+            <p className="text-sm text-slate-500">Export monthly evidence: Audit Log, Login, Change, Access Review, and Backup Evidence.</p>
+            <div className="flex flex-wrap items-end gap-2"><label className="text-xs font-semibold text-slate-500">Month<input type="month" value={evidenceMonth} onChange={(event) => setEvidenceMonth(event.target.value)} className="mt-1 block rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label><Button size="sm" disabled={!canExportEvidence || !evidenceMonth} isLoading={evidenceMutation.isPending} onClick={() => evidenceMutation.mutate()}><Archive className="h-4 w-4" />Export Evidence Package</Button></div>
+            {!canExportEvidence && <p className="text-xs text-slate-500">ต้องมีสิทธิ์ evidence.export</p>}
+            {evidenceMutation.isSuccess && <p className="break-all text-xs text-emerald-700">SHA-256: {evidenceMutation.data.checksum}</p>}
+            {evidenceMutation.error && <p className="text-xs font-semibold text-red-600" role="alert">{errorText(evidenceMutation.error)}</p>}
+          </CardBody>
+        </Card>
+      </div>
+
       <Card>
         <CardBody className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -171,6 +287,7 @@ export function AuditLogsPage() {
             </div>
             <ExportCsvButton
               disabled={!logsQuery.data?.items.length}
+              label="ส่งออกหน้าปัจจุบัน"
               fileName={`${tab === 'audit' ? 'audit-trail' : 'login-history'}-page-${page}.csv`}
               getRows={() => (tab === 'audit'
                 ? [
@@ -198,15 +315,25 @@ export function AuditLogsPage() {
                   ]),
                 ])}
             />
+            <ExportAllButton
+              disabled={!logsQuery.data?.pagination.totalItems}
+              label="ส่งออกตาม Filter ทั้งหมด"
+              url={`/api/v1/audit-logs/${tab === 'audit' ? 'export' : 'login-logs/export'}${filterQueryString ? `?${filterQueryString}` : ''}`}
+            />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
             <label className="text-xs font-semibold text-slate-500">ตั้งแต่วันที่<input aria-label="ตั้งแต่วันที่" type="date" value={from} onChange={(event) => table.setFilter('from', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
             <label className="text-xs font-semibold text-slate-500">ถึงวันที่<input aria-label="ถึงวันที่" type="date" value={to} onChange={(event) => table.setFilter('to', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
             <label className="text-xs font-semibold text-slate-500">{tab === 'audit' ? 'ผู้ดำเนินการ' : 'อีเมล'}<div className="relative mt-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={actor} onChange={(event) => table.setFilter('actor', event.target.value, { replace: true })} placeholder="ค้นหาอีเมล" className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></div></label>
             {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">โมดูล<input value={module} onChange={(event) => table.setFilter('module', event.target.value, { replace: true })} placeholder="เช่น settings" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
             {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">การกระทำ<input value={action} onChange={(event) => table.setFilter('action', event.target.value, { replace: true })} placeholder="เช่น UPDATE_SETTING" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>}
             <label className="text-xs font-semibold text-slate-500">ผลลัพธ์<select value={result} onChange={(event) => table.setFilter('result', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทั้งหมด</option>{tab === 'audit' ? <><option value="success">success</option><option value="fail">fail</option><option value="denied">denied</option></> : <><option value="true">สำเร็จ</option><option value="false">ไม่สำเร็จ</option></>}</select></label>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">Event Category<select value={eventCategory} onChange={(event) => table.setFilter('eventCategory', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">All categories</option><option value="authentication">authentication</option><option value="authorization">authorization</option><option value="data_change">data_change</option><option value="privileged_action">privileged_action</option><option value="administration">administration</option><option value="access_review">access_review</option><option value="backup">backup</option><option value="export">export</option><option value="security">security</option><option value="system">system</option></select></label>}
+            {tab === 'audit' && <label className="text-xs font-semibold text-slate-500">Privileged Action<select value={privileged} onChange={(event) => table.setFilter('privileged', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">All</option><option value="true">Yes</option><option value="false">No</option></select></label>}
+            {tab === 'login' && <label className="text-xs font-semibold text-slate-500">Authentication Event<select value={eventType} onChange={(event) => table.setFilter('eventType', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">All events</option><option value="login_attempt">login_attempt</option><option value="logout">logout</option><option value="mfa_challenge">mfa_challenge</option><option value="password_reset">password_reset</option><option value="password_change">password_change</option><option value="session_refresh">session_refresh</option></select></label>}
           </div>
         </CardBody>
       </Card>
@@ -249,6 +376,8 @@ export function AuditTable({ items, rowNumberStart = 1 }: { items: AuditLogItem[
                 <td className="px-4 py-3">
                   <code className="text-xs font-semibold text-primary-700 dark:text-primary-300">{log.action}</code>
                   <p className="mt-1 text-xs text-slate-500">{log.module}</p>
+                  <p className="mt-1 text-[11px] text-slate-400">{log.event_category ?? 'system'}{log.privileged_action ? ' · privileged' : ''}</p>
+                  {log.correlation_id && <p className="max-w-40 truncate font-mono text-[10px] text-slate-400" title={log.correlation_id}>CID {log.correlation_id}</p>}
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-500">
                   {log.target_table ?? '—'}

@@ -1,4 +1,5 @@
 import { DataTable, TablePagination } from '../../components/table/DataTable';
+import { ExportAllButton } from '../../components/table/ExportAllButton';
 import { useTableParams } from '../../hooks/useTableParams';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +22,7 @@ import {
   UsersRound,
   Wrench,
 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -34,9 +35,8 @@ import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Employee, EmployeeOption, PaginatedResult } from '../../types/admin';
 import type { AssetOption, ChecklistItem, MaintenancePlan, PmTemplate } from '../../types/assets';
-import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_STATUSES, PM_WORK_TYPES } from '../../types/assets';
+import { PM_CHECK_RESULTS, PM_RECURRENCES, PM_RECURRENCE_BASES, PM_RESULT_STATUSES, PM_STATUSES, PM_WORK_TYPES } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
-import { downloadCsv } from '../../utils/csv';
 import { cn } from '../../utils/cn';
 import { formatThaiDate } from '../../utils/date';
 import { PmRosterView } from './PmRosterView';
@@ -113,6 +113,7 @@ function CreatePlanForm({
   const [assetId, setAssetId] = useState('');
   const [planDate, setPlanDate] = useState('');
   const [recurrence, setRecurrence] = useState<(typeof PM_RECURRENCES)[number]>('ครั้งเดียว');
+  const [recurrenceBasis, setRecurrenceBasis] = useState<(typeof PM_RECURRENCE_BASES)[number]>('กำหนดเดิม');
   const [workType, setWorkType] = useState<(typeof PM_WORK_TYPES)[number]>('PM');
   const [technicianId, setTechnicianId] = useState('');
   const [templateId, setTemplateId] = useState('');
@@ -131,6 +132,7 @@ function CreatePlanForm({
           planDate,
           workType,
           recurrence,
+          recurrenceBasis,
           technicianId: technicianId || undefined,
           templateId: templateId || undefined,
           vendorId: vendorId || undefined,
@@ -179,6 +181,12 @@ function CreatePlanForm({
         <select data-testid="pm-create-recurrence" value={recurrence} onChange={(event) => setRecurrence(event.target.value as (typeof PM_RECURRENCES)[number])} className={fieldClass}>
           {PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}
         </select>
+      </FormField>
+      <FormField label="ฐานคำนวณรอบถัดไป">
+        <select data-testid="pm-create-recurrence-basis" value={recurrenceBasis} onChange={(event) => setRecurrenceBasis(event.target.value as (typeof PM_RECURRENCE_BASES)[number])} className={fieldClass}>
+          {PM_RECURRENCE_BASES.map((value) => <option key={value}>{value}</option>)}
+        </select>
+        <span className="mt-1 block text-[11px] text-slate-400">กำหนดเดิม = ยึดวันที่วางแผนของรอบนี้ · วันทำเสร็จ = ยึดวันที่ปิดงานจริง</span>
       </FormField>
       <FormField label="ผู้รับผิดชอบ">
         <select value={technicianId} onChange={(event) => setTechnicianId(event.target.value)} className={fieldClass}>
@@ -230,8 +238,9 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<PlanActionMode>('overview');
   const [technicianId, setTechnicianId] = useState(plan.technician_id ?? '');
-  const [resultStatus, setResultStatus] = useState<(typeof PM_STATUSES)[number]>('ดำเนินการแล้ว');
-  const [checklistResults, setChecklistResults] = useState<ChecklistItem[]>(plan.checklist_json ?? []);
+  const [resultStatus, setResultStatus] = useState<(typeof PM_RESULT_STATUSES)[number]>('ดำเนินการแล้ว');
+  const [actualDate, setActualDate] = useState(localDateKey());
+  const [checklistResults, setChecklistResults] = useState<ChecklistItem[]>(() => (plan.checklist_json ?? []).map((item) => ({ ...item, result: item.result ?? 'ยังไม่ตรวจ' })));
   const [resultNotes, setResultNotes] = useState('');
   const [newDate, setNewDate] = useState(plan.plan_date);
   const [reason, setReason] = useState('');
@@ -251,19 +260,20 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
     ...mutationOptions('เริ่มดำเนินการ PM แล้ว'),
   });
   const resultMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/result`, { method: 'POST', body: JSON.stringify({ status: resultStatus, checklistResults: checklistResults.length ? checklistResults : undefined, notes: resultNotes || undefined }) }),
+    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/result`, { method: 'POST', body: JSON.stringify({ status: resultStatus, actualDate: resultStatus === 'ดำเนินการแล้ว' ? actualDate : undefined, checklistResults, notes: resultNotes || undefined }) }),
     ...mutationOptions('บันทึกผล PM สำเร็จ'),
   });
   const rescheduleMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/reschedule`, { method: 'POST', body: JSON.stringify({ planDate: newDate, reason: reason || undefined }) }),
+    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/reschedule`, { method: 'POST', body: JSON.stringify({ planDate: newDate, reason }) }),
     ...mutationOptions('เลื่อนวันแผน PM สำเร็จ'),
   });
   const cancelMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) }),
+    mutationFn: () => apiFetch(`/api/v1/maintenance-plans/${plan.id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
     ...mutationOptions('ยกเลิกแผน PM แล้ว'),
   });
   const terminal = plan.status === 'ดำเนินการแล้ว' || plan.status === 'ยกเลิก';
   const busy = startMutation.isPending || resultMutation.isPending || rescheduleMutation.isPending || cancelMutation.isPending;
+  const incompleteRequired = checklistResults.filter((item) => item.required !== false && (!item.result || item.result === 'ยังไม่ตรวจ')).length;
 
   const actionItems = [
     { mode: 'start' as const, label: 'เริ่มดำเนินการ', description: 'มอบหมายผู้รับผิดชอบและเปลี่ยนสถานะงาน', icon: CirclePlay, hidden: terminal, tone: 'text-primary-700 bg-primary-50 dark:bg-primary-900/30' },
@@ -278,7 +288,8 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.asset_code} — {plan.asset?.name}</p>
-            <p className="mt-1 text-xs text-slate-500">กำหนด {formatThaiDate(plan.plan_date, 'd MMM yyyy')} · {plan.recurrence}</p>
+            <p className="mt-1 text-xs text-slate-500">กำหนด {formatThaiDate(plan.plan_date, 'd MMM yyyy')} · {plan.recurrence} · รอบถัดไปยึด{plan.recurrence_basis}</p>
+            {plan.original_plan_date !== plan.plan_date && <p className="mt-1 text-[11px] text-amber-700">กำหนดเดิม {formatThaiDate(plan.original_plan_date, 'd MMM yyyy')} (เลื่อนแล้ว)</p>}
           </div>
           <Badge variant={statusTone[plan.status]}>{plan.status}</Badge>
         </div>
@@ -295,7 +306,7 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
                 </button>
               );
             })}
-            {actionItems.every((item) => item.hidden) && <div className="py-8 text-center text-sm text-slate-500 sm:col-span-2">แผนนี้สิ้นสุดแล้ว ไม่มี Action เพิ่มเติม</div>}
+            {actionItems.every((item) => item.hidden) && <div className="py-8 text-center text-sm text-slate-500 sm:col-span-2">งานนี้ปิดแล้วและแก้ผลเดิมไม่ได้ หากต้องแก้ไขให้สร้างแผนใหม่พร้อมระบุเหตุผล ระบบจะเก็บประวัติแผนเดิมไว้</div>}
           </div>
         )}
         {mode === 'start' && (
@@ -314,23 +325,27 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
           <div className="space-y-4">
             <button type="button" onClick={() => setMode('overview')} className="text-xs font-semibold text-primary-700">← กลับไปเลือก Action</button>
             <FormField label="สถานะหลังบันทึก">
-              <select value={resultStatus} onChange={(event) => setResultStatus(event.target.value as (typeof PM_STATUSES)[number])} data-testid={`pm-result-status-${plan.id}`} className={fieldClass}>
-                {PM_STATUSES.filter((value) => value !== 'วางแผน').map((value) => <option key={value}>{value}</option>)}
+              <select value={resultStatus} onChange={(event) => setResultStatus(event.target.value as (typeof PM_RESULT_STATUSES)[number])} data-testid={`pm-result-status-${plan.id}`} className={fieldClass}>
+                {PM_RESULT_STATUSES.map((value) => <option key={value}>{value}</option>)}
               </select>
+            </FormField>
+            <FormField label="วันที่ทำเสร็จ" required>
+              <input type="date" value={actualDate} onChange={(event) => setActualDate(event.target.value)} className={fieldClass} />
             </FormField>
             {checklistResults.length > 0 && (
               <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
                 <div className="bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300">ผลตรวจเช็กลิสต์</div>
                 {checklistResults.map((item, index) => (
                   <div key={`${item.text}-${index}`} className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 text-sm dark:border-slate-700 sm:flex-row sm:items-center">
-                    <span className="flex-1 text-slate-700 dark:text-slate-200">{index + 1}. {item.text}</span>
-                    <select value={item.result ?? 'ผ่าน'} onChange={(event) => { const next = [...checklistResults]; next[index] = { ...item, result: event.target.value as ChecklistItem['result'] }; setChecklistResults(next); }} className={cn(fieldClass, 'h-9 sm:w-36')}>
+                    <span className="flex-1 text-slate-700 dark:text-slate-200">{index + 1}. {item.text}{item.required !== false && <span className="ml-1 text-[11px] font-semibold text-red-600">จำเป็น</span>}</span>
+                    <select value={item.result ?? 'ยังไม่ตรวจ'} onChange={(event) => { const next = [...checklistResults]; next[index] = { ...item, result: event.target.value as ChecklistItem['result'] }; setChecklistResults(next); }} className={cn(fieldClass, 'h-9 sm:w-36')}>
                       {PM_CHECK_RESULTS.map((value) => <option key={value}>{value}</option>)}
                     </select>
                   </div>
                 ))}
               </div>
             )}
+            {resultStatus === 'ดำเนินการแล้ว' && incompleteRequired > 0 && <p className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">ยังมีรายการที่จำเป็นต้องระบุผลอีก {incompleteRequired} รายการก่อนปิดงาน</p>}
             <FormField label="สรุปผล / หมายเหตุ">
               <textarea value={resultNotes} onChange={(event) => setResultNotes(event.target.value)} rows={3} className={cn(fieldClass, 'h-auto min-h-24 py-2.5')} />
             </FormField>
@@ -340,23 +355,23 @@ function PlanActions({ plan, technicians, onClose, onSaved }: { plan: Maintenanc
           <div className="space-y-4">
             <button type="button" onClick={() => setMode('overview')} className="text-xs font-semibold text-primary-700">← กลับไปเลือก Action</button>
             <FormField label="วันที่วางแผนใหม่" required><input type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} className={fieldClass} /></FormField>
-            <FormField label="เหตุผล"><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className={cn(fieldClass, 'h-auto min-h-24 py-2.5')} /></FormField>
+            <FormField label="เหตุผล" required><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className={cn(fieldClass, 'h-auto min-h-24 py-2.5')} /></FormField>
           </div>
         )}
         {mode === 'cancel' && (
           <div className="space-y-4">
             <button type="button" onClick={() => setMode('overview')} className="text-xs font-semibold text-primary-700">← กลับไปเลือก Action</button>
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">ยืนยันว่าต้องการยกเลิกแผน PM นี้ กรุณาระบุเหตุผลเพื่อใช้ตรวจสอบย้อนหลัง</div>
-            <FormField label="เหตุผลยกเลิก"><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className={cn(fieldClass, 'h-auto min-h-24 py-2.5')} /></FormField>
+            <FormField label="เหตุผลยกเลิก" required><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className={cn(fieldClass, 'h-auto min-h-24 py-2.5')} /></FormField>
           </div>
         )}
         {serverError && <p role="alert" className="mt-4 text-xs text-red-600">{serverError}</p>}
         <ModalFooter>
           <Button variant="outline" disabled={busy} onClick={onClose}>ปิด</Button>
           {mode === 'start' && <Button isLoading={startMutation.isPending} data-testid={`pm-start-submit-${plan.id}`} onClick={() => startMutation.mutate()}>ยืนยันเริ่มงาน</Button>}
-          {mode === 'result' && <Button isLoading={resultMutation.isPending} data-testid={`pm-result-submit-${plan.id}`} onClick={() => resultMutation.mutate()}>บันทึกผล PM</Button>}
-          {mode === 'reschedule' && <Button isLoading={rescheduleMutation.isPending} disabled={!newDate} data-testid={`pm-reschedule-submit-${plan.id}`} onClick={() => rescheduleMutation.mutate()}>บันทึกวันใหม่</Button>}
-          {mode === 'cancel' && <Button variant="danger" isLoading={cancelMutation.isPending} data-testid={`pm-cancel-submit-${plan.id}`} onClick={() => cancelMutation.mutate()}>ยืนยันยกเลิก</Button>}
+          {mode === 'result' && <Button isLoading={resultMutation.isPending} disabled={!actualDate || (resultStatus === 'ดำเนินการแล้ว' && incompleteRequired > 0)} data-testid={`pm-result-submit-${plan.id}`} onClick={() => resultMutation.mutate()}>บันทึกผล PM</Button>}
+          {mode === 'reschedule' && <Button isLoading={rescheduleMutation.isPending} disabled={!newDate || !reason.trim()} data-testid={`pm-reschedule-submit-${plan.id}`} onClick={() => rescheduleMutation.mutate()}>บันทึกวันใหม่</Button>}
+          {mode === 'cancel' && <Button variant="danger" isLoading={cancelMutation.isPending} disabled={!reason.trim()} data-testid={`pm-cancel-submit-${plan.id}`} onClick={() => cancelMutation.mutate()}>ยืนยันยกเลิก</Button>}
         </ModalFooter>
       </div>
     </div>
@@ -415,7 +430,7 @@ function AnalyticsPanel({ plans }: { plans: MaintenancePlan[] }) {
   const completed = plans.filter((plan) => plan.status === 'ดำเนินการแล้ว');
   const passCount = completed.filter((plan) => plan.checklist_json.length > 0 && plan.checklist_json.every((item) => item.result === 'ผ่าน' || item.result === 'N/A')).length;
   const recurring = plans.filter((plan) => plan.recurrence !== 'ครั้งเดียว').length;
-  const onTime = completed.filter((plan) => !plan.actual_date || plan.actual_date <= plan.plan_date).length;
+  const onTime = completed.filter((plan) => !plan.actual_date || plan.actual_date <= plan.original_plan_date).length;
   const metrics = [
     { label: 'อัตราปิดงาน', value: plans.length ? Math.round((completed.length / plans.length) * 100) : 0, suffix: '%' },
     { label: 'เสร็จตามกำหนด', value: completed.length ? Math.round((onTime / completed.length) * 100) : 0, suffix: '%' },
@@ -506,17 +521,11 @@ function CalendarView({ plans, month, onMonthChange, onSelect }: { plans: Mainte
   );
 }
 
-function ExportPanel({ plans, onClose }: { plans: MaintenancePlan[]; onClose: () => void }) {
-  const download = () => {
-    const headers = ['Asset Code', 'Asset Name', 'Plan Date', 'Recurrence', 'Owner', 'Status'];
-    const rows = plans.map((plan) => [plan.asset?.asset_code ?? '', plan.asset?.name ?? '', plan.plan_date, plan.recurrence, employeeName(plan.technician), plan.status]);
-    downloadCsv([headers, ...rows], `pm-plans-${localDateKey()}.csv`);
-    onClose();
-  };
+function ExportPanel({ url, totalItems, onClose }: { url: string; totalItems: number; onClose: () => void }) {
   return (
     <div className="p-5">
-      <div className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30"><FileSpreadsheet className="h-5 w-5" /></span><div><p className="font-bold text-slate-800 dark:text-slate-100">CSV สำหรับ Excel / Google Sheets</p><p className="mt-1 text-xs leading-relaxed text-slate-500">ส่งออก {plans.length} รายการตามตัวกรองปัจจุบัน พร้อม Asset, วันกำหนด, รอบ, ผู้รับผิดชอบ และสถานะ</p></div></div>
-      <ModalFooter><Button variant="outline" onClick={onClose}>ยกเลิก</Button><Button onClick={download}><Download className="h-4 w-4" /> ดาวน์โหลด CSV</Button></ModalFooter>
+      <div className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30"><FileSpreadsheet className="h-5 w-5" /></span><div><p className="font-bold text-slate-800 dark:text-slate-100">CSV สำหรับ Excel / Google Sheets</p><p className="mt-1 text-xs leading-relaxed text-slate-500">ส่งออกข้อมูล PM ครบ {totalItems.toLocaleString('th-TH')} รายการตามตัวกรองและช่วงวันที่ปัจจุบัน</p></div></div>
+      <ModalFooter><Button variant="outline" onClick={onClose}>ยกเลิก</Button><ExportAllButton url={url} label="ดาวน์โหลด CSV" disabled={totalItems === 0} /></ModalFooter>
     </div>
   );
 }
@@ -527,16 +536,21 @@ export function MaintenancePage() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<MaintenancePlan | null>(null);
-  const table = useTableParams<'status' | 'recurrence' | 'search' | 'view'>({ filters: ['status', 'recurrence', 'search', 'view'] });
+  const table = useTableParams<'status' | 'recurrence' | 'search' | 'planDateFrom' | 'planDateTo' | 'view'>({ filters: ['status', 'recurrence', 'search', 'planDateFrom', 'planDateTo', 'view'] });
   const { page, pageSize } = table;
-  const { status, recurrence, search } = table.filters;
+  const { status, recurrence, search, planDateFrom, planDateTo } = table.filters;
   const view: 'list' | 'calendar' | 'roster' = table.filters.view === 'calendar' ? 'calendar' : table.filters.view === 'roster' ? 'roster' : 'list';
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  const plansQuery = useQuery({ queryKey: ['maintenance-plans', 'dashboard'], queryFn: () => apiFetch<PaginatedResult<MaintenancePlan>>('/api/v1/maintenance-plans?page=1&pageSize=100') });
-  const plannedCountQuery = useQuery({ queryKey: ['maintenance-plans', 'count', 'วางแผน'], queryFn: () => apiFetch<PaginatedResult<MaintenancePlan>>(`/api/v1/maintenance-plans?page=1&pageSize=100&status=${encodeURIComponent('วางแผน')}`) });
-  const completedCountQuery = useQuery({ queryKey: ['maintenance-plans', 'count', 'ดำเนินการแล้ว'], queryFn: () => apiFetch<PaginatedResult<MaintenancePlan>>(`/api/v1/maintenance-plans?page=1&pageSize=1&status=${encodeURIComponent('ดำเนินการแล้ว')}`) });
+  const listParams = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (status) listParams.set('status', status);
+  if (recurrence) listParams.set('recurrence', recurrence);
+  if (search) listParams.set('search', search);
+  if (planDateFrom) listParams.set('planDateFrom', planDateFrom);
+  if (planDateTo) listParams.set('planDateTo', planDateTo);
+  const plansQuery = useQuery({ queryKey: ['maintenance-plans', 'dashboard', page, pageSize, status, recurrence, search, planDateFrom, planDateTo], queryFn: () => apiFetch<PaginatedResult<MaintenancePlan>>(`/api/v1/maintenance-plans?${listParams.toString()}`) });
+  const summaryQuery = useQuery({ queryKey: ['maintenance-plans', 'summary'], queryFn: () => apiFetch<{ total: number; upcoming: number; overdue: number; completed: number }>('/api/v1/maintenance-plans/summary') });
   const assetsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
   const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const templatesQuery = useQuery({ queryKey: ['pm-templates'], queryFn: () => apiFetch<PmTemplate[]>('/api/v1/pm-templates') });
@@ -544,30 +558,26 @@ export function MaintenancePage() {
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
   const contractOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'contract-options'], queryFn: () => apiFetch<ContractOption[]>('/api/v1/contracts/options') });
 
-  const items = useMemo(() => plansQuery.data?.items ?? [], [plansQuery.data]);
+  const items = plansQuery.data?.items ?? [];
   const technicians = employeesQuery.data ?? [];
-  const today = localDateKey();
-  const upcomingLimit = localDateKey(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
-  const plannedItems = plannedCountQuery.data?.items ?? [];
   const stats = {
-    total: plansQuery.data?.pagination.totalItems ?? 0,
-    upcoming: plannedItems.filter((plan) => plan.plan_date >= today && plan.plan_date <= upcomingLimit).length,
-    overdue: plannedItems.filter((plan) => plan.plan_date < today).length,
-    completed: completedCountQuery.data?.pagination.totalItems ?? 0,
+    total: summaryQuery.data?.total ?? 0,
+    upcoming: summaryQuery.data?.upcoming ?? 0,
+    overdue: summaryQuery.data?.overdue ?? 0,
+    completed: summaryQuery.data?.completed ?? 0,
   };
-  const filteredItems = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase('th');
-    return items.filter((plan) => {
-      const haystack = `${plan.asset?.asset_code ?? ''} ${plan.asset?.name ?? ''} ${employeeName(plan.technician)} ${plan.vendor?.name ?? ''}`.toLocaleLowerCase('th');
-      return (!needle || haystack.includes(needle)) && (!status || plan.status === status) && (!recurrence || plan.recurrence === recurrence);
-    });
-  }, [items, recurrence, search, status]);
-  const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pagedItems = filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const clearFilters = () => table.setFilters({ search: '', status: '', recurrence: '' });
-  const activeFilterCount = [search, status, recurrence].filter(Boolean).length;
+  const totalItems = plansQuery.data?.pagination.totalItems ?? 0;
+  const totalPages = plansQuery.data?.pagination.totalPages ?? 1;
+  const clearFilters = () => table.setFilters({ search: '', status: '', recurrence: '', planDateFrom: '', planDateTo: '' });
+  const activeFilterCount = [search, status, recurrence, planDateFrom, planDateTo].filter(Boolean).length;
   const isFormReady = Boolean(assetsQuery.data && templatesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data);
+  const exportParams = new URLSearchParams();
+  if (status) exportParams.set('status', status);
+  if (recurrence) exportParams.set('recurrence', recurrence);
+  if (search) exportParams.set('search', search);
+  if (planDateFrom) exportParams.set('planDateFrom', planDateFrom);
+  if (planDateTo) exportParams.set('planDateTo', planDateTo);
+  const exportUrl = `/api/v1/maintenance-plans/export${exportParams.toString() ? `?${exportParams.toString()}` : ''}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -604,26 +614,26 @@ export function MaintenancePage() {
                 onSearchChange={(value) => table.setFilter('search', value, { replace: true })}
                 searchLabel="ค้นหาแผน PM"
                 searchPlaceholder="ค้นหา Asset หรือผู้รับผิดชอบ..."
-                filters={<><select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className={filterControlClass}><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => table.setFilter('recurrence', event.target.value)} className={filterControlClass}><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select></>}
+                filters={<><select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className={filterControlClass}><option value="">สถานะ: ทั้งหมด</option>{PM_STATUSES.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="กรองรอบทำซ้ำ" value={recurrence} onChange={(event) => table.setFilter('recurrence', event.target.value)} className={filterControlClass}><option value="">รอบ: ทั้งหมด</option>{PM_RECURRENCES.map((value) => <option key={value}>{value}</option>)}</select><label className="inline-flex items-center gap-1 text-[11px] text-slate-500">ตั้งแต่<input aria-label="วันที่เริ่มต้น" type="date" value={planDateFrom} onChange={(event) => table.setFilter('planDateFrom', event.target.value)} className={filterControlClass} /></label><label className="inline-flex items-center gap-1 text-[11px] text-slate-500">ถึง<input aria-label="วันที่สิ้นสุด" type="date" value={planDateTo} onChange={(event) => table.setFilter('planDateTo', event.target.value)} className={filterControlClass} /></label></>}
                 onClear={clearFilters}
                 activeFilterCount={activeFilterCount}
-                resultCount={filteredItems.length}
+                resultCount={totalItems}
                 actions={<Button size="sm" variant="outline" onClick={() => setShowExport(true)} aria-haspopup="dialog"><Download className="h-4 w-4" /> ส่งออก</Button>}
               />
             </div>
 
             {plansQuery.isLoading && <div className="grid min-h-64 place-items-center" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div>}
             {plansQuery.isError && <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">โหลดรายการแผน PM ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</div>}
-            {plansQuery.data && filteredItems.length === 0 && <EmptyState icon={<Wrench className="h-10 w-10" />} title="ยังไม่มีแผน PM" message="ลองเปลี่ยนตัวกรอง หรือเพิ่มแผน PM ใหม่" />}
-            {plansQuery.data && filteredItems.length > 0 && (
+            {plansQuery.data && items.length === 0 && <EmptyState icon={<Wrench className="h-10 w-10" />} title="ยังไม่มีแผน PM" message="ลองเปลี่ยนตัวกรอง หรือเพิ่มแผน PM ใหม่" />}
+            {plansQuery.data && items.length > 0 && (
               <div className="overflow-x-auto border-y border-slate-200 dark:border-slate-700">
-                <DataTable mode="server" rowNumberStart={(currentPage - 1) * pageSize + 1} className="w-full min-w-[860px] text-left text-sm">
+                <DataTable mode="server" rowNumberStart={(page - 1) * pageSize + 1} className="w-full min-w-[860px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">Asset</th><th className="px-4 py-3">แผนวันที่</th><th className="px-4 py-3">รอบ</th><th className="px-4 py-3">ผู้รับผิดชอบ</th><th className="px-4 py-3">สถานะ</th><th className="w-20 px-4 py-3 text-center">Action</th></tr></thead>
-                  <tbody>{pagedItems.map((plan) => <tr key={plan.id} data-testid={`pm-row-${plan.id}`} className="border-t border-slate-100 transition hover:bg-primary-50/40 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="px-4 py-3"><p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.name ?? 'ไม่พบข้อมูล Asset'}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{plan.asset?.asset_code ?? '—'}</p></td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatThaiDate(plan.plan_date, 'd MMM yyyy')}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><Repeat2 className="h-3.5 w-3.5 text-slate-400" />{plan.recurrence}</span></td><td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{employeeName(plan.technician)}</td><td className="px-4 py-3"><Badge variant={statusTone[plan.status]}>{plan.status}</Badge></td><td className="px-4 py-3 text-center"><RowActions recordLabel={plan.asset?.name ?? plan.asset?.asset_code ?? plan.id} actions={[{ kind: 'custom', icon: MoreHorizontal, label: 'จัดการแผน', permission: 'maintenance.manage', onClick: () => setSelectedPlan(plan) }, { kind: 'delete', permission: 'maintenance.manage', deleteEndpoint: `/api/v1/record-deletions/maintenance-plans/${plan.id}` }]} /></td></tr>)}</tbody>
+                  <tbody>{items.map((plan) => <tr key={plan.id} data-testid={`pm-row-${plan.id}`} className="border-t border-slate-100 transition hover:bg-primary-50/40 dark:border-slate-700 dark:hover:bg-slate-700/40"><td className="px-4 py-3"><p className="font-semibold text-slate-800 dark:text-slate-100">{plan.asset?.name ?? 'ไม่พบข้อมูล Asset'}</p><p className="mt-0.5 font-mono text-[11px] text-slate-400">{plan.asset?.asset_code ?? '—'}</p></td><td className="px-4 py-3 text-slate-600 dark:text-slate-300"><p>{formatThaiDate(plan.plan_date, 'd MMM yyyy')}</p>{plan.original_plan_date !== plan.plan_date && <p className="text-[10px] text-amber-700">เดิม {formatThaiDate(plan.original_plan_date, 'd MMM yyyy')}</p>}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><Repeat2 className="h-3.5 w-3.5 text-slate-400" />{plan.recurrence}</span></td><td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{employeeName(plan.technician)}</td><td className="px-4 py-3"><Badge variant={statusTone[plan.status]}>{plan.status}</Badge></td><td className="px-4 py-3 text-center"><RowActions recordLabel={plan.asset?.name ?? plan.asset?.asset_code ?? plan.id} actions={[{ kind: 'custom', icon: MoreHorizontal, label: 'จัดการแผน', permission: 'maintenance.manage', onClick: () => setSelectedPlan(plan) }, { kind: 'delete', permission: 'maintenance.manage', deleteEndpoint: `/api/v1/record-deletions/maintenance-plans/${plan.id}` }]} /></td></tr>)}</tbody>
                 </DataTable>
               </div>
             )}
-            <div className="px-4 pb-4"><TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredItems.length} totalPages={pageCount} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>
+            <div className="px-4 pb-4"><TablePagination page={page} pageSize={pageSize} totalItems={totalItems} totalPages={totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} /></div>
           </>
         ) : view === 'calendar' ? (
           <div className="overflow-x-auto"><CalendarView plans={items} month={calendarMonth} onMonthChange={setCalendarMonth} onSelect={setSelectedPlan} /></div>
@@ -634,7 +644,7 @@ export function MaintenancePage() {
       {selectedPlan && <Modal title="จัดการแผน PM" size="lg" onClose={() => setSelectedPlan(null)} testId={`pm-action-dialog-${selectedPlan.id}`}><PlanActions plan={selectedPlan} technicians={technicians} onClose={() => setSelectedPlan(null)} onSaved={(message) => setToast({ tone: 'success', message })} /></Modal>}
       {showTemplates && <Modal title="เทมเพลตเช็กลิสต์ PM" size="lg" onClose={() => setShowTemplates(false)} testId="pm-template-dialog">{templatesAdminQuery.data ? <TemplateManager templates={templatesAdminQuery.data} onSaved={(message) => setToast({ tone: 'success', message })} /> : <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status"><Loader2 className="h-5 w-5 animate-spin" /> กำลังโหลดเทมเพลต...</div>}</Modal>}
       {showAnalytics && <Modal title="วิเคราะห์ผล PM" size="md" onClose={() => setShowAnalytics(false)} testId="pm-analytics-dialog"><AnalyticsPanel plans={items} /></Modal>}
-      {showExport && <Modal title="ส่งออกรายการ PM" size="sm" onClose={() => setShowExport(false)} testId="pm-export-dialog"><ExportPanel plans={filteredItems} onClose={() => setShowExport(false)} /></Modal>}
+      {showExport && <Modal title="ส่งออกรายการ PM" size="sm" onClose={() => setShowExport(false)} testId="pm-export-dialog"><ExportPanel url={exportUrl} totalItems={totalItems} onClose={() => setShowExport(false)} /></Modal>}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );

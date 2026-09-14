@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Link2, Link2Off, Loader2, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { ApiError, apiFetch } from '../../services/apiClient';
@@ -15,12 +16,19 @@ export interface LineLinkedAccount {
   linkStatus: string;
   friendStatus: string;
   linkedAt: string | null;
+  lastUsedAt?: string | null;
+}
+
+interface LineNotificationPreferences {
+  disabledTypes: string[];
+  updatedAt: string | null;
 }
 
 interface LineLinkState {
   available: boolean;
   unavailableReason: string;
   account: LineLinkedAccount | null;
+  notificationPreferences?: LineNotificationPreferences;
 }
 
 /** สิ่งที่จะได้รับทาง LINE เมื่อเชื่อมบัญชีแล้ว — เขียนจากมุมผู้ใช้ ไม่ใช่ชื่อ event ในระบบ */
@@ -30,6 +38,23 @@ const WHAT_YOU_GET = [
   'เอกสารและคำขอสิทธิ์ที่รอท่านอนุมัติ',
   'ข้อความใหม่ในใบงานที่ท่านเกี่ยวข้อง',
 ];
+
+const NOTIFICATION_TYPES = [
+  ['ticket_assigned', 'ได้รับมอบหมายงานแจ้งซ่อม'],
+  ['ticket_status_changed', 'อัปเดตสถานะใบงาน'],
+  ['ticket_comment', 'ข้อความใหม่ในใบงาน'],
+  ['ticket_closed', 'ปิดงานเรียบร้อย'],
+  ['response_warning', 'ใกล้ผิด Response SLA'],
+  ['response_breached', 'ผิด Response SLA แล้ว'],
+  ['resolution_warning', 'ใกล้ผิด Resolution SLA'],
+  ['resolution_breached', 'ผิด Resolution SLA แล้ว'],
+  ['workflow_approval', 'เอกสารหรือคำขอที่รออนุมัติ'],
+  ['task_reminder', 'เตือนงานของฉัน'],
+  ['incident_assigned', 'ได้รับมอบหมาย Incident'],
+  ['vulnerability_status', 'อัปเดตช่องโหว่'],
+  ['license_expiry', 'ใบอนุญาตใกล้หมดอายุ'],
+  ['contract_expiry', 'สัญญาใกล้หมดอายุ'],
+] as const;
 
 function ResultBanner({ result, onDismiss }: { result: 'linked' | 'error'; onDismiss: () => void }) {
   const linked = result === 'linked';
@@ -61,6 +86,7 @@ export function LineNotificationCard() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [starting, setStarting] = useState(false);
+  const [consentAcknowledged, setConsentAcknowledged] = useState(false);
   const result = searchParams.get('line');
 
   const { data, isLoading } = useQuery({
@@ -70,6 +96,13 @@ export function LineNotificationCard() {
 
   const unlink = useMutation({
     mutationFn: () => apiFetch('/api/v1/line/my-link', { method: 'DELETE' }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['line-my-link'] }),
+  });
+
+  const preferenceMutation = useMutation({
+    mutationFn: (disabledTypes: string[]) => apiFetch('/api/v1/line/my-link/preferences', {
+      method: 'PATCH', body: JSON.stringify({ disabledTypes }),
+    }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['line-my-link'] }),
   });
 
@@ -97,7 +130,8 @@ export function LineNotificationCard() {
     <Card>
       <CardHeader className="flex items-center gap-2">
         <MessageCircle className="h-4 w-4 text-primary-600" aria-hidden="true" />
-        การแจ้งเตือนผ่าน LINE
+        <span className="flex-1">LINE Link status / การแจ้งเตือนผ่าน LINE</span>
+        {!isLoading && data?.available && <Badge variant={account ? 'success' : 'neutral'}>{account ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}</Badge>}
       </CardHeader>
       <CardBody className="space-y-3 text-sm">
         {(result === 'linked' || result === 'error') && <ResultBanner result={result} onDismiss={dismissResult} />}
@@ -126,7 +160,16 @@ export function LineNotificationCard() {
             <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
               ก่อนเชื่อม กรุณาเพิ่มเพื่อนกับ LINE Official Account ของส่วนงาน IT ก่อน มิฉะนั้นข้อความจะส่งไปไม่ถึง
             </p>
-            <Button type="button" onClick={() => void startLinking()} isLoading={starting} disabled={starting}>
+            <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                checked={consentAcknowledged}
+                onChange={(event) => setConsentAcknowledged(event.target.checked)}
+              />
+              <span>ข้าพเจ้ายินยอมให้ระบบเชื่อมบัญชี LINE นี้กับบัญชีผู้ใช้ เพื่อรับการแจ้งเตือนที่เกี่ยวข้อง</span>
+            </label>
+            <Button type="button" onClick={() => void startLinking()} isLoading={starting} disabled={starting || !consentAcknowledged}>
               <Link2 className="h-4 w-4" aria-hidden="true" />
               เชื่อมบัญชี LINE ของฉัน
             </Button>
@@ -148,6 +191,7 @@ export function LineNotificationCard() {
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   {account.linkedAt ? `เชื่อมเมื่อ ${formatThaiDateTime(account.linkedAt)}` : 'เชื่อมกับบัญชีผู้ใช้นี้แล้ว'}
                 </p>
+                {account.lastUsedAt && <p className="text-xs text-slate-400">ใช้ล่าสุด {formatThaiDateTime(account.lastUsedAt)}</p>}
               </div>
             </div>
 
@@ -165,6 +209,34 @@ export function LineNotificationCard() {
                   : 'ยังไม่พบว่าท่านเพิ่มเพื่อนกับ LINE Official Account ของส่วนงาน IT ข้อความอาจส่งไปไม่ถึง'}
               </p>
             )}
+
+            <div className="rounded-lg border border-hairline p-3 dark:border-slate-700">
+              <p className="font-medium text-slate-800 dark:text-slate-100">เลือกประเภทการแจ้งเตือนทาง LINE</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">ปิดเฉพาะประเภทที่ไม่ต้องการได้ โดยการแจ้งเตือนในระบบจะยังคงอยู่</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {NOTIFICATION_TYPES.map(([type, label]) => {
+                  const disabledTypes = data?.notificationPreferences?.disabledTypes ?? [];
+                  return (
+                    <label key={type} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                        checked={!disabledTypes.includes(type)}
+                        disabled={preferenceMutation.isPending}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? disabledTypes.filter((item) => item !== type)
+                            : [...disabledTypes, type];
+                          preferenceMutation.mutate(next);
+                        }}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+              {preferenceMutation.isError && <p className="mt-2 text-xs text-red-600">บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่</p>}
+            </div>
 
             <Button
               type="button"

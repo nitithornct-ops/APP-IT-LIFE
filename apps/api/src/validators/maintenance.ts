@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 export const PM_STATUSES = ['วางแผน', 'กำลังดำเนินการ', 'ดำเนินการแล้ว', 'ยกเลิก'] as const;
 export const PM_RECURRENCES = ['ครั้งเดียว', 'รายเดือน', 'รายไตรมาส', 'รายปี'] as const;
-export const PM_CHECK_RESULTS = ['ผ่าน', 'ไม่ผ่าน', 'N/A'] as const;
+export const PM_RESULT_STATUSES = ['กำลังดำเนินการ', 'ดำเนินการแล้ว'] as const;
+export const PM_CHECK_RESULTS = ['ยังไม่ตรวจ', 'ผ่าน', 'ไม่ผ่าน', 'N/A'] as const;
+export const PM_RECURRENCE_BASES = ['กำหนดเดิม', 'วันทำเสร็จ'] as const;
 /** ชนิดงานสำหรับแยกสีในปฏิทิน (design handoff 3c) — ตรงกับ check constraint ใน migration 20260919100000 */
 export const PM_WORK_TYPES = ['PM', 'ลงพื้นที่', 'Change window'] as const;
 
@@ -25,6 +27,7 @@ export const createMaintenancePlanSchema = z.object({
   planDate: isoDateString,
   workType: z.enum(PM_WORK_TYPES).optional(),
   recurrence: z.enum(PM_RECURRENCES).optional(),
+  recurrenceBasis: z.enum(PM_RECURRENCE_BASES).optional(),
   technicianId: z.string().uuid().optional(),
   vendorId: z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
@@ -36,8 +39,16 @@ export type CreateMaintenancePlanInput = z.infer<typeof createMaintenancePlanSch
 
 export const listMaintenancePlansQuerySchema = paginationQuerySchema.extend({
   status: z.enum(PM_STATUSES).optional(),
+  recurrence: z.enum(PM_RECURRENCES).optional(),
   workType: z.enum(PM_WORK_TYPES).optional(),
   assetId: z.string().uuid().optional(),
+  search: z.string().trim().max(200).optional(),
+  planDateFrom: isoDateString.optional(),
+  planDateTo: isoDateString.optional(),
+}).superRefine((data, ctx) => {
+  if (data.planDateFrom && data.planDateTo && data.planDateFrom > data.planDateTo) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['planDateTo'], message: 'ช่วงวันที่ไม่ถูกต้อง' });
+  }
 });
 export type ListMaintenancePlansQuery = z.infer<typeof listMaintenancePlansQuerySchema>;
 
@@ -49,7 +60,7 @@ export const startMaintenanceSchema = z.object({
 export type StartMaintenanceInput = z.infer<typeof startMaintenanceSchema>;
 
 export const recordMaintenanceResultSchema = z.object({
-  status: z.enum(PM_STATUSES),
+  status: z.enum(PM_RESULT_STATUSES),
   actualDate: dateOrEmpty,
   checklistResults: z.array(checklistResultSchema).max(50).optional(),
   notes: z.string().trim().max(1500).optional(),
@@ -58,12 +69,12 @@ export type RecordMaintenanceResultInput = z.infer<typeof recordMaintenanceResul
 
 export const rescheduleMaintenanceSchema = z.object({
   planDate: isoDateString,
-  reason: z.string().trim().max(300).optional(),
+  reason: z.string().trim().min(1, 'กรุณาระบุเหตุผลการเลื่อนวัน').max(300),
 });
 export type RescheduleMaintenanceInput = z.infer<typeof rescheduleMaintenanceSchema>;
 
 export const cancelMaintenanceSchema = z.object({
-  reason: z.string().trim().max(300).optional(),
+  reason: z.string().trim().min(1, 'กรุณาระบุเหตุผลการยกเลิก').max(300),
 });
 export type CancelMaintenanceInput = z.infer<typeof cancelMaintenanceSchema>;
 

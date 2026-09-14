@@ -16,7 +16,7 @@ function ticketContextLine(ticket: LineTicketSummary): string {
 }
 
 export function LineTicketCard({ ticket, onOpen }: { ticket: LineTicketSummary; onOpen: (id: string) => void }) {
-  const sla = ticketSlaBadge(ticket.due_at, ticket.status);
+  const sla = ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || Boolean(ticket.sla_paused_at));
   const group = lineTicketGroup(ticket.status);
 
   return (

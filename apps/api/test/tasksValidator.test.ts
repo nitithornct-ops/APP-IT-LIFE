@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTaskSchema, listTasksQuerySchema, reorderTaskSubtaskSchema, setTaskDueDateSchema, setTaskPrioritySchema, setTaskReminderSchema, snoozeTaskReminderSchema, updateTaskSubtaskSchema } from '../src/validators/tasks';
+import { addTaskDependencySchema, addTaskRecordLinkSchema, applyTaskTemplateSchema, createTaskSchema, createTaskTemplateSchema, listTasksQuerySchema, reorderTaskSubtaskSchema, setTaskDueDateSchema, setTaskPrioritySchema, setTaskReminderSchema, snoozeTaskReminderSchema, updateTaskSubtaskSchema } from '../src/validators/tasks';
 
 describe('Task core validators', () => {
   it('accepts the Phase 1 defaults and task type', () => {
@@ -47,5 +47,19 @@ describe('Task core validators', () => {
     expect(setTaskReminderSchema.safeParse({ remindAt: '11/08/2569 09:00', preset: 'custom' }).success).toBe(false);
     expect(snoozeTaskReminderSchema.safeParse({ minutes: 30 }).success).toBe(true);
     expect(snoozeTaskReminderSchema.safeParse({ minutes: 17 }).success).toBe(false);
+  });
+
+  it('validates lightweight task extensions', () => {
+    expect(createTaskSchema.safeParse({ title: 'ตรวจ Backup', estimateHours: 2.5, actualHours: 1.25, blockedReason: 'รอสิทธิ์เข้าถึงระบบ' }).success).toBe(true);
+    expect(createTaskSchema.safeParse({ title: 'งานผิดปกติ', estimateHours: -1 }).success).toBe(false);
+    expect(addTaskDependencySchema.safeParse({ dependsOnTaskId: '00000000-0000-0000-0000-000000000001' }).success).toBe(true);
+    expect(addTaskRecordLinkSchema.safeParse({ recordType: 'asset', recordId: '00000000-0000-0000-0000-000000000001' }).success).toBe(true);
+    expect(addTaskRecordLinkSchema.safeParse({ recordType: 'unknown', recordId: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('validates reusable task templates and application dates', () => {
+    expect(createTaskTemplateSchema.safeParse({ name: 'ตรวจ Backup ทุกเดือน', title: 'ตรวจ Backup', recurrence: 'รายเดือน', checklist: ['ตรวจ log', 'ทดสอบ restore'], estimateHours: 2 }).success).toBe(true);
+    expect(createTaskTemplateSchema.safeParse({ name: 'กำหนดเอง', title: 'งาน', recurrence: 'กำหนดเอง' }).success).toBe(false);
+    expect(applyTaskTemplateSchema.safeParse({ startDate: '2026-08-15', dueDate: '2026-08-14' }).success).toBe(false);
   });
 });

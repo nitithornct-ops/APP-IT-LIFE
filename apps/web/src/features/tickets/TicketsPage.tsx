@@ -42,7 +42,7 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Department, Position, TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
-import type { AssignableStaff, TicketDetail, TicketListItem, TicketPriority, TicketStatus } from '../../types/tickets';
+import type { AssignableStaff, TicketDetail, TicketListItem, TicketPriority, TicketQueueSummary, TicketStatus } from '../../types/tickets';
 import { formatThaiDate } from '../../utils/date';
 import { cn } from '../../utils/cn';
 import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
@@ -76,7 +76,7 @@ const priorityRowClass: Record<TicketPriority, string> = {
 };
 
 /** สถานะที่เปลี่ยนทีละหลายใบได้ — ต้องตรงกับ BULK_TICKET_STATUSES ฝั่ง api */
-const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน'];
+const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ'];
 
 type TicketBulkResult = BulkResult<{ id: string; ticketNo: string; status: string }>;
 
@@ -111,7 +111,7 @@ function TicketPreviewPane({ id, onClose }: { id: string; onClose: () => void })
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><p className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400">SLA</p><div className="mt-1"><SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status)} fallback="ไม่กำหนด SLA" /></div></div>
+              <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><p className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400">SLA</p><div className="mt-1"><SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || ticket.sla_state === 'paused')} fallback="ไม่กำหนด SLA" /></div></div>
               <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><p className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400">สร้างเมื่อ</p><p className="mt-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-white/70">{formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')}</p></div>
             </div>
 
@@ -557,13 +557,13 @@ export function TicketsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkResult, setBulkResult] = useState<TicketBulkResult | null>(null);
   // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
-  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine'>({
-    filters: ['status', 'categoryId', 'priority', 'search', 'mine'],
+  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine' | 'queue'>({
+    filters: ['status', 'categoryId', 'priority', 'search', 'mine', 'queue'],
   });
   const { page, pageSize, sort } = table;
   // ค่าเริ่มต้นคือใบงานล่าสุดขึ้นก่อน เหมือนตารางทุกโมดูล — เรียงตามกำหนด SLA ได้จากหัวคอลัมน์
   const effectiveSort = sort ?? { key: 'created_at', order: 'desc' as const };
-  const { status, categoryId, priority, search: searchInput } = table.filters;
+  const { status, categoryId, priority, search: searchInput, queue } = table.filters;
   const mineOnly = table.filters.mine === 'true';
   const search = useDebouncedValue(searchInput.trim(), 350);
   const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
@@ -615,6 +615,7 @@ export function TicketsPage() {
     if (priority) params.set('priority', priority);
     if (search) params.set('search', search);
     if (mineOnly) params.set('mine', 'true');
+    if (queue) params.set('queue', queue);
     return params.toString();
   })();
 
@@ -637,6 +638,12 @@ export function TicketsPage() {
     staleTime: 60_000,
   });
 
+  const queueQuery = useQuery({
+    queryKey: ['tickets', 'queue-summary'],
+    queryFn: () => apiFetch<TicketQueueSummary>('/api/v1/tickets/queue-summary'),
+    staleTime: 30_000,
+  });
+
   const staffQuery = useQuery({
     queryKey: ['tickets', 'assignable-staff'],
     queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/tickets/assignable-staff'),
@@ -648,14 +655,15 @@ export function TicketsPage() {
   }
 
   const totalItems = ticketsQuery.data?.pagination.totalItems ?? 0;
-  const overdueOnPage = (ticketsQuery.data?.items ?? []).filter((ticket) => ticket.due_at && new Date(ticket.due_at).getTime() < Date.now() && !LOCKED_TICKET_STATUSES.includes(ticket.status)).length;
-  const activeFilterCount = [status, categoryId, priority, searchInput, mineOnly ? 'true' : ''].filter(Boolean).length;
+  const overdueOnPage = (ticketsQuery.data?.items ?? []).filter((ticket) => ticket.sla_state === 'overdue' || (!ticket.sla_state && ticket.due_at && new Date(ticket.due_at).getTime() < Date.now() && !LOCKED_TICKET_STATUSES.includes(ticket.status) && !ticket.is_sla_paused)).length;
+  const activeFilterCount = [status, categoryId, priority, searchInput, mineOnly ? 'true' : '', queue].filter(Boolean).length;
 
   function applyKpiFilter(values: { status?: TicketStatus; priority?: TicketPriority; mine?: boolean }) {
     table.setFilters({
       status: values.status ?? '',
       priority: values.priority ?? '',
       mine: values.mine ? 'true' : '',
+      queue: '',
       categoryId: '',
       search: '',
     });
@@ -779,6 +787,35 @@ export function TicketsPage() {
           },
         ]}
       />
+
+      <section aria-label="คิวงานเจ้าหน้าที่" className="rounded-card border border-hairline bg-white p-3 shadow-card dark:border-white/[.08] dark:bg-white/[.035]">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-extrabold text-ink-heading dark:text-[#e8eef9]">คิวงานเจ้าหน้าที่</p>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-white/45">พัก SLA จะไม่ถูกนับเป็นงานเกิน SLA</p>
+          </div>
+          {queue && <Button size="sm" variant="ghost" onClick={() => table.setFilter('queue', '')}>ล้างคิว</Button>}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {([
+            ['unassigned', 'ยังไม่มีผู้รับผิดชอบ', queueQuery.data?.unassigned ?? '—', 'secondary'],
+            ['near_sla', 'ใกล้เกิน SLA', queueQuery.data?.nearSla ?? '—', 'warning'],
+            ['overdue', 'เกิน SLA', queueQuery.data?.overdue ?? '—', 'danger'],
+            ['waiting_follow_up', 'รอติดตาม', queueQuery.data?.waitingFollowUp ?? '—', 'warning'],
+            ['awaiting_acceptance', 'รอตรวจรับ', queueQuery.data?.awaitingAcceptance ?? '—', 'primary'],
+            ['paused', 'พัก SLA', queueQuery.data?.paused ?? '—', 'info'],
+          ] as const).map(([key, label, value, tone]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => table.setFilters({ queue: queue === key ? '' : key, status: '', categoryId: '', priority: '', search: '', mine: '' })}
+              className={cn('rounded-lg border px-3 py-2 text-left transition hover:border-primary-300 hover:bg-primary-50 dark:border-white/[.08] dark:hover:bg-white/[.05]', queue === key && 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20')}
+            >
+              <span className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300"><span>{label}</span><Badge variant={tone}>{value}</Badge></span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="space-y-3" aria-label="รายการ Ticket">
         <FilterBar
@@ -915,7 +952,7 @@ export function TicketsPage() {
                       </td>
                       <td className="px-3 py-3" data-label="สถานะ/SLA">
                         <StatusBadge display={{ label: ticketStatusLabel[ticket.status], tone: ticketStatusTone[ticket.status] }} />
-                        <div className="mt-1"><SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status)} fallback={ticket.due_at ? `ครบกำหนด ${formatThaiDate(ticket.due_at, 'd/MM/yyyy HH:mm')}` : 'ไม่กำหนด SLA'} /></div>
+                        <div className="mt-1"><SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || ticket.sla_state === 'paused')} fallback={ticket.due_at ? `ครบกำหนด ${formatThaiDate(ticket.due_at, 'd/MM/yyyy HH:mm')}` : 'ไม่กำหนด SLA'} /></div>
                       </td>
                       <td className="px-3 py-3" data-label="ผู้แจ้ง">
                         <p className="font-medium text-slate-700 dark:text-slate-200">{requesterName(ticket)}{ticket.requester_id === me?.profile.id ? ' (ของฉัน)' : ''}</p>

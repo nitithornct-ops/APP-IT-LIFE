@@ -2,6 +2,7 @@ import { Activity, CheckCircle2, Clock3, MessageSquareHeart, TimerReset } from '
 import type { ReactNode } from 'react';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import type { ExecutiveServiceAnalytics as Analytics } from '../../types/dashboard';
+import { formatThaiDateTime } from '../../utils/date';
 
 const HEAT_COLORS = ['#EEF1F7', '#DCE6F9', '#CFDDF7', '#8FB0EE', '#4B7BE0', '#173A8A'];
 const STATUS_COLORS = ['#1D4ED8', '#4B7BE0', '#D97706', '#F2CF9C', '#0F766E', '#94A3B8'];
@@ -33,7 +34,7 @@ function Kpi({ label, value, note, icon, tone = 'default' }: { label: string; va
   </div>;
 }
 
-export function ExecutiveServiceAnalytics({ data }: { data: Analytics }) {
+export function ExecutiveServiceAnalytics({ data, generatedAt }: { data: Analytics; generatedAt?: string }) {
   const openTotal = data.openByStatus.reduce((sum, item) => sum + item.value, 0);
   const ageMaximum = Math.max(1, ...data.backlogAge.map((item) => item.value));
   const categoryMaximum = Math.max(1, ...data.categories.map((item) => item.value));
@@ -41,7 +42,7 @@ export function ExecutiveServiceAnalytics({ data }: { data: Analytics }) {
   return <section className="space-y-3" aria-labelledby="executive-service-title" data-testid="executive-service-analytics">
     <div className="flex flex-wrap items-end justify-between gap-2 px-1">
       <div><p className="font-mono text-[10px] font-bold uppercase tracking-[.14em] text-primary-700 dark:text-primary-300">Service performance · {data.periodDays} วัน</p><h2 id="executive-service-title" className="mt-1 text-xl font-extrabold text-slate-900 dark:text-white">ภาพรวมงานบริการ IT</h2></div>
-      {data.sampled && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">ข้อมูลเกินขีดจำกัด · วิเคราะห์จากรายการล่าสุด</span>}
+      <div className="flex flex-wrap items-center gap-2">{generatedAt && <span className="font-mono text-[10px] text-slate-400">ข้อมูล ณ เวลา {formatThaiDateTime(generatedAt)}</span>}{data.sampled && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">ข้อมูลเกินขีดจำกัด · วิเคราะห์จากรายการล่าสุด</span>}</div>
     </div>
 
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">

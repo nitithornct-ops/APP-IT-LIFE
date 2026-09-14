@@ -43,6 +43,17 @@ export const createEmployeeAssignmentSchema = z.object({
   status: z.enum(EMPLOYEE_ASSIGNMENT_STATUSES).optional(),
   assignedDate: dateOrEmpty,
   returnedDate: dateOrEmpty,
+  ownerEmployeeId: z.string().uuid().nullable().optional(),
+  custodianEmployeeId: z.string().uuid().nullable().optional(),
+  assignedUserEmployeeId: z.string().uuid().nullable().optional(),
+  checkoutDate: dateOrEmpty,
+  returnDate: dateOrEmpty,
+  accessories: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
+  managerApprovalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+  managerApprovedBy: z.string().uuid().nullable().optional(),
+  managerApprovalNotes: z.string().trim().max(1000).optional(),
+  handoverDocumentId: z.string().uuid().nullable().optional(),
+  handoverDocumentName: z.string().trim().max(255).optional(),
   notes: z.string().trim().max(1500).optional(),
 });
 export type CreateEmployeeAssignmentInput = z.infer<typeof createEmployeeAssignmentSchema>;
@@ -61,3 +72,25 @@ export const listEmployeeAssignmentsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
 });
 export type ListEmployeeAssignmentsQuery = z.infer<typeof listEmployeeAssignmentsQuerySchema>;
+
+export const bulkAssignEmployeeAssetsSchema = z.object({
+  employeeId: z.string().uuid(),
+  assetIds: z.array(z.string().uuid()).min(1).max(100).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือก Asset ซ้ำกัน'),
+  checkoutDate: isoDateString,
+  ownerEmployeeId: z.string().uuid().nullable().optional(),
+  custodianEmployeeId: z.string().uuid().nullable().optional(),
+  assignedUserEmployeeId: z.string().uuid().nullable().optional(),
+  managerApprovedBy: z.string().uuid('กรุณาเลือกผู้อนุมัติระดับ Manager'),
+  managerApprovalNotes: z.string().trim().max(1000).optional(),
+  accessories: z.array(z.string().trim().min(1).max(160)).max(30).default([]),
+  notes: z.string().trim().max(1500).optional(),
+});
+export type BulkAssignEmployeeAssetsInput = z.infer<typeof bulkAssignEmployeeAssetsSchema>;
+
+export const bulkReturnEmployeeAssetsSchema = z.object({
+  employeeIds: z.array(z.string().uuid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือกพนักงานซ้ำกัน'),
+  returnDate: isoDateString,
+  returnReceiverEmployeeId: z.string().uuid().nullable().optional(),
+  reason: z.string().trim().max(1000).optional(),
+});
+export type BulkReturnEmployeeAssetsInput = z.infer<typeof bulkReturnEmployeeAssetsSchema>;

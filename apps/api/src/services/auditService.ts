@@ -25,6 +25,8 @@ function asPlainObject(value: unknown): Record<string, unknown> | null {
 }
 
 export interface AuditLogEntry {
+  id?: string;
+  createdAt?: string;
   actorId?: string | null;
   actorEmail?: string | null;
   actorRole?: string | null;
@@ -39,6 +41,85 @@ export interface AuditLogEntry {
   after?: unknown;
   result?: 'success' | 'fail' | 'denied';
   requestId?: string | null;
+  correlationId?: string | null;
+  eventCategory?: AuditEventCategory;
+  privilegedAction?: boolean;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+export type AuditEventCategory =
+  | 'authentication'
+  | 'authorization'
+  | 'data_change'
+  | 'privileged_action'
+  | 'administration'
+  | 'access_review'
+  | 'backup'
+  | 'export'
+  | 'security'
+  | 'system';
+
+const PRIVILEGED_ACTION = /(?:ACCESS_DENIED|PERMISSION|APPROV|REJECT|EXPORT|ARCHIVE|VERIFY|DEPLOY|ROLE|PASSWORD|MFA|RESTORE|DISABLE|ENABLE)/i;
+
+export function isPrivilegedAuditAction(entry: Pick<AuditLogEntry, 'action' | 'module' | 'privilegedAction'>): boolean {
+  return entry.privilegedAction ?? PRIVILEGED_ACTION.test(`${entry.action} ${entry.module}`);
+}
+
+export function inferAuditEventCategory(entry: Pick<AuditLogEntry, 'action' | 'module' | 'eventCategory'>): AuditEventCategory {
+  if (entry.eventCategory) return entry.eventCategory;
+  const action = entry.action.toUpperCase();
+  const module = entry.module.toLowerCase();
+  if (/^(LOGIN|LOGOUT|MFA_CHALLENGE|PASSWORD_RESET|PASSWORD_CHANGE)$/.test(action) || /^(auth|authentication|login)$/.test(module)) return 'authentication';
+  if (action === 'ACCESS_DENIED' || action === 'PERMISSION_DENIED' || /^(authorization|permission|rbac)$/.test(module)) return 'authorization';
+  if (action.startsWith('EXPORT') || module.includes('export')) return 'export';
+  if (module.includes('backup') || module.includes('recovery')) return 'backup';
+  if (module.includes('access') && (module.includes('review') || module.includes('certification'))) return 'access_review';
+  if (action.includes('PASSWORD') || action.includes('MFA') || action.includes('SECURITY') || module.includes('security')) return 'security';
+  if (action.includes('ROLE') || action.includes('PERMISSION') || /^(admin|administration|settings|users)$/.test(module)) return 'administration';
+  if (/^(CREATE|UPDATE|DELETE|INSERT|UPSERT)(_|$)/.test(action)) return 'data_change';
+  if (isPrivilegedAuditAction({ action: entry.action, module: entry.module })) return 'privileged_action';
+  return 'system';
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalize(item)]));
+  }
+  return value;
+}
+
+function normalizedTimestamp(value: string | undefined): string | null {
+  if (!value) return null;
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toISOString();
+}
+
+export function auditHashPayload(entry: Pick<AuditLogEntry, 'id' | 'createdAt' | 'actorId' | 'actorEmail' | 'actorRole' | 'action' | 'module' | 'targetTable' | 'targetId' | 'detail' | 'result' | 'requestId' | 'correlationId' | 'eventCategory' | 'privilegedAction'>): Record<string, unknown> {
+  return {
+    id: entry.id ?? null,
+    createdAt: normalizedTimestamp(entry.createdAt),
+    actorId: entry.actorId ?? null,
+    actorEmail: entry.actorEmail ?? null,
+    actorRole: entry.actorRole ?? null,
+    action: entry.action,
+    module: entry.module,
+    targetTable: entry.targetTable ?? null,
+    targetId: entry.targetId ?? null,
+    detail: entry.detail ?? null,
+    result: entry.result ?? 'success',
+    requestId: entry.requestId ?? null,
+    correlationId: entry.correlationId ?? null,
+    eventCategory: entry.eventCategory ?? 'system',
+    privilegedAction: entry.privilegedAction ?? false,
+  };
+}
+
+export async function sha256Hex(value: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(canonicalize(value)));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** คอลัมน์ที่เปลี่ยนทุกครั้งอยู่แล้ว ไม่ใช่สาระของการแก้ไข จึงไม่ต้องรกอยู่ในรายการ changes */
@@ -115,7 +196,24 @@ export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promis
       entry.before || entry.after
         ? { ...(safeDetail ?? {}), changes, changedFields: Object.keys(changes) }
         : safeDetail;
+    const correlationId = entry.correlationId ?? entry.requestId ?? null;
+    const eventCategory = inferAuditEventCategory(entry);
+    const privilegedAction = isPrivilegedAuditAction(entry);
+    const id = entry.id ?? crypto.randomUUID();
+    const createdAt = entry.createdAt ?? new Date().toISOString();
+    const hashPayload = auditHashPayload({
+      ...entry,
+      id,
+      createdAt,
+      detail,
+      requestId: entry.requestId ?? null,
+      correlationId,
+      eventCategory,
+      privilegedAction,
+    });
+    const entryHash = await sha256Hex(hashPayload);
     const { error } = await supabase.from('audit_logs').insert({
+      id,
       actor_id: entry.actorId ?? null,
       actor_email: entry.actorEmail ?? null,
       actor_role: entry.actorRole ?? null,
@@ -126,6 +224,14 @@ export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promis
       detail: detail ?? null,
       result: entry.result ?? 'success',
       request_id: entry.requestId ?? null,
+      correlation_id: correlationId,
+      event_category: eventCategory,
+      privileged_action: privilegedAction,
+      entry_hash: entryHash,
+      hash_algorithm: 'sha256',
+      ip_address: entry.ipAddress ?? null,
+      user_agent: entry.userAgent ?? null,
+      created_at: createdAt,
     });
 
     if (error) {

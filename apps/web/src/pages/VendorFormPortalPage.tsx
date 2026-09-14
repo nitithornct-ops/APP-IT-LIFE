@@ -29,6 +29,7 @@ export function VendorFormPortalPage() {
   });
   const [form, setForm] = useState(initialResponse);
   const [submitted, setSubmitted] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
   const vendorHeaders = { 'x-vendor-token': token };
   const query = useQuery({
     queryKey: ['vendor-form', token],
@@ -40,7 +41,12 @@ export function VendorFormPortalPage() {
     if (query.data?.vendor_response?.submittedAt) setForm({ ...initialResponse, ...query.data.vendor_response });
   }, [query.data]);
   const submit = useMutation({
-    mutationFn: () => apiFetch<{ id: string; form_no: string; status: string; vendor_responded_at: string }>('/api/v1/public/forms/current/response', { method: 'POST', headers: vendorHeaders, body: JSON.stringify(form) }),
+    mutationFn: async () => {
+      if (query.data?.template?.acknowledgement_config?.enabled && !acknowledged) {
+        await apiFetch('/api/v1/public/forms/current/acknowledgement', { method: 'POST', headers: vendorHeaders, body: JSON.stringify({ partyName: form.assessorName, statement: query.data.template.acknowledgement_config.statement, accepted: true }) });
+      }
+      return apiFetch<{ id: string; form_no: string; status: string; vendor_responded_at: string }>('/api/v1/public/forms/current/response', { method: 'POST', headers: vendorHeaders, body: JSON.stringify(form) });
+    },
     onSuccess: () => {
       sessionStorage.removeItem(VENDOR_TOKEN_STORAGE_KEY);
       setSubmitted(true);
@@ -81,7 +87,8 @@ export function VendorFormPortalPage() {
             <label className="block text-sm font-semibold">หมายเหตุการประเมิน<textarea rows={3} value={form.assessmentNote ?? ''} onChange={(event) => update('assessmentNote', event.target.value)} className={fieldClass} /></label>
             <label className="block text-sm font-semibold">ชื่อผู้ประเมิน / ผู้รับจ้าง<input required value={form.assessorName} onChange={(event) => update('assessorName', event.target.value)} className={fieldClass} /></label>
             <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500">เมื่อกดส่ง ระบบจะบันทึกชื่อผู้ประเมินและรายละเอียดข้างต้นไว้กับแบบฟอร์มงานนี้ เพื่อให้ทีม IT ตรวจรับและปิดงาน</p>
-            <Button type="submit" className="w-full" isLoading={submit.isPending} disabled={!form.rootCause.trim() || !form.resolution.trim() || !form.assessorName.trim()}><Send className="h-4 w-4" />ส่งผลการประเมิน</Button>
+            {data.template?.acknowledgement_config?.enabled && <label className="flex gap-2 rounded-lg border border-primary-200 bg-primary-50 p-3 text-xs leading-relaxed text-primary-900"><input type="checkbox" checked={acknowledged} disabled={submit.isPending} onChange={(event) => setAcknowledged(event.target.checked)} required /><span>{data.template.acknowledgement_config.statement || 'Vendor acknowledges this form.'}</span></label>}
+            <Button type="submit" className="w-full" isLoading={submit.isPending} disabled={!form.rootCause.trim() || !form.resolution.trim() || !form.assessorName.trim() || Boolean(data.template?.acknowledgement_config?.enabled && !acknowledged)}><Send className="h-4 w-4" />ส่งผลการประเมิน</Button>
           </form>
         </CardBody></Card>
       </div>

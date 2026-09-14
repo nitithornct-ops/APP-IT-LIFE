@@ -1,9 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { randomToken } from '../lib/lineAuth';
-import { createAdminClient } from '../lib/supabase';
-import { constantTimeEqualText, hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../lib/vendorPortalAuth';
+import { createAdminClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
@@ -12,19 +9,16 @@ import { sendNotification } from '../services/notificationService';
 import type { AppEnv, VendorPortalProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
+import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { fail, ok } from '../utils/response';
 import { zodValidationHook } from '../utils/validation';
 import {
-  changeVendorPortalPasswordSchema,
+  completeVendorPortalInviteSchema,
   reviewOutsourceSubmissionSchema,
   submitOutsourceWorkSchema,
-  vendorPortalLoginSchema,
+  vendorPortalIdentitySchema,
 } from '../validators/vendorPortal';
 
-const VENDOR_SESSION_HOURS = 12;
-const VENDOR_SESSION_COOKIE = 'vendor_portal_session';
-const VENDOR_CSRF_COOKIE = 'vendor_portal_csrf';
-const VENDOR_CSRF_HEADER = 'x-vendor-csrf';
 const VENDOR_SIGNATURE_BUCKET = 'ticket-outsource-signatures';
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 const SAFE_TICKET_SELECT =
@@ -35,24 +29,6 @@ interface VendorSessionContext {
   token: string;
   sessionId: string;
   profile: VendorPortalProfile;
-}
-
-function vendorCookieOptions(env: AppEnv['Bindings'], httpOnly: boolean, maxAge: number) {
-  return {
-    httpOnly,
-    maxAge,
-    path: '/',
-    secure: env.ENVIRONMENT === 'production',
-    sameSite: env.ENVIRONMENT === 'production' ? 'None' as const : 'Lax' as const,
-  };
-}
-
-function issueVendorCsrfCookie(c: Context<AppEnv>): string {
-  const existing = getCookie(c, VENDOR_CSRF_COOKIE);
-  if (existing && /^[0-9a-f]{64}$/i.test(existing)) return existing;
-  const token = randomToken();
-  setCookie(c, VENDOR_CSRF_COOKIE, token, vendorCookieOptions(c.env, false, VENDOR_SESSION_HOURS * 3600));
-  return token;
 }
 
 interface SafeVendorTicketRow {
@@ -69,30 +45,29 @@ interface SafeVendorTicketRow {
   ticket_categories: { name: string | null } | null;
 }
 
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+function bearerToken(c: Context<AppEnv>): string | null {
+  const header = c.req.header('authorization') ?? '';
+  if (!header.startsWith('Bearer ')) return null;
+  const token = header.slice('Bearer '.length).trim();
+  return token || null;
 }
 
-async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionContext | null> {
-  const token = getCookie(c, VENDOR_SESSION_COOKIE) ?? '';
-  if (!/^[0-9a-f]{64}$/i.test(token)) return null;
+async function loadVendorSession(c: Context<AppEnv>, allowPendingInvite = false): Promise<VendorSessionContext | null> {
+  const token = bearerToken(c);
+  if (!token) return null;
+  const userClient = createUserScopedClient(c.env, token);
+  const { data: authData, error: authError } = await userClient.auth.getUser(token);
+  if (authError || !authData.user) return null;
   const admin = createAdminClient(c.env);
-  const sessionHash = await hashVendorSessionToken(token);
-  const { data: session } = await admin
-    .from('vendor_portal_sessions')
-    .select('id, account_id, expires_at, revoked_at, last_seen_at')
-    .eq('session_hash', sessionHash)
-    .maybeSingle();
-  if (!session || session.revoked_at || Date.parse(session.expires_at) <= Date.now()) return null;
-
   const { data: account } = await admin
     .from('vendor_portal_accounts')
-    .select('id, vendor_id, username, email, full_name, position, status, must_change_password')
-    .eq('id', session.account_id)
+    .select('id, vendor_id, username, email, full_name, position, status, invite_status')
+    .eq('auth_user_id', authData.user.id)
     .eq('status', 'Active')
     .maybeSingle();
   if (!account) return null;
+  if (account.invite_status === 'Revoked') return null;
+  if (!allowPendingInvite && account.invite_status !== 'Accepted') return null;
   const { data: vendor } = await admin
     .from('vendors')
     .select('id, vendor_code, name, status')
@@ -101,13 +76,9 @@ async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionConte
     .maybeSingle();
   if (!vendor) return null;
 
-  const lastSeen = Date.parse(session.last_seen_at);
-  if (!Number.isFinite(lastSeen) || Date.now() - lastSeen > 5 * 60_000) {
-    await admin.from('vendor_portal_sessions').update({ last_seen_at: new Date().toISOString() }).eq('id', session.id);
-  }
   return {
     token,
-    sessionId: session.id,
+    sessionId: authData.user.id,
     profile: {
       accountId: account.id,
       vendorId: vendor.id,
@@ -117,18 +88,20 @@ async function loadVendorSession(c: Context<AppEnv>): Promise<VendorSessionConte
       email: account.email,
       fullName: account.full_name,
       position: account.position,
-      mustChangePassword: account.must_change_password === true,
+      mustChangePassword: false,
     },
   };
 }
 
 const requireVendorSession: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await loadVendorSession(c);
+  if (session && jwtAuthenticatorAssuranceLevel(session.token) !== 'aal2') return c.json(fail(c.get('requestId'), 'VENDOR_MFA_REQUIRED', 'MFA verification is required'), 403);
   if (!session) return c.json(fail(c.get('requestId'), 'VENDOR_SESSION_REQUIRED', 'Session บริษัทหมดอายุ กรุณาเข้าสู่ระบบใหม่'), 401);
   c.set('vendorSession', session);
   await next();
 };
 
+/* Legacy cookie CSRF/password-change middleware retired in favor of Supabase Auth + AAL2.
 const requireVendorCsrf: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
     await next();
@@ -152,6 +125,15 @@ const requireVendorPasswordChange: MiddlewareHandler<AppEnv> = async (c, next) =
   await next();
 };
 
+*/
+
+const requireVendorInviteSession: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const session = await loadVendorSession(c, true);
+  if (!session) return c.json(fail(c.get('requestId'), 'VENDOR_SESSION_REQUIRED', 'Vendor session is missing or expired'), 401);
+  c.set('vendorSession', session);
+  await next();
+};
+
 async function latestSubmission(admin: ReturnType<typeof createAdminClient>, ticketId: string) {
   const { data } = await admin
     .from('ticket_outsource_submissions')
@@ -171,6 +153,69 @@ async function submissionWithSignature(admin: ReturnType<typeof createAdminClien
 
 export const vendorPortalRoute = new Hono<AppEnv>();
 
+vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabled: true })));
+
+vendorPortalRoute.post(
+  '/login/resolve',
+  edgeRateLimit({ keyFn: (c) => `vendor_login:${clientIp(c)}` }),
+  rateLimit({ windowMs: 15 * 60_000, max: 20, keyFn: (c) => `vendor_login:${clientIp(c)}` }),
+  zValidator('json', vendorPortalIdentitySchema, zodValidationHook),
+  async (c) => {
+    const body = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const invalid = () => c.json(fail(c.get('requestId'), 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+    const { data: vendor } = await admin.from('vendors').select('id').eq('vendor_code', body.vendorCode).eq('status', 'Active').maybeSingle();
+    if (!vendor) return invalid();
+    const { data: account } = await admin
+      .from('vendor_portal_accounts')
+      .select('email, auth_user_id, invite_status')
+      .eq('vendor_id', vendor.id)
+      .eq('username', body.username)
+      .eq('status', 'Active')
+      .maybeSingle();
+    if (!account?.auth_user_id || account.invite_status === 'Revoked') return invalid();
+    return c.json(ok(c.get('requestId'), { email: account.email }));
+  },
+);
+
+vendorPortalRoute.use('/invite/complete', requireVendorInviteSession);
+vendorPortalRoute.post(
+  '/invite/complete',
+  zValidator('json', completeVendorPortalInviteSchema, zodValidationHook),
+  async (c) => {
+    const session = c.get('vendorSession')!;
+    if (jwtAuthenticatorAssuranceLevel(session.token) !== 'aal2') {
+      return c.json(fail(c.get('requestId'), 'VENDOR_MFA_REQUIRED', 'Complete MFA enrollment before accepting the invite'), 403);
+    }
+    const body = c.req.valid('json');
+    const now = new Date().toISOString();
+    const { data, error } = await createAdminClient(c.env).from('vendor_portal_accounts').update({
+      invite_status: 'Accepted',
+      accepted_at: now,
+      mfa_enrolled_at: now,
+      last_login_at: now,
+    }).eq('id', session.profile.accountId).eq('status', 'Active').select('id').maybeSingle();
+    if (error) return dbFailJson(c, 'VENDOR_INVITE_COMPLETE_FAILED', error, 'Unable to complete vendor invite');
+    if (!data) return c.json(fail(c.get('requestId'), 'VENDOR_PORTAL_ACCOUNT_NOT_FOUND', 'Vendor portal account was not found'), 404);
+    await writeAuditLog(c.env, { actorEmail: `VENDOR:${session.profile.email}`, action: 'ACCEPT_INVITE', module: 'vendor_portal', targetTable: 'vendor_portal_accounts', targetId: data.id, detail: { vendorId: session.profile.vendorId, mfaFactorId: body.mfaFactorId ?? null }, requestId: c.get('requestId') });
+    return c.json(ok(c.get('requestId'), { ...session.profile, mustChangePassword: false }));
+  },
+);
+
+vendorPortalRoute.use('/me', requireVendorSession);
+vendorPortalRoute.use('/logout', requireVendorInviteSession);
+vendorPortalRoute.use('/tickets/*', requireVendorSession);
+vendorPortalRoute.use('/tickets', requireVendorSession);
+
+vendorPortalRoute.get('/me', async (c) => {
+  const session = c.get('vendorSession')!;
+  await createAdminClient(c.env).from('vendor_portal_accounts').update({ last_login_at: new Date().toISOString() }).eq('id', session.profile.accountId);
+  return c.json(ok(c.get('requestId'), session.profile));
+});
+
+vendorPortalRoute.post('/logout', (c) => c.json(ok(c.get('requestId'), { loggedOut: true })));
+
+/* Retired custom-password and cookie-session routes kept in source only for a short rolling deployment window.
 vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabled: true, csrfToken: issueVendorCsrfCookie(c) })));
 vendorPortalRoute.use('/login', requireVendorCsrf);
 
@@ -308,6 +353,7 @@ vendorPortalRoute.post(
     return c.json(ok(reqId, profile));
   },
 );
+*/
 
 vendorPortalRoute.get('/tickets', async (c) => {
   const reqId = c.get('requestId');

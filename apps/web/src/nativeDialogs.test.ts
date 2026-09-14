@@ -29,6 +29,10 @@ describe('no browser native dialogs', () => {
   // ตรวจเฉพาะโค้ดที่ถูกส่งขึ้น production — ไฟล์เทสต์มีสตริงตัวอย่าง XSS อย่าง onclick="alert(1)"
   // ซึ่งเป็นข้อมูลทดสอบ ไม่ใช่การเรียกใช้จริง
   const files = sourceFiles(srcRoot).filter((file) => !/\.test\.tsx?$/.test(file));
+  const sourceByFile = files.map((file) => ({
+    file,
+    source: stripComments(readFileSync(file, 'utf8')),
+  }));
 
   it('scans the whole source tree', () => {
     expect(files.length).toBeGreaterThan(50);
@@ -36,9 +40,9 @@ describe('no browser native dialogs', () => {
 
   it.each(['alert', 'confirm', 'prompt'])('never calls window.%s()', (name) => {
     const pattern = new RegExp(String.raw`(^|[^.\w])(window\s*\.\s*)?${name}\s*\(`, 'm');
-    const offenders = files
-      .filter((file) => pattern.test(stripComments(readFileSync(file, 'utf8'))))
-      .map((file) => relative(srcRoot, file));
+    const offenders = sourceByFile
+      .filter(({ source }) => pattern.test(source))
+      .map(({ file }) => relative(srcRoot, file));
 
     expect(offenders, `ใช้ ${name}() ที่: ${offenders.join(', ')} — ให้ใช้ Modal/ConfirmModal ของระบบแทน`).toEqual([]);
   });

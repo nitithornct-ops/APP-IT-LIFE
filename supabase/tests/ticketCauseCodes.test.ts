@@ -127,8 +127,12 @@ describe('ผลกับใบงาน', () => {
       return ticket.rows[0].id;
     });
 
-    await asServiceRole(db, async () =>
+    await expect(asServiceRole(db, async () =>
       db.query('delete from public.ticket_cause_codes where id = $1', [causeCodeId]),
+    )).rejects.toThrow(/MASTER_DATA_IN_USE/);
+
+    await asServiceRole(db, async () =>
+      db.query('update public.ticket_cause_codes set is_active = false where id = $1', [causeCodeId]),
     );
 
     const after = await asServiceRole(db, async () =>
@@ -138,8 +142,8 @@ describe('ผลกับใบงาน', () => {
       ),
     );
     expect(after.rows).toHaveLength(1);
-    expect(after.rows[0].cause_code_id).toBeNull();
-    // ข้อความอิสระคือหลักฐานที่เหลืออยู่เมื่อรหัสถูกลบ จึงห้ามหายไปพร้อมกัน
+    expect(after.rows[0].cause_code_id).toBe(causeCodeId);
+    // Keep both the historical reference and the free-text evidence intact.
     expect(after.rows[0].root_cause).toBe('สายที่ port 12 หลุดจากการย้ายโต๊ะ');
   });
 });

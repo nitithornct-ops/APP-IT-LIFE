@@ -32,3 +32,27 @@ export interface GovernanceDomainData {
   canAct: boolean;
   generatedAt: string;
 }
+
+export interface GovernanceReferenceOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface GovernanceReferences {
+  dataAssets: GovernanceReferenceOption[];
+  laws: GovernanceReferenceOption[];
+  obligations: GovernanceReferenceOption[];
+  assessments: GovernanceReferenceOption[];
+  controls: GovernanceReferenceOption[];
+  evidenceItems: GovernanceReferenceOption[];
+  controlTests: GovernanceReferenceOption[];
+  audits: GovernanceReferenceOption[];
+  findings: GovernanceReferenceOption[];
+  risks: GovernanceReferenceOption[];
+  capas: GovernanceReferenceOption[];
+  changes: GovernanceReferenceOption[];
+  ropa: GovernanceReferenceOption[];
+  employees: GovernanceReferenceOption[];
+  allRecords: GovernanceReferenceOption[];
+}

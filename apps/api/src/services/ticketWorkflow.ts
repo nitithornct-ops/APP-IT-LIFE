@@ -82,6 +82,12 @@ const FIELD_OUTCOME_COPY: Record<string, Omit<FieldOutcome, 'status'>> = {
     requiresResolution: false,
     tone: 'warning',
   },
+  [TICKET_STATUS.WAITING_USER]: {
+    label: 'รอผู้ใช้งาน',
+    description: 'ต้องการข้อมูลหรือการทดสอบจากผู้แจ้ง ระบบจะหยุดนับเวลา SLA ไว้ก่อน',
+    requiresResolution: false,
+    tone: 'warning',
+  },
   [TICKET_STATUS.OUTSOURCE]: {
     label: 'ส่งต่อผู้ให้บริการภายนอก',
     description: 'เกินขอบเขตที่ซ่อมเองได้ ต้องระบุผู้ให้บริการที่รับงานต่อ',
@@ -111,6 +117,8 @@ export function assertTransition(from: string, to: string) {
 export interface TicketStatusSource {
   status: string;
   acknowledged_at?: string | null;
+  first_response_at?: string | null;
+  started_at?: string | null;
   resolved_at?: string | null;
   outsource_sent_at?: string | null;
   sla_paused_at?: string | null;
@@ -121,7 +129,7 @@ export interface TicketStatusSource {
 /**
  * เติม field ที่ต้องเปลี่ยนตามสถานะใหม่ลงใน patch — timestamp ประจำสถานะ และการหยุด/นับต่อ SLA
  *
- * ไม่ครอบคลุมการเปิดงานซ้ำ (reopen) เพราะกรณีนั้นต้องรีเซ็ต due date ใหม่ทั้งชุด
+ * ไม่ครอบคลุมการเปิดงานซ้ำ (reopen) เพราะกรณีนั้นต้องสร้าง SLA round ใหม่
  * ผู้เรียกต้องตรวจสิทธิ์และ assertTransition มาก่อนแล้ว
  */
 export function applyStatusChange(
@@ -136,6 +144,13 @@ export function applyStatusChange(
 
   patch.status = toStatus;
   if (toStatus === TICKET_STATUS.ACK && !current.acknowledged_at) patch.acknowledged_at = now.toISOString();
+  // เจ้าหน้าที่อาจเริ่มทำงานจากสถานะ "ใหม่" ได้ทันที ต้องนับ response SLA
+  // ตั้งแต่วินาทีที่เริ่มดำเนินงาน ไม่ใช่รอให้มี action รับเรื่องแยกอีกครั้ง
+  if (toStatus === TICKET_STATUS.IN_PROGRESS) {
+    if (!current.started_at) patch.started_at = now.toISOString();
+    if (!current.acknowledged_at) patch.acknowledged_at = now.toISOString();
+    if (!current.first_response_at) patch.first_response_at = now.toISOString();
+  }
   if (toStatus === TICKET_STATUS.RESOLVED) patch.resolved_at = current.resolved_at ?? now.toISOString();
   if (toStatus === TICKET_STATUS.CLOSED) {
     patch.resolved_at = current.resolved_at ?? now.toISOString();

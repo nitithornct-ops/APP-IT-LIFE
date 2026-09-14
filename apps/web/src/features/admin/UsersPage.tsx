@@ -5,7 +5,7 @@ import { RowActions } from '../../components/table/RowActions';
 import { ConfirmModal, DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CheckCircle2, ChevronUp, Eye, EyeOff, KeyRound, Loader2, Plus, ShieldAlert, ShieldCheck, UserCog, UserMinus, UserPlus, UsersRound, X } from 'lucide-react';
+import { Ban, Check, CheckCircle2, ChevronUp, Eye, EyeOff, KeyRound, Layers3, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck, UserCog, UserMinus, UserPlus, UsersRound, X, XCircle } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -22,10 +22,14 @@ import type {
   PermissionOverride,
   Position,
   Role,
+  AccessGroup,
+  AccessGroupMembership,
+  EffectivePermission,
   UserListItem,
+  UserAccessReview,
   UserRoleAssignment,
 } from '../../types/admin';
-import { formatThaiDate } from '../../utils/date';
+import { formatThaiDate, formatThaiDateTime } from '../../utils/date';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 
 const overrideSchema = z.object({
@@ -33,6 +37,7 @@ const overrideSchema = z.object({
   effect: z.enum(['allow', 'deny']),
   reason: z.string().trim().min(1, 'กรุณาระบุเหตุผล'),
   endAt: z.string().optional(),
+  temporaryAccess: z.boolean().optional(),
 });
 
 type OverrideForm = z.infer<typeof overrideSchema>;
@@ -53,13 +58,13 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<OverrideForm>({ resolver: zodResolver(overrideSchema), defaultValues: { effect: 'deny' } });
+  } = useForm<OverrideForm>({ resolver: zodResolver(overrideSchema), defaultValues: { effect: 'deny', temporaryAccess: false } });
 
   const createMutation = useMutation({
     mutationFn: (values: OverrideForm) =>
       apiFetch('/api/v1/permission-overrides', {
         method: 'POST',
-        body: JSON.stringify({ userId, ...values, endAt: values.endAt || undefined }),
+        body: JSON.stringify({ userId, ...values, endAt: values.endAt || undefined, temporaryAccess: Boolean(values.temporaryAccess || values.endAt) }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey });
@@ -74,6 +79,18 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
     mutationFn: ({ id, status }: { id: string; status: 'active' | 'inactive' }) =>
       apiFetch(`/api/v1/permission-overrides/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey }),
+  });
+
+  const decisionMutation = useMutation({
+    mutationFn: ({ id, decision }: { id: string; decision: 'approve' | 'reject' }) =>
+      apiFetch(`/api/v1/permission-overrides/${id}/decision`, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users', userId, 'effective-permissions'] });
+    },
   });
 
   return (
@@ -156,6 +173,11 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
             />
           </div>
 
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <input type="checkbox" className="rounded border-slate-300" {...register('temporaryAccess')} />
+            Temporary access (requires expiry)
+          </label>
+
           {serverError && <p className="text-xs text-red-600 sm:col-span-2">{serverError}</p>}
 
           <div className="sm:col-span-2">
@@ -186,17 +208,41 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
                 <Badge variant={o.effect === 'deny' ? 'danger' : 'success'}>{o.effect.toUpperCase()}</Badge>
                 <span className="font-mono text-slate-700 dark:text-slate-200">{o.permissions?.key}</span>
                 <span className="text-slate-400">— {o.reason}</span>
+                {o.end_at && <Badge variant="warning">expires {formatThaiDate(o.end_at)}</Badge>}
+                {o.is_temporary && <Badge variant="info">temporary</Badge>}
               </span>
               <span className="flex items-center gap-2">
+                {o.privileged_access && <Badge variant="purple">privileged</Badge>}
+                {o.approval_status === 'pending' && <Badge variant="warning">pending approval</Badge>}
+                {o.approval_status === 'rejected' && <Badge variant="danger">rejected</Badge>}
+                {o.approval_status === 'pending' && o.privileged_access && o.effect === 'allow' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => decisionMutation.mutate({ id: o.id, decision: 'approve' })}
+                      className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-300"
+                    >
+                      <Check className="h-3 w-3" aria-hidden="true" /> approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => decisionMutation.mutate({ id: o.id, decision: 'reject' })}
+                      className="inline-flex items-center gap-1 text-red-700 hover:underline dark:text-red-300"
+                    >
+                      <XCircle className="h-3 w-3" aria-hidden="true" /> reject
+                    </button>
+                  </>
+                )}
                 <Badge variant={o.status === 'active' ? 'success' : 'secondary'}>
                   {o.status === 'active' ? 'ใช้งาน' : 'ระงับ'}
                 </Badge>
                 <button
                   type="button"
+                  disabled={o.approval_status === 'pending' || toggleStatusMutation.isPending}
                   onClick={() =>
                     toggleStatusMutation.mutate({ id: o.id, status: o.status === 'active' ? 'inactive' : 'active' })
                   }
-                  className="text-primary-700 hover:underline dark:text-primary-300"
+                  className="text-primary-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300"
                 >
                   {o.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน'}
                 </button>
@@ -212,13 +258,14 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
 function SupervisorPanel({ user, allUsers }: { user: UserListItem; allUsers: UserListItem[] }) {
   const queryClient = useQueryClient();
   const [supervisorId, setSupervisorId] = useState(user.supervisor_id ?? '');
+  const [employmentStatus, setEmploymentStatus] = useState(user.employment_status ?? 'active');
   const [serverError, setServerError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/v1/users/${user.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ supervisorId: supervisorId || null }),
+        body: JSON.stringify({ supervisorId: supervisorId || null, employmentStatus }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
@@ -247,6 +294,18 @@ function SupervisorPanel({ user, allUsers }: { user: UserListItem; allUsers: Use
               </option>
             ))}
         </select>
+        <select
+          value={employmentStatus}
+          onChange={(e) => setEmploymentStatus(e.target.value as UserListItem['employment_status'])}
+          aria-label="Employment status"
+          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        >
+          <option value="active">active</option>
+          <option value="on_leave">on leave</option>
+          <option value="contractor">contractor</option>
+          <option value="terminated">terminated</option>
+          <option value="retired">retired</option>
+        </select>
         <button
           type="button"
           onClick={() => mutation.mutate()}
@@ -258,6 +317,174 @@ function SupervisorPanel({ user, allUsers }: { user: UserListItem; allUsers: Use
         </button>
         {serverError && <p className="text-xs text-red-600">{serverError}</p>}
       </div>
+    </div>
+  );
+}
+
+function permissionSourceLabel(source: EffectivePermission['source']): string {
+  if (source === 'role') return 'Role';
+  if (source === 'override') return 'Override';
+  if (source === 'group') return 'Group';
+  return 'No grant';
+}
+
+function UserAccessGovernancePanel({ userId, allGroups }: { userId: string; allGroups: AccessGroup[] }) {
+  const queryClient = useQueryClient();
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [serverError, setServerError] = useState<string | null>(null);
+  const effectiveKey = ['admin', 'users', userId, 'effective-permissions'];
+  const groupsKey = ['admin', 'users', userId, 'access-groups'];
+  const reviewKey = ['admin', 'users', userId, 'access-review'];
+
+  const effectiveQuery = useQuery({
+    queryKey: effectiveKey,
+    queryFn: () => apiFetch<EffectivePermission[]>(`/api/v1/users/${userId}/effective-permissions`),
+  });
+  const groupsQuery = useQuery({
+    queryKey: groupsKey,
+    queryFn: () => apiFetch<AccessGroupMembership[]>(`/api/v1/users/${userId}/access-groups`),
+  });
+  const reviewQuery = useQuery({
+    queryKey: reviewKey,
+    queryFn: () => apiFetch<UserAccessReview | null>(`/api/v1/users/${userId}/access-review`),
+  });
+
+  const addGroupMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/users/${userId}/access-groups`, {
+        method: 'POST',
+        body: JSON.stringify({ groupId: selectedGroupId }),
+      }),
+    onSuccess: () => {
+      setSelectedGroupId('');
+      setServerError(null);
+      void queryClient.invalidateQueries({ queryKey: groupsKey });
+      void queryClient.invalidateQueries({ queryKey: effectiveKey });
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'group assignment failed'),
+  });
+
+  const removeGroupMutation = useMutation({
+    mutationFn: (membershipId: string) => apiFetch(`/api/v1/users/${userId}/access-groups/${membershipId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setServerError(null);
+      void queryClient.invalidateQueries({ queryKey: groupsKey });
+      void queryClient.invalidateQueries({ queryKey: effectiveKey });
+    },
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'group removal failed'),
+  });
+
+  const requestReviewMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/users/${userId}/access-review`, { method: 'POST', body: JSON.stringify({}) }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: reviewKey }),
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'access review creation failed'),
+  });
+
+  const decideReviewMutation = useMutation({
+    mutationFn: (status: 'approved' | 'revoked' | 'exception') =>
+      apiFetch(`/api/v1/users/${userId}/access-review/${reviewQuery.data?.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: reviewKey }),
+    onError: (error) => setServerError(error instanceof ApiError ? error.message : 'access review decision failed'),
+  });
+
+  const assignedGroupIds = new Set((groupsQuery.data ?? []).map((membership) => membership.group_id));
+  const availableGroups = allGroups.filter((group) => group.status === 'active' && !assignedGroupIds.has(group.id));
+  const review = reviewQuery.data;
+
+  return (
+    <div className="border-t border-slate-100 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section>
+          <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Effective Permission / สิทธิ์ที่มีผล
+          </p>
+          <div className="max-h-72 overflow-auto rounded-md border border-slate-200 dark:border-slate-700">
+            {(effectiveQuery.data ?? []).length === 0 ? (
+              <p className="p-3 text-xs text-slate-400">No effective permissions</p>
+            ) : (
+              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                {(effectiveQuery.data ?? []).map((permission) => (
+                  <li key={permission.permission_id} className="flex items-start justify-between gap-3 p-2.5 text-xs">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant={permission.effective_effect === 'allow' ? 'success' : 'danger'}>{permission.effective_effect.toUpperCase()}</Badge>
+                        <span className="font-mono text-slate-700 dark:text-slate-200">{permission.permission_key}</span>
+                        {permission.is_privileged && <Badge variant="purple">privileged</Badge>}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1 text-slate-400">
+                        <span>source:</span>
+                        {(permission.sources.length ? permission.sources : [{ type: permission.source, id: '', name: permissionSourceLabel(permission.source), effect: permission.effective_effect, startsAt: null, endsAt: null, temporary: false, approvalStatus: 'approved', reason: null }]).map((source, index) => (
+                          <Badge key={`${source.type}-${source.id}-${index}`} variant={source.type === 'override' ? 'warning' : source.type === 'group' ? 'info' : 'secondary'}>
+                            {permissionSourceLabel(source.type)}{source.name ? `: ${source.name}` : ''}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    {permission.expires_at && <span className="shrink-0 text-slate-400">expires {formatThaiDate(permission.expires_at)}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" /> Access Groups / กลุ่มสิทธิ์
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(groupsQuery.data ?? []).map((membership) => (
+              <span key={membership.id} className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2.5 py-1 text-xs text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200">
+                {membership.access_groups?.name ?? membership.access_groups?.key ?? membership.group_id}
+                <button type="button" onClick={() => removeGroupMutation.mutate(membership.id)} disabled={removeGroupMutation.isPending} className="text-cyan-700 hover:text-red-600 disabled:opacity-50" aria-label="Remove access group">
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            {(groupsQuery.data ?? []).length === 0 && <span className="text-xs text-slate-400">No group membership</span>}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)} className="min-w-56 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900">
+              <option value="">Select a group</option>
+              {availableGroups.map((group) => <option key={group.id} value={group.id}>{group.name} ({group.key})</option>)}
+            </select>
+            <Button size="sm" variant="outline" disabled={!selectedGroupId || addGroupMutation.isPending} onClick={() => addGroupMutation.mutate()}>
+              {addGroupMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />} Add group
+            </Button>
+          </div>
+        </section>
+      </div>
+
+      <section className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> User Access Review
+          </p>
+          <Button size="sm" variant="outline" disabled={requestReviewMutation.isPending || review?.status === 'pending'} onClick={() => requestReviewMutation.mutate()}>
+            {requestReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null} Start review
+          </Button>
+        </div>
+        {review ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant={review.status === 'approved' ? 'success' : review.status === 'pending' ? 'warning' : review.status === 'revoked' ? 'danger' : 'info'}>{review.status}</Badge>
+            <span className="text-slate-500">due {formatThaiDateTime(review.due_at)}</span>
+            <span className="text-slate-400">snapshot: {review.snapshot?.length ?? 0} permissions</span>
+            {review.status === 'pending' && (
+              <>
+                <button type="button" onClick={() => decideReviewMutation.mutate('approved')} disabled={decideReviewMutation.isPending} className="text-emerald-700 hover:underline dark:text-emerald-300">approve</button>
+                <button type="button" onClick={() => decideReviewMutation.mutate('revoked')} disabled={decideReviewMutation.isPending} className="text-red-700 hover:underline dark:text-red-300">revoke</button>
+                <button type="button" onClick={() => decideReviewMutation.mutate('exception')} disabled={decideReviewMutation.isPending} className="text-cyan-700 hover:underline dark:text-cyan-300">exception</button>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-400">No access review has been requested.</p>
+        )}
+      </section>
+      {serverError && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">{serverError}</p>}
     </div>
   );
 }
@@ -849,6 +1076,11 @@ export function UsersPage() {
     queryFn: () => apiFetch<Permission[]>('/api/v1/permissions'),
   });
 
+  const groupsQuery = useQuery({
+    queryKey: ['admin', 'access-groups'],
+    queryFn: () => apiFetch<AccessGroup[]>('/api/v1/access-groups'),
+  });
+
   const allUsersQuery = useQuery({
     queryKey: ['admin', 'users', 'for-supervisor-picker'],
     queryFn: () => apiFetch<PaginatedResult<UserListItem>>('/api/v1/users?page=1&pageSize=100'),
@@ -971,8 +1203,19 @@ export function UsersPage() {
           disabled={!visibleUsers.length}
           fileName={`users-page-${page}.csv`}
           getRows={() => [
-            ['ชื่อ-สกุล', 'อีเมล / ชื่อผู้ใช้', 'สถานะ', '2FA', 'เข้าร่วมเมื่อ'],
-            ...visibleUsers.map((user) => [user.full_name, loginIdentityOf(user), user.status, user.mfa_enabled ? 'เปิด' : 'ปิด', formatThaiDate(user.created_at)]),
+            ['ชื่อ-สกุล', 'อีเมล / ชื่อผู้ใช้', 'สถานะ', 'MFA Status', 'Last Login', 'Last Password Change', 'Account Source', 'Manager', 'Employment Status', 'เข้าร่วมเมื่อ'],
+            ...visibleUsers.map((user) => [
+              user.full_name,
+              loginIdentityOf(user),
+              user.status,
+              user.mfa_status,
+              user.last_login_at ? formatThaiDateTime(user.last_login_at) : '—',
+              user.last_password_change_at ? formatThaiDateTime(user.last_password_change_at) : '—',
+              user.account_source,
+              user.manager?.full_name ?? '—',
+              user.employment_status,
+              formatThaiDate(user.created_at),
+            ]),
           ]}
         />
       </div>
@@ -1001,7 +1244,12 @@ export function UsersPage() {
                 <th className="px-4 py-2" data-sort-key="full_name">ชื่อ-สกุล</th>
                 <th className="px-4 py-2" data-sort-key="email">อีเมล / ชื่อผู้ใช้</th>
                 <th className="px-4 py-2" data-sort-key="status">สถานะ</th>
-                <th className="px-4 py-2">2FA</th>
+                <th className="px-4 py-2">MFA Status</th>
+                <th className="px-4 py-2">Last Login</th>
+                <th className="px-4 py-2">Last Password Change</th>
+                <th className="px-4 py-2">Account Source</th>
+                <th className="px-4 py-2">Manager</th>
+                <th className="px-4 py-2" data-sort-key="employment_status">Employment Status</th>
                 <th className="px-4 py-2" data-sort-key="created_at">เข้าร่วมเมื่อ</th>
                 <th className="px-4 py-2" />
               </tr>
@@ -1022,7 +1270,7 @@ export function UsersPage() {
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={user.mfa_enabled ? 'success' : 'secondary'}>{user.mfa_enabled ? 'เปิด' : 'ปิด'}</Badge>
+                        <Badge variant={user.mfa_status === 'enabled' ? 'success' : 'secondary'}>{user.mfa_status === 'enabled' ? 'enabled' : 'disabled'}</Badge>
                         <Button
                           size="sm"
                           variant={user.mfa_enabled ? 'danger' : 'outline'}
@@ -1034,6 +1282,11 @@ export function UsersPage() {
                         </Button>
                       </div>
                     </td>
+                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{user.last_login_at ? formatThaiDateTime(user.last_login_at) : '—'}</td>
+                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{user.last_password_change_at ? formatThaiDateTime(user.last_password_change_at) : '—'}</td>
+                    <td className="px-4 py-2"><Badge variant="secondary">{user.account_source}</Badge></td>
+                    <td className="px-4 py-2 text-slate-600 dark:text-slate-400">{user.manager?.full_name ?? '—'}</td>
+                    <td className="px-4 py-2"><Badge variant={user.employment_status === 'active' ? 'success' : user.employment_status === 'on_leave' ? 'warning' : 'secondary'}>{user.employment_status}</Badge></td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{formatThaiDate(user.created_at)}</td>
                     <td className="px-4 py-2 text-right">
                       <RowActions
@@ -1063,12 +1316,13 @@ export function UsersPage() {
                   </tr>
                   {expandedUserId === user.id && (
                     <tr>
-                      <td colSpan={6} className="p-0">
+                      <td colSpan={11} className="p-0">
                         <UserRolesPanel userId={user.id} allRoles={rolesQuery.data ?? []} />
                         <SupervisorPanel user={user} allUsers={allUsersQuery.data?.items ?? []} />
                         <RequirePermission permission="role.manage">
                           <UserPermissionOverridesPanel userId={user.id} allPermissions={permissionsQuery.data ?? []} />
                         </RequirePermission>
+                        <UserAccessGovernancePanel userId={user.id} allGroups={groupsQuery.data ?? []} />
                       </td>
                     </tr>
                   )}

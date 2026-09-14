@@ -150,8 +150,8 @@ describe('LINE profile validator', () => {
 
 describe('LINE admin link validator', () => {
   it('accepts a profile UUID or null for unlinking', () => {
-    expect(lineAdminUpdateLinkSchema.safeParse({ userId: '11111111-1111-4111-8111-111111111111' }).success).toBe(true);
-    expect(lineAdminUpdateLinkSchema.safeParse({ userId: null }).success).toBe(true);
+    expect(lineAdminUpdateLinkSchema.safeParse({ userId: '11111111-1111-4111-8111-111111111111', consentAcknowledged: true }).success).toBe(true);
+    expect(lineAdminUpdateLinkSchema.safeParse({ userId: null, consentAcknowledged: true }).success).toBe(true);
   });
 
   it('rejects an invalid profile id', () => {

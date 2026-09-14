@@ -25,6 +25,7 @@ export function LineCallbackPage() {
       void apiFetch('/api/v1/line/my-link', {
         method: 'POST',
         headers: { 'x-line-session': token },
+        body: JSON.stringify({ acknowledged: true }),
       }, { silent: true })
         .then(() => {
           // การเชื่อมไม่ได้ต้องการ session ของพอร์ทัล LINE ต่อ — ปล่อยทิ้งไว้จะสับสนกับบัญชีผู้ใช้ในแอป

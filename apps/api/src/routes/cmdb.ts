@@ -17,6 +17,7 @@ import {
   createConfigurationItemSchema,
   listCiRelationshipsQuerySchema,
   listConfigurationItemsQuerySchema,
+  reviewConfigurationItemSchema,
   setCiRelationshipStatusSchema,
   setConfigurationItemStatusSchema,
   updateCiRelationshipSchema,
@@ -41,8 +42,9 @@ ciRelationshipsRoute.use('*', requireAuth);
 const CI_SELECT =
   'id, ci_code, name, ci_type, environment, business_service, owner_employee_id, administrator_employee_id, ' +
   'criticality, ip_address, url, version, vendor_name, contract_ref, vendor_id, contract_id, asset_id, cloud_ref, data_classification, ' +
-  'rpo_hours, rto_hours, backup_required, backup_reference, location, status, status_reason, last_verified_at, ' +
-  'last_verified_by, notes, created_at, updated_at, ' +
+  'application_service, source_of_truth, discovery_source, rpo_hours, rto_hours, backup_required, backup_reference, location, ' +
+  'status, status_reason, last_verified_at, last_verified_by, lifecycle, data_quality_score, auto_reconciliation, ' +
+  'ci_owner_review_status, ci_owner_review_at, ci_owner_review_by, notes, created_at, updated_at, ' +
   'owner:employees!configuration_items_owner_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'administrator:employees!configuration_items_administrator_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'asset:assets(id, asset_code, name), vendor:vendors(id, vendor_code, name, status), ' +
@@ -242,7 +244,7 @@ configurationItemsRoute.get('/data-quality', requirePermission('cmdb.view'), asy
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
 
-  const [{ data: unverified }, { data: highCriticality }, { data: activeRels }] = await Promise.all([
+  const [{ data: unverified }, { data: highCriticality }, { data: activeRels }, { data: scoreRows }] = await Promise.all([
     supabase.from('configuration_items').select('id, ci_code, name, status').is('last_verified_at', null).neq('status', 'Retired').order('created_at', { ascending: false }).limit(50),
     supabase
       .from('configuration_items')
@@ -251,6 +253,7 @@ configurationItemsRoute.get('/data-quality', requirePermission('cmdb.view'), asy
       .neq('status', 'Retired')
       .limit(200),
     supabase.from('ci_relationships').select(REL_SELECT).eq('status', 'Active').limit(500),
+    supabase.from('configuration_items').select('id, ci_code, name, data_quality_score').neq('status', 'Retired').limit(5000),
   ]);
   const activeRelRows = (activeRels ?? []) as unknown as CiRelationshipRow[];
 
@@ -268,8 +271,17 @@ configurationItemsRoute.get('/data-quality', requirePermission('cmdb.view'), asy
     return (sourceCheckable && !r.sourceName) || (targetCheckable && !r.targetName);
   });
 
+  const qualityRows = (scoreRows ?? []) as { id: string; ci_code: string; name: string; data_quality_score: number }[];
+  const averageScore = qualityRows.length
+    ? Math.round(qualityRows.reduce((total, row) => total + Number(row.data_quality_score ?? 0), 0) / qualityRows.length)
+    : 0;
+  const lowScoreRows = qualityRows.filter((row) => Number(row.data_quality_score ?? 0) < 70).sort((a, b) => a.data_quality_score - b.data_quality_score);
+
   return c.json(
     ok(reqId, {
+      averageScore,
+      lowScoreCount: lowScoreRows.length,
+      lowScoreSample: lowScoreRows.slice(0, 12),
       unverifiedCount: unverified?.length ?? 0,
       unverifiedSample: unverified ?? [],
       incompleteCount: incompleteRows.length,
@@ -341,6 +353,7 @@ configurationItemsRoute.post('/', requirePermission('cmdb.manage'), zValidator('
       ci_type: body.ciType,
       environment: body.environment,
       business_service: body.businessService || null,
+      application_service: body.applicationService || null,
       owner_employee_id: body.ownerEmployeeId,
       administrator_employee_id: body.administratorEmployeeId,
       criticality: body.criticality ?? 'Medium',
@@ -353,12 +366,16 @@ configurationItemsRoute.post('/', requirePermission('cmdb.manage'), zValidator('
       contract_id: body.contractId || null,
       asset_id: body.assetId || null,
       cloud_ref: body.cloudRef || null,
+      source_of_truth: body.sourceOfTruth || null,
+      discovery_source: body.discoverySource || null,
       data_classification: body.dataClassification ?? 'ไม่ลับ',
       rpo_hours: body.rpoHours ?? null,
       rto_hours: body.rtoHours ?? null,
       backup_required: body.backupRequired ?? false,
       backup_reference: body.backupReference || null,
       location: body.location || null,
+      lifecycle: body.lifecycle ?? 'Planned',
+      auto_reconciliation: body.autoReconciliation ?? false,
       status: body.status ?? 'Draft',
       notes: body.notes || null,
       created_by: actorId,
@@ -401,6 +418,7 @@ configurationItemsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidat
   if (body.ciType !== undefined) patch.ci_type = body.ciType;
   if (body.environment !== undefined) patch.environment = body.environment;
   if (body.businessService !== undefined) patch.business_service = body.businessService || null;
+  if (body.applicationService !== undefined) patch.application_service = body.applicationService || null;
   if (body.ownerEmployeeId !== undefined) patch.owner_employee_id = body.ownerEmployeeId;
   if (body.administratorEmployeeId !== undefined) patch.administrator_employee_id = body.administratorEmployeeId;
   if (body.criticality !== undefined) patch.criticality = body.criticality;
@@ -413,12 +431,16 @@ configurationItemsRoute.patch('/:id', requirePermission('cmdb.manage'), zValidat
   if (body.contractId !== undefined) patch.contract_id = body.contractId || null;
   if (body.assetId !== undefined) patch.asset_id = body.assetId || null;
   if (body.cloudRef !== undefined) patch.cloud_ref = body.cloudRef || null;
+  if (body.sourceOfTruth !== undefined) patch.source_of_truth = body.sourceOfTruth || null;
+  if (body.discoverySource !== undefined) patch.discovery_source = body.discoverySource || null;
   if (body.dataClassification !== undefined) patch.data_classification = body.dataClassification;
   if (body.rpoHours !== undefined) patch.rpo_hours = body.rpoHours;
   if (body.rtoHours !== undefined) patch.rto_hours = body.rtoHours;
   if (body.backupRequired !== undefined) patch.backup_required = body.backupRequired;
   if (body.backupReference !== undefined) patch.backup_reference = body.backupReference || null;
   if (body.location !== undefined) patch.location = body.location || null;
+  if (body.lifecycle !== undefined) patch.lifecycle = body.lifecycle;
+  if (body.autoReconciliation !== undefined) patch.auto_reconciliation = body.autoReconciliation;
   if (body.notes !== undefined) patch.notes = body.notes || null;
 
   const auditBefore = await loadAuditSnapshot(supabase, 'configuration_items', id);
@@ -510,6 +532,46 @@ configurationItemsRoute.post('/:id/verify', requirePermission('cmdb.manage'), zV
   if (error) return dbFailJson(c, 'CMDB_CI_VERIFY_FAILED', error);
 
   await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'VERIFY', module: 'cmdb', targetTable: 'configuration_items', targetId: id, requestId: reqId });
+
+  return c.json(ok(reqId, data));
+});
+
+configurationItemsRoute.post('/:id/owner-review', requirePermission('cmdb.manage'), zValidator('json', reviewConfigurationItemSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const id = c.req.param('id')!;
+  const { status, note } = c.req.valid('json');
+
+  const { data: current, error: currentError } = await loadCiOr404(supabase, id);
+  if (currentError) return c.json(fail(reqId, 'CMDB_CI_LOAD_FAILED', 'ไม่สามารถโหลดข้อมูล CI ได้'), 400);
+  if (!current) return c.json(fail(reqId, 'CMDB_CI_NOT_FOUND', 'ไม่พบ CI นี้'), 404);
+
+  const reviewNote = note ? `${current.notes ? `${current.notes}\n` : ''}[Owner Review:${status}] ${note}` : current.notes;
+  const { data, error } = await supabase
+    .from('configuration_items')
+    .update({
+      ci_owner_review_status: status,
+      ci_owner_review_at: status === 'Pending' ? null : new Date().toISOString(),
+      ci_owner_review_by: status === 'Pending' ? null : actorId,
+      notes: reviewNote,
+      updated_by: actorId,
+    })
+    .eq('id', id)
+    .select(CI_SELECT)
+    .single();
+  if (error) return dbFailJson(c, 'CMDB_CI_OWNER_REVIEW_FAILED', error);
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'OWNER_REVIEW',
+    module: 'cmdb',
+    targetTable: 'configuration_items',
+    targetId: id,
+    detail: { status, note },
+    requestId: reqId,
+  });
 
   return c.json(ok(reqId, data));
 });

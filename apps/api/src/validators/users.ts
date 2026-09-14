@@ -63,6 +63,7 @@ export const updateUserSchema = z.object({
   positionId: z.string().uuid().nullable().optional(),
   supervisorId: z.string().uuid().nullable().optional(),
   status: z.enum(['active', 'inactive']).optional(),
+  employmentStatus: z.enum(['active', 'on_leave', 'terminated', 'contractor', 'retired']).optional(),
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

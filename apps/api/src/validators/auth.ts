@@ -10,6 +10,7 @@ export const loginLogSchema = z.object({
   identifier: z.string().trim().min(1).max(254),
   success: z.boolean(),
   failureReason: z.string().max(200).optional(),
+  eventType: z.enum(['login_attempt', 'logout', 'mfa_challenge', 'password_reset', 'password_change', 'session_refresh']).optional(),
 });
 
 export type LoginLogInput = z.infer<typeof loginLogSchema>;
@@ -33,6 +34,23 @@ export const updateOwnProfileSchema = z.object({
 });
 
 export type UpdateOwnProfileInput = z.infer<typeof updateOwnProfileSchema>;
+
+export const PROFILE_TIMEZONES = [
+  'Asia/Bangkok',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'UTC',
+  'Europe/London',
+  'America/New_York',
+] as const;
+
+export const updateOwnPreferencesSchema = z.object({
+  timezone: z.enum(PROFILE_TIMEZONES),
+  preferredLanguage: z.enum(['th', 'en']),
+  inAppNotifications: z.boolean(),
+});
+
+export type UpdateOwnPreferencesInput = z.infer<typeof updateOwnPreferencesSchema>;
 
 /**
  * ปิดคำแนะนำเริ่มต้น — dismissed = true คือกด "ข้ามไปใช้ค่าเริ่มต้น",

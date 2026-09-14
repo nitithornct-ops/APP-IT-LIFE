@@ -1,6 +1,16 @@
-import type { AssetStatus } from '../../types/assets';
+import type { AssetLifecycleStatus, AssetStatus } from '../../types/assets';
 
-export { ASSET_AUDIT_RESULTS, ASSET_CRITICALITIES, ASSET_STATUSES, ASSET_TYPES } from '../../types/assets';
+export { ASSET_AUDIT_RESULTS, ASSET_CRITICALITIES, ASSET_LIFECYCLE_LABELS, ASSET_LIFECYCLE_STATUSES, ASSET_STATUSES, ASSET_TYPES } from '../../types/assets';
+
+export const assetLifecycleTone: Record<AssetLifecycleStatus, 'success' | 'primary' | 'warning' | 'secondary' | 'danger'> = {
+  ordered: 'secondary',
+  received: 'primary',
+  ready: 'success',
+  checked_out: 'primary',
+  repair: 'warning',
+  returned: 'success',
+  disposed: 'danger',
+};
 
 export const assetStatusTone: Record<AssetStatus, 'success' | 'primary' | 'warning' | 'secondary' | 'danger'> = {
   พร้อมใช้งาน: 'success',

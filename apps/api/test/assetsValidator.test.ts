@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bulkUpdateAssetsSchema } from '../src/validators/assets';
+import { assetLoanCreateSchema, bulkUpdateAssetsSchema } from '../src/validators/assets';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 
@@ -31,5 +31,31 @@ describe('bulkUpdateAssetsSchema', () => {
 
   it('ไม่รับสถานที่ว่าง เพราะการล้างสถานที่ทิ้งไม่ใช่สิ่งที่ผู้ใช้ตั้งใจสั่ง', () => {
     expect(bulkUpdateAssetsSchema.safeParse({ ids: [ID], location: '   ' }).success).toBe(false);
+  });
+});
+
+describe('assetLoanCreateSchema', () => {
+  const validLoan = {
+    assetId: ID,
+    borrowerEmployeeId: '22222222-2222-4222-8222-222222222222',
+    approverEmployeeId: '33333333-3333-4333-8333-333333333333',
+    borrowedAt: '2026-09-12',
+    dueAt: '2026-09-19',
+    purpose: 'Field work',
+    conditionBefore: 'Good',
+    companionEquipment: ['Adapter'],
+    borrowerAcknowledged: true,
+    borrowerAcknowledgementName: 'Borrower',
+  };
+
+  it('accepts the complete loan payload and applies reminder defaults', () => {
+    const result = assetLoanCreateSchema.safeParse(validLoan);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.reminderDaysBefore).toBe(3);
+  });
+
+  it('rejects an invalid date range or missing acknowledgement', () => {
+    expect(assetLoanCreateSchema.safeParse({ ...validLoan, dueAt: '2026-09-11' }).success).toBe(false);
+    expect(assetLoanCreateSchema.safeParse({ ...validLoan, borrowerAcknowledged: false }).success).toBe(false);
   });
 });

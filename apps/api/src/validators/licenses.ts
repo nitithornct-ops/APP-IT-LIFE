@@ -2,6 +2,9 @@ import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
 export const LICENSE_STATUSES = ['Active', 'Expired', 'Inactive'] as const;
+export const LICENSE_MODELS = ['SaaS', 'Device', 'Concurrent'] as const;
+export const LICENSE_ALLOCATION_TYPES = ['user', 'device'] as const;
+export const LICENSE_RENEWAL_APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
 const isoDateString = z
   .string()
@@ -19,6 +22,11 @@ const unitPriceOrEmpty = z
   .optional();
 
 const licenseBaseSchema = z.object({
+  productName: z.string().trim().max(150).optional(),
+  edition: z.string().trim().max(100).optional(),
+  version: z.string().trim().max(80).optional(),
+  publisher: z.string().trim().max(150).optional(),
+  licenseModel: z.enum(LICENSE_MODELS).default('SaaS'),
   softwareName: z.string().trim().min(1, 'กรุณากรอกชื่อซอฟต์แวร์').max(150),
   licenseType: z.string().trim().max(80).optional(),
   totalQty: z.coerce.number().min(0).optional(),
@@ -61,6 +69,34 @@ export const setLicenseStatusSchema = z.object({
   status: z.enum(LICENSE_STATUSES),
 });
 export type SetLicenseStatusInput = z.infer<typeof setLicenseStatusSchema>;
+
+export const createLicenseAllocationSchema = z.object({
+  assigneeType: z.enum(LICENSE_ALLOCATION_TYPES),
+  employeeId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  assetId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  notes: z.string().trim().max(500).optional(),
+}).superRefine((data, ctx) => {
+  const hasEmployee = Boolean(data.employeeId);
+  const hasAsset = Boolean(data.assetId);
+  if (data.assigneeType === 'user' && (!hasEmployee || hasAsset)) {
+    ctx.addIssue({ code: 'custom', message: 'กรุณาเลือก User ที่จะได้รับสิทธิ์', path: ['employeeId'] });
+  }
+  if (data.assigneeType === 'device' && (!hasAsset || hasEmployee)) {
+    ctx.addIssue({ code: 'custom', message: 'กรุณาเลือก Device ที่จะได้รับสิทธิ์', path: ['assetId'] });
+  }
+});
+export type CreateLicenseAllocationInput = z.infer<typeof createLicenseAllocationSchema>;
+
+export const reclaimLicenseAllocationSchema = z.object({
+  notes: z.string().trim().max(500).optional(),
+});
+export type ReclaimLicenseAllocationInput = z.infer<typeof reclaimLicenseAllocationSchema>;
+
+export const renewalApprovalSchema = z.object({
+  status: z.enum(LICENSE_RENEWAL_APPROVAL_STATUSES),
+  notes: z.string().trim().max(500).optional(),
+});
+export type RenewalApprovalInput = z.infer<typeof renewalApprovalSchema>;
 
 export const listLicensesQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),

@@ -15,8 +15,12 @@ export interface MeProfile {
   department_id: string | null;
   position_id: string | null;
   supervisor_id: string | null;
+  employee_id?: string | null;
   status: 'active' | 'inactive';
   mfa_enabled?: boolean;
+  timezone?: string | null;
+  preferred_language?: 'th' | 'en' | null;
+  notification_in_app_enabled?: boolean;
   /** null ทั้งคู่ = ยังไม่เคยปิดคำแนะนำเริ่มต้น (migration 20260918100000) */
   onboarding_completed_at?: string | null;
   onboarding_dismissed_at?: string | null;
@@ -30,6 +34,14 @@ export interface MeRole {
 
 export interface MeResponse {
   profile: MeProfile;
+  employeeDirectory?: {
+    id: string;
+    employee_code: string;
+    department_id: string | null;
+    position_id: string | null;
+    department: { id: string; name_th: string; name_en: string | null } | null;
+    position: { id: string; name_th: string; name_en: string | null } | null;
+  } | null;
   roles: MeRole[];
   permissions: string[];
 }

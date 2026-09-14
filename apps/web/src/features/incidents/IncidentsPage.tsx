@@ -5,7 +5,7 @@ import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, GitPullRequestArrow, Grid3X3, Lightbulb, Loader2, Plus, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, GitPullRequestArrow, Grid3X3, Lightbulb, Loader2, Network, Plus, ShieldAlert, Siren, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
@@ -22,7 +22,7 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
 import type { PaginatedResult } from '../../types/admin';
 import type { ChangeRequest } from '../../types/changes';
-import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, INCIDENT_STATUSES, type Incident, type RiskMatrixCell } from '../../types/incidents';
+import { INCIDENT_CATEGORIES, INCIDENT_SEVERITIES, INCIDENT_STATUSES, type Incident, type IncidentReferences, type RiskMatrixCell } from '../../types/incidents';
 import type { Problem } from '../../types/problems';
 import { formatThaiDate } from '../../utils/date';
 import { incidentStatusTone, riskCellClass, riskTone } from './incidentDisplay';
@@ -31,21 +31,24 @@ const createSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อ').max(200),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   category: z.enum(INCIDENT_CATEGORIES),
-  affectedSystem: z.string().trim().max(150).optional(),
+  affectedCiId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  detectionSource: z.string().trim().max(150).optional(),
   containsPersonalData: z.boolean().optional(),
+  majorIncident: z.boolean().optional(),
+  incidentCommanderId: z.union([z.string().uuid(), z.literal('')]).optional(),
   evidenceUrl: z.union([z.string().trim().url('URL ไม่ถูกต้อง'), z.literal('')]).optional(),
 });
 type CreateForm = z.infer<typeof createSchema>;
 
-function CreateIncidentForm({ onClose }: { onClose: () => void }) {
+function CreateIncidentForm({ references, onClose }: { references: IncidentReferences; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { category: INCIDENT_CATEGORIES[0], containsPersonalData: false },
+    defaultValues: { category: INCIDENT_CATEGORIES[0], affectedCiId: '', detectionSource: '', containsPersonalData: false, majorIncident: false, incidentCommanderId: '' },
   });
   const mutation = useMutation({
-    mutationFn: (values: CreateForm) => apiFetch<Incident>('/api/v1/incidents', { method: 'POST', body: JSON.stringify(values) }),
+    mutationFn: (values: CreateForm) => apiFetch<Incident>('/api/v1/incidents', { method: 'POST', body: JSON.stringify({ ...values, affectedCiId: values.affectedCiId || null, incidentCommanderId: values.incidentCommanderId || null }) }),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['incidents'] }); onClose(); },
     onError: (error) => setServerError(error instanceof ApiError ? error.message : 'บันทึก Incident ไม่สำเร็จ'),
   });
@@ -68,8 +71,12 @@ function CreateIncidentForm({ onClose }: { onClose: () => void }) {
         </select>
       </div>
       <div>
-        <label htmlFor="incident-system" className="mb-1 block text-xs font-semibold">ระบบที่ได้รับผลกระทบ</label>
-        <input id="incident-system" className={fieldClass} {...register('affectedSystem')} />
+        <label htmlFor="incident-ci" className="mb-1 block text-xs font-semibold">Affected System / CI</label>
+        <select id="incident-ci" data-testid="incident-create-ci" className={fieldClass} {...register('affectedCiId')}>
+          <option value="">— เลือก Configuration Item —</option>
+          {references.configurationItems.map((item) => <option key={item.id} value={item.id}>{item.ci_code} · {item.name} · {item.criticality}</option>)}
+        </select>
+        <p className="mt-1 text-[11px] text-slate-500">ระบบจะดึง Owner, Criticality, Vendor, Contract, Backup และ dependency จาก CMDB</p>
       </div>
       <div className="sm:col-span-2">
         <label htmlFor="incident-description" className="mb-1 block text-xs font-semibold">รายละเอียด</label>
@@ -80,10 +87,16 @@ function CreateIncidentForm({ onClose }: { onClose: () => void }) {
         <label htmlFor="incident-evidence" className="mb-1 block text-xs font-semibold">ลิงก์หลักฐาน (ถ้ามี)</label>
         <input id="incident-evidence" type="url" className={fieldClass} {...register('evidenceUrl')} />
       </div>
+      <div>
+        <label htmlFor="incident-detection-source" className="mb-1 block text-xs font-semibold">Detection Source</label>
+        <input id="incident-detection-source" placeholder="เช่น SIEM, Monitoring, User report" className={fieldClass} {...register('detectionSource')} />
+      </div>
+      <label className="text-xs font-semibold">Incident Commander<select data-testid="incident-create-commander" className={fieldClass} {...register('incidentCommanderId')}><option value="">— ยังไม่กำหนด —</option>{references.commanders.map((item) => <option key={item.id} value={item.id}>{item.full_name} ({item.email})</option>)}</select></label>
       <label className="flex items-center gap-2 self-end rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
         <input type="checkbox" data-testid="incident-create-pii" {...register('containsPersonalData')} />
         เกี่ยวข้องกับข้อมูลส่วนบุคคล
       </label>
+      <label className="flex items-center gap-2 self-end rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-200"><input type="checkbox" data-testid="incident-create-major" {...register('majorIncident')} /><Siren className="h-4 w-4" /> Major Incident</label>
       {serverError && <p className="text-sm text-red-600 sm:col-span-2">{serverError}</p>}
       <div className="sm:col-span-2"><Button type="submit" size="sm" isLoading={isSubmitting || mutation.isPending} data-testid="incident-create-submit">บันทึกการแจ้งเหตุ</Button></div>
     </form>
@@ -121,6 +134,7 @@ export function IncidentsPage() {
   const { page, pageSize, sort } = table;
   const { search, status, severity, personalData } = table.filters;
   const debouncedSearch = useDebouncedValue(search);
+  const referencesQuery = useQuery({ queryKey: ['incidents', 'references'], queryFn: () => apiFetch<IncidentReferences>('/api/v1/incidents/references'), enabled: hasPermission('incident.create') && showCreate });
   // query string ตัวเดียวกันทั้งรายการบนหน้าจอและไฟล์ที่ส่งออก (ฝั่ง api มองข้าม page/pageSize
   // ตอนส่งออก) — ถ้าประกอบแยกกัน ไฟล์จะมีข้อมูลไม่ตรงกับที่ผู้ใช้เห็นโดยไม่มีใครสังเกต
   const incidentListParams = `page=${page}&pageSize=${pageSize}${sort ? `&sort=${sort.key}&order=${sort.order}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}${severity ? `&severity=${encodeURIComponent(severity)}` : ''}${personalData ? `&personalData=${personalData}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`;
@@ -146,7 +160,7 @@ export function IncidentsPage() {
           <RequirePermission permission="incident.create"><Button size="sm" onClick={() => setShowCreate((value) => !value)} data-testid="incident-create-toggle"><Plus className="h-4 w-4" /> แจ้งเหตุ</Button></RequirePermission>
         </div>
       </div>
-      {showCreate && <FormModal title="แจ้ง Incident" description="บันทึกเหตุการณ์ ประเมินความรุนแรง และข้อมูลที่เกี่ยวข้อง" size="lg" onClose={() => setShowCreate(false)}><CreateIncidentForm onClose={() => setShowCreate(false)} /></FormModal>}
+      {showCreate && <FormModal title="แจ้ง Incident" description="บันทึกเหตุการณ์พร้อมผูกระบบจาก CMDB และกำหนดผู้บัญชาการเหตุการณ์" size="lg" onClose={() => setShowCreate(false)}>{referencesQuery.isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> : referencesQuery.data ? <CreateIncidentForm references={referencesQuery.data} onClose={() => setShowCreate(false)} /> : <p className="p-4 text-sm text-red-600">โหลดข้อมูล CMDB/ผู้เกี่ยวข้องไม่สำเร็จ</p>}</FormModal>}
       {showMatrix && <RiskMatrix />}
       <Card className="overflow-hidden">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span>ITIL Flow Board</span><span className="text-xs font-normal text-slate-500">Incident → Problem → Change</span></CardHeader>
@@ -181,7 +195,7 @@ export function IncidentsPage() {
           )}
           {!query.isError && query.data && items.length === 0 && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="ไม่พบ Incident" />}
           {items.length > 0 && <div className="overflow-x-auto"><DataTable mode="server" sort={sort} onSortChange={table.setSort} rowNumberStart={(page - 1) * pageSize + 1} className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2" data-sort-key="incident_number">เลขที่</th><th className="px-2 py-2" data-sort-key="title">เหตุการณ์</th><th className="px-2 py-2" data-sort-key="risk_score" data-sort-label="เรียงตามคะแนนความเสี่ยง">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead><tbody>
-            {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p></td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td><td className="px-2 py-2 text-right"><RowActions recordLabel={item.incident_number} actions={[{ kind: 'view', to: `/incidents/${item.id}` }, { kind: 'archive', permission: 'incident.manage', archiveEndpoint: `/api/v1/record-deletions/incidents/${item.id}` }]} /></td></tr>)}
+            {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p>{item.affected_system && <p className="mt-1 text-xs text-slate-400">{item.affected_system}</p>}{item.major_incident && <Badge variant="danger"><Siren className="h-3 w-3" /> Major</Badge>}{item.affected_ci_id && <p className="mt-1 flex items-center gap-1 text-xs text-slate-400"><Network className="h-3 w-3" /> CI linked</p>}</td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.incident_commander?.full_name ?? item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td><td className="px-2 py-2 text-right"><RowActions recordLabel={item.incident_number} actions={[{ kind: 'view', to: `/incidents/${item.id}` }, { kind: 'archive', permission: 'incident.manage', archiveEndpoint: `/api/v1/record-deletions/incidents/${item.id}` }]} /></td></tr>)}
           </tbody></DataTable></div>}
           {query.data && <TablePagination page={query.data.pagination.page} pageSize={pageSize} totalItems={query.data.pagination.totalItems} totalPages={query.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>

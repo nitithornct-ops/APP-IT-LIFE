@@ -1,0 +1,10 @@
+{
+  "name": "LIFE IT Field Scan",
+  "short_name": "Field Scan",
+  "description": "ตรวจนับทรัพย์สินหน้างานแบบ Offline/PWA",
+  "start_url": "/field/scan",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0b1b36",
+  "icons": []
+}

@@ -14,12 +14,24 @@ export interface ChangeServiceRequestRef {
   status: string;
 }
 
+export interface ChangeConfigurationItemRef {
+  id: string;
+  ci_code: string;
+  name: string;
+  ci_type: string;
+  environment: string;
+  criticality: string;
+  status: string;
+}
+
 export interface ChangeRequest {
   id: string;
   change_number: string;
   legacy_id: string | null;
   title: string;
   system_affected: string;
+  configuration_item_id: string | null;
+  configuration_item?: ChangeConfigurationItemRef | null;
   change_type: string | null;
   description: string;
   requester_id: string;
@@ -43,6 +55,8 @@ export interface ChangeRequest {
   version: string | null;
   rollback_plan: string | null;
   status: (typeof CHANGE_STATUSES)[number];
+  source_incident_id: string | null;
+  source_incident?: { id: string; incident_number: string; title: string; status: string } | null;
   source_service_request_id: string | null;
   source_service_request?: ChangeServiceRequestRef | null;
   notes: string | null;
@@ -52,6 +66,7 @@ export interface ChangeRequest {
 
 export interface ChangeReferences {
   serviceRequests: ChangeServiceRequestRef[];
+  configurationItems: ChangeConfigurationItemRef[];
 }
 
 export interface ChangeDetail {

@@ -41,7 +41,7 @@ describe('LineLinksPage', () => {
 
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith(
       '/api/v1/line/admin/links/22222222-2222-4222-8222-222222222222/link',
-      { method: 'PATCH', body: JSON.stringify({ userId: '11111111-1111-4111-8111-111111111111' }) },
+      { method: 'PATCH', body: JSON.stringify({ userId: '11111111-1111-4111-8111-111111111111', consentAcknowledged: true }) },
     ));
   });
 });

@@ -50,6 +50,58 @@ export interface TaskReminder {
   sent_at: string | null;
 }
 
+export type TaskRecordType = 'incident' | 'change' | 'asset' | 'contract' | 'risk';
+
+export interface TaskDependency {
+  id: string;
+  task_id: string;
+  depends_on_task_id: string;
+  owner_id: string;
+  note: string | null;
+  created_at: string;
+  depends_on_task: Pick<Task, 'id' | 'task_no' | 'title' | 'status' | 'progress' | 'due_date'> | null;
+}
+
+export interface TaskRecordLink {
+  id: string;
+  task_id: string;
+  owner_id: string;
+  record_type: TaskRecordType;
+  record_id: string;
+  record_code: string;
+  record_title: string;
+  record_status: string | null;
+  created_at: string;
+}
+
+export interface TaskContextOption {
+  id: string;
+  recordType: TaskRecordType;
+  code: string;
+  title: string;
+  status: string | null;
+}
+
+export interface TaskTemplate {
+  id: string;
+  owner_id: string;
+  name: string;
+  title: string;
+  description: string | null;
+  task_type: TaskType;
+  category: TaskCategory;
+  priority: TaskPriority;
+  recurrence: TaskRecurrence;
+  recurrence_rule: TaskRecurrenceRule | null;
+  due_offset_days: number;
+  estimate_hours: number | null;
+  tags: string | null;
+  notes: string | null;
+  checklist: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Task {
   id: string;
   task_no: string;
@@ -67,6 +119,9 @@ export interface Task {
   due_days: number | null;
   completed_at: string | null;
   progress: number;
+  estimate_hours: number | null;
+  actual_hours: number | null;
+  blocked_reason: string | null;
   tags: string | null;
   notes: string | null;
   sort_order: number;
@@ -80,6 +135,8 @@ export interface Task {
   links: TaskLink[];
   progressLogs: TaskProgressLog[];
   reminders: TaskReminder[];
+  dependencies: TaskDependency[];
+  relations: TaskRecordLink[];
 }
 
 export interface TaskDashboardSummary {

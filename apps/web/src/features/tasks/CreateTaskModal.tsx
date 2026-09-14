@@ -11,6 +11,8 @@ import type { TaskStatus } from '../../types/tasks';
 import { cn } from '../../utils/cn';
 import { TASK_CATEGORIES, TASK_PRIORITIES, TASK_RECURRENCES, TASK_TYPES } from './taskDisplay';
 
+const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number().min(0).max(999999.99).optional());
+
 const createTaskSchema = z
   .object({
     title: z.string().trim().min(1, 'กรุณาระบุชื่องาน').max(300),
@@ -22,6 +24,9 @@ const createTaskSchema = z
     startTime: z.string().optional(),
     dueDate: z.string().optional(),
     dueTime: z.string().optional(),
+    estimateHours: hoursInput,
+    actualHours: hoursInput,
+    blockedReason: z.string().trim().max(1000).optional(),
     recurrence: z.enum(['ไม่ทำซ้ำ', 'รายวัน', 'วันทำงาน', 'รายสัปดาห์', 'ทุก 2 สัปดาห์', 'รายเดือน', 'รายไตรมาส', 'ทุก 6 เดือน', 'รายปี', 'กำหนดเอง']),
     recurrenceRule: z.object({
       frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
@@ -92,6 +97,9 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
       startTime: '',
       dueDate: initialDueDate ?? '',
       dueTime: '',
+      estimateHours: undefined,
+      actualHours: undefined,
+      blockedReason: '',
       recurrence: 'ไม่ทำซ้ำ',
       recurrenceRule: { frequency: 'weekly', interval: 1 },
       recurrenceEndDate: '',
@@ -192,6 +200,14 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
             <input aria-label="เวลาเริ่มงาน" type="time" {...register('startTime')} className={`${fieldClass} mt-0`} />
           </div>
         </fieldset>
+
+        <fieldset className="sm:col-span-2">
+          <legend className={labelClass}>การประเมินเวลา</legend>
+          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+            <label className={labelClass}>Estimate Hours<input aria-label="Estimate Hours" type="number" min={0} step="0.25" {...register('estimateHours')} className={fieldClass} placeholder="เช่น 2.5" /></label>
+            <label className={labelClass}>Actual Hours<input aria-label="Actual Hours" type="number" min={0} step="0.25" {...register('actualHours')} className={fieldClass} placeholder="บันทึกเมื่อทำเสร็จ" /></label>
+          </div>
+        </fieldset>
         <fieldset>
           <legend className={labelClass}>ครบกำหนด <span className="text-red-600">*</span></legend>
           <div className="mt-1 grid grid-cols-[minmax(0,1fr)_110px] gap-2">
@@ -229,6 +245,10 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
 
         <label className={`${labelClass} sm:col-span-2`}>บันทึกเพิ่มเติม
           <textarea aria-label="บันทึกเพิ่มเติม" rows={2} {...register('notes')} className={fieldClass} placeholder="ข้อมูลประกอบที่ช่วยให้ทำงานต่อได้สะดวก" />
+        </label>
+
+        <label className={`${labelClass} sm:col-span-2`}>เหตุผลที่ถูกบล็อก (ถ้ามี)
+          <textarea aria-label="เหตุผลที่ถูกบล็อก" rows={2} {...register('blockedReason')} className={fieldClass} placeholder="เช่น รอสิทธิ์เข้าถึงระบบ หรือรอข้อมูลจากผู้เกี่ยวข้อง" />
         </label>
 
         {serverError && <p role="alert" className="rounded-[7px] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 sm:col-span-2 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{serverError}</p>}

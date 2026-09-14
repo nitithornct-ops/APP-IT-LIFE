@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { constantTimeEqualText, hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../src/lib/vendorPortalAuth';
-import { changeVendorPortalPasswordSchema, createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalLoginSchema } from '../src/validators/vendorPortal';
+import { changeVendorPortalPasswordSchema, createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalIdentitySchema } from '../src/validators/vendorPortal';
 
 describe('vendor portal authentication', () => {
   it('hashes passwords with a random salt and verifies without storing plaintext', async () => {
@@ -27,10 +27,10 @@ describe('vendor portal authentication', () => {
     expect(constantTimeEqualText('a'.repeat(64), 'a'.repeat(63))).toBe(false);
   });
 
-  it('normalizes the company login username and enforces strong admin-created passwords', () => {
-    expect(vendorPortalLoginSchema.parse({ vendorCode: 'vnd-001', username: 'Vendor.Contact', password: 'x' })).toMatchObject({ vendorCode: 'VND-001', username: 'vendor.contact' });
-    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'weakpassword' }).success).toBe(false);
-    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(true);
+  it('normalizes company identity and rejects admin-supplied passwords', () => {
+    expect(vendorPortalIdentitySchema.parse({ vendorCode: 'vnd-001', username: 'Vendor.Contact' })).toMatchObject({ vendorCode: 'VND-001', username: 'vendor.contact' });
+    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
+    expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A' }).success).toBe(true);
     expect(createVendorPortalAccountSchema.safeParse({ username: 'ชื่อบริษัท', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
   });
 

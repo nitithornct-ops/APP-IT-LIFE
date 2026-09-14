@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { sendNotification } from '../services/notificationService';
+import { automateServiceRequest } from '../services/serviceRequestAutomationService';
 import { createSignedUrl } from '../services/storageService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -77,6 +78,12 @@ interface EligibilityRule {
   departmentIds?: string[];
 }
 
+interface ServiceDependency {
+  type: 'requester_employee' | 'requester_department' | 'requester_role';
+  value?: string;
+  label?: string;
+}
+
 async function resolveActorEligibilityContext(c: Context<AppEnv>) {
   const supabase = c.get('supabase');
   const actorId = c.get('userId');
@@ -97,6 +104,58 @@ function isEligible(eligibility: EligibilityRule | null, ctx: { departmentId: st
   if (roles.length && ctx.roleKeys.some((key) => roles.includes(key))) return true;
   if (departmentIds.length && ctx.departmentId && departmentIds.includes(ctx.departmentId)) return true;
   return false;
+}
+
+async function validateServiceDependencies(
+  c: Context<AppEnv>,
+  dependencies: unknown,
+): Promise<string | null> {
+  if (!Array.isArray(dependencies) || dependencies.length === 0) return null;
+  const rules = dependencies.filter((item): item is ServiceDependency => Boolean(item && typeof item === 'object'));
+  if (!rules.length) return null;
+
+  const supabase = c.get('supabase');
+  const actorId = c.get('userId');
+  const [{ data: profile }, { data: roleRows }] = await Promise.all([
+    supabase.from('profiles').select('employee_code, department_id').eq('id', actorId).maybeSingle(),
+    supabase.from('user_roles').select('roles(key)').eq('user_id', actorId),
+  ]);
+  const roleKeys = (roleRows ?? [])
+    .map((row) => (row as unknown as { roles: { key: string } | null }).roles?.key)
+    .filter((key): key is string => Boolean(key));
+
+  for (const rule of rules) {
+    const label = rule.label ?? 'เงื่อนไขของบริการ';
+    if (rule.type === 'requester_employee' && !profile?.employee_code) {
+      return `${label}: ต้องมีข้อมูลพนักงานในระบบก่อนยื่นคำขอ`;
+    }
+    if (rule.type === 'requester_department' && (!profile?.department_id || profile.department_id !== rule.value)) {
+      return `${label}: ไม่พบแผนกที่ตรงตามเงื่อนไขของบริการ`;
+    }
+    if (rule.type === 'requester_role' && (!rule.value || !roleKeys.includes(rule.value))) {
+      return `${label}: บัญชีนี้ไม่มีสิทธิ์ตามเงื่อนไขของบริการ`;
+    }
+  }
+  return null;
+}
+
+function serviceRequestCycleTime(request: {
+  created_at: string;
+  approval_status: string | null;
+  approved_at: string | null;
+  fulfillment_started_at?: string | null;
+  completed_at: string | null;
+  status: string;
+}) {
+  const elapsedMinutes = (from: string | null | undefined, to: string | null | undefined) => {
+    if (!from || !to) return null;
+    const value = Math.round((Date.parse(to) - Date.parse(from)) / 60000);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  return {
+    approvalMinutes: request.approval_status === 'not_required' ? 0 : elapsedMinutes(request.created_at, request.approved_at),
+    fulfillmentMinutes: elapsedMinutes(request.fulfillment_started_at, request.completed_at),
+  };
 }
 
 async function activeApprovalGroupIdsFor(c: Context<AppEnv>): Promise<string[]> {
@@ -136,7 +195,7 @@ serviceRequestsRoute.get('/', zValidator('query', listServiceRequestsQuerySchema
   // RLS (service_requests_select_participant_or_staff) เป็นตัวกรองสิทธิ์การมองเห็นจริง
   let query = supabase
     .from('service_requests')
-    .select('id, service_code, service_name, requester_id, priority, status, approval_status, assignee_id, due_at, created_at', {
+    .select('id, service_code, service_name, requester_id, priority, status, approval_status, assignee_id, assigned_group_id, service_owner_id, fulfillment_task_id, fulfillment_started_at, due_at, sla_paused_at, sla_paused_minutes, estimated_cost, created_at', {
       count: 'exact',
     })
     .order('created_at', { ascending: false })
@@ -186,7 +245,7 @@ serviceRequestsRoute.get('/:id', async (c) => {
   const { data: request, error } = await supabase
     .from('service_requests')
     .select(
-      '*, service_catalog(service_name, category), requester:profiles!service_requests_requester_id_fkey(full_name, email), assignee:profiles!service_requests_assignee_id_fkey(full_name, email), approval_group:approval_groups(code, name)',
+      '*, service_catalog(service_name, category), requester:profiles!service_requests_requester_id_fkey(full_name, email), assignee:profiles!service_requests_assignee_id_fkey(full_name, email), service_owner:profiles!service_requests_service_owner_id_fkey(full_name, email), approval_group:approval_groups(code, name)',
     )
     .eq('id', id)
     .maybeSingle();
@@ -227,7 +286,13 @@ serviceRequestsRoute.get('/:id', async (c) => {
     return { ...attachment, signed_url: 'url' in signed ? signed.url : null };
   }));
 
-  return c.json(ok(reqId, { ...request, tasks: tasks ?? [], history: history ?? [], attachments }));
+  return c.json(ok(reqId, {
+    ...request,
+    tasks: tasks ?? [],
+    history: history ?? [],
+    attachments,
+    cycle_time: serviceRequestCycleTime(request),
+  }));
 });
 
 serviceRequestsRoute.post(
@@ -251,11 +316,12 @@ serviceRequestsRoute.post(
     }
 
     const { data: catalog, error: catalogError } = await supabase
-      .from('service_catalog')
-      .select('*')
-      .eq('id', body.catalogId)
-      .eq('status', 'active')
-      .maybeSingle();
+    .from('service_catalog')
+    .select('*')
+    .eq('id', body.catalogId)
+    .eq('status', 'active')
+    .lte('effective_date', new Date().toISOString().slice(0, 10))
+    .maybeSingle();
     if (catalogError || !catalog) {
       return c.json(fail(reqId, 'SERVICE_CATALOG_INVALID', 'กรุณาเลือกบริการที่เปิดใช้งานอยู่'), 400);
     }
@@ -263,6 +329,11 @@ serviceRequestsRoute.post(
     const eligibilityCtx = await resolveActorEligibilityContext(c);
     if (!isEligible(catalog.eligibility, eligibilityCtx)) {
       return c.json(fail(reqId, 'SERVICE_REQUEST_NOT_ELIGIBLE', 'ท่านไม่มีสิทธิ์ขอบริการรายการนี้'), 403);
+    }
+
+    const dependencyError = await validateServiceDependencies(c, catalog.dependencies);
+    if (dependencyError) {
+      return c.json(fail(reqId, 'SERVICE_REQUEST_DEPENDENCY_NOT_MET', dependencyError), 409);
     }
 
     const approvalRequired = catalog.approval_mode === 'group';
@@ -291,6 +362,8 @@ serviceRequestsRoute.post(
         approval_group_id: approvalRequired ? catalog.approval_group_id : null,
         approval_status: approvalRequired ? 'pending' : 'not_required',
         assigned_group_id: catalog.fulfillment_group_id,
+        service_owner_id: catalog.owner_id,
+        estimated_cost: catalog.estimated_cost ?? null,
         close_mode: catalog.close_mode,
         status: initialStatus,
         checklist_snapshot: catalog.checklist,
@@ -359,6 +432,19 @@ serviceRequestsRoute.post(
       }
     }
 
+    if (!approvalRequired) {
+      const automation = await automateServiceRequest(c.env, request.id, actorId);
+      if (automation.assigneeId) {
+        await sendNotification(c.env, {
+          recipientId: automation.assigneeId,
+          type: 'service_request_assigned',
+          title: `ได้รับมอบหมายคำขอบริการ: ${request.service_name}`,
+          body: automation.fulfillmentTaskId ? 'ระบบสร้างงานใน My Work ให้แล้ว' : null,
+          link: `/service-requests/${request.id}`,
+        });
+      }
+    }
+
     return c.json(ok(reqId, request), 201);
   },
 );
@@ -370,7 +456,7 @@ serviceRequestsRoute.post(
     const supabase = c.get('supabase');
     const reqId = c.get('requestId');
     const actorId = c.get('userId');
-    const id = c.req.param('id');
+    const id = c.req.param('id')!;
     const body = c.req.valid('json');
 
     const { data: current, error: currentError } = await supabase.from('service_requests').select('*').eq('id', id).maybeSingle();
@@ -446,6 +532,19 @@ serviceRequestsRoute.post(
       detail: body,
       requestId: reqId,
     });
+
+    if (body.approved) {
+      const automation = await automateServiceRequest(c.env, id, actorId);
+      if (automation.assigneeId) {
+        await sendNotification(c.env, {
+          recipientId: automation.assigneeId,
+          type: 'service_request_assigned',
+          title: `ได้รับมอบหมายคำขอบริการ: ${updated.service_name}`,
+          body: automation.fulfillmentTaskId ? 'ระบบสร้างงานใน My Work ให้แล้ว' : null,
+          link: `/service-requests/${id}`,
+        });
+      }
+    }
 
     await sendNotification(c.env, {
       recipientId: current.requester_id,
@@ -575,11 +674,29 @@ serviceRequestsRoute.patch('/:id', zValidator('json', updateServiceRequestSchema
 
   const patch: Record<string, unknown> = { updated_by: actorId };
   const now = new Date();
+  const isWaitingStatus = toStatus === STATUS.WAITING_USER || toStatus === STATUS.WAITING_VENDOR;
   if (body.assigneeId !== undefined) patch.assignee_id = body.assigneeId;
   if (body.assignedGroupId !== undefined) patch.assigned_group_id = body.assignedGroupId;
   if (body.priority !== undefined) patch.priority = body.priority;
   if (body.fulfillmentNotes !== undefined) patch.fulfillment_notes = body.fulfillmentNotes;
   if (body.completionEvidence !== undefined) patch.completion_evidence = body.completionEvidence;
+
+  if (isWaitingStatus && !current.sla_paused_at) {
+    patch.sla_paused_at = now.toISOString();
+    patch.sla_pause_reason = body.note ?? toStatus;
+  } else if (!isWaitingStatus && current.sla_paused_at) {
+    const pausedMs = Math.max(0, now.getTime() - Date.parse(String(current.sla_paused_at)));
+    const pausedMinutes = Math.floor(pausedMs / 60000);
+    patch.sla_paused_at = null;
+    patch.sla_pause_reason = null;
+    patch.sla_paused_minutes = Number(current.sla_paused_minutes ?? 0) + pausedMinutes;
+    if (current.due_at && Number.isFinite(pausedMs)) {
+      patch.due_at = new Date(Date.parse(String(current.due_at)) + pausedMs).toISOString();
+    }
+  }
+  if (toStatus === STATUS.IN_PROGRESS && !current.fulfillment_started_at) {
+    patch.fulfillment_started_at = now.toISOString();
+  }
 
   if (isConfirmPath) {
     patch.status = toStatus;

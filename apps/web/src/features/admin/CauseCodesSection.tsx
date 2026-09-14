@@ -32,6 +32,8 @@ function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode
   const [name, setName] = useState(cause?.name ?? '');
   const [description, setDescription] = useState(cause?.description ?? '');
   const [categoryId, setCategoryId] = useState(cause?.category_id ?? '');
+  const [effectiveDate, setEffectiveDate] = useState(cause?.effective_date ?? new Date().toISOString().slice(0, 10));
+  const [sortOrder, setSortOrder] = useState(String(cause?.sort_order ?? 100));
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -41,6 +43,8 @@ function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode
         name: name.trim(),
         description: description.trim() || null,
         categoryId: categoryId || null,
+        effectiveDate: effectiveDate || undefined,
+        sortOrder: Number(sortOrder),
       };
       return apiFetch(cause ? `/api/v1/cause-codes/${cause.id}` : '/api/v1/cause-codes', {
         method: cause ? 'PATCH' : 'POST',
@@ -100,6 +104,17 @@ function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode
           ))}
         </select>
       </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+          Effective Date
+          <input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} className={fieldClass} />
+        </label>
+        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+          Sort Order
+          <input type="number" min={0} step={1} value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className={fieldClass} />
+        </label>
+      </div>
 
       {error && <p className="text-[12px] text-danger-700 dark:text-red-300" role="alert">{error}</p>}
 
@@ -191,6 +206,7 @@ export function CauseCodesSection() {
                   <th className="px-2 py-2">ชื่อ</th>
                   <th className="px-2 py-2">หมวดหมู่</th>
                   <th className="px-2 py-2">สถานะ</th>
+                  <th className="px-2 py-2">Effective / Sort</th>
                   <th className="px-2 py-2" />
                 </tr>
               </thead>
@@ -208,11 +224,11 @@ export function CauseCodesSection() {
                     <td className="px-2 py-2">
                       <Badge variant={cause.is_active ? 'success' : 'secondary'}>{cause.is_active ? 'ใช้งาน' : 'ปิดใช้'}</Badge>
                     </td>
+                    <td className="px-2 py-2 text-xs text-slate-500 dark:text-slate-400"><div>{cause.effective_date}</div><div>#{cause.sort_order}</div></td>
                     <td className="px-2 py-2 text-right">
                       <RowActions recordLabel={cause.code} actions={[
                         { kind: 'edit', permission: 'cause_code.manage', onClick: () => setEditingCause(cause) },
                         { kind: 'custom', label: cause.is_active ? 'ปิดใช้' : 'เปิดใช้', permission: 'cause_code.manage', disabled: toggle.isPending, onClick: () => toggle.mutate(cause) },
-                        { kind: 'delete', permission: 'cause_code.manage', deleteEndpoint: `/api/v1/record-deletions/cause-codes/${cause.id}` },
                       ]} />
                     </td>
                   </tr>

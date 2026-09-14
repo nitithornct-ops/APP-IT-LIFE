@@ -1,4 +1,5 @@
 import { createAdminClient } from '../lib/supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { appUrl, buildUserNotificationFlexMessage, formatThaiDateTime, resolveUserLineTarget, sendLinePush } from '../lib/lineMessaging';
 import type { Bindings } from '../types';
 
@@ -43,6 +44,7 @@ export async function sendNotification(env: Bindings, input: NotificationInput):
       payload: input,
       status: 'PENDING',
       next_attempt_at: new Date().toISOString(),
+      delivery_channel: 'in-app',
     });
     if (queueError) throw new Error(queueError.message);
   } catch (queueError) {
@@ -106,6 +108,14 @@ export interface NotificationDispatchResult {
   dead: number;
 }
 
+async function recordChannelSuccess(supabase: SupabaseClient, channel: string, latencyMs: number): Promise<void> {
+  const { error } = await supabase.from('integration_channels').update({
+    last_latency_ms: Math.max(0, latencyMs),
+    last_successful_delivery_at: new Date().toISOString(),
+  }).eq('channel_key', channel);
+  if (error) console.warn(JSON.stringify({ msg: 'integration_channel_telemetry_update_failed', channel, error: error.message }));
+}
+
 export function isValidLineNotificationPayload(input: unknown): input is LineNotificationOutboxPayload {
   return isValidNotificationPayload(input)
     && typeof (input as Partial<LineNotificationOutboxPayload>).notificationId === 'string'
@@ -142,7 +152,7 @@ export async function dispatchNotificationOutbox(
     const nextAttempt = Number(candidate.attempt_count) + 1;
     const { data: claimed, error: claimError } = await supabase
       .from('integration_outbox')
-      .update({ status: 'PROCESSING', attempt_count: nextAttempt })
+      .update({ status: 'PROCESSING', attempt_count: nextAttempt, delivery_channel: 'in-app' })
       .eq('id', candidate.id)
       .in('status', ['PENDING', 'ERROR'])
       .select('id')
@@ -162,16 +172,21 @@ export async function dispatchNotificationOutbox(
       result.failed += 1;
       continue;
     }
+    const deliveryStartedAt = Date.now();
     const delivery = await supabase.from('notifications').insert(notificationRow(payload));
 
     if (!delivery.error) {
+      const deliveryLatencyMs = Date.now() - deliveryStartedAt;
       const { error: completeError } = await supabase.from('integration_outbox').update({
         status: 'COMPLETED',
         processed_at: now.toISOString(),
         next_attempt_at: null,
         last_error: null,
+        delivery_channel: 'in-app',
+        delivery_latency_ms: deliveryLatencyMs,
       }).eq('id', candidate.id).eq('status', 'PROCESSING');
       if (completeError) throw new Error(`notification_outbox_complete_failed: ${completeError.message}`);
+      await recordChannelSuccess(supabase, 'in-app', deliveryLatencyMs);
       result.completed += 1;
       continue;
     }
@@ -227,7 +242,7 @@ export async function dispatchLineNotificationOutbox(
     const nextAttempt = Number(candidate.attempt_count) + 1;
     const { data: claimed, error: claimError } = await supabase
       .from('integration_outbox')
-      .update({ status: 'PROCESSING', attempt_count: nextAttempt })
+      .update({ status: 'PROCESSING', attempt_count: nextAttempt, delivery_channel: 'line-messaging' })
       .eq('id', candidate.id)
       .in('status', ['PENDING', 'ERROR'])
       .select('id')
@@ -261,6 +276,7 @@ export async function dispatchLineNotificationOutbox(
     const text = [payload.title, payload.body]
       .filter((value): value is string => Boolean(value?.trim()))
       .join('\n');
+    const deliveryStartedAt = Date.now();
     const delivery = await sendLinePush(
       env,
       target.target,
@@ -273,15 +289,22 @@ export async function dispatchLineNotificationOutbox(
         footnote: `ส่งเมื่อ ${formatThaiDateTime(now)}`,
         url: appUrl(env, payload.link),
       }),
+      payload.type,
     );
 
     if (delivery.success) {
+      const deliveryLatencyMs = Date.now() - deliveryStartedAt;
       const { error: completeError } = await supabase.from('integration_outbox').update({
         status: 'COMPLETED', processed_at: now.toISOString(), next_attempt_at: null, last_error: null,
+        delivery_channel: 'line-messaging', delivery_latency_ms: deliveryLatencyMs,
         result_record_id: payload.notificationId,
-        result_payload: { lineUserId: target.lineUserId },
+        result_payload: {
+          lineUserId: target.lineUserId,
+          ...(delivery.skipped ? { skipped: delivery.skipped } : {}),
+        },
       }).eq('id', candidate.id).eq('status', 'PROCESSING');
       if (completeError) throw new Error(`line_notification_outbox_complete_failed: ${completeError.message}`);
+      await recordChannelSuccess(supabase, 'line-messaging', deliveryLatencyMs);
       result.completed += 1;
       continue;
     }

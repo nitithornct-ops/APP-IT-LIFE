@@ -13,6 +13,7 @@ import { useAuth } from '../../stores/authContext';
 import type { InventoryItem } from '../../types/assets';
 import type { PaginatedResult } from '../../types/admin';
 import type { FieldCloseTicket, FieldOutcome, PartUsage } from '../../types/fieldWork';
+import type { AssignableStaff } from '../../types/tickets';
 import type { CauseCode, CreatedKnowledgeArticle } from '../../types/causeCodes';
 import { cn } from '../../utils/cn';
 
@@ -37,6 +38,9 @@ export function FieldCloseTicketPage() {
   const [causeCodeId, setCauseCodeId] = useState('');
   const [createArticle, setCreateArticle] = useState(false);
   const [outsourceName, setOutsourceName] = useState('');
+  const [waitingReason, setWaitingReason] = useState('');
+  const [waitingOwnerId, setWaitingOwnerId] = useState('');
+  const [waitingFollowUpAt, setWaitingFollowUpAt] = useState('');
   const [parts, setParts] = useState<PartUsage[]>([]);
   const [photos, setPhotos] = useState<File[]>([]);
   const [partSearch, setPartSearch] = useState('');
@@ -50,6 +54,12 @@ export function FieldCloseTicketPage() {
     queryKey: ['tickets', id, 'field-close'],
     queryFn: () => apiFetch<FieldCloseTicket>(`/api/v1/tickets/${id}`),
     enabled: Boolean(id),
+  });
+
+  const staffQuery = useQuery({
+    queryKey: ['tickets', 'assignable-staff', 'field-close'],
+    queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/tickets/assignable-staff'),
+    enabled: Boolean(ticketQuery.data),
   });
 
   const partsQuery = useQuery({
@@ -82,6 +92,9 @@ export function FieldCloseTicketPage() {
       }
       if (selected.status === 'ส่งต่อ Outsource' && !outsourceName.trim()) {
         throw new ApiError('VALIDATION_ERROR', 'กรุณาระบุผู้ให้บริการที่รับงานต่อ');
+      }
+      if ((selected.status === 'รออะไหล่' || selected.status === 'รอผู้ใช้งาน') && (!waitingReason.trim() || !waitingOwnerId || !waitingFollowUpAt)) {
+        throw new ApiError('VALIDATION_ERROR', 'กรุณาระบุเหตุผล ผู้ติดตาม และวันติดตามเมื่อพัก Ticket');
       }
       setProgress([]);
 
@@ -120,6 +133,9 @@ export function FieldCloseTicketPage() {
           rootCause: rootCause.trim() || undefined,
           causeCodeId: causeCodeId || null,
           outsourceName: selected.status === 'ส่งต่อ Outsource' ? outsourceName.trim() : undefined,
+          waitingReason: selected.status === 'รออะไหล่' || selected.status === 'รอผู้ใช้งาน' ? waitingReason.trim() : undefined,
+          waitingOwnerId: selected.status === 'รออะไหล่' || selected.status === 'รอผู้ใช้งาน' ? waitingOwnerId : undefined,
+          waitingFollowUpAt: selected.status === 'รออะไหล่' || selected.status === 'รอผู้ใช้งาน' ? waitingFollowUpAt : undefined,
         }),
       });
       setProgress((current) => [...current, 'อัปเดตสถานะและแจ้งผู้ใช้']);
@@ -194,6 +210,17 @@ export function FieldCloseTicketPage() {
                   aria-label="ชื่อผู้ให้บริการที่รับงานต่อ"
                   className="min-h-11 w-full rounded-[8px] border border-hairline-control px-3 text-[13px] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-100"
                 />
+              </CardBody>
+            </Card>
+          )}
+
+          {(selected?.status === 'รออะไหล่' || selected?.status === 'รอผู้ใช้งาน') && (
+            <Card>
+              <CardHeader>ข้อมูลการพัก SLA</CardHeader>
+              <CardBody className="space-y-3">
+                <label className="block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">รออะไร <span className="text-danger-600">*</span><textarea value={waitingReason} onChange={(event) => setWaitingReason(event.target.value)} rows={2} maxLength={1000} className="mt-1 w-full rounded-[8px] border border-hairline-control px-3 py-2 text-[13px] dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-100" /></label>
+                <label className="block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">ผู้ติดตาม <span className="text-danger-600">*</span><select value={waitingOwnerId} onChange={(event) => setWaitingOwnerId(event.target.value)} className="mt-1 min-h-11 w-full rounded-[8px] border border-hairline-control px-3 text-[13px] dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-100"><option value="">— เลือกผู้ติดตาม —</option>{(Array.isArray(staffQuery.data) ? staffQuery.data : []).map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}</select></label>
+                <label className="block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">วันติดตาม <span className="text-danger-600">*</span><input type="datetime-local" value={waitingFollowUpAt} onChange={(event) => setWaitingFollowUpAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-[8px] border border-hairline-control px-3 text-[13px] dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-100" /></label>
               </CardBody>
             </Card>
           )}

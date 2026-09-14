@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { hasPermission } from '../middleware/permission';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { ATTACHMENTS_BUCKET } from '../services/storageService';
 import { TICKET_SIGNATURE_BUCKET } from '../services/ticketSignatureService';
 import type { AppEnv } from '../types';
@@ -68,6 +68,16 @@ const DELETION_RESOURCES = {
   'workflow-definitions': { table: 'workflow_definitions', permission: 'workflow.manage', module: 'workflow', mode: 'archive' },
   'workflow-instances': { table: 'workflow_instances', permission: 'workflow.manage', module: 'workflow', mode: 'archive' },
 } as const satisfies Record<string, DeletionResource>;
+
+/** Master Data ที่มีการอ้างอิงจะไม่ถูกลบ — fallback นี้ทำให้ endpoint เดิมปลอดภัยกับข้อมูลเก่าด้วย */
+const MASTER_DATA_IN_USE: Record<string, { statusColumn: 'status' | 'is_active'; inactiveValue: boolean | string }> = {
+  departments: { statusColumn: 'status', inactiveValue: 'inactive' },
+  positions: { statusColumn: 'status', inactiveValue: 'inactive' },
+  'ticket-categories': { statusColumn: 'status', inactiveValue: 'inactive' },
+  'asset-categories': { statusColumn: 'status', inactiveValue: 'inactive' },
+  'access-systems': { statusColumn: 'status', inactiveValue: 'inactive' },
+  'cause-codes': { statusColumn: 'is_active', inactiveValue: false },
+};
 
 export type DeletionResourceName = keyof typeof DELETION_RESOURCES;
 
@@ -234,11 +244,42 @@ recordDeletionsRoute.delete('/:resource/:id', async (c) => {
   });
 
   if (mutationError) {
+    const inUse = MASTER_DATA_IN_USE[resourceName];
+    if (inUse && mutationError.message.includes('MASTER_DATA_IN_USE')) {
+      const auditBefore = await loadAuditSnapshot(admin, resource.table, parsedId.data);
+      const { data: inactiveRow, error: inactiveError } = await admin
+        .from(resource.table)
+        .update({ [inUse.statusColumn]: inUse.inactiveValue, updated_by: c.get('userId') })
+        .eq('id', parsedId.data)
+        .select()
+        .maybeSingle();
+      if (inactiveError) return dbFailJson(c, 'MASTER_DATA_INACTIVATE_FAILED', inactiveError, 'รายการถูกใช้งานอยู่ จึงเปลี่ยนเป็น Inactive ไม่สำเร็จ');
+      if (!inactiveRow) return c.json(fail(requestId, 'DELETE_TARGET_NOT_FOUND', 'ไม่พบรายการที่ต้องการเปลี่ยนเป็น Inactive'), 404);
+      await writeAuditLog(c.env, {
+        actorId: c.get('userId'),
+        actorEmail: c.get('userEmail'),
+        action: 'INACTIVATE_IN_USE',
+        module: resource.module,
+        targetTable: resource.table,
+        targetId: parsedId.data,
+        detail: { resource: resourceName, reason: parsedBody.data.reason, rule: 'master_data_in_use', statusColumn: inUse.statusColumn },
+        requestId,
+        before: auditBefore,
+        after: inactiveRow,
+      });
+      return c.json(ok(requestId, { id: parsedId.data, resource: resourceName, mode: 'inactive', reason: 'MASTER_DATA_IN_USE' }));
+    }
     if (mutationError.message.includes('DELETE_TARGET_NOT_FOUND')) {
       return c.json(fail(requestId, 'DELETE_TARGET_NOT_FOUND', 'ไม่พบรายการที่ต้องการลบ'), 404);
     }
     if (mutationError.message.includes('PROTECTED_RECORD')) {
       return c.json(fail(requestId, 'PROTECTED_RECORD', 'รายการมาตรฐานของระบบไม่สามารถลบได้'), 409);
+    }
+    if (mutationError.message.includes('SYSTEM_ROLE_LOCKED')) {
+      return c.json(fail(requestId, 'SYSTEM_ROLE_LOCKED', 'บทบาทระบบถูกล็อก ไม่สามารถลบได้'), 409);
+    }
+    if (mutationError.message.includes('ROLE_HAS_ASSIGNED_USERS')) {
+      return c.json(fail(requestId, 'ROLE_HAS_ASSIGNED_USERS', 'ลบบทบาทไม่ได้ เพราะยังมีผู้ใช้งานได้รับบทบาทนี้อยู่'), 409);
     }
     if (mutationError.message.includes('DELETE_TARGET_ALREADY_ARCHIVED')) {
       return c.json(fail(requestId, 'DELETE_TARGET_ALREADY_ARCHIVED', 'รายการนี้ถูกเก็บถาวรไปแล้ว'), 409);

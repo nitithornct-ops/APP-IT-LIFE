@@ -4,12 +4,14 @@ import { z } from 'zod';
 export const CI_TYPES = [
   'Server', 'VM', 'Database', 'Application', 'Website', 'Network Device', 'Firewall',
   'Switch', 'Access Point', 'Domain', 'SSL Certificate', 'API', 'Cloud Service',
-  'Backup Job', 'Business Service', 'Other',
+  'Backup Job', 'Business Service', 'Application Service', 'Network', 'Other',
 ] as const;
 export const CI_ENVIRONMENTS = ['Production', 'UAT', 'Development', 'DR', 'Shared', 'N/A'] as const;
 export const CI_CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const CI_DATA_CLASSIFICATIONS = ['ไม่ลับ', 'ลับ', 'ลับมาก'] as const;
 export const CI_STATUSES = ['Draft', 'Active', 'Maintenance', 'Degraded', 'Retired'] as const;
+export const CI_LIFECYCLE_STAGES = ['Planned', 'In Development', 'In Service', 'Maintenance', 'Retired'] as const;
+export const CI_OWNER_REVIEW_STATUSES = ['Pending', 'Reviewed', 'Needs Update'] as const;
 
 /** node type ที่ DB CHECK รองรับครบ 8 ประเภทไว้ล่วงหน้า และมีตารางจริงให้เลือก 6 ประเภทตอนนี้ */
 export const CI_NODE_TYPES = ['CI', 'Asset', 'Vendor', 'Contract', 'Cloud', 'Backup', 'Incident', 'Change'] as const;
@@ -38,6 +40,7 @@ const configurationItemFields = {
   ciType: z.enum(CI_TYPES),
   environment: z.enum(CI_ENVIRONMENTS),
   businessService: z.string().trim().max(200).optional(),
+  applicationService: z.string().trim().max(200).optional(),
   ownerEmployeeId: z.string().uuid('กรุณาเลือกเจ้าของ CI'),
   administratorEmployeeId: z.string().uuid('กรุณาเลือกผู้ดูแล CI'),
   criticality: z.enum(CI_CRITICALITIES).optional(),
@@ -50,12 +53,16 @@ const configurationItemFields = {
   contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
   assetId: z.string().uuid().optional(),
   cloudRef: z.string().trim().max(100).optional(),
+  sourceOfTruth: z.string().trim().max(500).optional(),
+  discoverySource: z.string().trim().max(120).optional(),
   dataClassification: z.enum(CI_DATA_CLASSIFICATIONS).optional(),
   rpoHours: z.coerce.number().min(0).max(87600).optional(),
   rtoHours: z.coerce.number().min(0).max(87600).optional(),
   backupRequired: z.coerce.boolean().optional(),
   backupReference: z.string().trim().max(150).optional(),
   location: z.string().trim().max(300).optional(),
+  lifecycle: z.enum(CI_LIFECYCLE_STAGES).optional(),
+  autoReconciliation: z.coerce.boolean().optional(),
   status: z.enum(CI_STATUSES).optional(),
   notes: z.string().trim().max(2000).optional(),
 };
@@ -95,6 +102,12 @@ export const verifyConfigurationItemSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 export type VerifyConfigurationItemInput = z.infer<typeof verifyConfigurationItemSchema>;
+
+export const reviewConfigurationItemSchema = z.object({
+  status: z.enum(CI_OWNER_REVIEW_STATUSES),
+  note: z.string().trim().max(500).optional(),
+});
+export type ReviewConfigurationItemInput = z.infer<typeof reviewConfigurationItemSchema>;
 
 // ===== CI Relationships =====
 

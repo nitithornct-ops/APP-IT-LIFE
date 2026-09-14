@@ -64,8 +64,9 @@ describe('deleting a LINE account', () => {
       `select public.mutate_record_deletion('line-links', $1, $2, $3, $4, $5) as result`,
       [id, ACTOR_ID, 'line-delete-actor@test.local', 'ผู้ใช้ขอให้ลบข้อมูลตาม PDPA', 'req-line-delete-1'],
     ));
-    // 2 = worklog ของ LINE user เอง + worklog ของเจ้าหน้าที่ ซึ่งถูกลบผ่าน Ticket ทั้งคู่
-    expect(result.rows[0]!.result).toMatchObject({ resource: 'line-links', mode: 'hard', cascadedTickets: 1, cascadedWorklogs: 2 });
+    // 3 = initial Ticket worklog + worklog ของ LINE user เอง + worklog ของเจ้าหน้าที่
+    // ซึ่งถูกลบผ่าน Ticket ทั้งหมด
+    expect(result.rows[0]!.result).toMatchObject({ resource: 'line-links', mode: 'hard', cascadedTickets: 1, cascadedWorklogs: 3 });
 
     const remaining = await asServiceRole(db, async () => db.query<{ users: number; tickets: number; worklogs: number; files: number }>(
       `select
@@ -84,7 +85,7 @@ describe('deleting a LINE account', () => {
     ));
     expect(audit.rows).toHaveLength(1);
     expect(audit.rows[0]!.action).toBe('DELETE');
-    expect(audit.rows[0]!.detail).toMatchObject({ resource: 'line-links', cascadedTickets: 1, cascadedWorklogs: 2 });
+    expect(audit.rows[0]!.detail).toMatchObject({ resource: 'line-links', cascadedTickets: 1, cascadedWorklogs: 3 });
   });
 
   it('clears the RESTRICT-guarded ticket dependents that would otherwise block the delete', async () => {

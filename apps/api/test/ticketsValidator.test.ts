@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, listTicketsQuerySchema, submitTicketFeedbackSchema, ticketFormContentSchema } from '../src/validators/tickets';
+import { addTicketConversationSchema, bulkUpdateTicketsSchema, createTicketSchema, linkTicketMaintenancePlanSchema, listTicketsQuerySchema, requesterReopenTicketSchema, submitTicketFeedbackSchema, ticketFormContentSchema } from '../src/validators/tickets';
 import { ratingsMatchCriteria } from '../src/routes/tickets';
 
 const CATEGORY_ID = '11111111-1111-4111-8111-111111111111';
@@ -31,6 +31,28 @@ describe('ticket list filters', () => {
     expect(listTicketsQuerySchema.safeParse({ categoryId: 'not-uuid' }).success).toBe(false);
     expect(listTicketsQuerySchema.safeParse({ priority: 'ด่วนที่สุด' }).success).toBe(false);
     expect(listTicketsQuerySchema.safeParse({ search: 'x'.repeat(121) }).success).toBe(false);
+  });
+
+  it('accepts the operational queue filters used by the staff work queue', () => {
+    for (const queue of ['unassigned', 'near_sla', 'overdue', 'waiting_follow_up', 'awaiting_acceptance', 'paused']) {
+      expect(listTicketsQuerySchema.safeParse({ queue }).success).toBe(true);
+    }
+  });
+});
+
+describe('ticket requester reopen and PM link forms', () => {
+  it('requires a reason when a requester sends a resolved Ticket back', () => {
+    expect(requesterReopenTicketSchema.safeParse({ reason: 'ยังใช้งานไม่ได้' }).success).toBe(true);
+    expect(requesterReopenTicketSchema.safeParse({ reason: '   ' }).success).toBe(false);
+  });
+
+  it('accepts an exact PM round link and restricts the relationship type', () => {
+    expect(linkTicketMaintenancePlanSchema.safeParse({
+      maintenancePlanId: CATEGORY_ID,
+      relationship: 'root_cause',
+      notes: 'พบปัญหาในรอบ PM นี้',
+    }).success).toBe(true);
+    expect(linkTicketMaintenancePlanSchema.safeParse({ maintenancePlanId: CATEGORY_ID, relationship: 'unknown' }).success).toBe(false);
   });
 });
 

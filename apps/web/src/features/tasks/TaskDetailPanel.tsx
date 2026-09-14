@@ -12,12 +12,14 @@ import { ApiError, apiFetch } from '../../services/apiClient';
 import type { Task } from '../../types/tasks';
 import { formatThaiDate } from '../../utils/date';
 import { TASK_CATEGORIES, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATUSES, TASK_TYPES, priorityTone, statusTone } from './taskDisplay';
+import { TaskDependenciesSection, TaskRelationsSection } from './TaskExtensionsSections';
 
 const categoryEnum = z.enum(['งานทั่วไป', 'ประชุม', 'ติดตาม', 'เอกสาร', 'โครงการ', 'พัฒนาระบบ', 'ส่วนตัว', 'อื่นๆ']);
 const priorityEnum = z.enum(['ต่ำ', 'ปกติ', 'สูง', 'เร่งด่วน']);
 const statusEnum = z.enum(['ต้องทำ', 'กำลังทำ', 'รอข้อมูล', 'รอผู้อื่นดำเนินการ', 'พักไว้ก่อน', 'เสร็จแล้ว', 'ยกเลิก']);
 const recurrenceEnum = z.enum(['ไม่ทำซ้ำ', 'รายวัน', 'วันทำงาน', 'รายสัปดาห์', 'ทุก 2 สัปดาห์', 'รายเดือน', 'รายไตรมาส', 'ทุก 6 เดือน', 'รายปี', 'กำหนดเอง']);
 const taskTypeEnum = z.enum(['general', 'meeting', 'follow_up', 'document', 'project', 'system_development', 'personal', 'other']);
+const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number().min(0).max(999999.99).optional());
 
 const editSchema = z
   .object({
@@ -32,6 +34,9 @@ const editSchema = z
     startTime: z.string().optional(),
     dueTime: z.string().optional(),
     progress: z.coerce.number().min(0).max(100).optional(),
+    estimateHours: hoursInput,
+    actualHours: hoursInput,
+    blockedReason: z.string().trim().max(1000).optional(),
     tags: z.string().trim().optional(),
     notes: z.string().trim().optional(),
     recurrence: recurrenceEnum,
@@ -110,6 +115,9 @@ function EditTaskForm({ task }: { task: Task }) {
       startTime: task.start_time?.slice(0, 5) ?? '',
       dueTime: task.due_time?.slice(0, 5) ?? '',
       progress: task.progress,
+      estimateHours: task.estimate_hours ?? undefined,
+      actualHours: task.actual_hours ?? undefined,
+      blockedReason: task.blocked_reason ?? '',
       tags: task.tags ?? '',
       notes: task.notes ?? '',
       recurrence: task.recurrence,
@@ -208,6 +216,20 @@ function EditTaskForm({ task }: { task: Task }) {
       </div>
 
       <div>
+        <label htmlFor="td-estimate-hours" className={labelCls()}>
+          Estimate Hours
+        </label>
+        <input id="td-estimate-hours" type="number" min={0} max={999999.99} step={0.25} className={inputCls()} {...register('estimateHours')} />
+      </div>
+
+      <div>
+        <label htmlFor="td-actual-hours" className={labelCls()}>
+          Actual Hours
+        </label>
+        <input id="td-actual-hours" type="number" min={0} max={999999.99} step={0.25} className={inputCls()} {...register('actualHours')} />
+      </div>
+
+      <div>
         <label htmlFor="td-start" className={labelCls()}>
           วันที่เริ่ม
         </label>
@@ -296,6 +318,13 @@ function EditTaskForm({ task }: { task: Task }) {
           บันทึกเพิ่มเติม
         </label>
         <textarea id="td-notes" rows={2} className={inputCls()} {...register('notes')} />
+      </div>
+
+      <div className="sm:col-span-2">
+        <label htmlFor="td-blocked-reason" className={labelCls()}>
+          เหตุผลที่ถูกบล็อก
+        </label>
+        <textarea id="td-blocked-reason" rows={2} maxLength={1000} className={inputCls()} {...register('blockedReason')} />
       </div>
 
       {serverError && <p className="text-xs text-red-600 sm:col-span-2">{serverError}</p>}
@@ -737,9 +766,9 @@ export function TaskDetailPanel({ taskId, onClose, onDeleted }: { taskId: string
 
         {task && (
           <div className="flex flex-col gap-5 px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={statusTone[task.status]}>{task.status}</Badge>
-              <Badge variant={priorityTone[task.priority]}>{task.priority}</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={statusTone[task.status]}>{task.status}</Badge>
+            <Badge variant={priorityTone[task.priority]}>{task.priority}</Badge>
               {task.status === 'ยกเลิก' && (
                 <Button size="sm" variant="outline" isLoading={restoreMutation.isPending} onClick={() => restoreMutation.mutate()}>
                   <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> กู้คืนงาน
@@ -747,9 +776,14 @@ export function TaskDetailPanel({ taskId, onClose, onDeleted }: { taskId: string
               )}
             </div>
             {restoreError && <p role="alert" className="text-xs text-red-600">{restoreError}</p>}
+            {task.blocked_reason && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><span className="font-semibold">เหตุผลที่ถูกบล็อก:</span> {task.blocked_reason}</p>}
 
             <EditTaskForm task={task} />
             <ReminderSection task={task} />
+            <hr className="border-slate-100 dark:border-slate-700" />
+            <TaskDependenciesSection task={task} />
+            <hr className="border-slate-100 dark:border-slate-700" />
+            <TaskRelationsSection task={task} />
             <DeleteTaskSection task={task} onDeleted={() => { onClose(); onDeleted?.(); }} />
             <hr className="border-slate-100 dark:border-slate-700" />
             <SubtasksSection task={task} />

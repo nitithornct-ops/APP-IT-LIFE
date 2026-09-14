@@ -3,6 +3,8 @@ import {
   closeIncidentSchema,
   createIncidentSchema,
   createRegulatoryNotificationSchema,
+  notificationClockSchema,
+  notificationTimelineEventSchema,
   regulatoryAssessmentSchema,
   updateIncidentSchema,
 } from '../src/validators/incidents';
@@ -16,6 +18,12 @@ describe('Incident validators', () => {
   it('limits the risk matrix inputs to 1-5', () => {
     expect(updateIncidentSchema.safeParse({ likelihood: 5, impact: 1 }).success).toBe(true);
     expect(updateIncidentSchema.safeParse({ likelihood: 6, impact: 0 }).success).toBe(false);
+  });
+
+  it('accepts CI, commander, response phases and major incident metadata', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(createIncidentSchema.safeParse({ title: 'พบเหตุ', description: 'รายละเอียด', category: 'มัลแวร์/ไวรัส', affectedCiId: id, incidentCommanderId: id, detectionSource: 'SIEM', majorIncident: true }).success).toBe(true);
+    expect(updateIncidentSchema.safeParse({ affectedCiId: id, containment: 'แยกเครื่อง', eradication: 'ลบมัลแวร์', recovery: 'กู้คืนบริการ', majorIncident: true, incidentCommanderId: id }).success).toBe(true);
   });
 
   it('requires all four explicit regulatory decisions and an assessment reason', () => {
@@ -33,6 +41,17 @@ describe('Incident validators', () => {
     const base = { destination: 'NCSA', agency: 'สกมช.', notificationType: 'รายงานเหตุ', required: true, status: 'แจ้งแล้ว' };
     expect(createRegulatoryNotificationSchema.safeParse(base).success).toBe(false);
     expect(createRegulatoryNotificationSchema.safeParse({ ...base, referenceNo: 'NCSA-001' }).success).toBe(true);
+  });
+
+  it('validates notification clock ordering and sent state', () => {
+    expect(notificationClockSchema.safeParse({ clockType: 'PDPA', startedAt: '2026-09-11T08:00:00+07:00', deadlineAt: '2026-09-11T09:00:00+07:00', status: 'RUNNING' }).success).toBe(true);
+    expect(notificationClockSchema.safeParse({ clockType: 'PDPA', startedAt: '2026-09-11T09:00:00+07:00', deadlineAt: '2026-09-11T08:00:00+07:00', status: 'RUNNING' }).success).toBe(false);
+    expect(notificationClockSchema.safeParse({ clockType: 'CYBER', status: 'NOTIFIED' }).success).toBe(false);
+  });
+
+  it('requires a note for a manual notification timeline event', () => {
+    expect(notificationTimelineEventSchema.safeParse({ eventType: 'OTHER', note: 'โทรแจ้งทีมปฏิบัติการแล้ว' }).success).toBe(true);
+    expect(notificationTimelineEventSchema.safeParse({ eventType: 'OTHER', note: '' }).success).toBe(false);
   });
 
   it('requires root cause and resolution before close', () => {

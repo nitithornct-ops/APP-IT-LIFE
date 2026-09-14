@@ -49,6 +49,7 @@ describe('LineNotificationCard', () => {
       : Promise.resolve({ available: true, unavailableReason: '', account: null })));
     renderCard();
 
+    fireEvent.click(await screen.findByRole('checkbox'));
     fireEvent.click(await screen.findByRole('button', { name: /เชื่อมบัญชี LINE ของฉัน/ }));
 
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/line/login-url?returnMode=link'));

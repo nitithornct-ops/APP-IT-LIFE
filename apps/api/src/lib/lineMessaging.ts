@@ -1,4 +1,5 @@
 import { createAdminClient } from './supabase';
+import { isLineNotificationEnabled } from '../services/lineNotificationPreferences';
 import type { Bindings } from '../types';
 
 const PUSH_URL = 'https://api.line.me/v2/bot/message/push';
@@ -11,6 +12,7 @@ const VALUE_COLOR = '#172033';
 export interface LinePushResult {
   success: boolean;
   error: string | null;
+  skipped?: 'preference_disabled';
 }
 
 export interface LineMessagePayload {
@@ -341,9 +343,13 @@ export async function sendLinePush(
   message: string,
   lineUserId?: string | null,
   richMessage?: LineMessagePayload,
+  notificationType?: string | null,
 ): Promise<LinePushResult> {
   if (env.NOTIFY_LINE_ENABLED !== 'true' || !env.LINE_CHANNEL_ACCESS_TOKEN || !to) {
     return { success: false, error: 'LINE Messaging is disabled or incomplete' };
+  }
+  if (lineUserId && notificationType && !(await isLineNotificationEnabled(env, lineUserId, notificationType))) {
+    return { success: true, error: null, skipped: 'preference_disabled' };
   }
   try {
     const response = await fetch(PUSH_URL, {

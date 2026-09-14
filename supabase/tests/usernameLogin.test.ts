@@ -38,6 +38,30 @@ afterAll(async () => {
 });
 
 describe('username accounts', () => {
+  it('normalizes mixed-case usernames and surrounding whitespace when creating an account', async () => {
+    await asServiceRole(db, async () => {
+      const account = await db.query<{ id: string }>(
+        `insert into auth.users (email, raw_user_meta_data)
+         values ('normalized@example.test', '{"username":"  New.User  "}'::jsonb) returning id`,
+      );
+      const profile = await db.query<{ username: string }>(
+        'select username from public.profiles where id = $1', [account.rows[0]!.id],
+      );
+      expect(profile.rows).toEqual([{ username: 'new.user' }]);
+    });
+  });
+
+  it('keeps vendor portal accounts out of internal profiles', async () => {
+    await asServiceRole(db, async () => {
+      const account = await db.query<{ id: string }>(
+        `insert into auth.users (email, raw_user_meta_data)
+         values ('vendor@example.test', '{"account_type":"vendor_portal","username":"Vendor.User"}'::jsonb) returning id`,
+      );
+      const profile = await db.query('select id from public.profiles where id = $1', [account.rows[0]!.id]);
+      expect(profile.rows).toEqual([]);
+    });
+  });
+
   it('writes the username in the same insert that creates the profile', async () => {
     const result = await asServiceRole(db, async () =>
       db.query<{ username: string | null }>('select username from public.profiles where id = $1', [LOCAL_ID]),

@@ -4,10 +4,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlarmClock,
+  BookOpen,
   CircleSlash2,
   ClipboardCheck,
   ClipboardList,
+  CircleDollarSign,
   Download,
+  Eye,
   Folder,
   Grid3X3,
   Loader2,
@@ -18,11 +21,12 @@ import {
   Search,
   Send,
   ShieldCheck,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -35,8 +39,10 @@ import { sortNewestFirst } from '../../utils/recordOrder';
 import { useAuth } from '../../stores/authContext';
 import type { ApprovalGroup, Department, PaginatedResult } from '../../types/admin';
 import type { ServiceCatalogItem, ServiceCatalogStatus } from '../../types/serviceCatalog';
+import type { AssignableStaff } from '../../types/tickets';
 import type { ServiceRequestListItem, ServiceRequestStatus } from '../../types/serviceRequests';
 import { formatThaiDate } from '../../utils/date';
+import { ServiceCatalogPreview, type ServiceCatalogPreviewData } from './ServiceCatalogPreview';
 
 type WorkspaceTab = 'catalog' | 'mine' | 'action' | 'all' | 'manage';
 
@@ -53,10 +59,10 @@ const requestStatusTone: Record<ServiceRequestStatus, 'secondary' | 'info' | 'wa
 };
 
 const catalogStatusLabel: Record<ServiceCatalogStatus, string> = {
-  draft: 'ร่าง',
-  active: 'ใช้งาน',
-  suspended: 'ระงับ',
-  retired: 'ยกเลิก',
+  draft: 'Draft / ร่าง',
+  active: 'Published / ใช้งาน',
+  suspended: 'Suspended / ระงับ',
+  retired: 'Retired / ยกเลิก',
 };
 
 const catalogStatusTone: Record<ServiceCatalogStatus, 'secondary' | 'success' | 'warning' | 'danger'> = {
@@ -150,11 +156,17 @@ function RequestDialog({ item, onClose }: { item: ServiceCatalogItem; onClose: (
     onError: (error) => setServerError(errorText(error, 'ยื่นคำขอไม่สำเร็จ')),
   });
   const formFields = Array.isArray(item.form_schema) ? item.form_schema as Array<Record<string, unknown>> : [];
+  const dependencies = Array.isArray(item.dependencies) ? item.dependencies : [];
 
   return (
     <FormModal closeTestId="service-request-close" title={`ขอรับบริการ: ${item.service_name}`} description={`${item.service_code} · SLA ${item.sla_hours} ชั่วโมง · ${item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'ต้องผ่านการอนุมัติ'}`} size="md" closeDisabled={mutation.isPending} onClose={onClose}>
       <form onSubmit={handleSubmit((values) => mutation.mutate(values))} noValidate>
         <div className="space-y-4 p-5">
+          {dependencies.length > 0 && (
+            <div className="space-y-3 rounded-xl border border-primary-100 bg-primary-50/60 p-3 text-sm dark:border-primary-900/40 dark:bg-primary-950/20">
+              <div><p className="font-bold text-primary-900 dark:text-primary-100">เงื่อนไขก่อนยื่นคำขอ</p><ul className="mt-1 list-disc space-y-1 pl-5 text-primary-800 dark:text-primary-200">{dependencies.map((dependency, index) => <li key={`${dependency.type}-${index}`}>{dependency.label || dependency.value || dependency.type}</li>)}</ul></div>
+            </div>
+          )}
           <label className={labelClass}>หัวข้อคำขอ<input className={fieldClass} {...register('summary')} /></label>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className={labelClass}>ขอให้ใคร (เว้นว่างหากขอให้ตนเอง)<input className={fieldClass} {...register('requestedFor')} /></label>
@@ -198,16 +210,28 @@ const catalogSchema = z.object({
   serviceName: z.string().trim().min(1, 'กรุณาระบุชื่อบริการ'),
   category: z.string().trim().optional(),
   description: z.string().trim().optional(),
+  audience: z.string().trim().max(200).optional(),
   eligibilityText: z.string().trim().optional(),
+  eligibilityDepartmentIds: z.array(z.string().uuid()).optional(),
   slaHours: z.coerce.number().positive('SLA ต้องมากกว่า 0').max(720),
   attachmentRequired: z.boolean(),
   approvalMode: z.enum(['none', 'group']),
   approvalGroupId: z.string().optional(),
   fulfillmentGroupId: z.string().optional(),
+  ownerId: z.string().optional(),
+  autoAssign: z.boolean(),
+  autoCreateTask: z.boolean(),
+  estimatedCost: z.coerce.number().min(0).optional(),
+  documentationUrl: z.string().trim().optional().refine((value) => !value || /^https?:\/\/\S+$/i.test(value), 'กรุณาระบุ Documentation URL ที่ถูกต้อง'),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'กรุณาระบุ Effective Date'),
+  reviewDate: z.string().optional().refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), 'กรุณาระบุ Review Date เป็น YYYY-MM-DD'),
   closeMode: z.enum(['requester_confirms', 'it_closes']),
   formSchemaText: z.string(),
   checklistText: z.string(),
-}).refine((value) => value.approvalMode !== 'group' || Boolean(value.approvalGroupId), { message: 'กรุณาเลือกกลุ่มอนุมัติ', path: ['approvalGroupId'] });
+  dependenciesText: z.string(),
+  suggestedKnowledgeText: z.string(),
+}).refine((value) => value.approvalMode !== 'group' || Boolean(value.approvalGroupId), { message: 'กรุณาเลือกกลุ่มอนุมัติ', path: ['approvalGroupId'] })
+  .refine((value) => !value.reviewDate || value.reviewDate >= value.effectiveDate, { message: 'Review Date ต้องไม่ก่อน Effective Date', path: ['reviewDate'] });
 type CatalogFormValues = z.infer<typeof catalogSchema>;
 
 function parseJsonArray(value: string, label: string) {
@@ -221,21 +245,128 @@ function parseJsonArray(value: string, label: string) {
 }
 
 function eligibilityToText(value: ServiceCatalogItem['eligibility']) {
-  if (!value) return 'ทั้งหมด';
+  if (!value || !(value.roles ?? []).length) return 'ทั้งหมด';
   return (value.roles ?? []).join(', ');
 }
 
-function CatalogEditor({ item, approvalGroups, departments, onClose }: { item?: ServiceCatalogItem; approvalGroups: ApprovalGroup[]; departments: Department[]; onClose: () => void }) {
+function catalogItemToPreviewData(item: ServiceCatalogItem, approvalGroups: ApprovalGroup[], departments: Department[], owners: AssignableStaff[]): ServiceCatalogPreviewData {
+  const eligibility = item.eligibility;
+  const eligibilityDepartments = (eligibility?.departmentIds ?? [])
+    .map((id) => departments.find((department) => department.id === id)?.name_th ?? id);
+  const approvalGroup = approvalGroups.find((group) => group.id === item.approval_group_id);
+  const fulfillmentGroup = departments.find((department) => department.id === item.fulfillment_group_id);
+  const owner = owners.find((person) => person.id === item.owner_id);
+  return {
+    serviceCode: item.service_code,
+    serviceName: item.service_name,
+    category: item.category,
+    description: item.description,
+    owner: owner?.full_name ?? item.owner_id,
+    audience: item.audience,
+    eligibilityRoles: eligibility?.roles ?? [],
+    eligibilityDepartments,
+    slaHours: Number(item.sla_hours),
+    fulfillmentGroup: fulfillmentGroup?.name_th ?? item.fulfillment_group_id,
+    approvalWorkflow: item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : approvalGroup?.name ?? item.approval_group_id ?? 'กลุ่มอนุมัติ',
+    formVersion: item.version ?? 1,
+    cost: item.estimated_cost,
+    documentationUrl: item.documentation_url,
+    knowledge: item.suggested_knowledge ?? [],
+    dependencies: item.dependencies ?? [],
+    effectiveDate: item.effective_date ?? null,
+    reviewDate: item.review_date ?? null,
+    status: item.status,
+    formSchema: item.form_schema ?? [],
+    checklist: item.checklist ?? [],
+  };
+}
+
+function catalogValuesToPayload(values: CatalogFormValues) {
+  const eligibilityText = values.eligibilityText?.trim();
+  const eligibilityRoles = !eligibilityText || eligibilityText === 'ทั้งหมด'
+    ? []
+    : eligibilityText.split(',').map((part) => part.trim()).filter(Boolean);
+  const eligibilityDepartmentIds = values.eligibilityDepartmentIds ?? [];
+  return {
+    serviceCode: values.serviceCode.toUpperCase(),
+    serviceName: values.serviceName,
+    category: values.category || undefined,
+    description: values.description || undefined,
+    audience: values.audience || null,
+    eligibility: eligibilityRoles.length || eligibilityDepartmentIds.length
+      ? {
+        ...(eligibilityRoles.length ? { roles: eligibilityRoles } : {}),
+        ...(eligibilityDepartmentIds.length ? { departmentIds: eligibilityDepartmentIds } : {}),
+      }
+      : null,
+    slaHours: values.slaHours,
+    attachmentRequired: values.attachmentRequired,
+    approvalMode: values.approvalMode,
+    approvalGroupId: values.approvalMode === 'group' ? values.approvalGroupId : undefined,
+    fulfillmentGroupId: values.fulfillmentGroupId || undefined,
+    ownerId: values.ownerId || undefined,
+    autoAssign: values.autoAssign,
+    autoCreateTask: values.autoCreateTask,
+    estimatedCost: values.estimatedCost,
+    documentationUrl: values.documentationUrl || null,
+    effectiveDate: values.effectiveDate,
+    reviewDate: values.reviewDate || null,
+    closeMode: values.closeMode,
+    formSchema: parseJsonArray(values.formSchemaText, 'ฟิลด์แบบฟอร์ม'),
+    checklist: parseJsonArray(values.checklistText, 'Checklist'),
+    dependencies: parseJsonArray(values.dependenciesText, 'Dependencies'),
+    suggestedKnowledge: parseJsonArray(values.suggestedKnowledgeText, 'Suggested Knowledge'),
+  };
+}
+
+function catalogValuesToPreviewData(values: CatalogFormValues, item: ServiceCatalogItem | undefined, approvalGroups: ApprovalGroup[], departments: Department[], owners: AssignableStaff[]): ServiceCatalogPreviewData {
+  const payload = catalogValuesToPayload(values);
+  const eligibility = payload.eligibility as { roles?: string[]; departmentIds?: string[] } | null;
+  const eligibilityDepartments = (eligibility?.departmentIds ?? [])
+    .map((id) => departments.find((department) => department.id === id)?.name_th ?? id);
+  const approvalGroup = approvalGroups.find((group) => group.id === values.approvalGroupId);
+  const fulfillmentGroup = departments.find((department) => department.id === values.fulfillmentGroupId);
+  const owner = owners.find((person) => person.id === values.ownerId);
+  return {
+    serviceCode: String(payload.serviceCode),
+    serviceName: String(payload.serviceName),
+    category: values.category || null,
+    description: values.description || null,
+    owner: owner?.full_name ?? values.ownerId ?? null,
+    audience: values.audience || null,
+    eligibilityRoles: eligibility?.roles ?? [],
+    eligibilityDepartments,
+    slaHours: Number(values.slaHours),
+    fulfillmentGroup: fulfillmentGroup?.name_th ?? values.fulfillmentGroupId ?? null,
+    approvalWorkflow: values.approvalMode === 'none' ? 'ไม่ต้องอนุมัติ' : approvalGroup?.name ?? values.approvalGroupId ?? 'กลุ่มอนุมัติ',
+    formVersion: item?.version ?? 1,
+    cost: values.estimatedCost == null ? null : Number(values.estimatedCost),
+    documentationUrl: values.documentationUrl || null,
+    knowledge: payload.suggestedKnowledge as ServiceCatalogPreviewData['knowledge'],
+    dependencies: payload.dependencies as ServiceCatalogPreviewData['dependencies'],
+    effectiveDate: values.effectiveDate || null,
+    reviewDate: values.reviewDate || null,
+    status: item?.status ?? 'draft',
+    formSchema: payload.formSchema,
+    checklist: payload.checklist,
+  };
+}
+
+function CatalogEditor({ item, approvalGroups, departments, owners, onClose }: { item?: ServiceCatalogItem; approvalGroups: ApprovalGroup[]; departments: Department[]; owners: AssignableStaff[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<CatalogFormValues>({
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<ServiceCatalogPreviewData | null>(null);
+  const { register, handleSubmit, getValues, watch, formState: { errors } } = useForm<CatalogFormValues>({
     resolver: zodResolver(catalogSchema),
     defaultValues: item ? {
       serviceCode: item.service_code,
       serviceName: item.service_name,
       category: item.category ?? '',
       description: item.description ?? '',
+      audience: item.audience ?? '',
       eligibilityText: eligibilityToText(item.eligibility),
+      eligibilityDepartmentIds: item.eligibility?.departmentIds ?? [],
       slaHours: item.sla_hours,
       attachmentRequired: item.attachment_required,
       approvalMode: item.approval_mode,
@@ -244,28 +375,61 @@ function CatalogEditor({ item, approvalGroups, departments, onClose }: { item?: 
       closeMode: item.close_mode,
       formSchemaText: JSON.stringify(item.form_schema ?? [], null, 2),
       checklistText: JSON.stringify(item.checklist ?? [], null, 2),
+      ownerId: item.owner_id ?? '',
+      autoAssign: item.auto_assign,
+      autoCreateTask: item.auto_create_task,
+      estimatedCost: item.estimated_cost ?? undefined,
+      documentationUrl: item.documentation_url ?? '',
+      effectiveDate: item.effective_date ?? new Date().toISOString().slice(0, 10),
+      reviewDate: item.review_date ?? '',
+      dependenciesText: JSON.stringify(item.dependencies ?? [], null, 2),
+      suggestedKnowledgeText: JSON.stringify(item.suggested_knowledge ?? [], null, 2),
     } : {
-      eligibilityText: 'ทั้งหมด', slaHours: 24, attachmentRequired: false, approvalMode: 'none', approvalGroupId: '', fulfillmentGroupId: '', closeMode: 'requester_confirms', formSchemaText: '[]', checklistText: '[]',
+      eligibilityText: 'ทั้งหมด', eligibilityDepartmentIds: [], slaHours: 24, attachmentRequired: false, approvalMode: 'none', approvalGroupId: '', fulfillmentGroupId: '', ownerId: '', autoAssign: true, autoCreateTask: false, estimatedCost: undefined, documentationUrl: '', effectiveDate: new Date().toISOString().slice(0, 10), reviewDate: '', closeMode: 'requester_confirms', formSchemaText: '[]', checklistText: '[]', dependenciesText: '[]', suggestedKnowledgeText: '[]',
     },
   });
   const approvalMode = watch('approvalMode');
+
+  const saveCatalog = async (values: CatalogFormValues) => {
+    const payload = catalogValuesToPayload(values);
+    return apiFetch<ServiceCatalogItem>(item ? '/api/v1/service-catalog/' + item.id : '/api/v1/service-catalog', { method: item ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+  };
   const mutation = useMutation({
     mutationFn: (values: CatalogFormValues) => {
       const eligibilityText = values.eligibilityText?.trim();
+      const eligibilityRoles = !eligibilityText || eligibilityText === 'ทั้งหมด'
+        ? []
+        : eligibilityText.split(',').map((part) => part.trim()).filter(Boolean);
+      const eligibilityDepartmentIds = values.eligibilityDepartmentIds ?? [];
       const payload = {
         serviceCode: values.serviceCode.toUpperCase(),
         serviceName: values.serviceName,
         category: values.category || undefined,
         description: values.description || undefined,
-        eligibility: !eligibilityText || eligibilityText === 'ทั้งหมด' ? null : { roles: eligibilityText.split(',').map((part) => part.trim()).filter(Boolean) },
+        audience: values.audience || null,
+        eligibility: eligibilityRoles.length || eligibilityDepartmentIds.length
+          ? {
+            ...(eligibilityRoles.length ? { roles: eligibilityRoles } : {}),
+            ...(eligibilityDepartmentIds.length ? { departmentIds: eligibilityDepartmentIds } : {}),
+          }
+          : null,
         slaHours: values.slaHours,
         attachmentRequired: values.attachmentRequired,
         approvalMode: values.approvalMode,
         approvalGroupId: values.approvalMode === 'group' ? values.approvalGroupId : undefined,
         fulfillmentGroupId: values.fulfillmentGroupId || undefined,
+        ownerId: values.ownerId || undefined,
+        autoAssign: values.autoAssign,
+        autoCreateTask: values.autoCreateTask,
+        estimatedCost: values.estimatedCost,
+        documentationUrl: values.documentationUrl || null,
+        effectiveDate: values.effectiveDate,
+        reviewDate: values.reviewDate || null,
         closeMode: values.closeMode,
         formSchema: parseJsonArray(values.formSchemaText, 'ฟิลด์แบบฟอร์ม'),
         checklist: parseJsonArray(values.checklistText, 'Checklist'),
+        dependencies: parseJsonArray(values.dependenciesText, 'Dependencies'),
+        suggestedKnowledge: parseJsonArray(values.suggestedKnowledgeText, 'Suggested Knowledge'),
       };
       return apiFetch(item ? `/api/v1/service-catalog/${item.id}` : '/api/v1/service-catalog', { method: item ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
     },
@@ -273,35 +437,82 @@ function CatalogEditor({ item, approvalGroups, departments, onClose }: { item?: 
     onError: (error) => setServerError(errorText(error, error instanceof Error ? error.message : 'บันทึกบริการไม่สำเร็จ')),
   });
 
+  const publishMutation = useMutation({
+    mutationFn: async (values: CatalogFormValues) => {
+      const saved = await saveCatalog(values);
+      return apiFetch<ServiceCatalogItem>('/api/v1/service-catalog/' + saved.id + '/publish', { method: 'POST' });
+    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['service-catalog'] }); onClose(); },
+    onError: (error) => setServerError(errorText(error, error instanceof Error ? error.message : 'Publish บริการไม่สำเร็จ')),
+  });
+  const handlePreview = () => {
+    setPreviewError(null);
+    void handleSubmit((values) => {
+      try {
+        setPreviewData(catalogValuesToPreviewData(values, item, approvalGroups, departments, owners));
+      } catch (error) {
+        setPreviewError(error instanceof Error ? error.message : 'ข้อมูล Preview ไม่ถูกต้อง');
+      }
+    })();
+  };
+  const handlePublish = () => {
+    publishMutation.mutate(getValues());
+  };
+
   return (
-    <FormModal title={item ? 'แก้ไขรายการบริการ' : 'เพิ่มรายการบริการ'} description="กำหนด SLA สิทธิ์ แบบอนุมัติ และโครงสร้างฟอร์ม" size="xl" closeDisabled={mutation.isPending} onClose={onClose}>
+    <>
+      <FormModal title={item ? 'แก้ไขรายการบริการ' : 'เพิ่มรายการบริการ'} description="กำหนด Metadata, SLA, สิทธิ์ และแบบฟอร์มของบริการ" size="xl" closeDisabled={mutation.isPending || publishMutation.isPending} onClose={onClose}>
       <form onSubmit={handleSubmit((values) => mutation.mutate(values))} noValidate>
         <div className="p-5">
           <div className="grid gap-x-5 gap-y-4 md:grid-cols-6">
             <label className={`${labelClass} md:col-span-2`}>รหัสบริการ <span className="text-red-500">*</span><input className={fieldClass} {...register('serviceCode')} /><span className="mt-1 block text-xs font-normal text-slate-400">A-Z, 0-9, _ และ -</span>{errors.serviceCode && <span className="mt-1 block text-xs text-red-600">{errors.serviceCode.message}</span>}</label>
             <label className={`${labelClass} md:col-span-2`}>ชื่อบริการ <span className="text-red-500">*</span><input className={fieldClass} {...register('serviceName')} />{errors.serviceName && <span className="mt-1 block text-xs text-red-600">{errors.serviceName.message}</span>}</label>
             <label className={`${labelClass} md:col-span-2`}>หมวดบริการ<input className={fieldClass} {...register('category')} /></label>
+            <label className={`${labelClass} md:col-span-2`}>Audience<input className={fieldClass} {...register('audience')} /><span className="mt-1 block text-xs font-normal text-slate-400">กลุ่มผู้ใช้เป้าหมายของบริการ</span></label>
             <label className={`${labelClass} md:col-span-6`}>คำอธิบาย<textarea rows={3} className={`${fieldClass} py-3`} {...register('description')} /></label>
-            <label className={`${labelClass} md:col-span-3`}>ผู้มีสิทธิ์ขอ<input className={fieldClass} {...register('eligibilityText')} /><span className="mt-1 block text-xs font-normal text-slate-400">ทั้งหมด หรือ role หลายค่า คั่นด้วย comma</span></label>
+            <label className={`${labelClass} md:col-span-3`}>ผู้มีสิทธิ์ขอ (Role)<input className={fieldClass} {...register('eligibilityText')} /><span className="mt-1 block text-xs font-normal text-slate-400">ทั้งหมด หรือ role หลายค่า คั่นด้วย comma</span></label>
+            <label className={`${labelClass} md:col-span-3`}>ผู้มีสิทธิ์ขอ (ฝ่าย)<select multiple size={3} className={`${fieldClass} h-auto py-2`} {...register('eligibilityDepartmentIds')}>{departments.map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-400">เว้นว่าง = ทุกฝ่าย · เลือกหลายฝ่ายด้วย Ctrl/Cmd + คลิก</span></label>
             <label className={`${labelClass} md:col-span-2`}>SLA (ชั่วโมงทำการ) <span className="text-red-500">*</span><input type="number" min={1} max={720} className={fieldClass} {...register('slaHours')} />{errors.slaHours && <span className="mt-1 block text-xs text-red-600">{errors.slaHours.message}</span>}</label>
             <label className="flex items-center gap-2 self-center text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register('attachmentRequired')} />บังคับแนบเอกสาร</label>
             <label className={`${labelClass} md:col-span-2`}>รูปแบบอนุมัติ<select className={fieldClass} {...register('approvalMode')}><option value="none">ไม่ต้องอนุมัติ</option><option value="group">กลุ่มอนุมัติ</option></select></label>
             <label className={`${labelClass} md:col-span-2`}>กลุ่มผู้อนุมัติ{approvalMode === 'group' && <span className="text-red-500"> *</span>}<select className={fieldClass} disabled={approvalMode !== 'group'} {...register('approvalGroupId')}><option value="">— เลือกกลุ่มอนุมัติ —</option>{approvalGroups.map((group) => <option key={group.id} value={group.id}>{group.name} ({group.code})</option>)}</select>{errors.approvalGroupId && <span className="mt-1 block text-xs text-red-600">{errors.approvalGroupId.message}</span>}</label>
             <label className={`${labelClass} md:col-span-2`}>กลุ่มดำเนินการ<select className={fieldClass} {...register('fulfillmentGroupId')}><option value="">— ไม่ระบุ —</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name_th}</option>)}</select></label>
+            <label className={`${labelClass} md:col-span-2`}>Service Owner<select className={fieldClass} {...register('ownerId')}><option value="">— ไม่ระบุ —</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name}</option>)}</select></label>
+            <label className={`${labelClass} md:col-span-2`}>ค่าใช้จ่ายโดยประมาณ<input type="number" min={0} step="0.01" className={fieldClass} {...register('estimatedCost')} /><span className="mt-1 block text-xs font-normal text-slate-400">เว้นว่างได้ หากยังไม่ประเมิน</span></label>
+            <label className={`${labelClass} md:col-span-2`}>Documentation URL<input type="url" className={fieldClass} {...register('documentationUrl')} placeholder="https://..." />{errors.documentationUrl && <span className="mt-1 block text-xs text-red-600">{errors.documentationUrl.message}</span>}</label>
+            <label className={`${labelClass} md:col-span-2`}>Effective Date <span className="text-red-500">*</span><input type="date" className={fieldClass} {...register('effectiveDate')} />{errors.effectiveDate && <span className="mt-1 block text-xs text-red-600">{errors.effectiveDate.message}</span>}</label>
+            <label className={`${labelClass} md:col-span-2`}>Review Date<input type="date" className={fieldClass} {...register('reviewDate')} />{errors.reviewDate && <span className="mt-1 block text-xs text-red-600">{errors.reviewDate.message}</span>}</label>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Form Version</p><p className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-100">v{item?.version ?? 1}</p><p className="mt-1 text-xs text-slate-400">เพิ่มอัตโนมัติเมื่อแก้ไข Form/SLA/Checklist</p></div>
+            <div className="flex flex-wrap items-center gap-4 md:col-span-6">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register('autoAssign')} />มอบหมายอัตโนมัติตาม Service</label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register('autoCreateTask')} />สร้างงานใน My Work อัตโนมัติ</label>
+            </div>
             <label className={`${labelClass} md:col-span-3`}>Workflow Definition กลาง<select className={fieldClass} disabled><option>ไม่ใช้ Workflow Definition กลาง</option></select><span className="mt-1 block text-xs font-normal text-slate-400">สร้าง/แก้ไข Definition ได้จากเมนู Workflow</span></label>
             <label className={`${labelClass} md:col-span-3`}>รูปแบบปิดงาน<select className={fieldClass} {...register('closeMode')}><option value="requester_confirms">ผู้ขอยืนยันผลก่อนปิดงาน</option><option value="it_closes">IT ปิดงานโดยตรง</option></select></label>
             <label className={`${labelClass} md:col-span-3`}>ฟิลด์แบบฟอร์ม (JSON)<textarea rows={5} className={`${fieldClass} py-3 font-mono text-xs`} {...register('formSchemaText')} /><span className="mt-1 block text-xs font-normal text-slate-400">รองรับ text, textarea, number, date, select และ checkbox</span></label>
             <label className={`${labelClass} md:col-span-3`}>Checklist (JSON)<textarea rows={5} className={`${fieldClass} py-3 font-mono text-xs`} {...register('checklistText')} /><span className="mt-1 block text-xs font-normal text-slate-400">ตัวอย่าง: [{'{'}&quot;name&quot;:&quot;ตรวจสอบข้อมูล&quot;{'}'}]</span></label>
-            {serverError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700 md:col-span-6">{serverError}</p>}
+            <label className={`${labelClass} md:col-span-3`}>Dependencies (JSON)<textarea rows={5} className={`${fieldClass} py-3 font-mono text-xs`} {...register('dependenciesText')} /><span className="mt-1 block text-xs font-normal text-slate-400">เช่น [{'{'}&quot;type&quot;:&quot;requester_employee&quot;,&quot;label&quot;:&quot;ต้องมีพนักงานในระบบ&quot;{'}'}]</span></label>
+            <label className={`${labelClass} md:col-span-3`}>Suggested Knowledge (JSON)<textarea rows={5} className={`${fieldClass} py-3 font-mono text-xs`} {...register('suggestedKnowledgeText')} /><span className="mt-1 block text-xs font-normal text-slate-400">เช่น [{'{'}&quot;title&quot;:&quot;วิธีขอ Account&quot;,&quot;url&quot;:&quot;https://...&quot;{'}'}]</span></label>
+            {(serverError || previewError) && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700 md:col-span-6">{previewError ?? serverError}</p>}
           </div>
         </div>
         <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
           <Button variant="outline" onClick={onClose}>ยกเลิก</Button>
-          <Button type="submit" isLoading={mutation.isPending}>{item ? 'บันทึกการแก้ไข' : 'สร้าง Catalog'}</Button>
+          <Button variant="outline" data-testid="catalog-editor-preview" onClick={handlePreview} disabled={mutation.isPending || publishMutation.isPending}><Eye className="h-4 w-4" />ดู Preview ก่อน Publish</Button>
+          <Button type="submit" isLoading={mutation.isPending}>{item ? 'บันทึกการแก้ไข' : 'บันทึกแบบร่าง'}</Button>
         </div>
       </form>
-    </FormModal>
+      </FormModal>
+      {previewData && <ServiceCatalogPreview data={previewData} onClose={() => { setPreviewData(null); setPreviewError(null); }} onPublish={item?.status === 'active' || item?.status === 'retired' ? undefined : handlePublish} isPublishing={publishMutation.isPending} error={previewError ?? serverError} />}
+    </>
   );
+}
+
+function SuggestedArticleGate({ item, onContinue, onClose }: { item: ServiceCatalogItem; onContinue: () => void; onClose: () => void }) {
+  const suggestions = Array.isArray(item.suggested_knowledge) ? item.suggested_knowledge : [];
+  return <FormModal title="ลองแก้ปัญหาด้วยบทความแนะนำก่อน" description={`${item.service_code} · ${item.service_name}`} size="md" onClose={onClose}>
+    <div className="space-y-4 p-5"><div className="rounded-xl border border-primary-100 bg-primary-50/70 p-4 text-sm text-primary-900 dark:border-primary-900/40 dark:bg-primary-950/20 dark:text-primary-100"><p className="font-bold">อาจแก้ปัญหาได้ทันทีโดยไม่ต้องเปิดคำขอ</p><p className="mt-1">อ่านบทความที่เกี่ยวข้องก่อน หากยังไม่สำเร็จจึงเปิด Service Request ต่อได้</p></div><div className="space-y-2">{suggestions.map((article, index) => <div key={`${article.articleId ?? article.title}-${index}`} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700"><p className="font-bold text-slate-800 dark:text-slate-100">{article.url ? <a href={article.url} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline dark:text-primary-300">{article.title}</a> : article.title}</p>{article.summary && <p className="mt-1 text-xs text-slate-500">{article.summary}</p>}</div>)}</div><div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-700"><Button variant="outline" onClick={onClose}>ปิด</Button><Button onClick={onContinue}><Send className="h-4 w-4" />ยังต้องการเปิดคำขอ</Button></div></div>
+  </FormModal>;
 }
 
 function CatalogCards({ items, canRequest, onRequest }: { items: ServiceCatalogItem[]; canRequest: boolean; onRequest: (item: ServiceCatalogItem) => void }) {
@@ -314,7 +525,7 @@ function CatalogCards({ items, canRequest, onRequest }: { items: ServiceCatalogI
     return [...result.entries()].sort(([a], [b]) => a.localeCompare(b, 'th'));
   }, [items]);
   if (!items.length) return <EmptyState icon={<Package className="h-10 w-10" />} title="ยังไม่มีบริการที่เปิดให้ขอ" description="ติดต่อผู้ดูแลระบบเพื่อเปิดใช้งาน Service Catalog" />;
-  return <div className="space-y-6">{grouped.map(([category, categoryItems]) => <section key={category}><h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-slate-900 dark:text-white"><Folder className="h-5 w-5 text-primary-600" />{category}</h2><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{categoryItems.map((item) => <article key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800"><div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Package className="h-4 w-4" />{item.service_code}</div><h3 className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">{item.service_name}</h3><p className="mt-2 line-clamp-2 flex-1 text-sm text-slate-500 dark:text-slate-400">{item.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</p><div className="mb-3 mt-3 flex flex-wrap gap-2 text-[11px]"><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><AlarmClock className="mr-1 inline h-3 w-3" />SLA {item.sla_hours} ชม.</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ShieldCheck className="mr-1 inline h-3 w-3" />{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'ต้องอนุมัติ'}</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ClipboardCheck className="mr-1 inline h-3 w-3" />{item.checklist.length} ข้อ</span></div>{canRequest && <Button className="w-full" onClick={() => onRequest(item)}><Send className="h-4 w-4" />ขอรับบริการ</Button>}</article>)}</div></section>)}</div>;
+  return <div className="space-y-6">{grouped.map(([category, categoryItems]) => <section key={category}><h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-slate-900 dark:text-white"><Folder className="h-5 w-5 text-primary-600" />{category}</h2><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{categoryItems.map((item) => <article key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800"><div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Package className="h-4 w-4" />{item.service_code}</div><h3 className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">{item.service_name}</h3><p className="mt-2 line-clamp-2 flex-1 text-sm text-slate-500 dark:text-slate-400">{item.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</p><div className="mb-3 mt-3 flex flex-wrap gap-2 text-[11px]"><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><AlarmClock className="mr-1 inline h-3 w-3" />SLA {item.sla_hours} ชม.</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ShieldCheck className="mr-1 inline h-3 w-3" />{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'ต้องอนุมัติ'}</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ClipboardCheck className="mr-1 inline h-3 w-3" />{item.checklist.length} ข้อ</span>{item.suggested_knowledge.length > 0 && <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300"><BookOpen className="mr-1 inline h-3 w-3" />บทความแนะนำ {item.suggested_knowledge.length}</span>}{item.auto_assign && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"><UserRound className="mr-1 inline h-3 w-3" />Auto assign</span>}{item.auto_create_task && <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"><ClipboardList className="mr-1 inline h-3 w-3" />สร้าง Task</span>}{item.estimated_cost != null && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"><CircleDollarSign className="mr-1 inline h-3 w-3" />ประมาณ {Number(item.estimated_cost).toLocaleString('th-TH')}</span>}</div>{canRequest && <Button className="w-full" onClick={() => onRequest(item)}><Send className="h-4 w-4" />ขอรับบริการ</Button>}</article>)}</div></section>)}</div>;
 }
 
 function RequestTable({ items }: { items: ServiceRequestListItem[] }) {
@@ -322,7 +533,7 @@ function RequestTable({ items }: { items: ServiceRequestListItem[] }) {
   return <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"><DataTable className="w-full min-w-[840px] text-left text-sm"><thead className="bg-slate-50 text-xs font-bold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">รหัส</th><th className="px-4 py-3">บริการ</th><th className="px-4 py-3">ความเร่งด่วน</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">ครบกำหนด</th><th className="px-4 py-3">ยื่นเมื่อ</th><th className="px-4 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{items.map((request) => <tr key={request.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-4 py-3 font-mono text-xs text-slate-500">{request.service_code}</td><td className="px-4 py-3"><Link to={`/service-requests/${request.id}`} className="font-bold text-primary-700 hover:underline dark:text-primary-300">{request.service_name}</Link></td><td className="px-4 py-3"><Badge variant="secondary">{request.priority}</Badge></td><td className="px-4 py-3"><Badge variant={requestStatusTone[request.status]}>{request.status}</Badge></td><td className="px-4 py-3 text-slate-500">{request.due_at ? formatThaiDate(request.due_at, 'd MMM yyyy HH:mm') : '—'}</td><td className="px-4 py-3 text-slate-500">{formatThaiDate(request.created_at, 'd MMM yyyy HH:mm')}</td><td className="px-4 py-3 text-right"><RowActions recordLabel={request.service_code} actions={[{ kind: 'view', to: `/service-requests/${request.id}` }, { kind: 'delete', permission: 'service_request.close', deleteEndpoint: `/api/v1/record-deletions/service-requests/${request.id}` }]} /></td></tr>)}</tbody></DataTable></div>;
 }
 
-function CatalogManagement({ items, onCreate, onEdit }: { items: ServiceCatalogItem[]; onCreate: () => void; onEdit: (item: ServiceCatalogItem) => void }) {
+function CatalogManagement({ items, onCreate, onEdit, onPreview }: { items: ServiceCatalogItem[]; onCreate: () => void; onEdit: (item: ServiceCatalogItem) => void; onPreview: (item: ServiceCatalogItem) => void }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -341,32 +552,66 @@ function CatalogManagement({ items, onCreate, onEdit }: { items: ServiceCatalogI
     const rows = [['รหัส', 'บริการ', 'หมวด', 'SLA', 'สถานะ'], ...filtered.map((item) => [item.service_code, item.service_name, item.category ?? '', String(item.sla_hours), catalogStatusLabel[item.status]])];
     downloadCsv(rows, 'service-catalog.csv');
   }
-  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <label className="relative min-w-[240px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาในรายการ..." className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900" /></label>
-      <select aria-label="กรองสถานะ" value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">สถานะ: ทั้งหมด</option>{(Object.keys(catalogStatusLabel) as ServiceCatalogStatus[]).map((value) => <option key={value} value={value}>{catalogStatusLabel[value]}</option>)}</select>
-      <select aria-label="กรองหมวด" value={category} onChange={(event) => setCategory(event.target.value)} className="h-11 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">หมวด: ทั้งหมด</option>{categories.map((value) => <option key={value}>{value}</option>)}</select>
-      <div className="ml-auto flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setSearch(''); setStatus(''); setCategory(''); }}><RotateCcw className="h-4 w-4" />ล้างตัวกรอง</Button><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4" />ส่งออก</Button><Button data-testid="catalog-manage-create" onClick={onCreate}><Plus className="h-4 w-4" />เพิ่มบริการ</Button></div>
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+        <label className="relative min-w-[240px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาในรายการ..." className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900" /></label>
+        <select aria-label="กรองสถานะ" value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">สถานะ: ทั้งหมด</option>{(Object.keys(catalogStatusLabel) as ServiceCatalogStatus[]).map((value) => <option key={value} value={value}>{catalogStatusLabel[value]}</option>)}</select>
+        <select aria-label="กรองหมวด" value={category} onChange={(event) => setCategory(event.target.value)} className="h-11 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">หมวด: ทั้งหมด</option>{categories.map((value) => <option key={value}>{value}</option>)}</select>
+        <div className="ml-auto flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setSearch(''); setStatus(''); setCategory(''); }}><RotateCcw className="h-4 w-4" />ล้างตัวกรอง</Button><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4" />ส่งออก</Button><Button data-testid="catalog-manage-create" onClick={onCreate}><Plus className="h-4 w-4" />เพิ่มบริการ</Button></div>
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+        <DataTable className="w-full min-w-[1080px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-bold text-slate-700 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">รหัส</th><th className="px-4 py-3">บริการ</th><th className="px-4 py-3">Workflow</th><th className="px-4 py-3">SLA / Form</th><th className="px-4 py-3">Effective / Review</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">จัดการ</th></tr></thead>
+          <tbody>
+            {filtered.map((item) => (
+              <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700">
+                <td className="px-4 py-3"><p className="font-bold text-slate-700 dark:text-slate-200">{item.service_code}</p><p className="text-xs text-slate-400">v{item.version}</p></td>
+                <td className="px-4 py-3"><p className="font-bold text-slate-800 dark:text-white">{item.service_name}</p><p className="text-xs text-slate-400">{item.category || 'บริการทั่วไป'}{item.audience ? ' · ' + item.audience : ''}</p></td>
+                <td className="px-4 py-3"><p>{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'กลุ่มอนุมัติ'}</p><p className="text-xs text-slate-400">ปิด: {item.close_mode === 'requester_confirms' ? 'ผู้ขอยืนยัน' : 'IT'}</p></td>
+                <td className="px-4 py-3">{item.sla_hours} ชม.<p className="text-xs text-slate-400">{item.form_schema.length} ฟิลด์</p></td>
+                <td className="px-4 py-3"><p>{item.effective_date || '—'}</p><p className="text-xs text-slate-400">ทบทวน {item.review_date || 'ยังไม่กำหนด'}</p></td>
+                <td className="px-4 py-3"><Badge variant={catalogStatusTone[item.status]}>{catalogStatusLabel[item.status]}</Badge></td>
+                <td className="px-4 py-3"><RowActions recordLabel={item.service_code} actions={[{ kind: 'custom', label: 'Preview', icon: Eye, hidden: item.status !== 'active', onClick: () => onPreview(item) }, { kind: 'edit', onClick: () => onEdit(item) }, item.status === 'active' ? { kind: 'custom', label: 'ระงับ', onClick: () => statusMutation.mutate({ id: item.id, nextStatus: 'suspended' }) } : { kind: 'custom', label: 'Preview & Publish', hidden: item.status === 'retired', onClick: () => onPreview(item) }, { kind: 'cancel', label: 'Retire', hidden: item.status === 'retired' || item.status === 'draft', confirmTitle: 'Retire ' + item.service_code, confirmLabel: 'Retire Service', onConfirm: () => statusMutation.mutate({ id: item.id, nextStatus: 'retired' }) }, { kind: 'delete', permission: 'service_catalog.manage', deleteEndpoint: '/api/v1/record-deletions/service-catalog/' + item.id }]} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+        {!filtered.length && <div className="py-10 text-center text-sm text-slate-500">ไม่พบรายการที่ตรงกับตัวกรอง</div>}
+      </div>
     </div>
-    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><DataTable className="w-full min-w-[980px] text-left text-sm"><thead className="bg-slate-50 text-xs font-bold text-slate-700 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">รหัส</th><th className="px-4 py-3">บริการ</th><th className="px-4 py-3">Workflow</th><th className="px-4 py-3">SLA</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">จัดการ</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-4 py-3"><p className="font-bold text-slate-700 dark:text-slate-200">{item.service_code}</p><p className="text-xs text-slate-400">v{item.version}</p></td><td className="px-4 py-3"><p className="font-bold text-slate-800 dark:text-white">{item.service_name}</p><p className="text-xs text-slate-400">{item.category || 'บริการทั่วไป'}</p></td><td className="px-4 py-3"><p>{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'กลุ่มอนุมัติ'}</p><p className="text-xs text-slate-400">ปิด: {item.close_mode === 'requester_confirms' ? 'ผู้ขอยืนยัน' : 'IT'}</p></td><td className="px-4 py-3">{item.sla_hours} ชม.</td><td className="px-4 py-3"><Badge variant={catalogStatusTone[item.status]}>{catalogStatusLabel[item.status]}</Badge></td><td className="px-4 py-3"><RowActions recordLabel={item.service_code} actions={[{ kind: 'edit', onClick: () => onEdit(item) }, item.status === 'active' ? { kind: 'custom', label: 'ระงับ', onClick: () => statusMutation.mutate({ id: item.id, nextStatus: 'suspended' }) } : { kind: 'custom', label: 'เปิดใช้', hidden: item.status === 'retired', onClick: () => statusMutation.mutate({ id: item.id, nextStatus: 'active' }) }, { kind: 'cancel', label: 'ยกเลิก', hidden: item.status === 'retired', onConfirm: () => statusMutation.mutate({ id: item.id, nextStatus: 'retired' }) }, { kind: 'delete', permission: 'service_catalog.manage', deleteEndpoint: `/api/v1/record-deletions/service-catalog/${item.id}` }]} /></td></tr>)}</tbody></DataTable>{!filtered.length && <div className="py-10 text-center text-sm text-slate-500">ไม่พบรายการที่ตรงกับตัวกรอง</div>}</div>
-  </div>;
+  );
 }
 
 export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: WorkspaceTab }) {
   const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
   const canManage = hasPermission('service_catalog.manage');
   const canRequest = hasPermission('service_request.create');
-  const [tab, setTab] = useState<WorkspaceTab>(initialTab);
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const urlTab: WorkspaceTab | undefined = requestedTab === 'catalog' || requestedTab === 'mine' || requestedTab === 'action' || requestedTab === 'all' || requestedTab === 'manage' ? requestedTab : undefined;
+  const [tab, setTab] = useState<WorkspaceTab>(urlTab ?? initialTab);
   const [requestItem, setRequestItem] = useState<ServiceCatalogItem>();
+  const [suggestedRequestItem, setSuggestedRequestItem] = useState<ServiceCatalogItem>();
   const [editingItem, setEditingItem] = useState<ServiceCatalogItem | null>();
   const [showEditor, setShowEditor] = useState(false);
+  const [previewItem, setPreviewItem] = useState<ServiceCatalogItem | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const catalogQuery = useQuery({ queryKey: ['service-catalog', canManage ? 'all' : 'active'], queryFn: () => apiFetch<PaginatedResult<ServiceCatalogItem>>('/api/v1/service-catalog?pageSize=100') });
   const mineQuery = useQuery({ queryKey: ['service-requests', 'mine'], queryFn: () => apiFetch<PaginatedResult<ServiceRequestListItem>>('/api/v1/service-requests?pageSize=100&mine=true') });
   const visibleQuery = useQuery({ queryKey: ['service-requests', 'visible'], queryFn: () => apiFetch<PaginatedResult<ServiceRequestListItem>>('/api/v1/service-requests?pageSize=100') });
   const approvalsQuery = useQuery({ queryKey: ['service-requests', 'pending-my-approval'], queryFn: () => apiFetch<PaginatedResult<ServiceRequestListItem>>('/api/v1/service-requests?pageSize=100&pendingMyApproval=true') });
-  const approvalGroupsQuery = useQuery({ queryKey: ['admin', 'approval-groups'], enabled: canManage && showEditor, queryFn: () => apiFetch<ApprovalGroup[]>('/api/v1/approval-groups') });
-  const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], enabled: canManage && showEditor, queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
+  const approvalGroupsQuery = useQuery({ queryKey: ['admin', 'approval-groups'], enabled: canManage && (showEditor || Boolean(previewItem)), queryFn: () => apiFetch<ApprovalGroup[]>('/api/v1/approval-groups') });
+  const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], enabled: canManage && (showEditor || Boolean(previewItem)), queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
+  const ownersQuery = useQuery({ queryKey: ['service-catalog', 'owners'], enabled: canManage && (showEditor || Boolean(previewItem)), queryFn: () => apiFetch<AssignableStaff[]>('/api/v1/service-catalog/owners') });
+
+  const publishMutation = useMutation({
+    mutationFn: (id: string) => apiFetch<ServiceCatalogItem>('/api/v1/service-catalog/' + id + '/publish', { method: 'POST' }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['service-catalog'] }); setPreviewItem(null); setPublishError(null); },
+    onError: (error) => setPublishError(errorText(error, 'Publish บริการไม่สำเร็จ')),
+  });
 
   const catalogItems = catalogQuery.data?.items ?? [];
   const activeCatalog = catalogItems.filter((item) => item.status === 'active');
@@ -384,20 +629,26 @@ export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: W
   ];
   const loading = catalogQuery.isLoading || mineQuery.isLoading || visibleQuery.isLoading || approvalsQuery.isLoading;
   const failed = catalogQuery.isError || mineQuery.isError || visibleQuery.isError || approvalsQuery.isError;
+  function beginRequest(item: ServiceCatalogItem) {
+    if (item.suggested_knowledge?.length) setSuggestedRequestItem(item);
+    else setRequestItem(item);
+  }
 
   if (loading) return <div className="flex justify-center py-24" role="status"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>;
   if (failed) return <EmptyState icon={<CircleSlash2 className="h-9 w-9" />} title="โหลด Service Catalog ไม่สำเร็จ" description="กรุณาลองใหม่อีกครั้ง" />;
 
   return <div className="space-y-6" data-testid="service-catalog-workspace">
-    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / คำขอบริการ" title={<><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</>} description="เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว" />{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / คำขอบริการ" title={<><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</>} description="เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว" />{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setPreviewItem(null); setPublishError(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Grid3X3 className="h-6 w-6" />} value={activeCatalog.length} label="บริการที่เลือกได้" tone="blue" /><StatCard icon={<Users className="h-6 w-6" />} value={openMine} label="คำขอของฉันที่เปิดอยู่" tone="slate" /><StatCard icon={<ClipboardCheck className="h-6 w-6" />} value={approvalItems.length} label="รอฉันอนุมัติ" tone="slate" /><StatCard icon={<AlarmClock className="h-6 w-6" />} value={overdue} label="คิวเกิน SLA" tone="teal" /></div>
     <div className="flex gap-2 overflow-x-auto border-b border-slate-200 dark:border-slate-700">{tabs.filter((item) => item.show).map((item) => <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`whitespace-nowrap border-b-[3px] px-5 py-3 text-sm font-bold transition ${tab === item.key ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}>{item.label}{item.count !== undefined && ` (${item.count})`}</button>)}</div>
-    {tab === 'catalog' && <CatalogCards items={activeCatalog} canRequest={canRequest} onRequest={setRequestItem} />}
+    {tab === 'catalog' && <CatalogCards items={activeCatalog} canRequest={canRequest} onRequest={beginRequest} />}
     {tab === 'mine' && <RequestTable items={mineItems} />}
     {tab === 'action' && <RequestTable items={approvalItems} />}
     {tab === 'all' && <RequestTable items={visibleItems} />}
-    {tab === 'manage' && canManage && <CatalogManagement items={catalogItems} onCreate={() => { setEditingItem(null); setShowEditor(true); }} onEdit={(item) => { setEditingItem(item); setShowEditor(true); }} />}
+    {tab === 'manage' && canManage && <CatalogManagement items={catalogItems} onCreate={() => { setEditingItem(null); setPreviewItem(null); setShowEditor(true); }} onEdit={(item) => { setEditingItem(item); setPreviewItem(null); setShowEditor(true); }} onPreview={(item) => { setPreviewItem(item); setPublishError(null); }} />}
+    {suggestedRequestItem && <SuggestedArticleGate item={suggestedRequestItem} onClose={() => setSuggestedRequestItem(undefined)} onContinue={() => { setRequestItem(suggestedRequestItem); setSuggestedRequestItem(undefined); }} />}
     {requestItem && <RequestDialog item={requestItem} onClose={() => setRequestItem(undefined)} />}
-    {showEditor && approvalGroupsQuery.data && departmentsQuery.data && <CatalogEditor item={editingItem ?? undefined} approvalGroups={approvalGroupsQuery.data} departments={departmentsQuery.data} onClose={() => { setShowEditor(false); setEditingItem(null); }} />}
+    {showEditor && approvalGroupsQuery.data && departmentsQuery.data && ownersQuery.data && <CatalogEditor item={editingItem ?? undefined} approvalGroups={approvalGroupsQuery.data} departments={departmentsQuery.data} owners={ownersQuery.data} onClose={() => { setShowEditor(false); setEditingItem(null); }} />}
+    {previewItem && approvalGroupsQuery.data && departmentsQuery.data && ownersQuery.data && <ServiceCatalogPreview data={catalogItemToPreviewData(previewItem, approvalGroupsQuery.data, departmentsQuery.data, ownersQuery.data)} onClose={() => { setPreviewItem(null); setPublishError(null); }} onPublish={() => publishMutation.mutate(previewItem.id)} isPublishing={publishMutation.isPending} error={publishError} />}
   </div>;
 }

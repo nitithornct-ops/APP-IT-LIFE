@@ -16,7 +16,8 @@ export function MfaChallengePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
+  const setupMode = new URLSearchParams(location.search).get('setup') === '1';
+  const redirectTo = (location.state as { from?: string } | null)?.from ?? (setupMode ? '/profile' : '/');
   // ผูกกับตัวผู้ใช้ ไม่ใช่ object session — auth-js parse session ใหม่จาก storage ทุกครั้งที่แท็บกลับมามองเห็น
   // ได้ object คนละใบแต่ผู้ใช้คนเดิม ถ้าใช้ session เป็น dependency effect ด้านล่างจะรันซ้ำแล้วไป
   // unenroll/enroll factor ใหม่ ทำให้ QR เปลี่ยนไปเรื่อย ๆ ระหว่างที่ผู้ใช้กำลังสแกนอยู่
@@ -59,7 +60,7 @@ export function MfaChallengePage() {
   }, [userId]);
 
   if (!isSessionLoading && !session) return <Navigate to="/login" replace />;
-  if (!isSessionLoading && session && !mfaRequired && !loading) return <Navigate to={redirectTo} replace />;
+  if (!isSessionLoading && session && !mfaRequired && !setupMode && !loading) return <Navigate to={redirectTo} replace />;
 
   async function verify(event: React.FormEvent) {
     event.preventDefault();
@@ -80,7 +81,7 @@ export function MfaChallengePage() {
     try {
       await apiFetch('/api/v1/auth/login-log', {
         method: 'POST',
-        body: JSON.stringify({ identifier: session?.user.email ?? '', success: true }),
+        body: JSON.stringify({ identifier: session?.user.email ?? '', success: true, eventType: 'mfa_challenge' }),
       }, { silent: true });
     } catch {
       // An audit-log outage must not strand a user after successful MFA verification.
@@ -96,9 +97,9 @@ export function MfaChallengePage() {
         <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
           <KeyRound className="h-5 w-5" aria-hidden="true" />
         </div>
-        <h1 className="font-display text-2xl font-semibold text-slate-800">ยืนยันตัวตนสองขั้นตอน</h1>
+        <h1 className="font-display text-2xl font-semibold text-slate-800">{setupMode ? 'ตั้งค่า MFA' : 'ยืนยันตัวตนสองขั้นตอน'}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {enrollment ? 'สแกน QR ด้วยแอป Authenticator แล้วกรอกรหัส 6 หลักเพื่อเปิดใช้งาน MFA' : 'กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าสู่ระบบต่อ'}
+          {enrollment ? 'สแกน QR ด้วยแอป Authenticator แล้วกรอกรหัส 6 หลักเพื่อเปิดใช้งาน MFA' : setupMode ? 'จัดการการยืนยันตัวตนสองขั้นตอนของบัญชีนี้' : 'กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าสู่ระบบต่อ'}
         </p>
 
         {enrollment && (
@@ -109,7 +110,15 @@ export function MfaChallengePage() {
           </div>
         )}
 
-        <form onSubmit={verify} className="mt-6 space-y-4">
+        {setupMode && factorId && !enrollment && !loading && (
+          <div className="mt-5 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <p className="font-semibold">MFA เปิดใช้งานแล้ว</p>
+            <p>บัญชีนี้มี Authenticator ที่ยืนยันแล้ว หากต้องการเปลี่ยนอุปกรณ์ ให้ติดต่อผู้ดูแลระบบ</p>
+            <button type="button" onClick={() => navigate('/profile', { replace: true })} className="font-semibold underline">กลับไปหน้าโปรไฟล์</button>
+          </div>
+        )}
+
+        {(!setupMode || enrollment) && <form onSubmit={verify} className="mt-6 space-y-4">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">รหัส MFA</label>
           <input
             id="mfa-code"
@@ -129,7 +138,7 @@ export function MfaChallengePage() {
             ยืนยันและเข้าสู่ระบบ
           </button>
           <button type="button" onClick={() => void signOut()} className="public-link w-full text-center text-sm">ยกเลิกและออกจากระบบ</button>
-        </form>
+        </form>}
       </div>
     </main>
   );

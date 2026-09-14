@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { PublicBrand } from '../components/PublicBrand';
 import { Button } from '../components/ui/Button';
 import { RequesterSignatureInput } from '../features/tickets/RequesterSignatureInput';
+import { supabase } from '../lib/supabase';
 import { ApiError } from '../services/apiClient';
 import { clearVendorSessionToken, vendorPortalApiFetch } from '../services/vendorPortalApiClient';
 import type { VendorPortalProfile, VendorPortalTicket, VendorPortalTicketDetail } from '../types/vendorPortal';
@@ -34,10 +35,11 @@ export function VendorPortalPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [login, setLogin] = useState({ vendorCode: '', username: '', password: '' });
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const [loginStep, setLoginStep] = useState<'password' | 'mfa'>('password');
   const [loggingIn, setLoggingIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [passwordChange, setPasswordChange] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [work, setWork] = useState(emptyWorkForm);
   const [signature, setSignature] = useState<File | null>(null);
 
@@ -58,7 +60,7 @@ export function VendorPortalPage() {
     }).catch((reason) => {
       if (cancelled) return;
       clearVendorSessionToken();
-      if (reason instanceof ApiError && reason.code === 'VENDOR_SESSION_REQUIRED') return;
+      if (reason instanceof ApiError && ['VENDOR_SESSION_REQUIRED', 'VENDOR_MFA_REQUIRED'].includes(reason.code)) return;
       setError(errorMessage(reason, 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่'));
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -67,16 +69,43 @@ export function VendorPortalPage() {
   async function submitLogin() {
     setLoggingIn(true); setError('');
     try {
-      const result = await vendorPortalApiFetch<{ profile: VendorPortalProfile }>('/api/v1/vendor-portal/login', {
-        method: 'POST', body: JSON.stringify(login),
+      const identity = await vendorPortalApiFetch<{ email: string }>('/api/v1/vendor-portal/login/resolve', {
+        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username }),
       });
-      setProfile(result.profile);
-      if (!result.profile.mustChangePassword) await loadTickets();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: identity.email, password: login.password });
+      if (authError) throw new Error('Invalid vendor credentials');
+      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      if (factorsError) throw factorsError;
+      const factor = factors.totp.find((item) => item.status === 'verified');
+      if (!factor) throw new Error('MFA is not enrolled. Use the invitation link first.');
+      setMfaFactorId(factor.id);
+      setLoginStep('mfa');
+      setMfaCode('');
     } catch (reason) {
       setError(errorMessage(reason, 'เข้าสู่ระบบไม่สำเร็จ'));
+      await supabase.auth.signOut();
     } finally { setLoggingIn(false); }
   }
 
+  async function verifyLoginMfa() {
+    if (!mfaFactorId || !/^\d{6}$/.test(mfaCode)) {
+      setError('กรุณากรอกรหัส MFA 6 หลัก');
+      return;
+    }
+    setLoggingIn(true); setError('');
+    try {
+      const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code: mfaCode });
+      if (verifyError) throw new Error('MFA verification failed');
+      const nextProfile = await vendorPortalApiFetch<VendorPortalProfile>('/api/v1/vendor-portal/me');
+      setProfile(nextProfile);
+      await loadTickets();
+    } catch (reason) {
+      setError(errorMessage(reason, 'MFA verification failed'));
+      setMfaCode('');
+    } finally { setLoggingIn(false); }
+  }
+
+  /*
   async function submitPasswordChange() {
     if (passwordChange.newPassword !== passwordChange.confirmPassword) {
       setError('รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน');
@@ -95,6 +124,7 @@ export function VendorPortalPage() {
       setError(errorMessage(reason, 'เปลี่ยนรหัสผ่านไม่สำเร็จ'));
     } finally { setChangingPassword(false); }
   }
+  */
 
   async function openTicket(ticketId: string) {
     setLoading(true); setError('');
@@ -126,11 +156,25 @@ export function VendorPortalPage() {
   }
 
   async function logout() {
-    try { await vendorPortalApiFetch('/api/v1/vendor-portal/logout', { method: 'POST', body: '{}' }); } catch { /* local logout still applies */ }
+    await supabase.auth.signOut();
     clearVendorSessionToken(); setProfile(null); setTickets([]); setDetail(null); setError('');
+    setLoginStep('password'); setMfaFactorId(null); setMfaCode('');
   }
 
   if (loading && !profile) return <main className="public-portal min-h-screen bg-slate-50"><PublicBrand /><div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></div></main>;
+
+  if (!profile && loginStep === 'mfa') return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
+    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h1 className="text-xl font-extrabold text-slate-900">ยืนยันตัวตนด้วย MFA</h1>
+      <p className="mt-2 text-sm text-slate-500">กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าใช้งาน Vendor Portal</p>
+      <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void verifyLoginMfa(); }}>
+        <label className="block text-sm font-semibold">รหัส MFA<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className={`${fieldClass} text-center font-mono text-xl tracking-[0.3em]`} /></label>
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />ยืนยันและเข้าใช้งาน</Button>
+      </form>
+      <button type="button" onClick={() => { void supabase.auth.signOut(); setLoginStep('password'); setMfaFactorId(null); setMfaCode(''); }} className="mt-4 w-full text-sm font-semibold text-slate-500">ยกเลิก</button>
+    </section>
+  </div></main>;
 
   if (!profile) return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -147,6 +191,7 @@ export function VendorPortalPage() {
     </section>
   </div></main>;
 
+  /* Retired temporary-password screen; invitations are completed on the dedicated Auth/MFA page.
   if (profile.mustChangePassword) return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
     <section className="mt-6 rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
       <h1 className="text-xl font-extrabold text-slate-900">กรุณาเปลี่ยนรหัสผ่าน</h1>
@@ -162,6 +207,7 @@ export function VendorPortalPage() {
     </section>
   </div></main>;
 
+  */
   if (detail) {
     const submission = detail.submission;
     const canSubmit = !submission || submission.review_status === 'Revision Requested';

@@ -1,11 +1,11 @@
 import type { HealthResponse } from '@itlife/shared';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../services/apiClient';
+import { publicApiFetch } from '../services/publicApiClient';
 
 export function useHealth() {
   return useQuery({
     queryKey: ['health'],
-    queryFn: () => apiFetch<HealthResponse>('/api/v1/health'),
+    queryFn: () => publicApiFetch<HealthResponse>('/api/v1/health'),
     retry: false,
   });
 }

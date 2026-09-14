@@ -115,8 +115,8 @@ describe('TechnicianSkillMatrixPage', () => {
     const [path, init] = mocks.apiFetch.mock.calls.find((call) => call[1]?.method === 'PUT')!;
     expect(path).toBe('/api/v1/technician-skills/tech-1');
     expect(JSON.parse(String(init.body)).skills).toEqual([
-      { categoryId: 'cat-net', level: null, note: 'ดูแล Core Switch' },
-      { categoryId: 'cat-db', level: null },
+      { categoryId: 'cat-net', level: null, note: 'ดูแล Core Switch', certificationExpiry: null, availability: 'available' },
+      { categoryId: 'cat-db', level: null, certificationExpiry: null, availability: 'available' },
     ]);
   });
 

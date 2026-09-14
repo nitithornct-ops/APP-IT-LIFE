@@ -6,6 +6,7 @@ export const TASK_CATEGORIES = ['งานทั่วไป', 'ประชุ�
 export const TASK_RECURRENCES = ['ไม่ทำซ้ำ', 'รายวัน', 'วันทำงาน', 'รายสัปดาห์', 'ทุก 2 สัปดาห์', 'รายเดือน', 'รายไตรมาส', 'ทุก 6 เดือน', 'รายปี', 'กำหนดเอง'] as const;
 export const TASK_TYPES = ['general', 'meeting', 'follow_up', 'document', 'project', 'system_development', 'personal', 'other'] as const;
 export const TASK_REMINDER_PRESETS = ['at_time', 'before_15m', 'before_30m', 'before_1h', 'before_3h', 'before_1d', 'before_3d', 'custom'] as const;
+export const TASK_RECORD_TYPES = ['incident', 'change', 'asset', 'contract', 'risk'] as const;
 
 const isoDateString = z
   .string()
@@ -13,6 +14,10 @@ const isoDateString = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ไม่ถูกต้อง (yyyy-MM-dd)');
 
 const dateOrEmpty = z.union([isoDateString, z.literal('')]).optional();
+const hoursOrEmpty = z.preprocess(
+  (value) => value === '' || value === null ? undefined : value,
+  z.coerce.number().min(0).max(999999.99).optional(),
+);
 const timeOrEmpty = z.union([
   z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'รูปแบบเวลาไม่ถูกต้อง (HH:mm)'),
   z.literal(''),
@@ -39,6 +44,9 @@ export const createTaskSchema = z
     startTime: timeOrEmpty,
     dueTime: timeOrEmpty,
     progress: z.coerce.number().min(0).max(100).optional(),
+    estimateHours: hoursOrEmpty,
+    actualHours: hoursOrEmpty,
+    blockedReason: z.string().trim().max(1000).optional(),
     tags: z.string().trim().max(300).optional(),
     notes: z.string().trim().max(1500).optional(),
     recurrence: z.enum(TASK_RECURRENCES).optional(),
@@ -146,3 +154,55 @@ export const snoozeTaskReminderSchema = z.object({
   minutes: z.coerce.number().int().refine((value) => [15, 30, 60, 180, 1440].includes(value), 'ระยะเวลา Snooze ไม่ถูกต้อง'),
 });
 export type SnoozeTaskReminderInput = z.infer<typeof snoozeTaskReminderSchema>;
+
+export const addTaskDependencySchema = z.object({
+  dependsOnTaskId: z.string().uuid(),
+  note: z.string().trim().max(500).optional(),
+});
+export type AddTaskDependencyInput = z.infer<typeof addTaskDependencySchema>;
+
+export const addTaskRecordLinkSchema = z.object({
+  recordType: z.enum(TASK_RECORD_TYPES),
+  recordId: z.string().uuid(),
+});
+export type AddTaskRecordLinkInput = z.infer<typeof addTaskRecordLinkSchema>;
+
+export const listTaskContextOptionsQuerySchema = z.object({
+  type: z.enum(TASK_RECORD_TYPES).optional(),
+  search: z.string().trim().max(120).optional(),
+});
+export type ListTaskContextOptionsQuery = z.infer<typeof listTaskContextOptionsQuerySchema>;
+
+const templateChecklistItemSchema = z.string().trim().min(1).max(300);
+
+export const createTaskTemplateSchema = z.object({
+  name: z.string().trim().min(1).max(150),
+  title: z.string().trim().min(1).max(300),
+  description: z.string().trim().max(2000).optional(),
+  taskType: z.enum(TASK_TYPES).optional(),
+  category: z.enum(TASK_CATEGORIES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
+  recurrence: z.enum(TASK_RECURRENCES).optional(),
+  recurrenceRule: taskRecurrenceRuleSchema.nullable().optional(),
+  dueOffsetDays: z.coerce.number().int().min(0).max(3650).optional(),
+  estimateHours: hoursOrEmpty,
+  tags: z.string().trim().max(300).optional(),
+  notes: z.string().trim().max(1500).optional(),
+  checklist: z.array(templateChecklistItemSchema).max(50).optional(),
+}).superRefine((data, ctx) => {
+  if (data.recurrence === 'กำหนดเอง' && !data.recurrenceRule) {
+    ctx.addIssue({ code: 'custom', message: 'กรุณาระบุกฎการทำซ้ำแบบกำหนดเอง', path: ['recurrenceRule'] });
+  }
+});
+export type CreateTaskTemplateInput = z.infer<typeof createTaskTemplateSchema>;
+
+export const applyTaskTemplateSchema = z.object({
+  startDate: dateOrEmpty,
+  dueDate: dateOrEmpty,
+  status: z.enum(['ต้องทำ', 'กำลังทำ']).optional(),
+}).superRefine((data, ctx) => {
+  if (data.startDate && data.dueDate && data.dueDate < data.startDate) {
+    ctx.addIssue({ code: 'custom', message: 'วันครบกำหนดต้องไม่เร็วกว่าวันที่เริ่ม', path: ['dueDate'] });
+  }
+});
+export type ApplyTaskTemplateInput = z.infer<typeof applyTaskTemplateSchema>;

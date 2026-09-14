@@ -12,10 +12,9 @@ const usernameSchema = z.string()
   .toLowerCase()
   .regex(/^[a-z0-9._-]{3,32}$/, 'Username ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดล่าง และขีดกลาง ความยาว 3-32 ตัวอักษร');
 
-export const vendorPortalLoginSchema = z.object({
+export const vendorPortalIdentitySchema = z.object({
   vendorCode: z.string().trim().min(1).max(80).transform((value) => value.toUpperCase()),
   username: usernameSchema,
-  password: z.string().min(1).max(128),
 });
 
 export const createVendorPortalAccountSchema = z.object({
@@ -23,7 +22,10 @@ export const createVendorPortalAccountSchema = z.object({
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
   fullName: z.string().trim().min(1).max(160),
   position: z.string().trim().max(160).optional(),
-  password: passwordSchema,
+}).strict();
+
+export const completeVendorPortalInviteSchema = z.object({
+  mfaFactorId: z.string().uuid().optional(),
 });
 
 export const resetVendorPortalPasswordSchema = z.object({ password: passwordSchema });

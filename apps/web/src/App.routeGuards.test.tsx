@@ -31,6 +31,7 @@ const PUBLIC_ROUTES = new Set([
   '/vendor/forms',
   '/vendor/forms/:token', // legacy links only; newly generated links carry the token in a fragment
   '/vendor/portal', // company-only session and API authorization; never uses internal employee RBAC
+  '/vendor/portal/accept-invite', // Supabase Auth invite callback; MFA is required before portal data access
 ]);
 
 interface RouteDeclaration {

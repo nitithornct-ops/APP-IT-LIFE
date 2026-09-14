@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Paperclip, Upload } from 'lucide-react';
+import { ArrowLeft, Clock3, DollarSign, ExternalLink, Loader2, Paperclip, PauseCircle, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
@@ -42,6 +42,14 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-right font-medium text-slate-800 dark:text-slate-200">{value ?? '—'}</span>
     </div>
   );
+}
+
+function cycleTimeText(minutes: number | null) {
+  if (minutes === null) return 'กำลังดำเนินการ';
+  if (minutes < 60) return `${minutes} นาที`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours} ชม. ${remainder} นาที`;
 }
 
 function ApprovalPanel({ requestId }: { requestId: string }) {
@@ -185,6 +193,7 @@ function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; st
             <label htmlFor="sr-upd-note" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               {finalizing ? 'ผลการดำเนินการ (จำเป็นก่อนส่งมอบ/ปิดงาน)' : 'บันทึกเพิ่มเติม'}
             </label>
+            {(status === 'รอผู้ใช้งาน' || status === 'รอผู้ให้บริการ') && <p className="mb-2 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300"><PauseCircle className="h-3.5 w-3.5" />เมื่อบันทึกสถานะนี้ ระบบจะพัก SLA จนกว่าจะกลับมาดำเนินการ</p>}
             <textarea
               id="sr-upd-note"
               rows={2}
@@ -527,6 +536,20 @@ export function ServiceRequestDetailPage() {
               <InfoRow label="กลุ่มอนุมัติ" value={request.approval_group?.name} />
               <InfoRow label="ยื่นเมื่อ" value={formatThaiDate(request.created_at, 'd MMM yyyy HH:mm')} />
               <InfoRow label="ครบกำหนด" value={request.due_at ? formatThaiDate(request.due_at, 'd MMM yyyy HH:mm') : null} />
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader><span className="flex items-center gap-2"><Clock3 className="h-4 w-4" />SLA และ Cycle Time</span></CardHeader>
+            <CardBody className="space-y-3">
+              <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${request.sla_paused_at ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200' : 'bg-slate-50 text-slate-700 dark:bg-slate-900/40 dark:text-slate-200'}`}>
+                {request.sla_paused_at ? <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />}
+                <div><p className="font-semibold">{request.sla_paused_at ? 'พัก SLA อยู่' : 'SLA กำลังนับเวลา'}</p>{request.sla_paused_at && <p className="mt-1 text-xs">เหตุผล: {request.sla_pause_reason || request.status}</p>}<p className="mt-1 text-xs">พักสะสม {Number(request.sla_paused_minutes ?? 0).toLocaleString('th-TH')} นาที</p></div>
+              </div>
+              <InfoRow label="Approval Cycle" value={cycleTimeText(request.cycle_time.approvalMinutes)} />
+              <InfoRow label="Fulfillment Cycle" value={cycleTimeText(request.cycle_time.fulfillmentMinutes)} />
+              <InfoRow label="Service Owner" value={request.service_owner?.full_name} />
+              {request.estimated_cost != null && <InfoRow label="ค่าใช้จ่ายโดยประมาณ" value={<span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{Number(request.estimated_cost).toLocaleString('th-TH')}</span>} />}
+              {request.fulfillment_task_id && <a href="/tasks" className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300">เปิดงานใน My Work <ExternalLink className="h-3 w-3" /></a>}
             </CardBody>
           </Card>
         </div>

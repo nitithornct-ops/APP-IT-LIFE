@@ -16,10 +16,11 @@ on:
         options:
           - legacy-import
           - fresh-start
-        default: legacy-import
+        default: fresh-start
       fresh_start_confirm:
         description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
         required: false
+        default: NO-LEGACY-DATA
       staging_e2e_mode:
         description: verified = อ้างอิง run ที่ผ่านจริง / deferred = staging ยังตั้งค่าไม่เสร็จ ปล่อยโดยไม่มีหลักฐาน
         required: true

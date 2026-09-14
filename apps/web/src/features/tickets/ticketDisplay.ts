@@ -36,7 +36,7 @@ const SLA_SETTLED_STATUSES: TicketStatus[] = [...LOCKED_TICKET_STATUSES, 'เส
 /** เหลือเวลาน้อยกว่านี้ถือว่าใกล้ครบกำหนด */
 export const TICKET_SLA_DUE_SOON_HOURS = 4;
 
-export type TicketSlaState = 'overdue' | 'dueSoon';
+export type TicketSlaState = 'paused' | 'overdue' | 'dueSoon';
 
 export interface TicketSlaBadge {
   state: TicketSlaState;
@@ -64,7 +64,9 @@ export function ticketSlaBadge(
   dueAt: string | null | undefined,
   status: TicketStatus,
   now: Date = new Date(),
+  paused = false,
 ): TicketSlaBadge | null {
+  if (paused && !SLA_SETTLED_STATUSES.includes(status)) return { state: 'paused', tone: 'warning', label: 'พัก SLA' };
   if (!dueAt || SLA_SETTLED_STATUSES.includes(status)) return null;
   const due = new Date(dueAt).getTime();
   if (Number.isNaN(due)) return null;

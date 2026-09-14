@@ -1,8 +1,8 @@
 import { DataTable } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, QrCode } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, ExternalLink, Loader2, Paperclip, QrCode, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -14,10 +14,10 @@ import { Modal } from '../../components/ui/Modal';
 import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import type { AssetCategory, Department, EmployeeOption } from '../../types/admin';
-import type { AssetDetail } from '../../types/assets';
+import type { AssetAttachment, AssetDetail, AssetLifecycleStatus, AssetModelCatalog, AssetOption } from '../../types/assets';
 import type { ContractOption, ContractVendorRef } from '../../types/vendorsContracts';
 import { formatThaiDate } from '../../utils/date';
-import { ASSET_AUDIT_RESULTS, ASSET_CRITICALITIES, ASSET_STATUSES, ASSET_TYPES, assetStatusTone, employeeName, formatMoney } from './assetDisplay';
+import { ASSET_AUDIT_RESULTS, ASSET_CRITICALITIES, ASSET_LIFECYCLE_LABELS, ASSET_LIFECYCLE_STATUSES, ASSET_STATUSES, ASSET_TYPES, assetLifecycleTone, assetStatusTone, employeeName, formatMoney } from './assetDisplay';
 
 type ActionMode = null | 'assign' | 'return' | 'transfer' | 'repair-send' | 'repair-return' | 'verify';
 
@@ -42,11 +42,19 @@ const editSchema = z.object({
   serialNumber: z.string().trim().optional(),
   vendorId: z.string().optional(),
   contractId: z.string().optional(),
+  purchaseOrder: z.string().optional(),
+  invoiceNumber: z.string().optional(),
   location: z.string().trim().optional(),
   purchaseDate: z.string().optional(),
   warrantyExpire: z.string().optional(),
   price: z.coerce.number().nonnegative().optional().or(z.literal('')),
   usefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
+  depreciationMethod: z.enum(['straight_line', 'declining_balance', 'none']).optional(),
+  depreciationRate: z.coerce.number().nonnegative().max(100).optional().or(z.literal('')),
+  costCenter: z.string().optional(),
+  barcode: z.string().optional(),
+  assetModelCatalogId: z.string().optional(),
+  parentAssetId: z.string().optional(),
   criticality: z.enum(ASSET_CRITICALITIES).optional().or(z.literal('')),
   patchStatus: z.string().trim().optional(),
   notes: z.string().trim().optional(),
@@ -59,12 +67,16 @@ function EditAssetForm({
   categories,
   vendors,
   contracts,
+  models,
+  assetOptions,
   onClose,
 }: {
   detail: AssetDetail;
   categories: AssetCategory[];
   vendors: ContractVendorRef[];
   contracts: ContractOption[];
+  models: AssetModelCatalog[];
+  assetOptions: AssetOption[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -85,11 +97,19 @@ function EditAssetForm({
       serialNumber: a.serial_number ?? '',
       vendorId: a.vendor_id ?? '',
       contractId: a.contract_id ?? '',
+      purchaseOrder: a.purchase_order ?? '',
+      invoiceNumber: a.invoice_number ?? '',
       location: a.location ?? '',
       purchaseDate: a.purchase_date ?? '',
       warrantyExpire: a.warranty_expire ?? '',
       price: a.price ?? '',
       usefulLifeYears: a.useful_life_years ?? '',
+      depreciationMethod: a.depreciation_method ?? 'straight_line',
+      depreciationRate: a.depreciation_rate ?? '',
+      costCenter: a.cost_center ?? '',
+      barcode: a.barcode ?? '',
+      assetModelCatalogId: a.asset_model_catalog_id ?? '',
+      parentAssetId: a.parent_asset_id ?? '',
       criticality: (a.criticality as EditForm['criticality']) ?? '',
       patchStatus: a.patch_status ?? '',
       notes: a.notes ?? '',
@@ -104,8 +124,13 @@ function EditAssetForm({
         body: JSON.stringify({
           ...values,
           categoryId: values.categoryId || undefined,
+          vendorId: values.vendorId || undefined,
+          contractId: values.contractId || undefined,
+          assetModelCatalogId: values.assetModelCatalogId || undefined,
+          parentAssetId: values.parentAssetId || undefined,
           price: values.price === '' ? undefined : values.price,
           usefulLifeYears: values.usefulLifeYears === '' ? undefined : values.usefulLifeYears,
+          depreciationRate: values.depreciationRate === '' ? undefined : values.depreciationRate,
           criticality: values.criticality || undefined,
         }),
       }),
@@ -167,6 +192,18 @@ function EditAssetForm({
         <select id="ed-contract" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('contractId')}><option value="">— ไม่ระบุ —</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.contract_number} — {contract.name}</option>)}</select>
       </div>
       <div>
+        <label htmlFor="ed-purchase-order" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Purchase Order</label>
+        <input id="ed-purchase-order" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('purchaseOrder')} />
+      </div>
+      <div>
+        <label htmlFor="ed-invoice" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Invoice</label>
+        <input id="ed-invoice" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('invoiceNumber')} />
+      </div>
+      <div>
+        <label htmlFor="ed-cost-center" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Cost Center</label>
+        <input id="ed-cost-center" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('costCenter')} />
+      </div>
+      <div>
         <label htmlFor="ed-location" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่</label>
         <input id="ed-location" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('location')} />
       </div>
@@ -194,6 +231,36 @@ function EditAssetForm({
       <div>
         <label htmlFor="ed-life" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">อายุการใช้งาน (ปี)</label>
         <input id="ed-life" type="number" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('usefulLifeYears')} />
+      </div>
+      <div>
+        <label htmlFor="ed-depreciation-method" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Depreciation</label>
+        <select id="ed-depreciation-method" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('depreciationMethod')}>
+          <option value="straight_line">Straight-line</option>
+          <option value="declining_balance">Declining balance</option>
+          <option value="none">ไม่คิดค่าเสื่อม</option>
+        </select>
+      </div>
+      <div>
+        <label htmlFor="ed-depreciation-rate" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Depreciation Rate (%)</label>
+        <input id="ed-depreciation-rate" type="number" min="0" max="100" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('depreciationRate')} />
+      </div>
+      <div>
+        <label htmlFor="ed-barcode" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">QR / Barcode</label>
+        <input id="ed-barcode" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('barcode')} />
+      </div>
+      <div>
+        <label htmlFor="ed-model-catalog" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Asset Model Catalog</label>
+        <select id="ed-model-catalog" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('assetModelCatalogId')}>
+          <option value="">— ไม่ระบุ —</option>
+          {models.map((model) => <option key={model.id} value={model.id}>{model.model_code} — {model.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label htmlFor="ed-parent-asset" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Parent Asset</label>
+        <select id="ed-parent-asset" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('parentAssetId')}>
+          <option value="">— ไม่มี Parent —</option>
+          {assetOptions.filter((option) => option.id !== a.id).map((option) => <option key={option.id} value={option.id}>{option.asset_code} — {option.name}</option>)}
+        </select>
       </div>
       <div>
         <label htmlFor="ed-patch" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานะ Patch (ISMS)</label>
@@ -537,6 +604,88 @@ function VerifyForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
   );
 }
 
+function AssetLifecyclePanel({ asset, events, onDone }: { asset: AssetDetail['asset']; events: AssetDetail['lifecycleEvents']; onDone: () => void }) {
+  const current: AssetLifecycleStatus = ASSET_LIFECYCLE_STATUSES.includes(asset.lifecycle_status) ? asset.lifecycle_status : 'ready';
+  const transitionTargets: Record<AssetLifecycleStatus, AssetLifecycleStatus[]> = {
+    ordered: ['received'],
+    received: ['ready'],
+    ready: ['checked_out', 'disposed'],
+    checked_out: ['repair', 'returned'],
+    repair: ['returned'],
+    returned: ['ready', 'checked_out', 'disposed'],
+    disposed: [],
+  };
+  const [notes, setNotes] = useState('');
+  const mutation = useMutation({
+    mutationFn: (toStatus: AssetLifecycleStatus) => apiFetch(`/api/v1/assets/${asset.id}/lifecycle`, { method: 'POST', body: JSON.stringify({ toStatus, notes: notes.trim() || undefined }) }),
+    onSuccess: () => { setNotes(''); onDone(); },
+  });
+
+  return (
+    <Card data-testid="asset-lifecycle-panel">
+      <CardHeader className="flex items-center justify-between gap-2">
+        <span>Asset Lifecycle</span>
+        <Badge variant={assetLifecycleTone[current]}>{ASSET_LIFECYCLE_LABELS[current]}</Badge>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-7">
+          {ASSET_LIFECYCLE_STATUSES.map((status) => {
+            const isCurrent = status === current;
+            const isPast = ASSET_LIFECYCLE_STATUSES.indexOf(status) < ASSET_LIFECYCLE_STATUSES.indexOf(current);
+            return <div key={status} className={`rounded-lg border px-2 py-2 text-center text-xs ${isCurrent ? 'border-primary-500 bg-primary-50 text-primary-800 dark:bg-primary-950 dark:text-primary-200' : isPast ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-200' : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'}`}><span className="block font-semibold">{ASSET_LIFECYCLE_LABELS[status]}</span><span className="mt-0.5 block font-mono text-[10px] uppercase">{status.replace('_', ' ')}</span></div>;
+          })}
+        </div>
+        {transitionTargets[current].length > 0 && <div className="flex flex-wrap items-end gap-2">
+          <label className="min-w-[220px] flex-1 text-xs font-semibold text-slate-600 dark:text-slate-300">หมายเหตุการเปลี่ยนขั้นตอน
+            <input value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" maxLength={500} />
+          </label>
+          {transitionTargets[current].map((status) => <Button key={status} size="sm" variant={status === 'disposed' ? 'danger' : 'outline'} isLoading={mutation.isPending} disabled={mutation.isPending} onClick={() => mutation.mutate(status)} data-testid={`asset-lifecycle-${status}`}>
+            ไป: {ASSET_LIFECYCLE_LABELS[status]}
+          </Button>)}
+        </div>}
+        {mutation.error instanceof ApiError && <p className="text-xs text-red-600">{mutation.error.message}</p>}
+        {events.length > 0 && <div className="border-t border-slate-100 pt-3 dark:border-slate-700"><p className="mb-2 text-xs font-semibold text-slate-500">ประวัติ Lifecycle ล่าสุด</p><div className="space-y-1.5 text-xs">{events.slice(0, 5).map((event) => <div key={event.id} className="flex items-center justify-between gap-2"><span>{event.from_status ? ASSET_LIFECYCLE_LABELS[event.from_status] : 'เริ่มต้น'} → {ASSET_LIFECYCLE_LABELS[event.to_status]}</span><span className="text-slate-400">{new Date(event.event_date).toLocaleDateString('th-TH')}</span></div>)}</div></div>}
+      </CardBody>
+    </Card>
+  );
+}
+
+function AssetAttachments({ assetId, attachments, onDone }: { assetId: string; attachments: AssetAttachment[]; onDone: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('module', 'asset');
+      form.append('targetTable', 'assets');
+      form.append('targetId', assetId);
+      return apiFetch('/api/v1/files', { method: 'POST', body: form });
+    },
+    onSuccess: () => { setError(null); if (inputRef.current) inputRef.current.value = ''; onDone(); },
+    onError: (value) => setError(value instanceof ApiError ? value.message : 'อัปโหลดไฟล์ไม่สำเร็จ'),
+  });
+  const openAttachment = async (id: string) => {
+    try {
+      const result = await apiFetch<{ url: string }>(`/api/v1/files/${id}/signed-url`);
+      window.open(result.url, '_blank', 'noopener,noreferrer');
+    } catch {
+      setError('เปิดไฟล์ไม่สำเร็จ');
+    }
+  };
+
+  return <Card>
+    <CardHeader className="flex items-center gap-2"><Paperclip className="h-4 w-4" />ไฟล์แนบ ({attachments.length})</CardHeader>
+    <CardBody className="space-y-3">
+      <RequirePermission permission="asset.update">
+        <div className="flex flex-wrap items-center gap-2"><input ref={inputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); }} disabled={upload.isPending} className="max-w-full text-sm" /><Upload className="h-4 w-4 text-slate-400" />{upload.isPending && <span className="text-xs text-slate-500">กำลังอัปโหลด...</span>}</div>
+      </RequirePermission>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {attachments.length === 0 ? <p className="text-sm text-slate-400">ยังไม่มีเอกสารแนบ</p> : <div className="space-y-1">{attachments.map((attachment) => <button key={attachment.id} type="button" onClick={() => void openAttachment(attachment.id)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"><span className="min-w-0 truncate">{attachment.original_filename}</span><span className="flex shrink-0 items-center gap-1 text-xs text-primary-700 dark:text-primary-300"><ExternalLink className="h-3.5 w-3.5" />เปิด</span></button>)}</div>}
+    </CardBody>
+  </Card>;
+}
+
 export function AssetDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -550,6 +699,8 @@ export function AssetDetailPage() {
     enabled: Boolean(id),
   });
   const categoriesQuery = useQuery({ queryKey: ['admin', 'asset-categories'], queryFn: () => apiFetch<AssetCategory[]>('/api/v1/asset-categories') });
+  const modelsQuery = useQuery({ queryKey: ['assets', 'models'], queryFn: () => apiFetch<AssetModelCatalog[]>('/api/v1/assets/models') });
+  const assetOptionsQuery = useQuery({ queryKey: ['assets', 'options'], queryFn: () => apiFetch<AssetOption[]>('/api/v1/assets/options') });
   const employeesQuery = useQuery({ queryKey: ['employee-options'], queryFn: () => apiFetch<EmployeeOption[]>('/api/v1/employees/options') });
   const departmentsQuery = useQuery({ queryKey: ['admin', 'departments'], queryFn: () => apiFetch<Department[]>('/api/v1/departments') });
   const vendorOptionsQuery = useQuery({ queryKey: ['vendors-contracts', 'vendor-options'], queryFn: () => apiFetch<ContractVendorRef[]>('/api/v1/vendors/options') });
@@ -600,8 +751,8 @@ export function AssetDetailPage() {
 
       {showEdit && (
         <Modal title={`แก้ไขทรัพย์สิน: ${asset.name}`} size="xl" onClose={() => setShowEdit(false)} testId="asset-edit-dialog">
-          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data ? (
-            <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} onClose={() => setShowEdit(false)} />
+          {categoriesQuery.data && vendorOptionsQuery.data && contractOptionsQuery.data && modelsQuery.data && assetOptionsQuery.data ? (
+            <EditAssetForm detail={detailQuery.data} categories={categoriesQuery.data} vendors={vendorOptionsQuery.data} contracts={contractOptionsQuery.data} models={modelsQuery.data} assetOptions={assetOptionsQuery.data} onClose={() => setShowEdit(false)} />
           ) : (
             <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-slate-500" role="status">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -610,6 +761,8 @@ export function AssetDetailPage() {
           )}
         </Modal>
       )}
+
+      <AssetLifecyclePanel asset={asset} events={detailQuery.data.lifecycleEvents ?? []} onDone={() => { void queryClient.invalidateQueries({ queryKey: ['asset', id] }); void queryClient.invalidateQueries({ queryKey: ['assets'] }); }} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -627,11 +780,19 @@ export function AssetDetailPage() {
             <Info label="กำหนดคืน" value={asset.loan_due_date ? formatThaiDate(asset.loan_due_date, 'd MMM yyyy') : '—'} />
             <Info label="วันที่ซื้อ" value={asset.purchase_date ? formatThaiDate(asset.purchase_date, 'd MMM yyyy') : '—'} />
             <Info label="หมดประกัน" value={asset.warranty_expire ? formatThaiDate(asset.warranty_expire, 'd MMM yyyy') : '—'} />
+            <Info label="Purchase Order" value={asset.purchase_order ?? '—'} />
+            <Info label="Invoice" value={asset.invoice_number ?? '—'} />
+            <Info label="Cost Center" value={asset.cost_center ?? '—'} />
+            <Info label="QR / Barcode" value={asset.barcode ?? 'ใช้ Asset Code เป็น QR'} />
             <Info label="ราคา / มูลค่าคงเหลือ" value={`${formatMoney(asset.price)} / ${formatMoney(asset.bookValue)} บาท`} />
             <Info label="ค่าเสื่อม" value={asset.depreciationPct !== null ? `${asset.depreciationPct}%` : '—'} />
             <Info label="ความสำคัญ (ISMS)" value={asset.criticality ?? '—'} />
             <Info label="สถานะ Patch (ISMS)" value={asset.patch_status ?? '—'} />
             <Info label="ตรวจนับล่าสุด" value={asset.last_audit_date ? `${formatThaiDate(asset.last_audit_date, 'd MMM yyyy')} (${asset.audit_status ?? ''})` : 'ยังไม่เคยตรวจนับ'} />
+            <Info label="Physical Verification" value={asset.physical_verification_status === 'verified' ? 'Verified' : asset.physical_verification_status === 'exception' ? 'Exception' : 'Pending'} />
+            <Info label="Parent Asset" value={asset.parent_asset_id ?? 'ไม่มี'} />
+            <Info label="CMDB CI" value={detailQuery.data.configurationItem ? `${detailQuery.data.configurationItem.ci_code} — ${detailQuery.data.configurationItem.name}` : 'ยังไม่มี CI'} />
+            {(detailQuery.data.children ?? []).length > 0 && <Info label="Child Assets" value={(detailQuery.data.children ?? []).map((child) => `${child.asset_code} — ${child.name}`).join(', ')} />}
             {asset.notes && <div className="col-span-full"><Info label="หมายเหตุ" value={asset.notes} /></div>}
           </CardBody>
         </Card>
@@ -687,6 +848,8 @@ export function AssetDetailPage() {
         vendors={vendorOptionsQuery.data ?? []}
         onDone={() => void queryClient.invalidateQueries({ queryKey: ['asset', id] })}
       />
+
+      <AssetAttachments assetId={asset.id} attachments={detailQuery.data.attachments ?? []} onDone={() => void queryClient.invalidateQueries({ queryKey: ['asset', id] })} />
 
       <Card>
         <CardHeader>ประวัติการเคลื่อนไหว</CardHeader>

@@ -11,7 +11,13 @@ import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { zodValidationHook } from '../utils/validation';
-import { loginLogSchema, resolveLoginSchema, setOnboardingStateSchema, updateOwnProfileSchema } from '../validators/auth';
+import {
+  loginLogSchema,
+  resolveLoginSchema,
+  setOnboardingStateSchema,
+  updateOwnPreferencesSchema,
+  updateOwnProfileSchema,
+} from '../validators/auth';
 
 /**
  * อีเมลปลอมคงที่ที่คืนให้เมื่อค้นหาตัวระบุที่ผู้ใช้พิมพ์แล้วไม่พบบัญชี — ไม่มีทางตรงกับบัญชีจริง
@@ -68,13 +74,124 @@ authRoute.get('/me', requireAuth, async (c) => {
     return c.json(fail(reqId, 'PROFILE_NOT_FOUND', 'ไม่พบข้อมูลผู้ใช้'), 404);
   }
 
+  // Department/Position are owned by Employee Master. Return the directory
+  // projection separately so the profile page never treats profile columns as
+  // editable employment data.
+  type EmployeeDirectory = {
+    id: string;
+    employee_code: string;
+    department_id: string | null;
+    position_id: string | null;
+    department: { id: string; name_th: string; name_en: string | null } | null;
+    position: { id: string; name_th: string; name_en: string | null } | null;
+  };
+  let employeeDirectory: EmployeeDirectory | null = null;
+  if (typeof profile.employee_id === 'string' && profile.employee_id) {
+    const { data: employee } = await supabase
+      .from('employees')
+      .select('id, employee_code, department_id, position_id, department:departments(id, name_th, name_en), position:positions(id, name_th, name_en)')
+      .eq('id', profile.employee_id)
+      .maybeSingle();
+    if (employee) {
+      const row = employee as unknown as EmployeeDirectory & {
+        department: EmployeeDirectory['department'][];
+        position: EmployeeDirectory['position'][];
+      };
+      employeeDirectory = {
+        ...row,
+        department: row.department?.[0] ?? null,
+        position: row.position?.[0] ?? null,
+      };
+    }
+  }
+
   return c.json(
     ok(reqId, {
       profile,
+      employeeDirectory,
       roles: rolesResult.data ?? [],
       permissions: (permissionsResult.data ?? []).map((row: { permission_key: string }) => row.permission_key),
     }),
   );
+});
+
+authRoute.patch('/preferences', requireAuth, zValidator('json', updateOwnPreferencesSchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const userId = c.get('userId');
+  const reqId = c.get('requestId');
+  const body = c.req.valid('json');
+
+  const { data, error } = await supabase.rpc('update_my_preferences', {
+    timezone_input: body.timezone,
+    preferred_language_input: body.preferredLanguage,
+    notification_in_app_enabled_input: body.inAppNotifications,
+  });
+  if (error) return dbFailJson(c, 'PROFILE_PREFERENCES_UPDATE_FAILED', error, 'บันทึกการตั้งค่าโปรไฟล์ไม่สำเร็จ');
+
+  const row = Array.isArray(data) ? data[0] : data;
+  await writeAuditLog(c.env, {
+    actorId: userId,
+    actorEmail: c.get('userEmail'),
+    action: 'UPDATE_PREFERENCES',
+    module: 'profile',
+    targetTable: 'profiles',
+    targetId: userId,
+    detail: body,
+    requestId: reqId,
+  });
+  return c.json(ok(reqId, row));
+});
+
+authRoute.get('/security-activity', requireAuth, async (c) => {
+  const reqId = c.get('requestId');
+  const userId = c.get('userId');
+  const admin = createAdminClient(c.env);
+
+  const [loginResult, auditResult] = await Promise.all([
+    admin
+      .from('login_logs')
+      .select('id, success, failure_reason, mfa_used, ip_address, user_agent, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(8),
+    admin
+      .from('audit_logs')
+      .select('id, action, module, result, ip_address, user_agent, created_at')
+      .eq('actor_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(8),
+  ]);
+
+  if (loginResult.error || auditResult.error) {
+    return c.json(fail(reqId, 'SECURITY_ACTIVITY_LOAD_FAILED', 'ดึงประวัติความปลอดภัยไม่สำเร็จ'), 400);
+  }
+
+  const loginActivities = (loginResult.data ?? []).map((row) => ({
+    id: `login:${row.id}`,
+    source: 'login' as const,
+    action: row.success ? 'เข้าสู่ระบบสำเร็จ' : 'เข้าสู่ระบบไม่สำเร็จ',
+    result: row.success ? 'success' as const : 'fail' as const,
+    detail: row.mfa_used ? 'ยืนยัน MFA แล้ว' : row.failure_reason ?? null,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    createdAt: row.created_at,
+  }));
+  const auditActivities = (auditResult.data ?? []).map((row) => ({
+    id: `audit:${row.id}`,
+    source: 'audit' as const,
+    action: row.action,
+    result: row.result,
+    detail: row.module,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    createdAt: row.created_at,
+  }));
+
+  const activities = [...loginActivities, ...auditActivities]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 10);
+
+  return c.json(ok(reqId, activities));
 });
 
 /**
@@ -131,6 +248,30 @@ authRoute.patch('/profile', requireAuth, zValidator('json', updateOwnProfileSche
   });
 
   return c.json(ok(reqId, data));
+});
+
+/** Record a password update after Supabase Auth has accepted it. The endpoint only
+ * writes server time for the authenticated account; clients cannot provide a timestamp. */
+authRoute.post('/password-change-log', requireAuth, async (c) => {
+  const supabase = createAdminClient(c.env);
+  const userId = c.get('userId');
+  const reqId = c.get('requestId');
+  const changedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ last_password_change_at: changedAt, updated_by: userId })
+    .eq('id', userId);
+  if (error) return dbFailJson(c, 'PASSWORD_CHANGE_LOG_FAILED', error, 'บันทึกประวัติการเปลี่ยนรหัสผ่านไม่สำเร็จ');
+  await writeAuditLog(c.env, {
+    actorId: userId,
+    actorEmail: c.get('userEmail'),
+    action: 'CHANGE_PASSWORD',
+    module: 'profile',
+    targetTable: 'profiles',
+    targetId: userId,
+    requestId: reqId,
+  });
+  return c.json(ok(reqId, { recorded: true, changedAt }));
 });
 
 /**
@@ -243,6 +384,9 @@ authRoute.post(
       mfaUsed: verifiedMfaUsed,
       ipAddress: clientIp(c),
       userAgent: c.req.header('user-agent') ?? null,
+      eventType: body.eventType ?? 'login_attempt',
+      requestId: reqId,
+      correlationId: reqId,
     });
 
     return c.json(ok(reqId, { recorded: true }));
