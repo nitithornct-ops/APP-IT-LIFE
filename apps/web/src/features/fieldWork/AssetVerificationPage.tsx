@@ -86,7 +86,10 @@ function readStoredCampaignId(): string {
 
 function clientRef(): string {
   const random = globalThis.crypto?.randomUUID;
-  return typeof random === 'function' ? random.call(globalThis.crypto) : `field-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  if (typeof random === 'function') return random.call(globalThis.crypto);
+  // randomUUID ใช้ได้เฉพาะ secure context (HTTPS) แต่ getRandomValues ใช้ได้เสมอและยังเดาค่าไม่ได้
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  return `field-${Date.now()}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
 function errorText(error: unknown, fallback: string): string {
