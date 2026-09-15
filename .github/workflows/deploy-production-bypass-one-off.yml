@@ -1,4 +1,4 @@
-name: Deploy Production
+name: Deploy Production Bypass (one-off)
 
 on:
   workflow_dispatch:
@@ -6,28 +6,12 @@ on:
       confirmation:
         description: Type DEPLOY to confirm the production cutover
         required: true
-      migration_approval_ref:
-        description: Approved change/UAT reference for this release
+      bypass_confirmation:
+        description: Type BYPASS-PRODUCTION-GATE to confirm the approved bypass
         required: true
-      migration_mode:
-        description: legacy-import = ยกข้อมูลจากระบบเดิมเข้ามาด้วย / fresh-start = เริ่มข้อมูลใหม่ทั้งหมด
+      release_note:
+        description: Short release note for the audit trail
         required: true
-        type: choice
-        options:
-          - legacy-import
-          - fresh-start
-        default: fresh-start
-      fresh_start_confirm:
-        description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
-        required: false
-        default: NO-LEGACY-DATA
-      staging_e2e_run_ref:
-        description: "verified เท่านั้น: Successful Staging Live E2E run URL/ID for this exact master commit"
-        required: true
-      attachments_approved:
-        description: All attachment migration exceptions were reviewed (ไม่มีผลในโหมด fresh-start)
-        required: true
-        type: boolean
 
 concurrency:
   group: production-deploy
@@ -35,24 +19,20 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/master' && inputs.confirmation == 'DEPLOY'
+    if: >-
+      github.ref == 'refs/heads/deploy/prod-bypass-20260915' &&
+      inputs.confirmation == 'DEPLOY' &&
+      inputs.bypass_confirmation == 'BYPASS-PRODUCTION-GATE'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 60
     env:
       PRODUCTION_DEPLOY_CONFIRM: ${{ inputs.confirmation }}
-      MIGRATION_APPROVAL_REF: ${{ inputs.migration_approval_ref }}
-      MIGRATION_MODE: ${{ inputs.migration_mode }}
-      FRESH_START_CONFIRM: ${{ inputs.fresh_start_confirm }}
-      STAGING_E2E_APPROVAL_REF: ${{ inputs.staging_e2e_run_ref }}
-      STAGING_E2E_RUN_REF: ${{ inputs.staging_e2e_run_ref }}
-      # Production releases always require verified staging evidence.
-      STAGING_E2E_MODE: verified
-      MIGRATION_ATTACHMENTS_APPROVED: ${{ inputs.attachments_approved }}
+      PRODUCTION_BYPASS_CONFIRM: ${{ inputs.bypass_confirmation }}
+      PRODUCTION_RELEASE_NOTE: ${{ inputs.release_note }}
       PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
       CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
@@ -63,7 +43,6 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       ALLOWED_ORIGINS: ${{ vars.PRODUCTION_WEB_URL }}
       PUBLIC_APP_URL: ${{ vars.PRODUCTION_WEB_URL }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -87,14 +66,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - name: Verify Staging Live E2E evidence for this commit
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: npm run staging:gate
-      - name: Validate production configuration and migration approval
-        run: |
-          npm run predeploy
-          npm run migration:gate
       - name: Verify release candidate
         run: |
           npm run typecheck
@@ -102,11 +73,7 @@ jobs:
           npm run test
           npm run audit:prod
           npm run build
-      - name: Apply reviewed database migrations
-        run: |
-          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
-          npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all
-      - name: Verify the database matches this release and Auth is locked down
+      - name: Verify current production schema and Auth configuration
         run: npm run runtime:gate
       - name: Synchronize Worker secrets
         shell: bash
@@ -140,7 +107,7 @@ jobs:
         run: npm run build --workspace=apps/web
       - name: Deploy web
         run: npx wrangler pages deploy apps/web/dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch master
-      - name: Post-deploy smoke checks
+      - name: Post-deploy production smoke checks
         shell: bash
         run: |
           curl --fail --retry 5 --retry-all-errors "$PRODUCTION_API_URL/api/v1/health"

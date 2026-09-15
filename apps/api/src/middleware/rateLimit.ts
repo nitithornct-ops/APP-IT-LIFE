@@ -7,10 +7,28 @@ interface Bucket {
   resetAt: number;
 }
 
-// จำกัดในระดับ isolate เดียว (ไม่ persist ข้าม edge node) — เป็นแนวป้องกันชั้นแรกสำหรับ
-// endpoint สาธารณะที่ยังไม่ต้อง login (เช่น login-log) ของ Phase 3 นี้ ความแม่นยำข้าม edge node
-// จะดีขึ้นถ้าย้ายไป Cloudflare Rate Limiting/KV ในรอบ Security Hardening (Phase 8)
+// จำกัดในระดับ isolate เดียว (ไม่ persist ข้าม edge node) — เป็น defense in depth สำหรับ endpoint
+// สาธารณะ ส่วน route ที่มีความเสี่ยงสูงควรใช้ edgeRateLimit ร่วมกับ binding ของ Cloudflare ด้วย
 const buckets = new Map<string, Bucket>();
+const MAX_BUCKETS = 10_000;
+const PRUNE_INTERVAL_MS = 60_000;
+let nextPruneAt = 0;
+
+function pruneBuckets(now: number): void {
+  if (now < nextPruneAt && buckets.size <= MAX_BUCKETS) return;
+
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+
+  if (buckets.size > MAX_BUCKETS) {
+    const oldest = [...buckets.entries()]
+      .sort((left, right) => left[1].resetAt - right[1].resetAt)
+      .slice(0, buckets.size - MAX_BUCKETS);
+    for (const [key] of oldest) buckets.delete(key);
+  }
+  nextPruneAt = now + PRUNE_INTERVAL_MS;
+}
 
 export function rateLimit(options: {
   windowMs: number;
@@ -20,9 +38,10 @@ export function rateLimit(options: {
   return async (c, next) => {
     const key = options.keyFn(c);
     const now = Date.now();
+    pruneBuckets(now);
     const bucket = buckets.get(key);
 
-    if (!bucket || bucket.resetAt < now) {
+    if (!bucket || bucket.resetAt <= now) {
       buckets.set(key, { count: 1, resetAt: now + options.windowMs });
     } else {
       bucket.count += 1;

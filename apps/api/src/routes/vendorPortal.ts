@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { createAdminClient, createUserScopedClient } from '../lib/supabase';
+import { createAdminClient, createSupabaseAuthClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
@@ -16,7 +16,7 @@ import {
   completeVendorPortalInviteSchema,
   reviewOutsourceSubmissionSchema,
   submitOutsourceWorkSchema,
-  vendorPortalIdentitySchema,
+  vendorPortalLoginSchema,
 } from '../validators/vendorPortal';
 
 const VENDOR_SIGNATURE_BUCKET = 'ticket-outsource-signatures';
@@ -156,25 +156,91 @@ export const vendorPortalRoute = new Hono<AppEnv>();
 vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabled: true })));
 
 vendorPortalRoute.post(
-  '/login/resolve',
+  '/login',
   edgeRateLimit({ keyFn: (c) => `vendor_login:${clientIp(c)}` }),
   rateLimit({ windowMs: 15 * 60_000, max: 20, keyFn: (c) => `vendor_login:${clientIp(c)}` }),
-  zValidator('json', vendorPortalIdentitySchema, zodValidationHook),
+  zValidator('json', vendorPortalLoginSchema, zodValidationHook),
   async (c) => {
+    const reqId = c.get('requestId');
     const body = c.req.valid('json');
     const admin = createAdminClient(c.env);
-    const invalid = () => c.json(fail(c.get('requestId'), 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
-    const { data: vendor } = await admin.from('vendors').select('id').eq('vendor_code', body.vendorCode).eq('status', 'Active').maybeSingle();
+    const invalid = () => c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+
+    const { data: vendor, error: vendorError } = await admin
+      .from('vendors')
+      .select('id, vendor_code, name')
+      .eq('vendor_code', body.vendorCode)
+      .eq('status', 'Active')
+      .maybeSingle();
+    if (vendorError) return dbFailJson(c, 'VENDOR_LOGIN_LOOKUP_FAILED', vendorError);
     if (!vendor) return invalid();
-    const { data: account } = await admin
+
+    const { data: account, error: accountError } = await admin
       .from('vendor_portal_accounts')
-      .select('email, auth_user_id, invite_status')
+      .select('id, email, auth_user_id, invite_status, status, locked_until')
       .eq('vendor_id', vendor.id)
       .eq('username', body.username)
       .eq('status', 'Active')
       .maybeSingle();
-    if (!account?.auth_user_id || account.invite_status === 'Revoked') return invalid();
-    return c.json(ok(c.get('requestId'), { email: account.email }));
+    if (accountError) return dbFailJson(c, 'VENDOR_LOGIN_LOOKUP_FAILED', accountError);
+    if (!account?.auth_user_id || account.invite_status !== 'Accepted') return invalid();
+    if (account.locked_until && Date.parse(account.locked_until) > Date.now()) return invalid();
+
+    const authClient = createSupabaseAuthClient(c.env);
+    const { data: authData, error: authError } = await authClient.auth.signInWithPassword({
+      email: account.email,
+      password: body.password,
+      ...(body.captchaToken ? { options: { captchaToken: body.captchaToken } } : {}),
+    });
+
+    if (authError || !authData.session || !authData.user) {
+      if (authError?.status === 400) {
+        const { error: failureError } = await admin.rpc('register_vendor_portal_login_failure', {
+          account_id_input: account.id,
+          failed_at_input: new Date().toISOString(),
+        });
+        if (failureError) return dbFailJson(c, 'VENDOR_LOGIN_COUNTER_FAILED', failureError);
+      }
+      if (authError?.status === 429) return c.json(fail(reqId, 'VENDOR_LOGIN_RATE_LIMITED', 'Too many login attempts'), 429);
+      return invalid();
+    }
+
+    if (authData.user.id !== account.auth_user_id) {
+      await authClient.auth.signOut();
+      console.error(JSON.stringify({ requestId: reqId, code: 'VENDOR_AUTH_LINK_MISMATCH', accountId: account.id }));
+      return c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Vendor authentication is unavailable'), 503);
+    }
+
+    const { data: loginAllowed, error: successError } = await admin.rpc('register_vendor_portal_login_success', {
+      account_id_input: account.id,
+      login_at_input: new Date().toISOString(),
+    });
+    if (successError) {
+      await authClient.auth.signOut();
+      return dbFailJson(c, 'VENDOR_LOGIN_COUNTER_FAILED', successError);
+    }
+    if (loginAllowed !== true) {
+      await authClient.auth.signOut();
+      return invalid();
+    }
+
+    await writeAuditLog(c.env, {
+      actorEmail: `VENDOR:${account.email}`,
+      action: 'VENDOR_PASSWORD_AUTHENTICATED',
+      module: 'vendor_portal',
+      targetTable: 'vendor_portal_accounts',
+      targetId: account.id,
+      detail: { vendorId: vendor.id },
+      requestId: reqId,
+    });
+    c.header('Cache-Control', 'no-store');
+    return c.json(ok(reqId, {
+      accessToken: authData.session.access_token,
+      refreshToken: authData.session.refresh_token,
+      expiresIn: authData.session.expires_in,
+      expiresAt: authData.session.expires_at,
+      tokenType: authData.session.token_type,
+    }));
   },
 );
 

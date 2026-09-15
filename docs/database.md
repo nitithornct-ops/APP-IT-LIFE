@@ -1,5 +1,7 @@
 # Database — Foundation Schema (Phase 2)
 
+> Current schema note: the SQL migrations under `../supabase/migrations/` are the source of truth for the complete schema. This document's original foundation ER diagram is retained as historical context; it is not a Phase 2-only schema inventory.
+
 > Help Desk extension: [`helpdesk/phase2-database-security.md`](helpdesk/phase2-database-security.md)
 >
 > Repository analysis: [`helpdesk/phase1-analysis.md`](helpdesk/phase1-analysis.md)
