@@ -17,6 +17,11 @@ export const vendorPortalIdentitySchema = z.object({
   username: usernameSchema,
 });
 
+export const vendorPortalLoginSchema = vendorPortalIdentitySchema.extend({
+  password: z.string().min(1).max(128),
+  captchaToken: z.string().trim().min(1).max(4096).optional(),
+}).strict();
+
 export const createVendorPortalAccountSchema = z.object({
   username: usernameSchema,
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),

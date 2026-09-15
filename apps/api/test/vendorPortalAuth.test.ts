@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { constantTimeEqualText, hashVendorPassword, hashVendorSessionToken, verifyVendorPassword } from '../src/lib/vendorPortalAuth';
-import { changeVendorPortalPasswordSchema, createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalIdentitySchema } from '../src/validators/vendorPortal';
+import { changeVendorPortalPasswordSchema, createVendorPortalAccountSchema, submitOutsourceWorkSchema, vendorPortalIdentitySchema, vendorPortalLoginSchema } from '../src/validators/vendorPortal';
 
 describe('vendor portal authentication', () => {
   it('hashes passwords with a random salt and verifies without storing plaintext', async () => {
@@ -32,6 +32,11 @@ describe('vendor portal authentication', () => {
     expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
     expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A' }).success).toBe(true);
     expect(createVendorPortalAccountSchema.safeParse({ username: 'ชื่อบริษัท', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
+  });
+
+  it('validates the broker login payload without accepting an email field', () => {
+    expect(vendorPortalLoginSchema.safeParse({ vendorCode: 'vnd-001', username: 'vendor', password: 'secret' }).success).toBe(true);
+    expect(vendorPortalLoginSchema.safeParse({ vendorCode: 'vnd-001', username: 'vendor', password: 'secret', email: 'internal@example.com' }).success).toBe(false);
   });
 
   it('requires a strong, different password when changing the temporary password', () => {

@@ -14,19 +14,11 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
   ไว้เป็น `staging_e2e_run_ref` โดย run ต้องเป็น workflow `.github/workflows/staging-e2e.yml`, สำเร็จบน
   `master` commit SHA เดียวกับที่จะ deploy และอายุไม่เกิน 72 ชั่วโมง ระบบจะตรวจผ่าน GitHub API ก่อน deploy
 
-### 1.0 เลือก `staging_e2e_mode`
+### 1.0 Staging E2E เป็นเงื่อนไขบังคับ
 
-**`verified`** (ค่าเริ่มต้น) — ตามเงื่อนไขข้างบนทุกข้อ ใช้กับทุกรุ่นตามปกติ
-
-**`deferred`** — ใช้ได้เฉพาะเมื่อ environment `staging` ยังตั้งค่าไม่ครบจน Staging Live E2E รันไม่ได้เลย
-
-- ต้องกรอก `staging_e2e_defer_confirm` เป็น `NO-STAGING-EVIDENCE` และยังบังคับ `migration_approval_ref`
-  เหมือนเดิม เพื่อให้ย้อนตรวจได้ว่าใครสั่งเลื่อนและอ้างอิงเอกสารใด
-- ปล่อย `staging_e2e_run_ref` ว่างไว้ — ด่าน `npm run predeploy` รับคำประกาศแทนเลข run ในโหมดนี้
-- ด่านจะพิมพ์ `::warning` ติดไว้ในหน้า run ว่า commit นี้ขึ้น Production โดยไม่มีหลักฐาน E2E
-- **สิ่งที่แลกไป:** ไม่มีอะไรยืนยันว่า flow จริง (login/MFA, ticket, vendor portal, report) ยังทำงาน
-  บนข้อมูลจริง — regression จะถูกพบที่ Production เท่านั้น ต้องเฝ้า smoke test ในข้อ 4 ให้ครบ
-- เมื่อตั้งค่า staging ครบแล้วให้กลับไปใช้ `verified` ทันที โหมดนี้ไม่ใช่ค่าปกติของโครงการ
+Production รับเฉพาะหลักฐานแบบ `verified` เท่านั้น: ต้องกรอก `staging_e2e_run_ref` เป็น URL หรือ run ID
+ของ workflow `Staging Live E2E` ที่สำเร็จบน commit เดียวกันและอายุไม่เกิน 72 ชั่วโมง ระบบจะตรวจซ้ำผ่าน
+GitHub API ก่อน deploy ไม่มีโหมด `deferred` ใน workflow นี้
 
 ### 1.1 เลือก `migration_mode` ให้ตรงกับรุ่นที่ปล่อย
 
@@ -70,7 +62,7 @@ Environment ชื่อ `production` ที่กำหนด required reviewer
   ข้อความตอบกลับของผู้ใช้ยังเข้าสู่ LINE OA Manager ตามการตั้งค่า Chat เดิม
 
 Environment `staging` ต้องมี Supabase keys, อีเมล UAT ของ Requester/Technician/Approver/Manager/Admin,
-TOTP secret ของ Technician/Approver/Manager/Admin และ `UAT_VENDOR_CODE`, `UAT_VENDOR_EMAIL`,
+TOTP secret ของ Technician/Approver/Manager/Admin และ `UAT_VENDOR_CODE`, `UAT_VENDOR_USERNAME`,
 `UAT_VENDOR_PASSWORD` ให้ครบ ส่วนข้อมูล Ticket สำหรับทดสอบจะถูกสร้างและล้างในแต่ละรอบ หากขาด
 credential/secret ใด หรือมี test ถูก skip แม้แต่รายการเดียว Staging Live E2E จะ fail แทนการแสดงผลเขียว
 

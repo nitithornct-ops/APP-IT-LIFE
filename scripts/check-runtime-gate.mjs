@@ -111,6 +111,8 @@ const REQUIRED_COLUMNS = {
   ticket_categories: ['name', 'default_priority', 'response_sla_hours', 'resolution_sla_hours', 'sla_hours', 'is_security_default'],
   ticket_worklogs: ['ticket_id', 'entry_type', 'action', 'status_to', 'detail', 'is_public', 'actor_label', 'actor_line_user_id'],
   profiles: ['email', 'username', 'full_name', 'status', 'department_id', 'position_id', 'supervisor_id'],
+  vendors: ['vendor_code', 'name', 'status'],
+  vendor_portal_accounts: ['vendor_id', 'username', 'email', 'auth_user_id', 'invite_status', 'status', 'locked_until', 'failed_login_count', 'last_login_at'],
   employees: ['employee_code', 'first_name_th', 'last_name_th', 'email', 'status'],
   assets: ['asset_code', 'name', 'status', 'warranty_expire'],
   personal_tasks: ['title', 'status', 'priority', 'due_date', 'recurrence_rule'],

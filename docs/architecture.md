@@ -23,9 +23,10 @@ Frontend: React + TS + Vite    ───────▶  Backend API: TypeScript
 ```
 
 Frontend เรียกข้อมูลของระบบทั้งหมดผ่าน Cloudflare Workers API เท่านั้น — ยกเว้นการ login/logout/refresh session
-ที่ใช้ Supabase Auth SDK โดยตรงจาก Frontend (ตามสถาปัตยกรรมมาตรฐานของ Supabase Auth)
+ที่ใช้ Supabase Auth SDK โดยตรงจาก Frontend (ตามสถาปัตยกรรมมาตรฐานของ Supabase Auth) และ Vendor Portal
+ที่ส่ง credentials ให้ Worker เป็นผู้ broker การ sign-in โดยไม่เปิดเผยอีเมลภายในให้ browser
 
-ข้อยกเว้นเล็ก ๆ ที่เพิ่มเข้ามาพร้อมบัญชีแบบ username: หน้า Login เรียก `POST /api/v1/auth/resolve-login` ที่ Worker
+ข้อยกเว้นเล็ก ๆ ที่เพิ่มเข้ามาพร้อมบัญชีแบบ username: หน้า Login ภายในเรียก `POST /api/v1/auth/resolve-login` ที่ Worker
 หนึ่งครั้งก่อน เพื่อแปลงสิ่งที่ผู้ใช้พิมพ์ (อีเมล **หรือ** ชื่อผู้ใช้) เป็นอีเมลที่ Supabase Auth รู้จัก เพราะ Supabase
 รับตัวระบุได้แค่ email/phone ส่วนบัญชีที่ไม่มีอีเมลจริงถูกผูกไว้กับอีเมลภายในที่ผู้ใช้ไม่รู้ค่า — การตรวจรหัสผ่านยังคง
 เกิดที่ Supabase Auth ตรงจาก Frontend เหมือนเดิมทุกประการ Worker เป็นแค่ขั้นตอนค้นหาที่วางไว้ข้างหน้า

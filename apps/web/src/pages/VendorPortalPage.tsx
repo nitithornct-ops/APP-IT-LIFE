@@ -1,6 +1,7 @@
 import { ArrowLeft, Building2, CheckCircle2, ClipboardList, FileSignature, Loader2, LogOut, RefreshCw, Send, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PublicBrand } from '../components/PublicBrand';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { Button } from '../components/ui/Button';
 import { RequesterSignatureInput } from '../features/tickets/RequesterSignatureInput';
 import { supabase } from '../lib/supabase';
@@ -38,6 +39,9 @@ export function VendorPortalPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [loginStep, setLoginStep] = useState<'password' | 'mfa'>('password');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
   const [loggingIn, setLoggingIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [work, setWork] = useState(emptyWorkForm);
@@ -69,11 +73,24 @@ export function VendorPortalPage() {
   async function submitLogin() {
     setLoggingIn(true); setError('');
     try {
-      const identity = await vendorPortalApiFetch<{ email: string }>('/api/v1/vendor-portal/login/resolve', {
-        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username }),
+      if (turnstileSiteKey && !captchaToken) {
+        setError('Please complete the security check before signing in.');
+        return;
+      }
+      const auth = await vendorPortalApiFetch<{ accessToken: string; refreshToken: string }>('/api/v1/vendor-portal/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          vendorCode: login.vendorCode,
+          username: login.username,
+          password: login.password,
+          ...(captchaToken ? { captchaToken } : {}),
+        }),
       });
-      const { error: authError } = await supabase.auth.signInWithPassword({ email: identity.email, password: login.password });
-      if (authError) throw new Error('Invalid vendor credentials');
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: auth.accessToken,
+        refresh_token: auth.refreshToken,
+      });
+      if (sessionError) throw sessionError;
       const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
       if (factorsError) throw factorsError;
       const factor = factors.totp.find((item) => item.status === 'verified');
@@ -84,7 +101,10 @@ export function VendorPortalPage() {
     } catch (reason) {
       setError(errorMessage(reason, 'เข้าสู่ระบบไม่สำเร็จ'));
       await supabase.auth.signOut();
-    } finally { setLoggingIn(false); }
+    } finally {
+      turnstileRef.current?.reset();
+      setLoggingIn(false);
+    }
   }
 
   async function verifyLoginMfa() {
@@ -184,6 +204,7 @@ export function VendorPortalPage() {
       <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void submitLogin(); }}>
         <label className="block text-sm font-semibold">รหัสบริษัท<input required autoComplete="organization" value={login.vendorCode} onChange={(e) => setLogin((current) => ({ ...current, vendorCode: e.target.value.toUpperCase() }))} className={fieldClass} placeholder="VND-..." /></label>
         <label className="block text-sm font-semibold">Username<input required autoComplete="username" maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" value={login.username} onChange={(e) => setLogin((current) => ({ ...current, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
+        <TurnstileWidget ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
         <label className="block text-sm font-semibold">รหัสผ่าน<input required type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin((current) => ({ ...current, password: e.target.value }))} className={fieldClass} /></label>
         {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
         <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>

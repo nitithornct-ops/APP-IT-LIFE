@@ -183,32 +183,43 @@ function clientProfile(user: LineUserRecord) {
   };
 }
 
-lineRoute.get('/bootstrap', async (c) => {
-  const reqId = c.get('requestId');
-  const status = getLineLoginConfigStatus(c.env);
-  const session = await loadLineSession(c);
-  return c.json(ok(reqId, {
-    configured: status.configured,
-    enabled: status.enabled,
-    message: status.message,
-    authenticated: Boolean(session),
-    requireEmployeeLink: false,
-    profile: session ? clientProfile(session.user) : null,
-  }));
-});
+lineRoute.get(
+  '/bootstrap',
+  edgeRateLimit({ keyFn: (c) => `line_bootstrap:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 60, keyFn: (c) => `line_bootstrap:${clientIp(c)}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const status = getLineLoginConfigStatus(c.env);
+    const session = await loadLineSession(c);
+    return c.json(ok(reqId, {
+      configured: status.configured,
+      enabled: status.enabled,
+      message: status.message,
+      authenticated: Boolean(session),
+      requireEmployeeLink: false,
+      profile: session ? clientProfile(session.user) : null,
+    }));
+  },
+);
 
-lineRoute.get('/ticket-categories', async (c) => {
-  const reqId = c.get('requestId');
-  const admin = createAdminClient(c.env);
-  // ส่ง SLA มาด้วยเพื่อให้หน้าแจ้งซ่อมบอกผู้แจ้งได้ว่าจะได้รับการตอบรับภายในกี่ชั่วโมง
-  const { data, error } = await admin
-    .from('ticket_categories')
-    .select('id, name, default_priority, response_sla_hours, resolution_sla_hours, sla_hours')
-    .eq('status', 'active')
-    .order('name');
-  if (error) return dbFailJson(c, 'LINE_CATEGORIES_LOAD_FAILED', error);
-  return c.json(ok(reqId, data ?? []));
-});
+lineRoute.get(
+  '/ticket-categories',
+  edgeRateLimit({ keyFn: (c) => `line_ticket_categories:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 60, keyFn: (c) => `line_ticket_categories:${clientIp(c)}` }),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const admin = createAdminClient(c.env);
+    // ส่ง SLA มาด้วยเพื่อให้หน้าแจ้งซ่อมบอกผู้แจ้งได้ว่าจะได้รับการตอบรับภายในกี่ชั่วโมง
+    const { data, error } = await admin
+      .from('ticket_categories')
+      .select('id, name, default_priority, response_sla_hours, resolution_sla_hours, sla_hours')
+      .eq('status', 'active')
+      .order('name');
+    if (error) return dbFailJson(c, 'LINE_CATEGORIES_LOAD_FAILED', error);
+    c.header('Cache-Control', 'public, max-age=60, s-maxage=60');
+    return c.json(ok(reqId, data ?? []));
+  },
+);
 
 lineRoute.get(
   '/login-url',
@@ -254,7 +265,11 @@ lineRoute.get(
 );
 
 /** LINE redirects the browser here directly (not an XHR) — always respond with a redirect, never JSON, so the user lands back on a normal page. */
-lineRoute.get('/callback', async (c) => {
+lineRoute.get(
+  '/callback',
+  edgeRateLimit({ keyFn: (c) => `line_callback:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 20, keyFn: (c) => `line_callback:${clientIp(c)}` }),
+  async (c) => {
   const query = c.req.query();
   const frontendBase = c.env.PUBLIC_APP_URL || new URL(c.req.url).origin;
   const browserBinding = getCookie(c, LINE_OAUTH_BINDING_COOKIE);
@@ -312,8 +327,9 @@ lineRoute.get('/callback', async (c) => {
       error: error instanceof Error ? error.message : 'เข้าสู่ระบบ LINE ไม่สำเร็จ',
     }).toString();
     return c.redirect(redirect.toString(), 302);
-  }
-});
+    }
+  },
+);
 
 lineRoute.post('/logout', requireLineSession, async (c) => {
   const reqId = c.get('requestId');

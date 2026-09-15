@@ -58,15 +58,15 @@ for (const role of roles) {
 
 test('Vendor signs in through the isolated company portal on mobile', async ({ page }) => {
   const vendorCode = process.env.UAT_VENDOR_CODE;
-  const email = process.env.UAT_VENDOR_EMAIL;
+  const username = process.env.UAT_VENDOR_USERNAME;
   const password = process.env.UAT_VENDOR_PASSWORD;
-  if (!vendorCode || !email || !password) throw new Error('UAT vendor credentials are required');
+  if (!vendorCode || !username || !password) throw new Error('UAT vendor credentials are required (UAT_VENDOR_CODE, UAT_VENDOR_USERNAME, UAT_VENDOR_PASSWORD)');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/vendor/portal');
   const form = page.locator('form');
   await form.locator('input').nth(0).fill(vendorCode);
-  await form.locator('input').nth(1).fill(email);
+  await form.locator('input').nth(1).fill(username);
   await form.locator('input').nth(2).fill(password);
   await form.locator('button[type="submit"]').click();
   await expect(page.getByText(vendorCode, { exact: true })).toBeVisible({ timeout: 20_000 });

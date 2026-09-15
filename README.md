@@ -1,5 +1,7 @@
 # LIFE IT Smart Service Center
 
+> Runtime policy: use Node.js 22+ and npm 10+ (see `.nvmrc` and the root `engines` field).
+
 ระบบ Web Application สำหรับบริหารงานบริการเทคโนโลยีสารสนเทศ (ITSM) และงานกำกับดูแลด้านเทคโนโลยีขององค์กร โดยรวมงานรับแจ้งปัญหา การให้บริการ งานปฏิบัติการไอที ทรัพย์สิน โครงสร้างพื้นฐาน รายงาน และ Governance ไว้ในระบบเดียว
 
 > **สถานะโครงการ:** Pre-production / migration rehearsal
@@ -72,16 +74,15 @@ Supabase Auth + PostgreSQL + RLS + Storage
 ├── packages/shared/         Types, schemas, roles และ permissions ที่ใช้ร่วมกัน
 ├── packages/migration/      เครื่องมือเตรียมและซ้อมย้ายข้อมูล
 ├── supabase/                Database migrations และ tests
-├── legacy-gas/              Source ระบบ Google Apps Script เดิมสำหรับอ้างอิงการย้ายระบบ
 ├── docs/                    เอกสารสถาปัตยกรรมและเอกสาร migration
 └── .github/workflows/       CI/CD และ quality gates
 ```
 
-โฟลเดอร์ `docs/`, `legacy-gas/` และ workflow บางส่วนอาจมีรายละเอียดภายในหรือข้อมูลสำหรับการปฏิบัติงาน ไม่ควรถือว่าเป็นเอกสาร public ที่อนุมัติให้เผยแพร่ทั้งหมด โปรดตรวจตาม [SECURITY.md](SECURITY.md) ก่อนเปิด repository ต่อสาธารณะ
+โฟลเดอร์ `docs/` และ workflow บางส่วนอาจมีรายละเอียดภายในหรือข้อมูลสำหรับการปฏิบัติงาน ไม่ควรถือว่าเป็นเอกสาร public ที่อนุมัติให้เผยแพร่ทั้งหมด โปรดตรวจตาม [SECURITY.md](SECURITY.md) ก่อนเปิด repository ต่อสาธารณะ
 
 ## เริ่มต้นใช้งานสำหรับนักพัฒนา
 
-**ข้อกำหนดเบื้องต้น:** Node.js 20+ และ npm 10+
+**ข้อกำหนดเบื้องต้น:** Node.js 22+ และ npm 10+
 
 ```bash
 npm install

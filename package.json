@@ -2,6 +2,10 @@
   "name": "itlife",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
   "description": "LIFE IT Smart Service Center — React + Cloudflare Workers + Supabase monorepo",
   "workspaces": [
     "apps/*",
