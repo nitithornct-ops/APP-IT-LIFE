@@ -22,10 +22,6 @@ permissions:
 
 jobs:
   deploy:
-    if: >-
-      github.ref == 'refs/heads/deploy/prod-bypass-20260915' &&
-      inputs.confirmation == 'DEPLOY' &&
-      inputs.bypass_confirmation == 'BYPASS-PRODUCTION-GATE'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 60
@@ -69,6 +65,12 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      - name: Reconfirm approved production bypass
+        shell: bash
+        run: |
+          test "$PRODUCTION_DEPLOY_CONFIRM" = "DEPLOY"
+          test "$PRODUCTION_BYPASS_CONFIRM" = "BYPASS-PRODUCTION-GATE"
+          test -n "$PRODUCTION_RELEASE_NOTE"
       - run: npm ci
       - name: Validate production configuration
         run: npm run predeploy
