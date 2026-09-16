@@ -91,6 +91,7 @@ export function PdfToolsPage() {
   const { pages, sources } = workspace;
 
   const [tab, setTab] = useState<ToolTab>('organize');
+  const [editorMounted, setEditorMounted] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
   const [pageLabel, setPageLabel] = useState(DEFAULT_PAGE_LABEL);
@@ -103,6 +104,10 @@ export function PdfToolsPage() {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (tab === 'editor') setEditorMounted(true);
+  }, [tab]);
 
   // หน้าที่ถูกลบไปแล้วต้องหลุดจากรายการที่เลือกด้วย ไม่งั้นปุ่ม "บันทึกเฉพาะที่เลือก" จะนับเกินจริง
   useEffect(() => {
@@ -693,7 +698,7 @@ export function PdfToolsPage() {
             </Card>
           )}
 
-          {tab === 'editor' && (
+          {editorMounted && (
             <Suspense
               fallback={
                 <Card id="pdf-panel-editor" role="tabpanel" aria-labelledby="pdf-tab-editor">
@@ -703,7 +708,9 @@ export function PdfToolsPage() {
                 </Card>
               }
             >
-              <PdfFormEditor sources={sources} pages={pages} filename={baseName} />
+              <div className={tab === 'editor' ? 'block' : 'hidden'} aria-hidden={tab !== 'editor'}>
+                <PdfFormEditor sources={sources} pages={pages} filename={baseName} />
+              </div>
             </Suspense>
           )}
         </section>

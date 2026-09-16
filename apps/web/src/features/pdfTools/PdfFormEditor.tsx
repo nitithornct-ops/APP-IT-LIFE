@@ -11,7 +11,7 @@ import {
   Type,
   X,
 } from 'lucide-react';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { degrees, PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
@@ -20,7 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody } from '../../components/ui/Card';
 import { showToast } from '../../services/apiClient';
 import { downloadBytes, renderTextStamp } from './pdfBrowser';
-import { buildPdf, type PdfSource, type WorkPage } from './pdfDocumentEngine';
+import { anchorForCenter, buildPdf, normalizeAngle, type PdfSource, type WorkPage } from './pdfDocumentEngine';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -34,6 +34,7 @@ type FieldKind = 'text' | 'checkbox' | 'date' | 'signature';
 
 interface PdfField {
   id: string;
+  pageId: string;
   pageIndex: number;
   kind: FieldKind;
   x: number;
@@ -125,15 +126,23 @@ async function drawTextValue(document: PDFDocument, pageIndex: number, field: Pd
   const supersample = 3;
   const naturalWidth = image.width / supersample;
   const naturalHeight = image.height / supersample;
-  const scale = Math.min(1, (field.width - 6) / naturalWidth, (field.height - 4) / naturalHeight);
-  const width = Math.max(1, naturalWidth * scale);
-  const height = Math.max(1, naturalHeight * scale);
   const page = document.getPage(pageIndex);
+  const rotation = normalizeAngle(page.getRotation().angle);
+  const isQuarterTurn = rotation % 180 === 90;
+  const displayWidth = isQuarterTurn ? field.height : field.width;
+  const displayHeight = isQuarterTurn ? field.width : field.height;
+  const scale = Math.min(1, Math.max(1, displayWidth - 6) / naturalWidth, Math.max(1, displayHeight - 4) / naturalHeight);
+  const displayImageWidth = Math.max(1, naturalWidth * scale);
+  const displayImageHeight = Math.max(1, naturalHeight * scale);
+  const width = isQuarterTurn ? displayImageHeight : displayImageWidth;
+  const height = isQuarterTurn ? displayImageWidth : displayImageHeight;
+  const anchor = anchorForCenter(field.x + field.width / 2, field.y + field.height / 2, width, height, rotation);
   page.drawImage(image, {
-    x: field.x + 3,
-    y: field.y + (field.height - height) / 2,
+    x: anchor.x,
+    y: anchor.y,
     width,
     height,
+    rotate: degrees(rotation),
   });
 }
 
@@ -194,7 +203,11 @@ export function PdfFormEditor({ sources, pages, filename }: PdfFormEditorProps) 
     if (previous) void previous.cleanup();
     setPageViews([]);
     setBaseBytes(null);
-    setFields([]);
+    const nextPageIndexById = new Map(pages.map((page, index) => [page.id, index]));
+    setFields((current) => current.flatMap((field) => {
+      const nextPageIndex = nextPageIndexById.get(field.pageId);
+      return nextPageIndex === undefined ? [] : [{ ...field, pageIndex: nextPageIndex }];
+    }));
     setSelectedFieldId(null);
     setLoading(true);
     setError(null);
@@ -268,6 +281,7 @@ export function PdfFormEditor({ sources, pages, filename }: PdfFormEditorProps) 
     const document = pdfRef.current;
     if (!document || pageViews.length === 0) return;
     let cancelled = false;
+    const renderTasks = new Set<{ cancel: () => void }>();
     const renderPages = async () => {
       const deviceScale = Math.min(2, window.devicePixelRatio || 1);
       for (const view of pageViews) {
@@ -286,7 +300,12 @@ export function PdfFormEditor({ sources, pages, filename }: PdfFormEditorProps) 
           viewport: view.viewport,
           transform: deviceScale === 1 ? undefined : [deviceScale, 0, 0, deviceScale, 0, 0],
         });
-        await task.promise;
+        renderTasks.add(task);
+        try {
+          await task.promise;
+        } finally {
+          renderTasks.delete(task);
+        }
         if (cancelled) return;
       }
     };
@@ -296,6 +315,7 @@ export function PdfFormEditor({ sources, pages, filename }: PdfFormEditorProps) 
     });
     return () => {
       cancelled = true;
+      for (const task of renderTasks) task.cancel();
     };
   }, [pageViews]);
 
@@ -317,6 +337,7 @@ export function PdfFormEditor({ sources, pages, filename }: PdfFormEditorProps) 
     const rectangle = pdfRectangle(view.viewport, left, top, size.width, size.height);
     const field: PdfField = {
       id: `field-${(fieldSequence.current += 1)}`,
+      pageId: pages[view.pageIndex].id,
       pageIndex: view.pageIndex,
       kind: activeTool,
       ...rectangle,
