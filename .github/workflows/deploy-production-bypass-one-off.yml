@@ -12,6 +12,9 @@ on:
       release_note:
         description: Short release note for the audit trail
         required: true
+      release_sha:
+        description: Exact approved application release SHA
+        required: true
 
 concurrency:
   group: production-deploy
@@ -29,8 +32,8 @@ jobs:
       PRODUCTION_DEPLOY_CONFIRM: ${{ inputs.confirmation }}
       PRODUCTION_BYPASS_CONFIRM: ${{ inputs.bypass_confirmation }}
       PRODUCTION_RELEASE_NOTE: ${{ inputs.release_note }}
-      APPROVED_RELEASE_REF: refs/heads/deploy/prod-bypass-20260915
       APPROVED_RELEASE_SHA: ef22e1c7f4c4b9fa002a6e8a898afab477d1a8fe
+      PRODUCTION_RELEASE_SHA: ${{ inputs.release_sha }}
       MIGRATION_APPROVAL_REF: CHAT-APPROVED-BYPASS-20260915
       STAGING_E2E_MODE: deferred
       STAGING_E2E_DEFER_CONFIRM: NO-STAGING-EVIDENCE
@@ -63,6 +66,8 @@ jobs:
       GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
@@ -73,8 +78,9 @@ jobs:
           test "$PRODUCTION_DEPLOY_CONFIRM" = "DEPLOY"
           test "$PRODUCTION_BYPASS_CONFIRM" = "BYPASS-PRODUCTION-GATE"
           test -n "$PRODUCTION_RELEASE_NOTE"
-          test "$GITHUB_REF" = "$APPROVED_RELEASE_REF"
-          test "$GITHUB_SHA" = "$APPROVED_RELEASE_SHA"
+          test "$GITHUB_REF" = "refs/heads/master"
+          test "$PRODUCTION_RELEASE_SHA" = "$APPROVED_RELEASE_SHA"
+          test "$(git rev-parse HEAD)" = "$APPROVED_RELEASE_SHA"
       - run: npm ci
       - name: Validate production configuration
         run: npm run predeploy
