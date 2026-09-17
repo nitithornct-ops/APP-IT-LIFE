@@ -536,7 +536,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
 
   return (
     <div className={cn('overflow-hidden rounded-xl border border-slate-300 bg-slate-200 shadow-sm dark:border-slate-600 dark:bg-slate-900', className)}>
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-b border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-800">
+      <div className="sticky top-0 z-card flex flex-wrap items-center gap-1 border-b border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-800">
         {!readOnly && <>
           <button type="button" className="form-toolbar-label" onMouseDown={(event) => event.preventDefault()} onClick={() => run('formatBlock', 'p')}>ปกติ</button>
           <button type="button" className="form-toolbar-label" onMouseDown={(event) => event.preventDefault()} onClick={() => run('formatBlock', 'h2')}>หัวข้อ 1</button>

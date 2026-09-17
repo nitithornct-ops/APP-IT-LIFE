@@ -385,7 +385,7 @@ export function AssetVerificationPage() {
             </CardBody>
           </Card>
 
-          <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+          <div className="sticky bottom-2 z-card flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
             <p className="text-xs text-slate-500">{stats.total ? `ตรวจ ${stats.total} รายการ · ${stats.exceptions} รายการต้องติดตาม` : 'เริ่มจากการสแกน Asset แรก'}</p>
             <div className="flex flex-wrap gap-2">
               {selectedCampaign?.status === 'active' && <Button variant="outline" size="sm" disabled={!canUpdate || !online || !hasPending || sync.isPending} isLoading={sync.isPending} onClick={() => sync.mutate()}><CloudUpload className="h-4 w-4" />ซิงก์ภายหลัง</Button>}

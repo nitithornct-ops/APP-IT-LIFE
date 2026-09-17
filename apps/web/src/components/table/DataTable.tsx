@@ -255,9 +255,9 @@ const ROW_NUMBER_CELL_CLASS = 'w-[52px] whitespace-nowrap px-2 py-2 text-right a
  * (ไกลสุดเท่าที่เป็นไปได้ คือ ช่องเลือก + ลำดับ + คอลัมน์แรกของข้อมูลจริง)
  */
 const FROZEN_COLUMN_SURFACE = [
-  '[&_tbody_td:first-child]:z-10 [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800 [&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40 [&_thead_th:first-child]:z-30 [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
-  '[&_tbody_td:nth-child(2)]:z-10 [&_tbody_td:nth-child(2)]:bg-white dark:[&_tbody_td:nth-child(2)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(2)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(2)]:bg-slate-700/40 [&_thead_th:nth-child(2)]:z-30 [&_thead_th:nth-child(2)]:bg-slate-50 dark:[&_thead_th:nth-child(2)]:bg-slate-900',
-  '[&_tbody_td:nth-child(3)]:z-10 [&_tbody_td:nth-child(3)]:bg-white dark:[&_tbody_td:nth-child(3)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(3)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(3)]:bg-slate-700/40 [&_thead_th:nth-child(3)]:z-30 [&_thead_th:nth-child(3)]:bg-slate-50 dark:[&_thead_th:nth-child(3)]:bg-slate-900',
+  '[&_tbody_td:first-child]:z-content [&_tbody_td:first-child]:bg-white dark:[&_tbody_td:first-child]:bg-slate-800 [&_tbody_tr:hover_td:first-child]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:first-child]:bg-slate-700/40 [&_thead_th:first-child]:z-card [&_thead_th:first-child]:bg-slate-50 dark:[&_thead_th:first-child]:bg-slate-900',
+  '[&_tbody_td:nth-child(2)]:z-content [&_tbody_td:nth-child(2)]:bg-white dark:[&_tbody_td:nth-child(2)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(2)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(2)]:bg-slate-700/40 [&_thead_th:nth-child(2)]:z-card [&_thead_th:nth-child(2)]:bg-slate-50 dark:[&_thead_th:nth-child(2)]:bg-slate-900',
+  '[&_tbody_td:nth-child(3)]:z-content [&_tbody_td:nth-child(3)]:bg-white dark:[&_tbody_td:nth-child(3)]:bg-slate-800 [&_tbody_tr:hover_td:nth-child(3)]:bg-primary-50/50 dark:[&_tbody_tr:hover_td:nth-child(3)]:bg-slate-700/40 [&_thead_th:nth-child(3)]:z-card [&_thead_th:nth-child(3)]:bg-slate-50 dark:[&_thead_th:nth-child(3)]:bg-slate-900',
 ];
 
 /**
@@ -570,7 +570,7 @@ export function DataTable({
     <div
       data-ui="data-table"
       className={cn(
-        'w-full overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
+        'w-full overflow-visible rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
         containerClassName,
       )}
     >
@@ -628,7 +628,7 @@ export function DataTable({
                   <Columns3 className="h-4 w-4" aria-hidden="true" />คอลัมน์<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                 </Button>
                 {showColumns && (
-                  <div className="absolute right-0 z-30 mt-2 max-h-72 min-w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                  <div className="absolute right-0 z-dropdown mt-2 max-h-72 min-w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
                     {headers.map((header, index) => {
                       const visible = !hiddenColumns.has(index);
                       const isLastVisible = visible && visibleColumns.length === 1;
@@ -703,7 +703,7 @@ export function DataTable({
             '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-primary-50/50 dark:[&_tbody_tr:hover]:bg-slate-700/40',
             '[&_td]:min-h-11 [&_td]:border-b [&_td]:border-hairline-row [&_td]:px-[13px] [&_td]:py-2 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-white/[.07]',
             // thead โปร่งแสงอยู่ ถ้าตรึงไว้เฉย ๆ แถวจะเลื่อนทะลุขึ้นมาเห็นข้างหลัง จึงต้องทึบ
-            stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-surface-header dark:[&_thead_th]:bg-[#0a1224]',
+            stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-card [&_thead_th]:bg-surface-header dark:[&_thead_th]:bg-[#0a1224]',
             // คอลัมน์ที่ตรึงไว้ต้องทึบและเปลี่ยนสีตามแถวด้วย ไม่งั้น hover จะดูเหมือนตารางแตกเป็นสองส่วน
             freezeFirstColumn && freezeColumnClass(leadingColumnWidths),
             cardOnMobile && 'data-table-cards',
@@ -727,7 +727,7 @@ export function DataTable({
       {selectable && selection.length > 0 && (
         <div
           // ลอยเหนือเนื้อหาเสมอ เพราะรายการที่เลือกไว้ข้ามหน้าได้ ผู้ใช้จึงต้องเห็นยอดรวมตลอด
-          className="fixed inset-x-0 bottom-20 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-card border border-slate-200 bg-white px-4 py-3 shadow-elevated dark:border-slate-600 dark:bg-slate-800 sm:bottom-6"
+          className="fixed inset-x-0 bottom-20 z-popover mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-card border border-slate-200 bg-white px-4 py-3 shadow-elevated dark:border-slate-600 dark:bg-slate-800 sm:bottom-6"
           role="status"
         >
           <span className="text-sm font-bold text-slate-700 dark:text-slate-100">

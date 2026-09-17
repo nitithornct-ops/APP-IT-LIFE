@@ -156,7 +156,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/45 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-modal-backdrop flex items-start justify-center bg-slate-900/45 pt-[12vh] backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -164,7 +164,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         aria-modal="true"
         aria-label="ค้นหาด่วน"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800"
+        className="relative z-modal w-full max-w-xl overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800"
       >
         <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-700">
           <Search className="h-5 w-5 text-primary-600" aria-hidden="true" />

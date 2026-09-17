@@ -62,6 +62,23 @@
   --font-app: 'Sarabun', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   --font-scale: 1;
+
+  /* Shared application layer scale. Keep this in sync with tailwind.config.js. */
+  --z-background: 0;
+  --z-content: 10;
+  --z-card: 20;
+  --z-sidebar: 30;
+  --z-mobile-backdrop: 40;
+  --z-header: 50;
+  --z-mobile-drawer: 60;
+  --z-dropdown: 100;
+  --z-popover: 120;
+  --z-tooltip: 150;
+  --z-modal-backdrop: 900;
+  --z-modal: 1000;
+  --z-modal-popover: 1050;
+  --z-toast: 1100;
+  --z-global-loading: 1200;
 }
 
 .dark {
@@ -134,7 +151,7 @@ a[href],
 /* Accessible foundations ------------------------------------------------- */
 .skip-link {
   position: fixed;
-  z-index: 5000;
+  z-index: var(--z-global-loading);
   top: -64px;
   left: 16px;
   min-height: 40px;
@@ -167,6 +184,16 @@ textarea:focus-visible,
   color: var(--color-text);
 }
 
+.life-app-background {
+  position: fixed;
+  z-index: var(--z-background);
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 92% 2%, rgb(75 123 224 / 0.08), transparent 23rem),
+    var(--color-bg);
+}
+
 .life-app svg.lucide,
 .life-public svg.lucide,
 .life-public svg.lucide {
@@ -174,9 +201,8 @@ textarea:focus-visible,
 }
 
 .life-app #main-content {
-  background:
-    radial-gradient(circle at 92% 2%, rgb(75 123 224 / 0.08), transparent 23rem),
-    var(--color-bg);
+  min-width: 0;
+  background: transparent;
 }
 
 .app-topbar {
@@ -726,7 +752,7 @@ textarea:focus-visible,
 .form-page-sheet { width: var(--form-page-width, 210mm); min-height: var(--form-page-height, 297mm); padding: var(--form-page-margin, 20mm); }
 .form-page-sheet > *:first-child { margin-top: 0; }
 
-.form-image-selection { position: absolute; z-index: 20; border: 2px solid var(--life-green-600); pointer-events: none; }
+.form-image-selection { position: absolute; z-index: var(--z-card); border: 2px solid var(--life-green-600); pointer-events: none; }
 .form-image-context-toolbar,
 .form-block-rail { position: absolute; bottom: calc(100% + 8px); left: -2px; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-default); background: var(--color-surface); box-shadow: var(--shadow-elevated); pointer-events: auto; }
 .form-image-context-toolbar-below,
@@ -741,14 +767,14 @@ textarea:focus-visible,
 
 /* กรอบบล็อกที่กำลังแก้ไขอยู่ วาดทาบไว้เฉย ๆ ไม่แตะเนื้อหาจริง เพราะ class ใด ๆ ที่ใส่ลงในเอกสาร
    จะถูกตัวกรอง HTML ตัดทิ้งตอนบันทึกอยู่ดี และไม่ควรมีร่องรอยของ UI ติดไปในเอกสารที่พิมพ์ */
-.form-block-selection { position: absolute; z-index: 19; border: 1px dashed var(--life-green-600); border-radius: var(--radius-sm); pointer-events: none; }
+.form-block-selection { position: absolute; z-index: calc(var(--z-card) - 1); border: 1px dashed var(--life-green-600); border-radius: var(--radius-sm); pointer-events: none; }
 
 .ticket-form-section-title { border-left: 4px solid var(--life-green-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--life-green-50); padding: 0.5rem 0.75rem; color: var(--life-green-900); font-size: 0.875rem; font-weight: 800; }
 .ticket-print-page table th,
 .ticket-print-page table td { border: 1px solid #d4d9d5; padding: 0.45rem; text-align: left; vertical-align: top; }
 
 /* Responsive data tables ------------------------------------------------- */
-@media (max-width: 767px) {
+@media (max-width: 639px) {
   html { font-size: calc(93.75% * var(--font-scale)); }
 
   .life-app #main-content {

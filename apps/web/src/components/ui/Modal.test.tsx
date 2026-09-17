@@ -140,8 +140,8 @@ describe('Modal', () => {
   });
 
   /**
-   * z-index ของ modal เคยคิดจากตัวนับที่โตขึ้นเรื่อย ๆ ตลอด session (50 + ลำดับที่เปิดมาแล้วทั้งหมด)
-   * เปิด/ปิดเกิน ~21 ครั้งแล้ว modal จะแซงชั้นของ Toast (z-index 70) ทำให้ข้อความแจ้งเตือน
+   * z-index ของ modal ต้องอิงจากความลึกจริง ไม่ใช่ตัวนับที่สะสมไปเรื่อย ๆ ตลอด session
+   * modal ทุกชั้นต้องอยู่ต่ำกว่า Toast layer (z-index 1100) เสมอ
    * "บันทึกสำเร็จ/ไม่สำเร็จ" ถูกบังหายไปทั้งที่ระบบส่งออกมาแล้ว
    * (พบตอน Pre-production QA audit 2026-08-13)
    */
@@ -156,12 +156,12 @@ describe('Modal', () => {
         layers.add(backdropOf(`รอบ ${round}`).style.zIndex);
         view.unmount();
       }
-      // เดิมค่านี้ไต่ขึ้นทุกครั้งที่เปิด (51, 52, 53, ...) จนแซงชั้นของ Toast
+      // modal เดี่ยวต้องกลับมาใช้ layer เดิมเสมอ ไม่ขึ้นกับจำนวนรอบที่เคยเปิด
       expect(layers.size).toBe(1);
     });
 
     it('stays below the toast layer even after many open/close cycles', () => {
-      const TOAST_Z = 200;
+      const TOAST_Z = 1100;
       for (let round = 0; round < 30; round += 1) {
         const view = render(<Modal title={`รอบ ${round}`} onClose={() => {}}>เนื้อหา</Modal>);
         expect(Number(backdropOf(`รอบ ${round}`).style.zIndex)).toBeLessThan(TOAST_Z);

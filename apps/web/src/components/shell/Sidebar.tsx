@@ -92,7 +92,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           type="button"
           aria-label="ปิดเมนู"
           onClick={onCloseMobile}
-          className="fixed inset-0 z-30 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-mobile-backdrop bg-slate-900/50 backdrop-blur-sm lg:hidden"
         />
       )}
 
@@ -101,10 +101,12 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         ต้องแสดงเต็มรูปแบบพร้อมป้ายชื่อเสมอไม่ว่าจะเคยย่อเมนูไว้บนเดสก์ท็อปหรือไม่ (พฤติกรรมเดียวกับระบบเดิม)
       */}
       <aside
+        id="app-sidebar"
+        aria-label="เมนูหลัก"
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-[216px] flex-col border-r border-white/[.07] bg-[#0b1b36] text-white shadow-[8px_0_28px_rgba(11,27,54,.12)] transition-all duration-200 dark:bg-[#060d1c] dark:text-[#e8eef9]',
+          'fixed inset-y-0 left-0 z-sidebar flex w-[216px] flex-col border-r border-white/[.07] bg-[#0b1b36] text-white shadow-[8px_0_28px_rgba(11,27,54,.12)] transition-all duration-200 dark:bg-[#060d1c] dark:text-[#e8eef9]',
           collapsed && 'lg:w-14',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+          mobileOpen ? 'z-mobile-drawer translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >
         <div className="flex h-[46px] min-h-[46px] items-center gap-2.5 border-b border-white/[.07] px-[13px]">

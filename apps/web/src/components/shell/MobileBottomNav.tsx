@@ -20,7 +20,7 @@ export function MobileBottomNav() {
   items.push({ label: 'โปรไฟล์ของฉัน', shortLabel: 'Profile', path: '/profile', icon: UserCircle });
 
   return (
-    <nav className="life-bottom-nav fixed inset-x-0 bottom-0 z-30 grid min-h-[68px] border-t px-1 pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }} aria-label="เมนูหลักบนมือถือ">
+    <nav className="life-bottom-nav fixed inset-x-0 bottom-0 z-sidebar grid min-h-[68px] border-t px-1 pb-[env(safe-area-inset-bottom)] sm:hidden" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }} aria-label="เมนูหลักบนมือถือ">
       {items.map((item) => (
         <NavLink
           key={item.path}

@@ -22,7 +22,7 @@ export function LinePortalNav({ tab, unreadCount, onChange }: {
 }) {
   return (
     <nav
-      className="life-bottom-nav fixed inset-x-0 bottom-0 z-30 border-t"
+      className="life-bottom-nav fixed inset-x-0 bottom-0 z-sidebar border-t"
       aria-label="เมนูหลักของพอร์ทัล"
     >
       <ul className="mx-auto flex w-full max-w-md items-stretch">
@@ -68,7 +68,7 @@ export function LineScreenHeader({ onBack, eyebrow, title, action }: {
   action?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+    <header className="sticky top-0 z-header border-b border-hairline bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
       <div className="flex items-start gap-3">
         <button
           type="button"

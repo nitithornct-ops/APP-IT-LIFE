@@ -24,6 +24,10 @@ export function AppShell() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setCommandPaletteOpen(true);
@@ -31,14 +35,35 @@ export function AppShell() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const syncBodyLock = () => {
+      document.body.style.overflow = window.innerWidth >= 1024 ? previousOverflow : 'hidden';
+    };
+
+    syncBodyLock();
+    window.addEventListener('resize', syncBodyLock);
+    return () => {
+      window.removeEventListener('resize', syncBodyLock);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
 
   // Dashboard owns a purpose-built hero. Other authenticated routes receive
   // the shared module treatment from the shell.
   const hasNativeHero = location.pathname === '/';
 
   return (
-    <div className="life-app min-h-screen bg-surface-page dark:bg-[#060d1c]">
+    <div className="life-app relative min-h-screen bg-surface-page dark:bg-[#060d1c]">
+      <div className="life-app-background" aria-hidden="true" />
       <a href="#main-content" className="skip-link">
         ข้ามไปยังเนื้อหาหลัก
       </a>
@@ -50,10 +75,14 @@ export function AppShell() {
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className={cn('flex min-h-screen flex-col transition-all duration-200', collapsed ? 'lg:ml-14' : 'lg:ml-[216px]')}>
-        <Topbar onOpenMobileMenu={() => setMobileMenuOpen(true)} onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
-        <main id="main-content" className="flex-1 px-3 py-3 sm:px-[18px] sm:py-4">
-          <div className="module-page-content" data-module-themed={!hasNativeHero}>
+      <div className={cn('flex min-h-screen min-w-0 flex-col transition-all duration-200', collapsed ? 'lg:ml-14' : 'lg:ml-[216px]')}>
+        <Topbar
+          mobileMenuOpen={mobileMenuOpen}
+          onOpenMobileMenu={() => setMobileMenuOpen((open) => !open)}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        />
+        <main id="main-content" className="relative min-w-0 flex-1 px-3 py-3 sm:px-[18px] sm:py-4">
+          <div className="module-page-content min-w-0" data-module-themed={!hasNativeHero}>
             <Outlet />
           </div>
         </main>
