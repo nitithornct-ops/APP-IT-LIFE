@@ -33,7 +33,8 @@ let nextModalId = 0;
  * ก่อนหน้านี้หมายเลขสะสมอาจทำให้ modal แม่ได้ z-index สูงกว่าลูกหลังเปิด/ปิดหลายรอบจนลูกกดไม่ได้
  * และเลขที่ไต่ขึ้นเรื่อย ๆ ยังเคยแซงชั้น Toast อีกด้วย
  */
-const MODAL_BASE_Z = 50;
+const MODAL_BASE_Z = 900;
+const MODAL_DEPTH_STEP = 10;
 /** เพดานที่ยอมให้ดันชั้นขึ้น กันกรณีซ้อนผิดปกติไม่ให้ไปแตะชั้นของ Toast */
 const MODAL_MAX_DEPTH = 9;
 
@@ -172,8 +173,8 @@ export function Modal({
   return createPortal(
     <ModalDepthContext.Provider value={depth + 1}>
     <div
-      className="global-modal-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-primary-950/55 p-3 backdrop-blur-[3px] sm:items-center sm:p-6"
-      style={{ zIndex: MODAL_BASE_Z + Math.min(depth, MODAL_MAX_DEPTH) }}
+      className="global-modal-backdrop fixed inset-0 z-modal-backdrop flex items-start justify-center overflow-y-auto bg-primary-950/55 p-3 backdrop-blur-[3px] sm:items-center sm:p-6"
+      style={{ zIndex: MODAL_BASE_Z + Math.min(depth, MODAL_MAX_DEPTH) * MODAL_DEPTH_STEP }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && closeOnBackdrop && !closeDisabled) requestClose();
       }}
@@ -187,7 +188,7 @@ export function Modal({
         data-ui="modal"
         data-testid={testId}
         className={cn(
-          'global-modal-panel my-auto flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800',
+          'global-modal-panel relative z-modal my-auto flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800',
           sizeClasses[size],
           className,
         )}
@@ -226,7 +227,7 @@ export function Modal({
       </section>
 
       {showDiscardConfirm && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary-950/50 p-4" role="presentation">
+        <div className="absolute inset-0 z-modal flex items-center justify-center bg-primary-950/50 p-4" role="presentation">
           <section ref={discardDialogRef} role="alertdialog" aria-modal="true" aria-labelledby={`${titleId}-discard`} data-ui="modal-discard" className="global-modal-panel w-full max-w-md rounded-modal border border-slate-200 bg-white p-5 shadow-elevated dark:border-slate-700 dark:bg-slate-800">
             <div className="flex gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200"><AlertTriangle className="h-5 w-5" aria-hidden="true" /></span>

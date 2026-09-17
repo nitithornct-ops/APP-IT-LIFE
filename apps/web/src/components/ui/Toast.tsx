@@ -38,7 +38,7 @@ export function Toast({ toast, onClose }: { toast: ToastMessage | null; onClose:
       aria-live="polite"
       data-ui="toast"
       className={cn(
-        'fixed bottom-20 right-4 z-[200] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-elevated dark:bg-slate-800 sm:bottom-4 sm:max-w-sm',
+        'fixed left-1/2 top-4 z-toast flex w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-elevated sm:left-auto sm:right-4 sm:translate-x-0 dark:bg-slate-800',
         toast.tone === 'success'
           ? 'border-emerald-200 text-emerald-800 dark:border-emerald-800 dark:text-emerald-200'
           : 'border-red-200 text-red-700 dark:border-red-800 dark:text-red-200',

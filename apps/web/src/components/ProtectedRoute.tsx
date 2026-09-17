@@ -46,7 +46,7 @@ export function ProtectedRoute({
 
   if (isSessionLoading || (session && isMfaLoading)) {
     return (
-      <div className="flex min-h-screen items-center justify-center" role="status">
+      <div className="fixed inset-0 z-global-loading flex min-h-screen items-center justify-center bg-surface-page dark:bg-[#060d1c]" role="status">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
       </div>
     );
@@ -64,7 +64,7 @@ export function ProtectedRoute({
   if (permission || anyPermission?.length) {
     if (isMeLoading) {
       return (
-        <div className="flex min-h-screen items-center justify-center" role="status">
+        <div className="fixed inset-0 z-global-loading flex min-h-screen items-center justify-center bg-surface-page dark:bg-[#060d1c]" role="status">
           <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
         </div>
       );

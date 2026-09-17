@@ -1,5 +1,7 @@
 import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useFloatingMenuPosition } from '../../hooks/useFloatingMenuPosition';
 
 export interface SearchableSelectOption {
   id: string;
@@ -25,14 +27,17 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+  const controlRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const menuPosition = useFloatingMenuPosition(controlRef, open && !disabled);
   const selected = options.find((option) => option.id === value);
   const normalized = search.trim().toLocaleLowerCase('th');
   const filtered = options.filter((option) => !normalized || `${option.label} ${option.description ?? ''}`.toLocaleLowerCase('th').includes(normalized));
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      if (!rootRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) {
         setOpen(false);
         setSearch('');
       }
@@ -61,7 +66,7 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
   return (
     <div ref={rootRef} className="relative" data-testid={testId}>
       <span className="mb-1.5 block text-[13px] font-semibold text-slate-700 dark:text-slate-200">{label}{required && <span className="ml-1 text-red-600">*</span>}</span>
-      <div role="combobox" aria-expanded={open} aria-controls={listId} aria-haspopup="listbox" className={`${controlClass} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} onClick={() => !disabled && setOpen(true)}>
+      <div ref={controlRef} role="combobox" aria-expanded={open} aria-controls={listId} aria-haspopup="listbox" className={`${controlClass} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} onClick={() => !disabled && setOpen(true)}>
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
           <input
@@ -80,8 +85,8 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
         </div>
       </div>
-      {open && !disabled && (
-        <div id={listId} role="listbox" aria-label={label} className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+      {open && !disabled && menuPosition && createPortal(
+        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-dropdown overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
           {filtered.map((option) => (
             <button key={option.id} type="button" role="option" aria-selected={option.id === value} className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${option.id === value ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`} onClick={() => pick(option.id)}>
@@ -89,7 +94,8 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
               <span className="min-w-0"><span className="block truncate font-medium">{option.label}</span>{option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
       <p className="mt-1 text-[11px] text-slate-400">ค้นหาและเลือกจากทะเบียนกลาง ไม่ต้องกรอก UUID</p>
     </div>

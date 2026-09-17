@@ -1,5 +1,7 @@
 import { ChevronDown, Search, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useFloatingMenuPosition } from '../../hooks/useFloatingMenuPosition';
 
 export interface SearchableMultiSelectOption {
   id: string;
@@ -24,14 +26,17 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+  const controlRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const menuPosition = useFloatingMenuPosition(controlRef, open);
   const selected = value.map((id) => options.find((option) => option.id === id)).filter((option): option is SearchableMultiSelectOption => Boolean(option));
   const normalized = search.trim().toLocaleLowerCase('th');
   const filtered = options.filter((option) => !normalized || `${option.label} ${option.description ?? ''}`.toLocaleLowerCase('th').includes(normalized));
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
@@ -57,6 +62,7 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
     <div ref={rootRef} className={`relative ${className}`} data-testid={testId}>
       <span className="mb-1.5 block text-[13px] font-semibold text-slate-700 dark:text-slate-200">{label}</span>
       <div
+        ref={controlRef}
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
@@ -89,8 +95,8 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
           </div>
         </div>
       </div>
-      {open && (
-        <div id={listId} role="listbox" aria-label={label} className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+      {open && menuPosition && createPortal(
+        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-dropdown overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
           {filtered.map((option) => {
             const checked = value.includes(option.id);
@@ -108,7 +114,8 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
       <p className="mt-1 text-[11px] text-slate-400">เลือกแล้ว {selected.length} รายการ · พิมพ์ค้นหาแล้วกด Enter เพื่อเลือก</p>
     </div>

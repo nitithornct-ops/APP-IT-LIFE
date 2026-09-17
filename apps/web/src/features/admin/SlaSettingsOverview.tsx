@@ -78,7 +78,7 @@ export function SlaImpactPanel({ data }: { data: SlaImpactResponse }) {
         <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
           <p className="text-xs font-bold text-slate-500">Escalation timeline</p>
           <div className="relative mt-4 grid grid-cols-3 gap-2 before:absolute before:left-[16.7%] before:right-[16.7%] before:top-3 before:h-0.5 before:bg-slate-200 dark:before:bg-slate-700">
-            {[['70%', 'เริ่มเสี่ยง', 'bg-amber-500'], ['90%', 'วิกฤต', 'bg-orange-500'], ['100%', 'เกิน SLA', 'bg-red-600']].map(([percent, label, color]) => <div key={percent} className="relative text-center"><span className={`relative z-10 mx-auto grid h-6 w-6 place-items-center rounded-full text-[9px] font-bold text-white ${color}`}>{percent.replace('%', '')}</span><p className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</p><p className="font-mono text-[10px] text-slate-400">{percent}</p></div>)}
+            {[['70%', 'เริ่มเสี่ยง', 'bg-amber-500'], ['90%', 'วิกฤต', 'bg-orange-500'], ['100%', 'เกิน SLA', 'bg-red-600']].map(([percent, label, color]) => <div key={percent} className="relative text-center"><span className={`relative z-content mx-auto grid h-6 w-6 place-items-center rounded-full text-[9px] font-bold text-white ${color}`}>{percent.replace('%', '')}</span><p className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</p><p className="font-mono text-[10px] text-slate-400">{percent}</p></div>)}
           </div>
         </div>
       </div>
