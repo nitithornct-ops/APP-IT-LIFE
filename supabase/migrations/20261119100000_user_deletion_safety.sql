@@ -71,6 +71,10 @@ begin
       and con.confrelid = 'public.profiles'::regclass
       and con.confdeltype in ('a', 'c', 'r')
       and not (con.conrelid = 'public.profiles'::regclass and att.attname = 'id')
+      and not (
+        n.nspname = 'public'
+        and cls.relname in ('user_roles', 'user_permission_overrides', 'user_access_registry')
+      )
       and array_length(con.conkey, 1) = 1
       and array_length(con.confkey, 1) = 1
   loop

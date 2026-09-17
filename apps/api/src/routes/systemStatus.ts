@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/permission';
 import { loadSystemStatus, refreshInternalSystemStatus } from '../services/systemStatusService';
 import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
 
 export const systemStatusRoute = new Hono<AppEnv>();
 systemStatusRoute.use('*', requireAuth);
+systemStatusRoute.use('*', requirePermission('system_status.view'));
 
 /** Internal status view. It is authenticated and intentionally excludes secrets and raw upstream errors. */
 systemStatusRoute.get('/', async (c) => {
