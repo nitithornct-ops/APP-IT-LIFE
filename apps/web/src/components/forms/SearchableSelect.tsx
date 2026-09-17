@@ -86,7 +86,7 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
         </div>
       </div>
       {open && !disabled && menuPosition && createPortal(
-        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-dropdown overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-modal-popover overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
           {filtered.map((option) => (
             <button key={option.id} type="button" role="option" aria-selected={option.id === value} className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${option.id === value ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`} onClick={() => pick(option.id)}>

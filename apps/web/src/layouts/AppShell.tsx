@@ -78,7 +78,7 @@ export function AppShell() {
       <div className={cn('flex min-h-screen min-w-0 flex-col transition-all duration-200', collapsed ? 'lg:ml-14' : 'lg:ml-[216px]')}>
         <Topbar
           mobileMenuOpen={mobileMenuOpen}
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          onOpenMobileMenu={() => setMobileMenuOpen((open) => !open)}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         />
         <main id="main-content" className="relative min-w-0 flex-1 px-3 py-3 sm:px-[18px] sm:py-4">

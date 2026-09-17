@@ -42,7 +42,7 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
         aria-expanded={mobileMenuOpen}
         aria-controls="app-sidebar"
         className="flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-600 hover:bg-primary-50 hover:text-primary-700 dark:text-slate-300 dark:hover:bg-white/[.07] lg:hidden"
-        aria-label="เปิดเมนู"
+        aria-label={mobileMenuOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>

@@ -96,7 +96,7 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
         </div>
       </div>
       {open && menuPosition && createPortal(
-        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-dropdown overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-modal-popover overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
           {filtered.map((option) => {
             const checked = value.includes(option.id);
