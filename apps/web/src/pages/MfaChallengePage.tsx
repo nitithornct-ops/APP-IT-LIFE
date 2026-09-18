@@ -83,6 +83,15 @@ export function MfaChallengePage() {
       setSubmitting(false);
       return;
     }
+    if (setupMode) {
+      try {
+        await apiFetch('/api/v1/auth/mfa/enable', { method: 'POST' }, { silent: true });
+      } catch {
+        setError('ยืนยัน MFA สำเร็จแล้ว แต่เปิดใช้งาน MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        setSubmitting(false);
+        return;
+      }
+    }
     await refreshMfa();
     try {
       await apiFetch('/api/v1/auth/login-log', {
