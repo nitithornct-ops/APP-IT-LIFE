@@ -27,6 +27,12 @@ describe('form HTML utilities', () => {
     expect(safe).toContain('https://example.supabase.co/storage/v1/object/public/branding/logo.png');
   });
 
+  it('preserves supported signature markers on images but drops arbitrary image fields', () => {
+    const safe = sanitizeFormHtml('<img src="https://x.test/requester.png" data-field="requester_signature"><img src="https://x.test/custom.png" data-field="custom_image">');
+    expect(safe).toContain('data-field="requester_signature"');
+    expect(safe).not.toContain('data-field="custom_image"');
+  });
+
   it('refuses a data URL that is not an image, however it is dressed up', () => {
     for (const hostile of [
       'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',

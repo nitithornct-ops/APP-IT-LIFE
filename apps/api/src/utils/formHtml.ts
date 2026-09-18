@@ -33,7 +33,7 @@ export function sanitizeFormHtml(input: string): string {
     allowedTags,
     allowedAttributes: {
       a: ['href', 'title', 'target', 'rel'],
-      img: ['src', 'alt', 'title', 'style', 'width', 'height', 'data-image-layout'],
+      img: ['src', 'alt', 'title', 'style', 'width', 'height', 'data-field', 'data-image-layout'],
       span: ['class', 'data-field', 'style'],
       div: ['style', 'class'],
       p: ['style'],

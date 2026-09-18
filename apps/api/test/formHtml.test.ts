@@ -21,9 +21,10 @@ describe('API form HTML sanitizer', () => {
 
   it('preserves supported document markup and raster images', () => {
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
-    const safe = sanitizeFormHtml(`<p style="text-align:right"><strong>เอกสาร</strong></p><img src="${png}" alt="logo" style="width:160px;height:auto;display:block;margin-left:auto;margin-right:0"><span class="form-variable" data-field="requester_name">{{name}}</span>`);
+    const safe = sanitizeFormHtml(`<p style="text-align:right"><strong>เอกสาร</strong></p><img src="${png}" alt="logo" data-field="requester_signature" style="width:160px;height:auto;display:block;margin-left:auto;margin-right:0"><span class="form-variable" data-field="requester_name">{{name}}</span>`);
     expect(safe).toContain(png);
     expect(safe).toContain('width:160px');
+    expect(safe).toContain('data-field="requester_signature"');
     expect(safe).toContain('class="form-variable"');
     expect(safe).toContain('data-field="requester_name"');
   });

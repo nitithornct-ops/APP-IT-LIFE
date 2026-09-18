@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderTicketFormTemplate, ticketFormFlow } from '../src/services/ticketFormDocument';
+import { refreshTicketFormSignatureSlots, renderTicketFormTemplate, ticketFormFlow } from '../src/services/ticketFormDocument';
 
 describe('Ticket Form Studio document', () => {
   it('fills the five-section template from Ticket and Vendor data without leaking HTML', () => {
@@ -43,7 +43,21 @@ describe('Ticket Form Studio document', () => {
     expect(html).toContain('Finance');
     expect(html).toContain('09:30');
     expect(html).toContain('https://signed.test/requester.png');
-    expect(html).toMatch(/<p>—<\/p>$/);
+    expect(html).toContain('data-field="it_signature"');
+    expect(html).toContain('height:40px');
+  });
+
+  it('refreshes signatures inside a saved per-ticket layout', () => {
+    const saved = '<p>Requester</p><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" data-field="requester_signature"><p>IT</p><img src="https://expired.test/it.png" data-field="it_signature">';
+    const refreshed = refreshTicketFormSignatureSlots(saved, {
+      requesterSignatureUrl: 'https://signed.test/requester-new.png',
+      itSignatureUrl: 'https://signed.test/it-new.png',
+    });
+
+    expect(refreshed).toContain('https://signed.test/requester-new.png');
+    expect(refreshed).toContain('https://signed.test/it-new.png');
+    expect(refreshed).not.toContain('expired.test');
+    expect(refreshed).toContain('style="width:180px;height:auto;display:block;margin-left:0;margin-right:auto"');
   });
 
   it('takes the document logo from the organisation setting, not from the stored template', () => {

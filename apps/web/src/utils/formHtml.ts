@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 
 const SAFE_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i;
 const SAFE_FIELD = /^[a-zA-Z0-9_.-]{1,100}$/;
+const SAFE_SIGNATURE_FIELD = /^(?:requester_signature|it_signature|vendor_signature)$/;
 /**
  * class เดียวที่แต่ละแท็กเก็บไว้ได้ — ไม่ใช่รายการ class อิสระ เพื่อไม่ให้ผู้ใช้แปะ class ของ
  * ระบบมาทับสไตล์หน้าจออื่น `div.form-page-break` คือตัวแบ่งหน้ากระดาษที่ผู้ใช้สั่งเอง
@@ -105,7 +106,11 @@ export function sanitizeFormHtml(input: string): string {
       if (element.getAttribute('target') === '_blank') element.setAttribute('rel', 'noopener noreferrer');
     }
     if (element.hasAttribute('class') && element.getAttribute('class') !== ALLOWED_ELEMENT_CLASS[tag]) element.removeAttribute('class');
-    if (element.hasAttribute('data-field') && !(tag === 'span' && SAFE_FIELD.test(element.getAttribute('data-field') ?? ''))) element.removeAttribute('data-field');
+    if (element.hasAttribute('data-field')) {
+      const field = element.getAttribute('data-field') ?? '';
+      const valid = (tag === 'span' && SAFE_FIELD.test(field)) || (tag === 'img' && SAFE_SIGNATURE_FIELD.test(field));
+      if (!valid) element.removeAttribute('data-field');
+    }
     if (element.hasAttribute('data-image-layout') && !(tag === 'img' && /^(?:inline|free)$/.test(element.getAttribute('data-image-layout') ?? ''))) element.removeAttribute('data-image-layout');
     if (element.hasAttribute('style')) constrainStyle(element);
   });

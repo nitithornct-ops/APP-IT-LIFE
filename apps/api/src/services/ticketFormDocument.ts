@@ -30,7 +30,7 @@ interface TicketFormSource {
   signature_uploaded_at?: string | null;
   signature_uploaded_by?: string | null;
   requester_signature_uploaded_at?: string | null;
-  requester?: { full_name?: string | null } | null;
+  requester?: { full_name?: string | null; email?: string | null } | null;
   assignee?: { full_name?: string | null } | null;
   ticket_categories?: { name?: string | null } | null;
 }
@@ -64,6 +64,10 @@ function responseValue(response: Record<string, unknown>, key: string): FormValu
   return typeof value === 'string' || typeof value === 'number' ? value : null;
 }
 
+function firstNonEmpty(...values: Array<string | null | undefined>): string | null {
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0) ?? null;
+}
+
 function formatBangkokDate(value: FormValue, withTime = false): string {
   if (!value) return '—';
   const date = new Date(String(value));
@@ -86,12 +90,35 @@ function formatBangkokTime(value: FormValue): string {
   }).format(date);
 }
 
-function signatureHtml(signatureUrl: string | null | undefined): string {
-  if (!signatureUrl || !/^https:\/\//i.test(signatureUrl)) return '—';
-  // Use an explicit width because the form HTML sanitizer only keeps bounded
-  // width/height values. A max-width/max-height pair is removed during
-  // sanitization, which makes the stored signature render at its source size.
-  return `<img src="${escapeHtml(signatureUrl)}" alt="ลายเซ็นรับรอง Ticket" style="width:180px;height:auto;display:block;margin-left:0;margin-right:auto">`;
+type TicketFormSignatureSlot = 'requester_signature' | 'it_signature' | 'vendor_signature';
+
+// Keep an empty slot in the document so a later sign-off can replace it even
+// when the user saved a per-ticket form layout before signing.
+const EMPTY_SIGNATURE_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+const SIGNATURE_IMAGE_STYLE = 'width:180px;height:auto;display:block;margin-left:0;margin-right:auto';
+const EMPTY_SIGNATURE_IMAGE_STYLE = 'width:180px;height:40px;display:block;margin-left:0;margin-right:auto';
+
+function signatureHtml(signatureUrl: string | null | undefined, slot: TicketFormSignatureSlot): string {
+  const isValidUrl = Boolean(signatureUrl && /^https:\/\//i.test(signatureUrl));
+  const src = isValidUrl ? escapeHtml(signatureUrl) : EMPTY_SIGNATURE_IMAGE;
+  const style = isValidUrl ? SIGNATURE_IMAGE_STYLE : EMPTY_SIGNATURE_IMAGE_STYLE;
+  return `<img src="${src}" data-field="${slot}" alt="ลายเซ็นรับรอง Ticket" style="${style}">`;
+}
+
+/** Refresh signed-image URLs in saved per-ticket HTML without changing its layout or text. */
+export function refreshTicketFormSignatureSlots(
+  html: string,
+  assets: TicketFormAssets,
+): string {
+  const urls: Record<TicketFormSignatureSlot, string | null | undefined> = {
+    requester_signature: assets.requesterSignatureUrl,
+    it_signature: assets.itSignatureUrl,
+    vendor_signature: assets.vendorSignatureUrl,
+  };
+  return html.replace(
+    /<img\b[^>]*\bdata-field\s*=\s*["'](requester_signature|it_signature|vendor_signature)["'][^>]*\/?>/gi,
+    (_match, slot: TicketFormSignatureSlot) => signatureHtml(urls[slot], slot),
+  );
 }
 
 /**
@@ -119,8 +146,11 @@ export function renderTicketFormTemplate(
   assets: TicketFormAssets = {},
 ): string {
   const response = issueForm?.vendor_response ?? {};
-  const requesterName = ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name;
-  const department = ticket.department_name_snapshot ?? ticket.guest_department;
+  // Prefer the snapshot captured when the Ticket was opened, so a later profile
+  // rename does not rewrite historical forms. The relation is only a fallback
+  // for older Tickets that predate the snapshot columns.
+  const requesterName = firstNonEmpty(ticket.requester_name_snapshot, ticket.requester?.full_name, ticket.guest_name);
+  const department = firstNonEmpty(ticket.department_name_snapshot, ticket.guest_department);
   const prevention = responseValue(response, 'prevention');
   const vendorResolution = responseValue(response, 'resolution');
   const vendorAssessor = [responseValue(response, 'assessorName'), responseValue(response, 'assessorPosition')].filter(Boolean).join(' · ');
@@ -131,6 +161,7 @@ export function renderTicketFormTemplate(
     document_no: ticket.ticket_no,
     ticket_no: ticket.ticket_no,
     requester_name: requesterName,
+    requester_email: ticket.requester?.email,
     position: ticket.requester_position_snapshot,
     department,
     phone: ticket.requester_phone,
@@ -161,9 +192,9 @@ export function renderTicketFormTemplate(
     it_sign_date: formatBangkokDate(ticket.signature_uploaded_at),
   };
   const rawValues: Record<string, string> = {
-    requester_signature: signatureHtml(assets.requesterSignatureUrl),
-    it_signature: signatureHtml(assets.itSignatureUrl),
-    vendor_signature: signatureHtml(assets.vendorSignatureUrl),
+    requester_signature: signatureHtml(assets.requesterSignatureUrl, 'requester_signature'),
+    it_signature: signatureHtml(assets.itSignatureUrl, 'it_signature'),
+    vendor_signature: signatureHtml(assets.vendorSignatureUrl, 'vendor_signature'),
     org_logo: organizationLogoHtml(assets.organizationLogoUrl),
   };
 
