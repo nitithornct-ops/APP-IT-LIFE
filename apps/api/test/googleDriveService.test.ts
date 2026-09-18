@@ -104,6 +104,18 @@ describe('googleDriveConfig', () => {
       folderId: 'shared-drive-folder',
     });
   });
+  it('accepts the downloaded service-account JSON in either credential secret', () => {
+    const configured = googleDriveConfig({
+      ...env,
+      GOOGLE_SA_CLIENT_EMAIL: JSON.stringify({ client_email: env.GOOGLE_SA_CLIENT_EMAIL }),
+      GOOGLE_SA_PRIVATE_KEY: JSON.stringify({ private_key: privateKeyPem }),
+    });
+    expect(configured).toEqual({
+      clientEmail: env.GOOGLE_SA_CLIENT_EMAIL,
+      privateKey: privateKeyPem.trim(),
+      folderId: 'shared-drive-folder',
+    });
+  });
 });
 
 describe('uploadCsvAsGoogleSheet', () => {
@@ -241,6 +253,26 @@ describe('fetchGoogleDocHtml', () => {
       },
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/export?mimeType=text%2Fhtml'))).toBe(true);
+  });
+
+  it('uses a downloaded service-account JSON when importing a document', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: 'doc-json-token', expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) {
+        return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      }
+      if (url.includes('/export?mimeType=text%2Fhtml')) return new Response('<html><body>ok</body></html>', { status: 200 });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    const result = await fetchGoogleDocHtml({
+      ...env,
+      GOOGLE_SA_CLIENT_EMAIL: JSON.stringify({ client_email: env.GOOGLE_SA_CLIENT_EMAIL }),
+      GOOGLE_SA_PRIVATE_KEY: JSON.stringify({ private_key: privateKeyPem }),
+    }, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
   });
 
   it('accepts a raw document ID and rejects non-document or malformed sources', () => {

@@ -58,10 +58,23 @@ export function googleDriveConfig(env: Bindings): GoogleDriveConfig | null {
 }
 
 /** Auth-only configuration used when reading a Google Doc; a destination folder is not needed. */
+function serviceAccountField(value: string | undefined, field: 'client_email' | 'private_key'): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const candidate = parsed[field];
+    if (typeof candidate === 'string') return candidate.trim();
+  } catch {
+    // The documented form is a scalar value, not JSON.
+  }
+  return trimmed;
+}
+
 export function googleDocsConfig(env: Bindings): GoogleDriveConfig | null {
   if (env.GOOGLE_DRIVE_ENABLED !== 'true') return null;
-  const clientEmail = env.GOOGLE_SA_CLIENT_EMAIL?.trim();
-  const privateKey = env.GOOGLE_SA_PRIVATE_KEY?.trim();
+  const clientEmail = serviceAccountField(env.GOOGLE_SA_CLIENT_EMAIL, 'client_email');
+  const privateKey = serviceAccountField(env.GOOGLE_SA_PRIVATE_KEY, 'private_key');
   if (!clientEmail || !privateKey) return null;
   return { clientEmail, privateKey, folderId: env.GOOGLE_DRIVE_FOLDER_ID?.trim() ?? '' };
 }
@@ -82,11 +95,15 @@ function base64UrlText(text: string): string {
  * (คัดลอกจากไฟล์ JSON ตรง ๆ) จึงต้องแปลงกลับก่อน ไม่งั้น importKey จะล้มโดยไม่บอกสาเหตุที่แท้จริง
  */
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  const der = pem
-    .replace(/\\n/g, '\n')
-    .replace(/-----BEGIN [A-Z ]+-----/, '')
-    .replace(/-----END [A-Z ]+-----/, '')
-    .replace(/\s+/g, '');
+  const normalized = serviceAccountField(pem, 'private_key')
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\\r?\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .trim();
+  const match = normalized.match(/-----BEGIN [A-Z ]+-----([\s\S]+?)-----END [A-Z ]+-----/);
+  if (!match) throw new Error('Invalid Google service-account private key format');
+  const der = match[1].replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(der)) throw new Error('Invalid Google service-account private key encoding');
   const bytes = Uint8Array.from(atob(der), (char) => char.charCodeAt(0));
   return crypto.subtle.importKey('pkcs8', bytes, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
 }
@@ -234,7 +251,14 @@ export async function fetchGoogleDocHtml(
   if (!documentId) return { ok: false, reason: 'rejected', message: 'ลิงก์หรือรหัส Google Docs ไม่ถูกต้อง' };
 
   const auth = await getAccessToken(config, fetchImpl, now);
-  if (!auth.ok) return { ok: false, reason: auth.reason, message: 'ไม่สามารถยืนยันตัวตนกับ Google Drive ได้' };
+  if (!auth.ok) {
+    const message = auth.reason === 'configuration'
+      ? 'รูปแบบ Service Account private key ไม่ถูกต้อง กรุณาใช้ค่า private_key จากไฟล์ JSON ทั้งบล็อก BEGIN/END'
+      : auth.reason === 'auth'
+        ? 'Google ปฏิเสธ Service Account กรุณาตรวจสอบ Google Drive API และ Service Account ใน Google Cloud'
+        : 'ไม่สามารถยืนยันตัวตนกับ Google Drive ได้';
+    return { ok: false, reason: auth.reason, message };
+  }
   const headers = { Authorization: `Bearer ${auth.token}` };
 
   let metadataResponse: Response;
