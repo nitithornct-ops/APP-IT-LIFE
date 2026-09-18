@@ -14,11 +14,12 @@ const buckets = new Map<string, Bucket>();
 
 export function rateLimit(options: {
   windowMs: number;
-  max: number;
+  max: number | ((c: Context<AppEnv>) => number);
   keyFn: (c: Context<AppEnv>) => string;
 }): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const key = options.keyFn(c);
+    const max = typeof options.max === 'function' ? options.max(c) : options.max;
     const now = Date.now();
     const bucket = buckets.get(key);
 
@@ -26,7 +27,7 @@ export function rateLimit(options: {
       buckets.set(key, { count: 1, resetAt: now + options.windowMs });
     } else {
       bucket.count += 1;
-      if (bucket.count > options.max) {
+      if (bucket.count > max) {
         return c.json(fail(c.get('requestId'), 'RATE_LIMITED', 'มีการร้องขอมากเกินไป กรุณาลองใหม่ภายหลัง'), 429);
       }
     }

@@ -136,6 +136,22 @@ describe('Ticket work panel', () => {
     expect(await screen.findByText('กรุณาระบุชื่อผู้ให้บริการภายนอก')).toBeVisible();
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
+
+  it('omits empty waiting fields when saving a normal ticket update', async () => {
+    apiFetchMock.mockResolvedValue({});
+    renderWorkPanel(makeTicket({ status: 'ใหม่' }));
+
+    fireEvent.change(screen.getByLabelText('เวลาที่ใช้ (นาที)'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก' }));
+
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
+    const [, request] = apiFetchMock.mock.calls[0] as [string, { body: string }];
+    const payload = JSON.parse(request.body) as Record<string, unknown>;
+
+    expect(payload).toMatchObject({ status: 'ใหม่', assigneeId: 'staff-1', minutesSpent: 50 });
+    expect(payload).not.toHaveProperty('waitingOwnerId');
+    expect(payload).not.toHaveProperty('waitingFollowUpAt');
+  });
 });
 
 function makeWorklog(overrides: Partial<TicketWorklog> = {}): TicketWorklog {

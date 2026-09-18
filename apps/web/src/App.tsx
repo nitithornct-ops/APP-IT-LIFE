@@ -168,9 +168,11 @@ export function App() {
         <Route
           path="/system-status"
           element={
-            <Suspense fallback={<LazyPageFallback />}>
-              <SystemStatusPage />
-            </Suspense>
+            <ProtectedRoute permission="system_status.view">
+              <Suspense fallback={<LazyPageFallback />}>
+                <SystemStatusPage />
+              </Suspense>
+            </ProtectedRoute>
           }
         />
         {/* เครื่องมือช่วยงานเอกสารที่ทำงานในเบราว์เซอร์ล้วน ๆ ไม่อ่านหรือเขียนข้อมูลของระบบ */}

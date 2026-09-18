@@ -170,7 +170,7 @@ export async function installLiveSession(page: Page, email: string, totpSecret?:
       authorization: `Bearer ${session.access_token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ email, success: true }),
+    body: JSON.stringify({ identifier: email, success: true }),
   });
   if (!loginLog.ok) throw new Error(`Could not record live test login (${loginLog.status})`);
   await page.addInitScript(

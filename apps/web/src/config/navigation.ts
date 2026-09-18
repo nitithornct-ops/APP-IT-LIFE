@@ -67,7 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'ศูนย์งานของฉัน', path: '/my-work', icon: ClipboardList, permission: 'dashboard.view' },
       { label: 'งานส่วนตัว', path: '/tasks', icon: ListTodo, permission: 'task.view' },
       { label: 'เครื่องมือ PDF', path: '/pdf-tools', icon: FileStack },
-      { label: 'สถานะระบบ', path: '/system-status', icon: Activity },
+      { label: 'สถานะระบบ', path: '/system-status', icon: Activity, permission: 'system_status.view' },
     ],
   },
   {

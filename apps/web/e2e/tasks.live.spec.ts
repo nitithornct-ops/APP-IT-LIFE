@@ -47,8 +47,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!service || !userId) return;
   await service.from('personal_tasks').delete().eq('owner_id', userId);
-  await service.from('audit_logs').delete().eq('actor_id', userId);
-  await service.from('login_logs').delete().eq('user_id', userId);
+  await service.from('profiles').update({ status: 'inactive' }).eq('id', userId);
+  await service.from('user_roles').delete().eq('user_id', userId);
   await service.auth.admin.deleteUser(userId);
 });
 

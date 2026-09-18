@@ -48,7 +48,7 @@ export interface MeResponse {
 
 export interface MfaPolicyResponse {
   required: boolean;
-  reason: 'enrolled_factor' | 'user_enabled' | 'admin_role' | 'approver_role' | 'approval_permission' | 'export_permission' | null;
+  reason: 'enrolled_factor' | 'user_enabled' | null;
   enrolled: boolean;
   currentLevel: string | null;
   needsEnrollment: boolean;
@@ -59,6 +59,7 @@ interface AuthContextValue {
   isSessionLoading: boolean;
   isMfaLoading: boolean;
   mfaRequired: boolean;
+  mfaPolicyError: Error | null;
   me: MeResponse | undefined;
   isMeLoading: boolean;
   meError: Error | null;
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [isMfaLoading, setIsMfaLoading] = useState(true);
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaPolicyError, setMfaPolicyError] = useState<Error | null>(null);
   const queryClient = useQueryClient();
 
   /** ผู้ใช้ที่ตรวจนโยบาย MFA ไปแล้ว — `undefined` คือยังไม่เคยตรวจ ต่างจาก `null` ที่แปลว่าตรวจแล้วและไม่มีใคร login */
@@ -97,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const seq = (mfaRequestSeqRef.current += 1);
     if (!nextSession) {
       setMfaRequired(false);
+      setMfaPolicyError(null);
       setIsMfaLoading(false);
       return;
     }
@@ -105,18 +108,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const policy = await apiFetch<MfaPolicyResponse>('/api/v1/auth/mfa-policy', undefined, { silent: true });
       if (seq !== mfaRequestSeqRef.current) return;
       hasMfaAnswerRef.current = true;
+      setMfaPolicyError(null);
       setMfaRequired(policy.required && policy.currentLevel !== 'aal2');
     } catch (error) {
       if (seq !== mfaRequestSeqRef.current) return;
-      // The server is authoritative for privileged roles. A lookup outage must not silently
-      // downgrade an admin/approver/exporter to AAL1 — a failure before any answer fails closed.
+      // A transport hiccup after a successful policy check keeps the last known answer.
+      // A first/real policy error must not be misrepresented as an MFA challenge: block the
+      // protected shell and ask the user to retry instead.
       //
       // แต่ถ้าเคยได้คำตอบมาแล้วและรอบนี้ล้มเพราะเครือข่ายล้วน ๆ (มือถือเพิ่งตื่นจากพักหน้าจอ สัญญาณยังไม่กลับมา)
       // การตั้ง mfaRequired = true จะเด้งผู้ใช้ที่กำลังทำงานอยู่ไปหน้า /mfa ทั้งที่สิทธิ์ไม่ได้เปลี่ยนอะไรเลย
       // จึงคงคำตอบเดิมไว้ — Backend ตรวจระดับ AAL ซ้ำทุก request อยู่แล้ว การคงค่าไว้จึงไม่เปิดช่องให้ใคร
-      if (!hasMfaAnswerRef.current || !isTransportFailure(error)) {
-        setMfaRequired(true);
-      }
+      if (hasMfaAnswerRef.current && isTransportFailure(error)) return;
+      setMfaRequired(false);
+      setMfaPolicyError(error instanceof Error ? error : new Error('MFA policy lookup failed'));
     } finally {
       if (seq === mfaRequestSeqRef.current) setIsMfaLoading(false);
     }
@@ -182,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isSessionLoading,
     isMfaLoading,
     mfaRequired,
+    mfaPolicyError,
     me: meQuery.data,
     isMeLoading: meQuery.isLoading,
     meError: meQuery.error,

@@ -25,6 +25,23 @@ function AccessDenied() {
   );
 }
 
+function MfaPolicyUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="mx-auto flex min-h-[60vh] max-w-xl items-center justify-center px-4 text-center">
+      <Card className="w-full border-warning-100 dark:border-amber-400/30">
+        <CardBody className="flex flex-col items-center gap-3 px-6 py-12">
+          <div className="grid h-14 w-14 place-items-center rounded-[13px] bg-warning-50 text-warning-700 dark:bg-amber-400/10 dark:text-amber-300">
+            <ShieldAlert className="h-7 w-7" aria-hidden="true" />
+          </div>
+          <p className="text-lg font-extrabold text-ink-heading dark:text-[#e8eef9]">ตรวจสอบสถานะ MFA ไม่สำเร็จ</p>
+          <p className="max-w-sm text-sm text-slate-500 dark:text-white/45">ระบบยังยืนยันไม่ได้ว่าบัญชีนี้เปิด MFA หรือไม่ กรุณาลองใหม่อีกครั้ง</p>
+          <Button type="button" onClick={onRetry}>ลองตรวจสอบอีกครั้ง</Button>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
 /**
  * ปิดกั้นหน้าที่ต้อง Login — พาไปหน้า Login พร้อมจำหน้าที่ตั้งใจจะเข้าไว้เพื่อ redirect กลับหลัง login สำเร็จ
  * ถ้าระบุ `permission` (สิทธิ์เดียว) หรือ `anyPermission` (มีอย่างน้อยหนึ่งในรายการ — ใช้เมื่อหน้าเดียว
@@ -41,7 +58,7 @@ export function ProtectedRoute({
   permission?: string;
   anyPermission?: string[];
 }) {
-  const { session, isSessionLoading, isMfaLoading, mfaRequired, hasPermission, isMeLoading } = useAuth();
+  const { session, isSessionLoading, isMfaLoading, mfaRequired, mfaPolicyError, refreshMfa, hasPermission, isMeLoading } = useAuth();
   const location = useLocation();
 
   if (isSessionLoading || (session && isMfaLoading)) {
@@ -56,6 +73,9 @@ export function ProtectedRoute({
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
+  if (mfaPolicyError) {
+    return <MfaPolicyUnavailable onRetry={() => void refreshMfa()} />;
+  }
 
   if (mfaRequired) {
     return <Navigate to="/mfa" replace state={{ from: location.pathname }} />;

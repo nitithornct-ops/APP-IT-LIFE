@@ -62,8 +62,8 @@ test.afterAll(async () => {
     await service.from('employees').delete().eq('id', employeeId);
   }
   if (userId) {
-    await service.from('audit_logs').delete().eq('actor_id', userId);
-    await service.from('login_logs').delete().eq('user_id', userId);
+    await service.from('profiles').update({ status: 'inactive' }).eq('id', userId);
+    await service.from('user_roles').delete().eq('user_id', userId);
     await service.auth.admin.deleteUser(userId);
   }
 });
@@ -98,7 +98,7 @@ test('employee register and all action forms render as bounded popups', async ({
 
   await page.goto('/admin/employee-assignments');
   await expect(page.getByRole('heading', { name: 'เบิกจ่าย / คืนทรัพย์สินพนักงาน', exact: true })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('การเพิ่มหรือแก้ไขข้อมูลพนักงานและรายการที่มอบหมาย ทำจากหน้า', { exact: false })).toBeVisible();
+  await expect(page.getByText('Bulk Assign', { exact: false }).first()).toBeVisible();
   await expect(page.getByTestId('ea-create-toggle')).toHaveCount(0);
   await expect(page.getByTestId('ea-go-employees')).toBeVisible();
 });

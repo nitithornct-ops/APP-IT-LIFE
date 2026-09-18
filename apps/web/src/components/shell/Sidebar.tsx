@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         id="app-sidebar"
         aria-label="เมนูหลัก"
         className={cn(
-          'fixed inset-y-0 left-0 z-sidebar flex w-[216px] flex-col border-r border-white/[.07] bg-[#0b1b36] text-white shadow-[8px_0_28px_rgba(11,27,54,.12)] transition-all duration-200 dark:bg-[#060d1c] dark:text-[#e8eef9]',
+          'fixed inset-y-0 left-0 flex w-[216px] flex-col border-r border-white/[.07] bg-[#0b1b36] text-white shadow-[8px_0_28px_rgba(11,27,54,.12)] transition-all duration-200 dark:bg-[#060d1c] dark:text-[#e8eef9] lg:z-sidebar',
           collapsed && 'lg:w-14',
           mobileOpen ? 'z-mobile-drawer translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}

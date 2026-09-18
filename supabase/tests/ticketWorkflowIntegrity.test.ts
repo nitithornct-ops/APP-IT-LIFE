@@ -193,4 +193,30 @@ describe('Ticket workflow integrity', () => {
     );
     expect(link.rows).toEqual([{ maintenance_plan_id: plan.rows[0].id, result: 'พบอาการผิดปกติ' }]);
   });
+
+  it('attributes the initial worklog when a guest Ticket has no profile identity', async () => {
+    const ticket = await asServiceRole(db, () => db.query<{ id: string }>(
+      `insert into public.tickets
+         (title, description, requester_id, source_channel, guest_name, public_tracking_token_hash,
+          privacy_consent_confirmed, privacy_notice_version, privacy_consent_at,
+          privacy_consent_channel, privacy_consent_text)
+       values ('Guest workflow integrity test', 'Guest Ticket test', null, 'guest', 'Public Tester', repeat('a', 64),
+          true, 'test', now(), 'PUBLIC_TICKET_WEB', 'Guest workflow integrity consent')
+       returning id`,
+    ));
+
+    const worklog = await db.query<{
+      actor_id: string | null;
+      actor_line_user_id: string | null;
+      actor_label: string | null;
+    }>(
+      `select actor_id, actor_line_user_id, actor_label
+       from public.ticket_worklogs where ticket_id = $1`,
+      [ticket.rows[0].id],
+    );
+
+    expect(worklog.rows).toHaveLength(1);
+    expect(worklog.rows[0]).toMatchObject({ actor_id: null, actor_line_user_id: null });
+    expect(worklog.rows[0].actor_label).not.toBeNull();
+  });
 });

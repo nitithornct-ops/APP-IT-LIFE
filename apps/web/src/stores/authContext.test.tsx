@@ -66,6 +66,7 @@ function Probe() {
     <div>
       <span data-testid="mfa-loading">{String(auth.isMfaLoading)}</span>
       <span data-testid="mfa-required">{String(auth.mfaRequired)}</span>
+      <span data-testid="mfa-policy-error">{String(Boolean(auth.mfaPolicyError))}</span>
       <span data-testid="me">{auth.me?.profile.full_name ?? '-'}</span>
       <span data-testid="token">{auth.session?.access_token ?? 'none'}</span>
     </div>
@@ -173,14 +174,15 @@ describe('AuthProvider เมื่อแท็บกลับมามองเ
 });
 
 describe('AuthProvider เมื่อขอนโยบาย MFA ไม่สำเร็จ', () => {
-  it('กันไว้ก่อน (fail closed) ถ้ายังไม่เคยได้คำตอบจากเซิร์ฟเวอร์เลย', async () => {
+  it('ไม่พาผู้ใช้ไปหน้ากรอกรหัส MFA เมื่อยังตรวจ policy ไม่ได้', async () => {
     mocks.apiFetch.mockImplementation((path: string) => {
       if (path === '/api/v1/auth/mfa-policy') return Promise.reject(new ApiError('NETWORK_ERROR', 'เชื่อมต่อระบบไม่สำเร็จ'));
       return Promise.resolve(ME);
     });
     renderProvider();
 
-    await waitFor(() => expect(screen.getByTestId('mfa-required')).toHaveTextContent('true'));
+    await waitFor(() => expect(screen.getByTestId('mfa-policy-error')).toHaveTextContent('true'));
+    expect(screen.getByTestId('mfa-required')).toHaveTextContent('false');
   });
 
   /**
@@ -202,6 +204,7 @@ describe('AuthProvider เมื่อขอนโยบาย MFA ไม่ส�
     });
 
     expect(screen.getByTestId('mfa-required')).toHaveTextContent('false');
+    expect(screen.getByTestId('mfa-policy-error')).toHaveTextContent('false');
     expect(screen.getByTestId('mfa-loading')).toHaveTextContent('false');
   });
 
@@ -217,6 +220,7 @@ describe('AuthProvider เมื่อขอนโยบาย MFA ไม่ส�
       await refreshMfa();
     });
 
-    expect(screen.getByTestId('mfa-required')).toHaveTextContent('true');
+    await waitFor(() => expect(screen.getByTestId('mfa-policy-error')).toHaveTextContent('true'));
+    expect(screen.getByTestId('mfa-required')).toHaveTextContent('false');
   });
 });

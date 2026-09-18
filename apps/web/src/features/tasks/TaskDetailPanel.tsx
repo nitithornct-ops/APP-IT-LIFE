@@ -417,9 +417,10 @@ function ReminderSection({ task }: { task: Task }) {
 function DeleteTaskSection({ task, onDeleted }: { task: Task; onDeleted: () => void }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/tasks/${task.id}`, { method: 'DELETE' }),
+    mutationFn: (deleteReason: string) => apiFetch(`/api/v1/tasks/${task.id}`, { method: 'DELETE', body: JSON.stringify({ reason: deleteReason }) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
       void queryClient.invalidateQueries({ queryKey: ['task-dashboard'] });
@@ -428,15 +429,13 @@ function DeleteTaskSection({ task, onDeleted }: { task: Task; onDeleted: () => v
     onError: (e) => setError(e instanceof ApiError ? e.message : 'ไม่สามารถลบงานได้ กรุณาลองใหม่อีกครั้ง'),
   });
 
-  if (task.status === 'ยกเลิก') return null;
-
   return (
     <>
     <section className="rounded-lg border border-red-100 bg-red-50/70 p-3 dark:border-red-900 dark:bg-red-950/20">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold text-red-700 dark:text-red-300">ลบงาน</h3>
-          <p className="text-xs text-red-600/80 dark:text-red-300/80">งานจะถูกย้ายเป็นสถานะยกเลิกและยังสามารถกู้คืนได้</p>
+          <p className="text-xs text-red-600/80 dark:text-red-300/80">งานจะถูกลบออกจากระบบถาวรและไม่สามารถกู้คืนได้</p>
         </div>
         <Button type="button" size="sm" variant="danger" onClick={() => setConfirming(true)}>
           <Trash2 className="h-4 w-4" aria-hidden="true" /> ลบงาน
@@ -446,12 +445,24 @@ function DeleteTaskSection({ task, onDeleted }: { task: Task; onDeleted: () => v
     {confirming && (
       <DeleteConfirmModal
         title={`ยืนยันลบ “${task.title}”?`}
-        description="งานจะถูกย้ายเป็นสถานะยกเลิกและซ่อนจากรายการงานที่เปิดอยู่"
+        description="งานจะถูกลบออกจากระบบถาวร รวมถึงรายการย่อยและการแจ้งเตือนที่ผูกไว้"
         confirmLabel="ยืนยันลบงาน"
+        confirmDisabled={reason.trim().length < 3}
         isPending={mutation.isPending}
-        onClose={() => setConfirming(false)}
-        onConfirm={() => mutation.mutate()}
+        onClose={() => { setConfirming(false); setReason(''); setError(null); }}
+        onConfirm={() => mutation.mutate(reason.trim())}
       >
+        <label className="mb-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+          เหตุผลการลบ <span className="text-rose-600">*</span>
+          <textarea
+            data-autofocus
+            rows={3}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="ระบุเหตุผลอย่างน้อย 3 ตัวอักษร"
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
         {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       </DeleteConfirmModal>
     )}

@@ -46,4 +46,31 @@ describe('audit log hardening', () => {
     expect(source.rows).toHaveLength(1);
     expect(archive.rows).toEqual([{ source_id: auditId, request_id: 'req-hardening-1' }]);
   });
+
+  it('keeps actor identity in immutable evidence when the profile is deleted', async () => {
+    const profileId = '00000000-0000-0000-0000-000000000902';
+    await asServiceRole(db, async () => {
+      await db.query(`insert into auth.users (id, email) values ($1, 'deleted-actor@test.local')`, [profileId]);
+      await db.query(
+        `insert into public.audit_logs (actor_id, actor_email, action, module, result)
+         values ($1, 'deleted-actor@test.local', 'TEST_DELETE_PROFILE', 'audit', 'success')`,
+        [profileId],
+      );
+      await db.query(
+        `insert into public.login_logs (user_id, email_attempted, success)
+         values ($1, 'deleted-actor@test.local', true)`,
+        [profileId],
+      );
+      await db.query(`delete from public.profiles where id = $1`, [profileId]);
+    });
+
+    const evidence = await db.query<{ actor_id: string; user_id: string }>(
+      `select a.actor_id, l.user_id
+       from public.audit_logs a
+       cross join public.login_logs l
+       where a.action = 'TEST_DELETE_PROFILE'
+         and l.email_attempted = 'deleted-actor@test.local'`,
+    );
+    expect(evidence.rows).toEqual([{ actor_id: profileId, user_id: profileId }]);
+  });
 });

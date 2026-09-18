@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditHashPayload, inferAuditEventCategory, isPrivilegedAuditAction, sha256Hex } from '../src/services/auditService';
+import { auditHashPayload, inferAuditEventCategory, isAuditHardeningSchemaError, isPrivilegedAuditAction, sha256Hex } from '../src/services/auditService';
 import { loginHashPayload } from '../src/services/loginLogService';
 
 describe('audit evidence helpers', () => {
@@ -24,5 +24,12 @@ describe('audit evidence helpers', () => {
       requestId: 'req-123',
       correlationId: 'corr-123',
     });
+  });
+
+  it('recognises only additive audit hardening schema drift for compatibility fallback', () => {
+    expect(isAuditHardeningSchemaError({ code: 'PGRST204', message: "Could not find the 'event_category' column" })).toBe(true);
+    expect(isAuditHardeningSchemaError({ code: 'PGRST205', message: "Could not find the table 'public.audit_activity_alerts'" })).toBe(true);
+    expect(isAuditHardeningSchemaError({ code: '42501', message: 'permission denied' })).toBe(false);
+    expect(isAuditHardeningSchemaError({ code: 'PGRST204', message: "Could not find the 'title' column" })).toBe(false);
   });
 });

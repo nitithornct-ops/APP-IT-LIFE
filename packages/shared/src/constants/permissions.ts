@@ -77,6 +77,7 @@ export const DEFAULT_PERMISSION_KEYS = [
   'backup.manage',
   'monitoring.view',
   'monitoring.manage',
+  'system_status.view',
   'workflow.view',
   'workflow.view_all',
   'workflow.manage',

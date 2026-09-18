@@ -76,7 +76,7 @@ describe('GET /unknown-route', () => {
 });
 
 describe('GET /api/v1/system-status', () => {
-  it('keeps the detailed status view behind authentication', async () => {
+  it('keeps the detailed status view behind authentication and authorization', async () => {
     const res = await app.request('/api/v1/system-status', {}, testEnv);
     expect(res.status).toBe(401);
   });

@@ -83,8 +83,8 @@ test.afterAll(async () => {
       await service.from(table).delete().in('created_by', userIds);
     }
   }
-  await service.from('audit_logs').delete().in('actor_id', userIds);
-  await service.from('login_logs').delete().in('user_id', userIds);
+  await service.from('profiles').update({ status: 'inactive' }).in('id', userIds);
+  await service.from('user_roles').delete().in('user_id', userIds);
   for (const id of userIds.reverse()) await service.auth.admin.deleteUser(id);
 });
 

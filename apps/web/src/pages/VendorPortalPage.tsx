@@ -198,8 +198,8 @@ export function VendorPortalPage() {
       <p className="mt-2 text-sm text-slate-600">เพื่อความปลอดภัย กรุณาเปลี่ยนรหัสผ่านเริ่มต้นก่อนใช้งาน Outsource Portal</p>
       <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void submitPasswordChange(); }}>
         <label className="block text-sm font-semibold">รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={passwordChange.currentPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, currentPassword: e.target.value }))} className={fieldClass} /></label>
-        <label className="block text-sm font-semibold">รหัสผ่านใหม่<input required type="password" minLength={12} autoComplete="new-password" value={passwordChange.newPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, newPassword: e.target.value }))} className={fieldClass} /></label>
-        <label className="block text-sm font-semibold">ยืนยันรหัสผ่านใหม่<input required type="password" minLength={12} autoComplete="new-password" value={passwordChange.confirmPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, confirmPassword: e.target.value }))} className={fieldClass} /></label>
+        <label className="block text-sm font-semibold">รหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.newPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, newPassword: e.target.value }))} className={fieldClass} /></label>
+        <label className="block text-sm font-semibold">ยืนยันรหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.confirmPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, confirmPassword: e.target.value }))} className={fieldClass} /></label>
         {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
         <Button type="submit" className="w-full" isLoading={changingPassword}>บันทึกรหัสผ่านใหม่</Button>
       </form>

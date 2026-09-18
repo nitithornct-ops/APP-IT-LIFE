@@ -29,7 +29,7 @@ import {
 export const licensesRoute = new Hono<AppEnv>();
 licensesRoute.use('*', requireAuth);
 
-const LICENSE_SELECT = '*, vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date)';
+const LICENSE_SELECT = '*, vendor:vendors(id, vendor_code, name, status), contract:contracts!software_licenses_contract_id_fkey(id, contract_number, name, status, end_date)';
 const ALLOCATION_SELECT =
   'id, license_id, assignee_type, employee_id, asset_id, status, assigned_at, assigned_by, reclaimed_at, reclaimed_by, notes, created_at, updated_at, ' +
   'employee:employees!software_license_allocations_employee_id_fkey(id, employee_code, prefix_th, first_name_th, last_name_th, nickname), ' +

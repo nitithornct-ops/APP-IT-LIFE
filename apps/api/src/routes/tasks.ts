@@ -2,6 +2,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
@@ -57,6 +58,7 @@ tasksRoute.use('*', requirePermission('task.view'));
 
 const TERMINAL_STATUSES = new Set(['เสร็จแล้ว', 'ยกเลิก']);
 const PRIORITY_RANK: Record<string, number> = { เร่งด่วน: 0, สูง: 1, ปกติ: 2, ต่ำ: 3 };
+const taskDeleteSchema = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 
 interface TaskRow {
   id: string;
@@ -776,11 +778,23 @@ tasksRoute.patch('/:id', zValidator('json', updateTaskSchema, zodValidationHook)
   return c.json(ok(reqId, updated));
 });
 
-/** Soft delete for Phase 1. Permanent deletion remains reserved for Archive. */
+/** Personal tasks are user-owned records, so deletion is permanent after confirmation. */
 tasksRoute.delete('/:id', async (c) => {
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
   const id = c.req.param('id')!;
+
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    rawBody = null;
+  }
+  const parsedBody = taskDeleteSchema.safeParse(rawBody);
+  if (!parsedBody.success) {
+    return c.json(fail(reqId, 'TASK_DELETE_REASON_INVALID', 'กรุณาระบุเหตุผลการลบอย่างน้อย 3 ตัวอักษร'), 400);
+  }
+
   const current = await loadTaskOr404(c, id);
 
   if (!current) {
@@ -788,23 +802,19 @@ tasksRoute.delete('/:id', async (c) => {
   }
 
   const supabase = c.get('supabase');
-  const { data: updated, error } = await supabase
+  const { data: deleted, error } = await supabase
     .from('personal_tasks')
-    .update({
-      status: 'ยกเลิก',
-      completed_at: null,
-      progress: current.status === 'เสร็จแล้ว' ? ((current.progress_before_complete as number | null) ?? 0) : current.progress,
-      updated_by: actorId,
-    })
+    .delete()
     .eq('id', id)
-    .select()
-    .single();
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     return c.json(fail(reqId, 'TASK_DELETE_FAILED', 'ไม่สามารถลบงานได้ กรุณาลองใหม่อีกครั้ง'), 400);
   }
-
-  await cancelActiveTaskReminder(c, id);
+  if (!deleted) {
+    return c.json(fail(reqId, 'TASK_NOT_FOUND', 'ไม่พบงานนี้ หรือท่านไม่มีสิทธิ์เข้าถึง'), 404);
+  }
 
   await writeAuditLog(c.env, {
     actorId,
@@ -813,11 +823,11 @@ tasksRoute.delete('/:id', async (c) => {
     module: 'task',
     targetTable: 'personal_tasks',
     targetId: id,
-    detail: { mode: 'soft_delete', previousStatus: current.status },
+    detail: { mode: 'hard_delete', previousStatus: current.status, reason: parsedBody.data.reason },
     requestId: reqId,
   });
 
-  return c.json(ok(reqId, updated));
+  return c.json(ok(reqId, { id: deleted.id, mode: 'hard_delete' }));
 });
 
 tasksRoute.post('/:id/status', zValidator('json', setTaskStatusSchema, zodValidationHook), async (c) => {

@@ -48,7 +48,7 @@ const CI_SELECT =
   'owner:employees!configuration_items_owner_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'administrator:employees!configuration_items_administrator_employee_id_fkey(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'asset:assets(id, asset_code, name), vendor:vendors(id, vendor_code, name, status), ' +
-  'contract:contracts(id, contract_number, name, status, end_date)';
+  'contract:contracts!configuration_items_contract_id_fkey(id, contract_number, name, status, end_date)';
 
 const REL_SELECT =
   'id, source_type, source_id, target_type, target_id, relationship_type, direction, impact_level, ' +

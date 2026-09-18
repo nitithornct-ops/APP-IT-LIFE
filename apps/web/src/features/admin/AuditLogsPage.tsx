@@ -20,6 +20,7 @@ import { auditChanges, auditChangesText, auditContext, auditFieldLabel, auditSum
 type LogTab = 'audit' | 'login';
 
 interface AuditControls {
+  available?: boolean;
   retention: { audit_retention_days: number; login_retention_days: number; archive_after_days: number; legal_hold: boolean } | null;
   archive: { auditRows: number; loginRows: number };
   integrity: { auditHashed: number; auditTotal: number; loginHashed: number; loginTotal: number };
@@ -202,17 +203,17 @@ export function AuditLogsPage() {
 
   const overviewQuery = useQuery({
     queryKey: ['admin', 'audit-overview'],
-    queryFn: () => apiFetch<AuditOverview>('/api/v1/audit-logs/overview?days=30'),
+    queryFn: () => apiFetch<AuditOverview>('/api/v1/audit-logs/overview?days=30', undefined, { silent: true }),
   });
   const logsQuery = useQuery<PaginatedResult<AuditLogItem | LoginLogItem>>({
     queryKey: ['admin', 'audit-logs', tab, queryString],
     queryFn: () => tab === 'audit'
-      ? apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs?${queryString}`)
-      : apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs/login-logs?${queryString}`),
+      ? apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs?${queryString}`, undefined, { silent: true })
+      : apiFetch<PaginatedResult<AuditLogItem | LoginLogItem>>(`/api/v1/audit-logs/login-logs?${queryString}`, undefined, { silent: true }),
   });
   const controlsQuery = useQuery({
     queryKey: ['admin', 'audit-controls'],
-    queryFn: () => apiFetch<AuditControls>('/api/v1/audit-logs/controls'),
+    queryFn: () => apiFetch<AuditControls>('/api/v1/audit-logs/controls', undefined, { silent: true }),
   });
   const integrityQuery = useQuery({
     queryKey: ['admin', 'audit-integrity'],
@@ -246,12 +247,14 @@ export function AuditLogsPage() {
           <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="เข้าสู่ระบบไม่สำเร็จ" value={overviewQuery.data.failedLogins} tone="danger" />
         </div>
       )}
+      {overviewQuery.isError && <p className="text-sm text-amber-700 dark:text-amber-300" role="status">โหลดสรุป Audit Log บางส่วนไม่สำเร็จ แต่ยังสามารถดูรายการ Audit Trail ได้</p>}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardBody className="space-y-3">
             <div className="flex items-center gap-2"><Fingerprint className="h-5 w-5 text-primary-600" /><h2 className="font-bold text-slate-800 dark:text-slate-100">Audit Controls</h2></div>
             {controlsQuery.isLoading && <Loader2 className="h-5 w-5 animate-spin text-primary-600" />}
+            {(controlsQuery.isError || controlsQuery.data?.available === false) && <p className="text-sm text-amber-700 dark:text-amber-300" role="status">Audit Controls ยังไม่พร้อม จึงแสดงเฉพาะรายการ Audit Log หลัก</p>}
             {controlsQuery.data && <div className="grid grid-cols-2 gap-3 text-sm">
               <div><p className="text-xs text-slate-500">Hash coverage</p><p className="font-semibold">{controlsQuery.data.integrity.auditHashed + controlsQuery.data.integrity.loginHashed} / {controlsQuery.data.integrity.auditTotal + controlsQuery.data.integrity.loginTotal}</p></div>
               <div><p className="text-xs text-slate-500">Open alerts</p><p className="font-semibold text-amber-700">{controlsQuery.data.openAlertCount}</p></div>

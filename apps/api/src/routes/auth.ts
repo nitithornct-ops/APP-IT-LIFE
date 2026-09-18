@@ -2,7 +2,7 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { createAdminClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth, requireSession } from '../middleware/auth';
-import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
+import { clientIp, rateLimit } from '../middleware/rateLimit';
 import { writeAuditLog } from '../services/auditService';
 import { writeLoginLog } from '../services/loginLogService';
 import { loadMfaPolicy } from '../services/mfaPolicy';
@@ -327,13 +327,20 @@ authRoute.post(
  *  - success = false ยังไม่มี Session จึงยอมให้เรียกโดยไม่ต้อง Login แต่บันทึกเป็น
  *               "ความพยายามที่ Client รายงาน" เท่านั้น (user_id เป็น null เสมอ) และค่าที่บันทึกคือสิ่งที่
  *               ผู้ใช้พิมพ์จริง ซึ่งเป็นชื่อผู้ใช้ก็ได้ ไม่ใช่อีเมลเสมอไป
- * ทั้งสองกรณีจำกัดด้วย Rate Limit ต่อ IP (edge + isolate)
+ * ทั้งสองกรณีจำกัดด้วย Rate Limit ต่อ IP: ความพยายามที่ไม่สำเร็จใช้เพดานต่ำกว่า
+ * ส่วน success=true ผ่าน Session แล้ว จึงรองรับการเข้าสู่ระบบพร้อมกันของสำนักงานได้มากขึ้น
  */
 authRoute.post(
   '/login-log',
-  edgeRateLimit({ keyFn: (c) => `login-log:${clientIp(c)}` }),
-  rateLimit({ windowMs: 60_000, max: 10, keyFn: (c) => `login-log:${clientIp(c)}` }),
   zValidator('json', loginLogSchema, zodValidationHook),
+  rateLimit({
+    windowMs: 60_000,
+    max: (c) => (c.req.valid('json' as never) as { success?: boolean }).success ? 60 : 10,
+    keyFn: (c) => {
+      const success = (c.req.valid('json' as never) as { success?: boolean }).success === true;
+      return `login-log:${success ? 'success' : 'failure'}:${clientIp(c)}`;
+    },
+  }),
   async (c) => {
     const reqId = c.get('requestId');
     const body = c.req.valid('json');
