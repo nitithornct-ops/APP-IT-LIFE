@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { supabase } from '../lib/supabase';
 import { vendorPortalApiFetch } from '../services/vendorPortalApiClient';
 
-const passwordRule = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,128}$/;
+const passwordRule = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
 
 export function VendorPortalInvitePage() {
   const navigate = useNavigate();
@@ -33,7 +33,7 @@ export function VendorPortalInvitePage() {
   async function acceptInvite(event: FormEvent) {
     event.preventDefault();
     if (!passwordRule.test(password)) {
-      setError('Password ต้องมีอย่างน้อย 12 ตัวอักษร และมี a-z, A-Z และตัวเลข');
+      setError('Password ต้องมีอย่างน้อย 8 ตัวอักษร และมี a-z, A-Z และตัวเลข');
       return;
     }
     if (password !== confirmPassword) {
@@ -86,8 +86,8 @@ export function VendorPortalInvitePage() {
         <h1 className="font-display text-2xl font-semibold text-slate-800">ตั้งค่า Vendor Portal</h1>
         <p className="mt-1 text-sm text-slate-500">ตั้ง Password ของคุณเอง แล้วผูก MFA ก่อนเริ่มใช้งาน</p>
         <form onSubmit={acceptInvite} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium text-slate-700">Password ใหม่<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
-          <label className="block text-sm font-medium text-slate-700">ยืนยัน Password<input required type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
+          <label className="block text-sm font-medium text-slate-700">Password ใหม่<input required type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
+          <label className="block text-sm font-medium text-slate-700">ยืนยัน Password<input required type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
           {enrollment && <div className="rounded-xl border border-slate-200 bg-white p-4 text-center"><p className="text-sm font-semibold text-slate-700">สแกน QR ด้วย Authenticator</p><img src={enrollment.qrCode} alt="QR code สำหรับตั้งค่า MFA" className="mx-auto mt-3 h-44 w-44" /><p className="mt-3 text-xs text-slate-500">หรือใช้ Secret นี้</p><code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">{enrollment.secret}</code></div>}
           {factorId && <label className="block text-sm font-medium text-slate-700">รหัส MFA 6 หลัก<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="public-field mt-1 w-full px-3 py-3 text-center font-mono text-xl tracking-[0.3em]" /></label>}
           {error && <div className="public-notice flex items-center gap-2 px-3 py-2 text-sm text-red-700" role="alert"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}

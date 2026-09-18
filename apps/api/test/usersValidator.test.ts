@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loginLogSchema, resolveLoginSchema } from '../src/validators/auth';
-import { createLocalUserSchema, resetPasswordSchema, updateUserSchema } from '../src/validators/users';
+import { createLocalUserSchema, deleteUserSchema, resetPasswordSchema, updateUserSchema } from '../src/validators/users';
 
 const validAccount = { username: 'somchai.j', password: 'Rong2568Pass', fullName: 'สมชาย ใจดี' };
 
@@ -24,9 +24,10 @@ describe('local account creation', () => {
   });
 
   it('holds the initial password to the same policy as the vendor portal', () => {
-    for (const password of ['Short1aA', 'alllowercase1', 'ALLUPPERCASE1', 'NoDigitsAtAll']) {
+    for (const password of ['Short1a', 'alllowercase1', 'ALLUPPERCASE1', 'NoDigitsAtAll']) {
       expect(createLocalUserSchema.safeParse({ ...validAccount, password }).success).toBe(false);
     }
+    expect(createLocalUserSchema.safeParse({ ...validAccount, password: 'Abcd1234' }).success).toBe(true);
     expect(createLocalUserSchema.safeParse(validAccount).success).toBe(true);
   });
 
@@ -48,6 +49,15 @@ describe('updating a user', () => {
     expect(updateUserSchema.parse({ username: 'Malee.D' }).username).toBe('malee.d');
     expect(updateUserSchema.safeParse({ username: null }).success).toBe(true);
     expect(updateUserSchema.safeParse({ username: 'has space' }).success).toBe(false);
+  });
+});
+
+describe('deleting a user', () => {
+  it('requires a bounded reason for the destructive operation', () => {
+    expect(deleteUserSchema.safeParse({ reason: 'พนักงานลาออก' }).success).toBe(true);
+    expect(deleteUserSchema.safeParse({ reason: '  ' }).success).toBe(false);
+    expect(deleteUserSchema.safeParse({ reason: 'x'.repeat(1001) }).success).toBe(false);
+    expect(deleteUserSchema.safeParse({ reason: 'พนักงานลาออก', unexpected: true }).success).toBe(false);
   });
 });
 

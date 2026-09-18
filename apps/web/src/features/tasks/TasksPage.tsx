@@ -88,38 +88,34 @@ function TaskProgress({ value }: { value: number }) {
 export function TaskActions({
   task,
   statusPending,
-  deletePending,
   onView,
   onEdit,
   onStatus,
-  onDelete,
 }: {
   task: Task;
   statusPending: boolean;
-  deletePending: boolean;
   onView: () => void;
   onEdit: () => void;
   onStatus: (status: TaskStatus) => void;
-  onDelete: () => void;
 }) {
   const isTerminal = TERMINAL_STATUSES.includes(task.status);
 
-  // งานที่ปิดไปแล้วเปลี่ยนสถานะไม่ได้ แต่ยังดู แก้ไข หรือลบแบบ soft delete ได้
+  // งานที่ปิดไปแล้วเปลี่ยนสถานะไม่ได้ แต่ยังดู แก้ไข หรือลบได้ตามสิทธิ์เจ้าของงาน
   return (
     <div onClick={(event) => event.stopPropagation()}>
       <RowActions
         recordLabel={task.title}
         className="gap-0.5 [&_a]:h-8 [&_a]:w-8 [&_a]:justify-center [&_a]:px-0 [&_a]:text-[0] [&_button]:h-8 [&_button]:w-8 [&_button]:justify-center [&_button]:px-0 [&_button]:text-[0]"
         actions={[
-          { kind: 'view', label: 'ดู', disabled: statusPending || deletePending, onClick: onView },
-          { kind: 'edit', label: 'แก้ไข', disabled: statusPending || deletePending, onClick: onEdit },
-          { kind: 'custom', icon: statusPending ? Loader2 : CirclePlay, label: 'เริ่มงาน', disabled: statusPending || deletePending, hidden: isTerminal || task.status === 'กำลังทำ', onClick: () => onStatus('กำลังทำ') },
-          { kind: 'custom', icon: statusPending ? Loader2 : Check, label: 'ทำงานเสร็จ', disabled: statusPending || deletePending, hidden: isTerminal, onClick: () => onStatus('เสร็จแล้ว') },
+          { kind: 'view', label: 'ดู', disabled: statusPending, onClick: onView },
+          { kind: 'edit', label: 'แก้ไข', disabled: statusPending, onClick: onEdit },
+          { kind: 'custom', icon: statusPending ? Loader2 : CirclePlay, label: 'เริ่มงาน', disabled: statusPending, hidden: isTerminal || task.status === 'กำลังทำ', onClick: () => onStatus('กำลังทำ') },
+          { kind: 'custom', icon: statusPending ? Loader2 : Check, label: 'ทำงานเสร็จ', disabled: statusPending, hidden: isTerminal, onClick: () => onStatus('เสร็จแล้ว') },
           {
             kind: 'cancel',
             label: 'ยกเลิกงาน',
             hidden: isTerminal,
-            disabled: deletePending,
+            disabled: statusPending,
             isPending: statusPending,
             confirmDescription: 'งานนี้จะถูกยกเลิก แต่ยังอยู่ในรายการและประวัติการทำงานเพื่อการตรวจสอบย้อนหลัง',
             onConfirm: () => onStatus('ยกเลิก'),
@@ -127,12 +123,10 @@ export function TaskActions({
           {
             kind: 'delete',
             label: 'ลบ',
-            hidden: task.status === 'ยกเลิก',
             disabled: statusPending,
-            isPending: deletePending,
+            deleteEndpoint: `/api/v1/tasks/${task.id}`,
             confirmTitle: `ยืนยันลบ “${task.title}”?`,
-            confirmDescription: 'งานจะถูกย้ายเป็นสถานะยกเลิกและซ่อนจากรายการงานที่เปิดอยู่ โดยระบบยังเก็บประวัติไว้สำหรับการตรวจสอบย้อนหลัง',
-            onConfirm: onDelete,
+            confirmDescription: 'งานนี้จะถูกลบออกจากระบบถาวรและไม่สามารถกู้คืนได้',
           },
         ]}
       />
@@ -294,24 +288,6 @@ export function TasksPage() {
     statusMutation.mutate({ id: task.id, nextStatus });
   };
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
-    onMutate: () => setActionError(null),
-    onSuccess: (_data, id) => {
-      setSelectedTaskId((current) => current === id ? null : current);
-      setDetailTaskId((current) => current === id ? null : current);
-      setToast({ tone: 'success', message: 'ลบงานสำเร็จ' });
-      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      void queryClient.invalidateQueries({ queryKey: ['task-dashboard'] });
-    },
-    onError: (error) => setActionError(error instanceof ApiError ? error.message : 'ลบงานไม่สำเร็จ กรุณาลองใหม่'),
-  });
-
-  const deleteTask = (task: Task) => {
-    if (deleteMutation.isPending || statusMutation.isPending) return;
-    deleteMutation.mutate(task.id);
-  };
-
   const navItems: { scope: Scope; label: string; icon: typeof Gauge; count?: number; view?: View }[] = [
     { scope: 'focus', label: 'ภาพรวม', icon: Grid2X2, count: openTasks.length },
     { scope: 'today', label: 'วันนี้', icon: Sun, count: summary.today + summary.overdue, view: 'list' },
@@ -436,11 +412,9 @@ export function TasksPage() {
                       <TaskActions
                         task={task}
                         statusPending={statusMutation.isPending && statusMutation.variables?.id === task.id}
-                        deletePending={deleteMutation.isPending && deleteMutation.variables === task.id}
                         onView={() => setSelectedTaskId(task.id)}
                         onEdit={() => setDetailTaskId(task.id)}
                         onStatus={(nextStatus) => changeStatus(task, nextStatus)}
-                        onDelete={() => deleteTask(task)}
                       />
                     </article>
                   ))}
@@ -451,7 +425,7 @@ export function TasksPage() {
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'table' && (
               <DataTable mode="server" tableId="personal-tasks" rowNumberStart={(currentPage - 1) * pageSize + 1} cardOnMobile className="w-full min-w-[950px] text-left text-xs" containerClassName="rounded-b-card">
                 <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">งาน</th><th className="px-3 py-3">ประเภท</th><th className="px-3 py-3">ความสำคัญ</th><th className="px-3 py-3">ครบกำหนด</th><th className="px-3 py-3">ความคืบหน้า</th><th className="px-3 py-3">สถานะ</th><th className="px-3 py-3">จัดการ</th></tr></thead>
-                <tbody>{pagedTasks.map((task) => <tr key={task.id} aria-selected={selectedTaskId === task.id} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)} className={cn('cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')}><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-primary-700 dark:text-primary-300">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} statusPending={statusMutation.isPending && statusMutation.variables?.id === task.id} deletePending={deleteMutation.isPending && deleteMutation.variables === task.id} onView={() => setSelectedTaskId(task.id)} onEdit={() => setDetailTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} onDelete={() => deleteTask(task)} /></td></tr>)}</tbody>
+                <tbody>{pagedTasks.map((task) => <tr key={task.id} aria-selected={selectedTaskId === task.id} onClick={() => setSelectedTaskId((current) => current === task.id ? null : task.id)} className={cn('cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40', selectedTaskId === task.id && 'bg-primary-50 dark:bg-primary-900/25')}><td className="max-w-[360px] px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"><span className="mr-2 font-mono text-[10px] text-primary-700 dark:text-primary-300">{task.task_no}</span>{task.title}</td><td className="px-3 py-3 text-slate-500">{taskTypeLabel[task.task_type] ?? 'งานทั่วไป'}</td><td className="px-3 py-3"><Badge variant={priorityTone[task.priority]}>{task.priority}</Badge></td><td className="px-3 py-3"><DueBadge dueDate={task.due_date} dueDays={task.due_days} /></td><td className="px-3 py-3"><TaskProgress value={task.progress} /></td><td className="px-3 py-3"><Badge variant={statusTone[task.status]}>{task.status}</Badge></td><td className="px-3 py-3"><TaskActions task={task} statusPending={statusMutation.isPending && statusMutation.variables?.id === task.id} onView={() => setSelectedTaskId(task.id)} onEdit={() => setDetailTaskId(task.id)} onStatus={(nextStatus) => changeStatus(task, nextStatus)} /></td></tr>)}</tbody>
               </DataTable>
             )}
 

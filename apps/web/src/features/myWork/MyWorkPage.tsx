@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DataTable } from '../../components/table/DataTable';
+import { RowActions } from '../../components/table/RowActions';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -257,7 +258,7 @@ export function MyWorkPage() {
                       <td className="whitespace-nowrap">{item.riskScore ? <Badge variant={item.riskScore >= 16 ? 'danger' : item.riskScore >= 10 ? 'warning' : 'secondary'}><ShieldAlert className="h-3 w-3" />{item.riskScore}</Badge> : <span className="text-xs text-slate-400">—</span>}</td>
                       <td className="whitespace-nowrap"><Badge variant={countdown.tone}><Clock3 className="h-3 w-3" />{countdown.label}</Badge></td>
                       <td className={cn('whitespace-nowrap text-xs', due.overdue ? 'font-bold text-danger-700 dark:text-red-300' : 'text-slate-500')}><span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{due.label}</span></td>
-                      <td className="whitespace-nowrap text-right"><div className="flex justify-end gap-1"><Link className="inline-flex min-h-9 items-center rounded-[7px] px-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 hover:underline dark:text-primary-300" to={item.path}>{item.action}</Link><Button size="sm" variant="ghost" isLoading={isSnoozing} onClick={() => snoozeMutation.mutate({ item, minutes: snoozeMinutes })} title={`เตือนฉันภายหลัง ${snoozeOptions.find((option) => option.minutes === snoozeMinutes)?.label}`} aria-label={`เตือนฉันภายหลัง ${item.title}`}><AlarmClock className="h-4 w-4" /></Button></div></td>
+                      <td className="whitespace-nowrap text-right"><div className="flex justify-end gap-1"><Link className="inline-flex min-h-9 items-center rounded-[7px] px-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 hover:underline dark:text-primary-300" to={item.path}>{item.action}</Link><Button size="sm" variant="ghost" isLoading={isSnoozing} onClick={() => snoozeMutation.mutate({ item, minutes: snoozeMinutes })} title={`เตือนฉันภายหลัง ${snoozeOptions.find((option) => option.minutes === snoozeMinutes)?.label}`} aria-label={`เตือนฉันภายหลัง ${item.title}`}><AlarmClock className="h-4 w-4" /></Button>{item.kind === 'task' && <RowActions recordLabel={item.title} className="shrink-0" actions={[{ kind: 'delete', label: 'ลบ', deleteEndpoint: `/api/v1/tasks/${item.id}`, confirmTitle: `ยืนยันลบ “${item.title}”?`, confirmDescription: 'งานนี้จะถูกลบออกจากระบบถาวรและไม่สามารถกู้คืนได้' }]} />}</div></td>
                     </tr>
                   );
                 })}</tbody>

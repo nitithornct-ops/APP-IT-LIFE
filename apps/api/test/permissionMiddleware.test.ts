@@ -21,4 +21,20 @@ describe('requireAnyPermission', () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ success: false, error: { code: 'PERMISSION_DENIED' } });
   });
+
+  it('denies the internal system status permission to a non-admin caller', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('requestId', 'system-status-permission-test');
+      c.set('userId', '00000000-0000-0000-0000-000000000002');
+      c.set('userEmail', 'user@test.local');
+      c.set('supabase', { rpc: vi.fn().mockResolvedValue({ data: false, error: null }) } as never);
+      await next();
+    });
+    app.get('/system-status', requireAnyPermission(['system_status.view']), (c) => c.json({ success: true }));
+
+    const response = await app.request('/system-status', {}, {} as Bindings);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ success: false, error: { code: 'PERMISSION_DENIED' } });
+  });
 });

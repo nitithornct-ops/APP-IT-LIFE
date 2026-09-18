@@ -15,7 +15,7 @@ const usernameSchema = z
 /** นโยบายรหัสผ่านเดียวกับ Vendor Portal (validators/vendorPortal.ts) เพื่อไม่ให้มีสองมาตรฐานในระบบเดียว */
 const passwordSchema = z
   .string()
-  .min(12, 'รหัสผ่านต้องมีอย่างน้อย 12 ตัวอักษร')
+  .min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
   .max(128)
   .regex(/[a-z]/, 'รหัสผ่านต้องมีตัวอักษรภาษาอังกฤษตัวเล็ก')
   .regex(/[A-Z]/, 'รหัสผ่านต้องมีตัวอักษรภาษาอังกฤษตัวใหญ่')
@@ -67,6 +67,12 @@ export const updateUserSchema = z.object({
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+export const deleteUserSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+}).strict();
+
+export type DeleteUserInput = z.infer<typeof deleteUserSchema>;
 
 export const updateMfaSchema = z.object({
   enabled: z.boolean(),

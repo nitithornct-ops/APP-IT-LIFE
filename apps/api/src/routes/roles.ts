@@ -48,7 +48,10 @@ function roleMutationFailure(c: Context<AppEnv>, code: string, error: { message?
 }
 
 rolesRoute.get('/', viewOrManage, async (c) => {
-  const supabase = c.get('supabase');
+  // Authorization is already enforced by viewOrManage. Use the service-role read
+  // path for the related governance tables so RLS policies on metadata cannot make
+  // the whole Permission Matrix fail after a role is added or changed.
+  const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const [rolesResult, assignmentsResult, permissionsResult, rulesResult] = await Promise.all([
     supabase.from('roles').select('*').order('created_at', { ascending: false }),
@@ -229,7 +232,7 @@ rolesRoute.patch('/:id', requirePermission('role.manage'), zValidator('json', up
 });
 
 rolesRoute.get('/:id/permissions', viewOrManage, async (c) => {
-  const supabase = c.get('supabase');
+  const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const roleId = c.req.param('id');
 

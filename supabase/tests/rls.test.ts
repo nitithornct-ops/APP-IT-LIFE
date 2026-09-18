@@ -93,6 +93,17 @@ describe('has_permission()', () => {
     expect((result.rows[0] as { allowed: boolean }).allowed).toBe(true);
   });
 
+  it('denies the internal system status permission to a plain user', async () => {
+    const regularUser = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query("select public.has_permission('system_status.view') as allowed"),
+    );
+    const admin = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query("select public.has_permission('system_status.view') as allowed"),
+    );
+    expect((regularUser.rows[0] as { allowed: boolean }).allowed).toBe(false);
+    expect((admin.rows[0] as { allowed: boolean }).allowed).toBe(true);
+  });
+
   it('denies a plain user the role.manage permission', async () => {
     const result = await asUser(db, REGULAR_USER_ID, async () =>
       db.query("select public.has_permission('role.manage') as allowed"),
