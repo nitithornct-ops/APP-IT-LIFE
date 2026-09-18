@@ -12,6 +12,7 @@ import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
 import { uploadRequesterSignature } from '../services/ticketSignatureService';
 import {
+  refreshTicketFormSignatureSlots,
   renderTicketFormTemplate,
   ticketFormFlow,
 } from '../services/ticketFormDocument';
@@ -370,18 +371,21 @@ ticketsRoute.get('/:id/form-document', async (c) => {
   const sourceHtml = issueForm?.content_html || template.content_html;
   /**
    * เอกสารที่เจ้าหน้าที่จัดรูปเองแล้วบันทึกไว้กับ Ticket ใบนี้ (tickets.form_content_html)
-   * มาก่อน Template เสมอ — และไม่ต้องผ่าน renderTicketFormTemplate ซ้ำ เพราะมันคือผลลัพธ์ที่
-   * แทนค่า {{field}} ไปแล้วตั้งแต่ตอนบันทึก การ render ทับจะไม่เปลี่ยนอะไรนอกจากเสียเวลา
+   * มาก่อน Template เสมอ เพื่อรักษาข้อความและตำแหน่งที่จัดไว้ แต่ช่องลายเซ็นจะถูก refresh
+   * จาก Storage ทุกครั้ง เพราะ signed URL มีอายุจำกัดและผู้แจ้งอาจเซ็นหลังจากจัดรูปเอกสารแล้ว
    */
   const customContentHtml = typeof ticket.form_content_html === 'string' && ticket.form_content_html.trim()
     ? ticket.form_content_html
     : null;
-  const contentHtml = customContentHtml ?? renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, {
+  const renderAssets = {
     itSignatureUrl: signatureUrl,
     requesterSignatureUrl,
     vendorSignatureUrl,
     organizationLogoUrl: organizationLogo?.value ?? null,
-  });
+  };
+  const contentHtml = customContentHtml
+    ? refreshTicketFormSignatureSlots(customContentHtml, renderAssets)
+    : renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, renderAssets);
   const templateVersion = Number(issueForm?.template_version ?? template.current_version);
   const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;
   const checkmarks = savedCheckmarks

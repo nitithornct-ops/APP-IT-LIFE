@@ -22,6 +22,9 @@ const FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const GOOGLE_SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const GOOGLE_DOC_EXPORT_MIME = 'text/html';
+const MAX_GOOGLE_DOC_EXPORT_BYTES = 10 * 1024 * 1024;
 const TIMEOUT_MS = 20_000;
 
 export interface GoogleDriveConfig {
@@ -49,12 +52,18 @@ export type GoogleDriveResult =
  * ขาดอย่างใดอย่างหนึ่งถือว่ายังไม่ได้ตั้งค่า ไม่ใช่ตั้งค่าครึ่ง ๆ กลาง ๆ แล้วไปพังตอนผู้ใช้กดส่งออก
  */
 export function googleDriveConfig(env: Bindings): GoogleDriveConfig | null {
+  const config = googleDocsConfig(env);
+  if (!config?.folderId) return null;
+  return config;
+}
+
+/** Auth-only configuration used when reading a Google Doc; a destination folder is not needed. */
+export function googleDocsConfig(env: Bindings): GoogleDriveConfig | null {
   if (env.GOOGLE_DRIVE_ENABLED !== 'true') return null;
   const clientEmail = env.GOOGLE_SA_CLIENT_EMAIL?.trim();
   const privateKey = env.GOOGLE_SA_PRIVATE_KEY?.trim();
-  const folderId = env.GOOGLE_DRIVE_FOLDER_ID?.trim();
-  if (!clientEmail || !privateKey || !folderId) return null;
-  return { clientEmail, privateKey, folderId };
+  if (!clientEmail || !privateKey) return null;
+  return { clientEmail, privateKey, folderId: env.GOOGLE_DRIVE_FOLDER_ID?.trim() ?? '' };
 }
 
 function base64Url(bytes: ArrayBuffer | Uint8Array): string {
@@ -171,6 +180,123 @@ export async function probeGoogleDrive(
   } catch {
     return { ok: false, responseTimeMs: Date.now() - startedAt, reason: 'network' };
   }
+}
+
+export interface GoogleDocHtmlImport {
+  documentId: string;
+  name: string;
+  webViewLink: string;
+  html: string;
+}
+
+export type GoogleDocHtmlImportResult =
+  | { ok: true; document: GoogleDocHtmlImport }
+  | { ok: false; reason: GoogleDriveFailureReason; message: string };
+
+function validGoogleDocId(value: string): string | null {
+  return /^[A-Za-z0-9_-]{10,200}$/.test(value) ? value : null;
+}
+
+/** Accepts a Google Docs URL, a Drive URL with ?id=, or the document ID itself. */
+export function googleDocIdFromSource(source: string): string | null {
+  const trimmed = source.trim();
+  const directId = validGoogleDocId(trimmed);
+  if (directId) return directId;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname === 'docs.google.com') {
+      const match = url.pathname.match(/^\/document\/d\/([^/]+)/);
+      return match ? validGoogleDocId(decodeURIComponent(match[1]!)) : null;
+    }
+    if (url.hostname === 'drive.google.com') return validGoogleDocId(url.searchParams.get('id') ?? '');
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function googleResponseReason(status: number): GoogleDriveFailureReason {
+  return status === 401 || status === 403 || status === 404 ? 'rejected' : 'response';
+}
+
+/** Read a Google Doc as sanitized-by-the-caller HTML without sending a file to the browser. */
+export async function fetchGoogleDocHtml(
+  env: Bindings,
+  source: string,
+  fetchImpl: typeof fetch = fetch,
+  now = Date.now(),
+): Promise<GoogleDocHtmlImportResult> {
+  const config = googleDocsConfig(env);
+  if (!config) return { ok: false, reason: 'configuration', message: 'Google Drive ยังไม่ได้ตั้งค่าการเชื่อมต่อ' };
+
+  const documentId = googleDocIdFromSource(source);
+  if (!documentId) return { ok: false, reason: 'rejected', message: 'ลิงก์หรือรหัส Google Docs ไม่ถูกต้อง' };
+
+  const auth = await getAccessToken(config, fetchImpl, now);
+  if (!auth.ok) return { ok: false, reason: auth.reason, message: 'ไม่สามารถยืนยันตัวตนกับ Google Drive ได้' };
+  const headers = { Authorization: `Bearer ${auth.token}` };
+
+  let metadataResponse: Response;
+  try {
+    metadataResponse = await fetchImpl(
+      `${FILES_URL}/${encodeURIComponent(documentId)}?fields=id,name,mimeType,trashed,webViewLink&supportsAllDrives=true`,
+      { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
+    );
+  } catch {
+    return { ok: false, reason: 'network', message: 'เชื่อมต่อ Google Drive ไม่สำเร็จ' };
+  }
+  if (!metadataResponse.ok) {
+    return { ok: false, reason: googleResponseReason(metadataResponse.status), message: 'เปิด Google Docs ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์การแชร์ให้บัญชีระบบ' };
+  }
+
+  let metadata: { id?: unknown; name?: unknown; mimeType?: unknown; trashed?: unknown; webViewLink?: unknown };
+  try {
+    metadata = await metadataResponse.json() as typeof metadata;
+  } catch {
+    return { ok: false, reason: 'response', message: 'ข้อมูล Google Docs ที่ได้รับไม่ถูกต้อง' };
+  }
+  if (metadata.mimeType !== GOOGLE_DOC_MIME || metadata.trashed === true) {
+    return { ok: false, reason: 'rejected', message: 'ลิงก์นี้ต้องเป็น Google Docs ที่ยังไม่ถูกลบเท่านั้น' };
+  }
+  const name = typeof metadata.name === 'string' && metadata.name.trim() ? safeDriveName(metadata.name, 'Google Docs') : 'Google Docs';
+
+  let exportResponse: Response;
+  try {
+    exportResponse = await fetchImpl(
+      `${FILES_URL}/${encodeURIComponent(documentId)}/export?mimeType=${encodeURIComponent(GOOGLE_DOC_EXPORT_MIME)}`,
+      { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
+    );
+  } catch {
+    return { ok: false, reason: 'network', message: 'ดึงเนื้อหา Google Docs ไม่สำเร็จ' };
+  }
+  if (!exportResponse.ok) {
+    return { ok: false, reason: googleResponseReason(exportResponse.status), message: 'Google Docs ไม่อนุญาตให้ส่งออกเนื้อหา กรุณาตรวจสอบสิทธิ์การแชร์' };
+  }
+  const contentLength = Number(exportResponse.headers.get('content-length') ?? 0);
+  if (contentLength > MAX_GOOGLE_DOC_EXPORT_BYTES) {
+    return { ok: false, reason: 'rejected', message: 'Google Docs มีขนาดเกิน 10 MB ซึ่งระบบรองรับต่อครั้ง' };
+  }
+
+  let html: string;
+  try {
+    html = await exportResponse.text();
+  } catch {
+    return { ok: false, reason: 'response', message: 'อ่านเนื้อหา Google Docs ไม่สำเร็จ' };
+  }
+  if (new TextEncoder().encode(html).byteLength > MAX_GOOGLE_DOC_EXPORT_BYTES) {
+    return { ok: false, reason: 'rejected', message: 'Google Docs มีขนาดเกิน 10 MB ซึ่งระบบรองรับต่อครั้ง' };
+  }
+
+  return {
+    ok: true,
+    document: {
+      documentId,
+      name,
+      webViewLink: typeof metadata.webViewLink === 'string' && metadata.webViewLink ? metadata.webViewLink : `https://docs.google.com/document/d/${documentId}/edit`,
+      html,
+    },
+  };
 }
 
 /** ชื่อไฟล์ที่ผู้ใช้เห็นใน Drive — ตัด path separator กับอักขระควบคุมที่ทำให้ชื่อไฟล์เพี้ยน */
