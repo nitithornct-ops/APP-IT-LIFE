@@ -247,6 +247,7 @@ export async function fetchGoogleDocHtml(
     return { ok: false, reason: 'network', message: 'เชื่อมต่อ Google Drive ไม่สำเร็จ' };
   }
   if (!metadataResponse.ok) {
+    if (metadataResponse.status === 401) tokenCache.delete(config.clientEmail);
     return { ok: false, reason: googleResponseReason(metadataResponse.status), message: 'เปิด Google Docs ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์การแชร์ให้บัญชีระบบ' };
   }
 
@@ -271,6 +272,7 @@ export async function fetchGoogleDocHtml(
     return { ok: false, reason: 'network', message: 'ดึงเนื้อหา Google Docs ไม่สำเร็จ' };
   }
   if (!exportResponse.ok) {
+    if (exportResponse.status === 401) tokenCache.delete(config.clientEmail);
     return { ok: false, reason: googleResponseReason(exportResponse.status), message: 'Google Docs ไม่อนุญาตให้ส่งออกเนื้อหา กรุณาตรวจสอบสิทธิ์การแชร์' };
   }
   const contentLength = Number(exportResponse.headers.get('content-length') ?? 0);

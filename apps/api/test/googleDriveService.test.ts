@@ -249,6 +249,48 @@ describe('fetchGoogleDocHtml', () => {
     expect(googleDocIdFromSource('https://example.com/document/d/doc-123456789')).toBeNull();
     expect(googleDocIdFromSource('not an id')).toBeNull();
   });
+
+  it('evicts a cached token when Google rejects document metadata with 401', async () => {
+    let metadataAttempts = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: `doc-token-${metadataAttempts + 1}`, expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) {
+        metadataAttempts += 1;
+        if (metadataAttempts === 1) return jsonResponse({ error: 'unauthorized' }, 401);
+        return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      }
+      if (url.includes('/export?mimeType=text%2Fhtml')) return new Response('<html><body>ok</body></html>', { status: 200 });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+    const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(2);
+  });
+
+  it('evicts a cached token when Google rejects document export with 401', async () => {
+    let exportAttempts = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: `doc-token-${exportAttempts + 1}`, expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      if (url.includes('/export?mimeType=text%2Fhtml')) {
+        exportAttempts += 1;
+        if (exportAttempts === 1) return jsonResponse({ error: 'unauthorized' }, 401);
+        return new Response('<html><body>ok</body></html>', { status: 200 });
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+    const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(2);
+  });
 });
 
 describe('buddhistYearFolder', () => {
