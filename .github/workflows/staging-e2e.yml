@@ -2,16 +2,11 @@ name: Staging Live E2E
 
 on:
   workflow_dispatch:
+  # ทุก commit บน master ต้องมีหลักฐาน E2E ของตัวเอง เพราะ verify-staging-e2e-run.mjs
+  # เทียบ head_sha ตรงตัว ถ้ากรอง paths ไว้ commit ที่แตะแค่ package.json, config หรือ
+  # workflow deploy จะไม่มี run ของ SHA ตัวเอง แล้ว deploy จะถูกบล็อกทั้งที่ควรปล่อยได้
   push:
     branches: [master]
-    paths:
-      - 'apps/web/src/**'
-      - 'apps/web/e2e/**'
-      - 'apps/web/index.html'
-      - 'apps/api/src/**'
-      - 'supabase/migrations/**'
-      - 'supabase/seed.sql'
-      - '.github/workflows/staging-e2e.yml'
   # ชุดนี้เคยรันเฉพาะตอนกดเอง จึงไปพบว่า locator ไม่ตรง UI เอาตอนจะ deploy แล้ว (3 เคสล้มใน
   # Pre-production QA audit 2026-08-13) — ให้รันกับ PR ที่แตะหน้าจอหรือ API ด้วย เพื่อให้ E2E
   # ที่ตามการ refactor ไม่ทันถูกจับตั้งแต่ตอนรีวิว ไม่ใช่ตอน release gate
