@@ -1,10 +1,10 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
-import { isMfaMandatoryForUser } from '../services/mfaPolicy';
 import { sendNotification } from '../services/notificationService';
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
@@ -21,6 +21,7 @@ import {
 import {
   assignRoleSchema,
   createLocalUserSchema,
+  deleteUserSchema,
   inviteUserSchema,
   listUsersQuerySchema,
   resetPasswordSchema,
@@ -115,16 +116,6 @@ usersRoute.patch('/:id/mfa', requirePermission('user.manage'), zValidator('json'
   const auditBefore = await loadAuditSnapshot(admin, 'profiles', targetId);
   if (!auditBefore) {
     return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
-  }
-
-  if (!enabled) {
-    try {
-      if (await isMfaMandatoryForUser(c.env, targetId)) {
-        return c.json(fail(reqId, 'USER_MFA_REQUIRED_BY_POLICY', 'บัญชีนี้ถูกบังคับใช้ 2FA จากบทบาทหรือสิทธิ์ จึงปิดไม่ได้'), 409);
-      }
-    } catch {
-      return c.json(fail(reqId, 'USER_MFA_POLICY_LOOKUP_FAILED', 'ตรวจสอบนโยบาย 2FA ของผู้ใช้งานไม่สำเร็จ กรุณาลองใหม่'), 503);
-    }
   }
 
   let removedFactorCount = 0;
@@ -428,6 +419,74 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
   });
 
   return c.json(ok(reqId, data));
+});
+
+/**
+ * ลบบัญชีผู้ใช้งานถาวรผ่าน Supabase Auth Admin API
+ *
+ * การลบจะทำได้เฉพาะบัญชีที่ระงับแล้ว และฐานข้อมูลจะตรวจซ้ำว่าไม่มีข้อมูลธุรกิจ
+ * อ้างอิงอยู่ เพื่อไม่ให้การลบบัญชีลบ Ticket/Task/หลักฐานงานตาม ON DELETE CASCADE
+ * ไปโดยไม่ตั้งใจ
+ */
+usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', deleteUserSchema, zodValidationHook), async (c) => {
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const targetId = c.req.param('id')!;
+  const body = c.req.valid('json');
+
+  if (!z.string().uuid().safeParse(targetId).success) {
+    return c.json(fail(reqId, 'USER_ID_INVALID', 'รหัสผู้ใช้งานไม่ถูกต้อง'), 400);
+  }
+  if (targetId === actorId) {
+    return c.json(fail(reqId, 'USER_SELF_DELETE_FORBIDDEN', 'ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้'), 409);
+  }
+
+  const admin = createAdminClient(c.env);
+  const auditBefore = await loadAuditSnapshot(admin, 'profiles', targetId);
+  if (!auditBefore) {
+    return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
+  }
+
+  const { error: safetyError } = await admin.rpc('assert_user_deletion_safe', { user_id_input: targetId });
+  if (safetyError) {
+    const message = safetyError.message ?? '';
+    if (message.includes('USER_MUST_BE_INACTIVE')) {
+      return c.json(fail(reqId, 'USER_MUST_BE_INACTIVE', 'กรุณาระงับบัญชีก่อนลบผู้ใช้งานถาวร'), 409);
+    }
+    if (message.includes('LAST_SUPER_ADMIN')) {
+      return c.json(fail(reqId, 'LAST_SUPER_ADMIN', 'ไม่สามารถลบผู้ดูแลระบบสูงสุดคนสุดท้ายได้'), 409);
+    }
+    if (message.includes('USER_HAS_DEPENDENCIES')) {
+      return c.json(fail(reqId, 'USER_HAS_DEPENDENCIES', 'ไม่สามารถลบผู้ใช้งานได้ เพราะยังมีข้อมูลในระบบอ้างอิงบัญชีนี้อยู่'), 409);
+    }
+    return dbFailJson(c, 'USER_DELETE_SAFETY_CHECK_FAILED', safetyError, 'ตรวจสอบความปลอดภัยก่อนลบผู้ใช้งานไม่สำเร็จ');
+  }
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(targetId);
+  if (deleteError) {
+    const message = deleteError.message ?? '';
+    if (/foreign key|constraint|referenced/i.test(message)) {
+      return c.json(fail(reqId, 'USER_HAS_DEPENDENCIES', 'ไม่สามารถลบผู้ใช้งานได้ เพราะยังมีข้อมูลในระบบอ้างอิงบัญชีนี้อยู่'), 409);
+    }
+    if (/not found|does not exist/i.test(message)) {
+      return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
+    }
+    return dbFailJson(c, 'USER_DELETE_FAILED', deleteError, 'ลบผู้ใช้งานไม่สำเร็จ');
+  }
+
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'DELETE',
+    module: 'user',
+    targetTable: 'profiles',
+    targetId,
+    detail: { reason: body.reason, mode: 'hard' },
+    requestId: reqId,
+    before: auditBefore,
+  });
+
+  return c.json(ok(reqId, { id: targetId, removed: true }));
 });
 
 usersRoute.get('/:id/effective-permissions', requireAnyPermission(['role.view', 'role.manage', 'user.manage']), async (c) => {

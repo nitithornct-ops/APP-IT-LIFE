@@ -25,21 +25,24 @@ function initialsFrom(name: string | undefined): string {
 }
 
 interface TopbarProps {
+  mobileMenuOpen: boolean;
   onOpenMobileMenu: () => void;
   onOpenCommandPalette: () => void;
 }
 
-export function Topbar({ onOpenMobileMenu, onOpenCommandPalette }: TopbarProps) {
+export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette }: TopbarProps) {
   const { me, signOut } = useAuth();
   const context = useCurrentPageContext();
 
   return (
-    <header className="app-topbar sticky top-0 z-20 flex h-[46px] min-h-[46px] items-center gap-2 border-b border-hairline bg-white px-3 dark:border-white/[.07] dark:bg-[#0a1224] sm:px-[18px]">
+    <header className="app-topbar sticky top-0 z-header flex h-[46px] min-h-[46px] items-center gap-2 border-b border-hairline bg-white px-3 dark:border-white/[.07] dark:bg-[#0a1224] sm:px-[18px]">
       <button
         type="button"
         onClick={onOpenMobileMenu}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="app-sidebar"
         className="flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-600 hover:bg-primary-50 hover:text-primary-700 dark:text-slate-300 dark:hover:bg-white/[.07] lg:hidden"
-        aria-label="เปิดเมนู"
+        aria-label={mobileMenuOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>

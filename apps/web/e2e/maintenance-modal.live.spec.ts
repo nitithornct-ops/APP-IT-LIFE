@@ -67,8 +67,8 @@ test.afterAll(async () => {
   if (planId) await service.from('maintenance_plans').delete().eq('id', planId);
   if (assetId) await service.from('assets').delete().eq('id', assetId);
   if (userId) {
-    await service.from('audit_logs').delete().eq('actor_id', userId);
-    await service.from('login_logs').delete().eq('user_id', userId);
+    await service.from('profiles').update({ status: 'inactive' }).eq('id', userId);
+    await service.from('user_roles').delete().eq('user_id', userId);
     await service.auth.admin.deleteUser(userId);
   }
 });

@@ -84,7 +84,7 @@ Phase 1 (จะสร้างพร้อมเนื้อหาจริง�
 - **ทำไมไม่ผ่าน server** ผู้ใช้มักต้องแก้เอกสารที่ยังไม่ควรออกจากเครื่อง การประมวลผลในเบราว์เซอร์จึงเป็น
   ทางที่ปลอดภัยกว่า และไม่กิน quota ของ Workers/Storage
 - **ทำไมไม่มี permission** ไม่มีข้อมูลของระบบให้เข้าถึง จึงไม่มีสิทธิ์ใดให้ตรวจ route นี้อยู่ในรายการยกเว้น
-  ของ `App.routeGuards.test.tsx` พร้อมเหตุผล เหมือน `/system-status`
+  ของ `App.routeGuards.test.tsx` พร้อมเหตุผล ส่วน `/system-status` เป็นข้อมูลภายในและใช้ `system_status.view`
 - **การแบ่งชั้น** `pdfDocumentEngine.ts` เป็นตรรกะ PDF ล้วน (ทดสอบใน Node ได้) ส่วน `pdfBrowser.ts` และ
   `pdfThumbnails.ts` เป็นส่วนที่ต้องใช้ canvas/worker ของเบราว์เซอร์จริง
 - **ขนาด bundle** pdf-lib และ pdf.js ถูกโหลดแบบ lazy เฉพาะตอนเปิดหน้านี้ ไม่ติดไปกับ bundle หลัก

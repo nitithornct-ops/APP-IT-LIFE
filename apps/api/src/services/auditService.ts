@@ -122,6 +122,20 @@ export async function sha256Hex(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Detect a partially-applied audit hardening migration without hiding ordinary
+ * database outages or permission failures. This is used to keep the legacy
+ * audit trail usable while the additive integrity/archive schema catches up.
+ */
+export function isAuditHardeningSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  const code = typeof candidate.code === 'string' ? candidate.code : '';
+  const message = typeof candidate.message === 'string' ? candidate.message : '';
+  if (!['PGRST204', 'PGRST205', '42703', '42P01'].includes(code)) return false;
+  return /audit_activity_alerts|audit_log_archive|login_log_archive|audit_retention_policies|event_category|privileged_action|correlation_id|entry_hash|hash_algorithm|event_type/i.test(message);
+}
+
 /** คอลัมน์ที่เปลี่ยนทุกครั้งอยู่แล้ว ไม่ใช่สาระของการแก้ไข จึงไม่ต้องรกอยู่ในรายการ changes */
 const NOISE_COLUMNS = new Set(['updated_at', 'updated_by', 'created_at', 'created_by']);
 const SENSITIVE_AUDIT_KEY = /(?:password|passcode|token|secret|signature|signed_?url|storage_?path|file_?path|attachment|phone|e-?mail|employee_?code|full_?name|first_?name|last_?name|description|resolution|reason|notes?|body|comment|address|symptom|root_?cause)/i;
@@ -212,7 +226,7 @@ export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promis
       privilegedAction,
     });
     const entryHash = await sha256Hex(hashPayload);
-    const { error } = await supabase.from('audit_logs').insert({
+    const auditRow = {
       id,
       actor_id: entry.actorId ?? null,
       actor_email: entry.actorEmail ?? null,
@@ -232,10 +246,33 @@ export async function writeAuditLog(env: Bindings, entry: AuditLogEntry): Promis
       ip_address: entry.ipAddress ?? null,
       user_agent: entry.userAgent ?? null,
       created_at: createdAt,
-    });
+    };
+    const { error } = await supabase.from('audit_logs').insert(auditRow);
 
     if (error) {
-      throw new Error(error.message);
+      if (!isAuditHardeningSchemaError(error)) throw new Error(error.message);
+
+      // The core audit columns pre-date the hardening migration. Retry with
+      // that stable contract so a missing additive column never breaks the
+      // business mutation that was being audited.
+      const { error: legacyError } = await supabase.from('audit_logs').insert({
+        id: auditRow.id,
+        actor_id: auditRow.actor_id,
+        actor_email: auditRow.actor_email,
+        actor_role: auditRow.actor_role,
+        action: auditRow.action,
+        module: auditRow.module,
+        target_table: auditRow.target_table,
+        target_id: auditRow.target_id,
+        detail: auditRow.detail,
+        result: auditRow.result,
+        request_id: auditRow.request_id,
+        ip_address: auditRow.ip_address,
+        user_agent: auditRow.user_agent,
+        created_at: auditRow.created_at,
+      });
+      if (legacyError) throw new Error(legacyError.message);
+      console.warn(JSON.stringify({ msg: 'audit_log_hardening_schema_pending', requestId: entry.requestId ?? null }));
     }
   } catch (err) {
     console.error(JSON.stringify({ msg: 'audit_log_write_exception', error: String(err) }));

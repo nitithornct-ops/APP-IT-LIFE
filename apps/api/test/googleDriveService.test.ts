@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buddhistYearFolder,
+  fetchGoogleDocHtml,
+  googleDocIdFromSource,
   googleDriveConfig,
   resetGoogleDriveCaches,
   safeDriveName,
@@ -98,6 +100,18 @@ describe('googleDriveConfig', () => {
     expect(googleDriveConfig({ ...env, GOOGLE_DRIVE_FOLDER_ID: '   ' })).toBeNull();
     expect(googleDriveConfig(env)).toEqual({
       clientEmail: 'itlife@example.iam.gserviceaccount.com',
+      privateKey: privateKeyPem.trim(),
+      folderId: 'shared-drive-folder',
+    });
+  });
+  it('accepts the downloaded service-account JSON in either credential secret', () => {
+    const configured = googleDriveConfig({
+      ...env,
+      GOOGLE_SA_CLIENT_EMAIL: JSON.stringify({ client_email: env.GOOGLE_SA_CLIENT_EMAIL }),
+      GOOGLE_SA_PRIVATE_KEY: JSON.stringify({ private_key: privateKeyPem }),
+    });
+    expect(configured).toEqual({
+      clientEmail: env.GOOGLE_SA_CLIENT_EMAIL,
       privateKey: privateKeyPem.trim(),
       folderId: 'shared-drive-folder',
     });
@@ -212,6 +226,102 @@ describe('safeDriveName', () => {
     expect(safeDriveName('a/b\\c', 'export')).toBe('a b c');
     expect(safeDriveName('     ', 'export')).toBe('export');
     expect(safeDriveName('x'.repeat(200), 'export')).toHaveLength(150);
+  });
+});
+
+describe('fetchGoogleDocHtml', () => {
+  it('accepts a Docs URL and exports the document as HTML without downloading a local file', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: 'doc-access-token', expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) {
+        return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false, webViewLink: 'https://docs.google.com/document/d/doc-123456789/edit' });
+      }
+      if (url.includes('/export?mimeType=text%2Fhtml')) return new Response('<html><body><h1>Incident form</h1></body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    const result = await fetchGoogleDocHtml(env, 'https://docs.google.com/document/d/doc-123456789/edit', fetchMock);
+
+    expect(result).toEqual({
+      ok: true,
+      document: {
+        documentId: 'doc-123456789',
+        name: 'Incident form',
+        webViewLink: 'https://docs.google.com/document/d/doc-123456789/edit',
+        html: '<html><body><h1>Incident form</h1></body></html>',
+      },
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/export?mimeType=text%2Fhtml'))).toBe(true);
+  });
+
+  it('uses a downloaded service-account JSON when importing a document', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: 'doc-json-token', expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) {
+        return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      }
+      if (url.includes('/export?mimeType=text%2Fhtml')) return new Response('<html><body>ok</body></html>', { status: 200 });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    const result = await fetchGoogleDocHtml({
+      ...env,
+      GOOGLE_SA_CLIENT_EMAIL: JSON.stringify({ client_email: env.GOOGLE_SA_CLIENT_EMAIL }),
+      GOOGLE_SA_PRIVATE_KEY: JSON.stringify({ private_key: privateKeyPem }),
+    }, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts a raw document ID and rejects non-document or malformed sources', () => {
+    expect(googleDocIdFromSource('doc-123456789')).toBe('doc-123456789');
+    expect(googleDocIdFromSource('https://drive.google.com/open?id=doc-123456789')).toBe('doc-123456789');
+    expect(googleDocIdFromSource('https://example.com/document/d/doc-123456789')).toBeNull();
+    expect(googleDocIdFromSource('not an id')).toBeNull();
+  });
+
+  it('evicts a cached token when Google rejects document metadata with 401', async () => {
+    let metadataAttempts = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: `doc-token-${metadataAttempts + 1}`, expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) {
+        metadataAttempts += 1;
+        if (metadataAttempts === 1) return jsonResponse({ error: 'unauthorized' }, 401);
+        return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      }
+      if (url.includes('/export?mimeType=text%2Fhtml')) return new Response('<html><body>ok</body></html>', { status: 200 });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+    const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(2);
+  });
+
+  it('evicts a cached token when Google rejects document export with 401', async () => {
+    let exportAttempts = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return jsonResponse({ access_token: `doc-token-${exportAttempts + 1}`, expires_in: 3600 });
+      if (url.includes('/drive/v3/files/doc-123456789?')) return jsonResponse({ id: 'doc-123456789', name: 'Incident form', mimeType: 'application/vnd.google-apps.document', trashed: false });
+      if (url.includes('/export?mimeType=text%2Fhtml')) {
+        exportAttempts += 1;
+        if (exportAttempts === 1) return jsonResponse({ error: 'unauthorized' }, 401);
+        return new Response('<html><body>ok</body></html>', { status: 200 });
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+    const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => isTokenCall(url))).toHaveLength(2);
   });
 });
 

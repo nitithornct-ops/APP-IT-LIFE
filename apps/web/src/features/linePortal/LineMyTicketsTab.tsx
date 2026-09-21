@@ -31,7 +31,7 @@ export function LineMyTicketsTab({ tickets, filter, onFilterChange, onOpenTicket
 
   return (
     <div className="flex flex-col pb-4">
-      <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 px-4 pb-2 pt-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+      <header className="sticky top-0 z-header border-b border-hairline bg-white/95 px-4 pb-2 pt-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
         <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100">งานของฉัน</h1>
         <div className="-mx-1 mt-2 flex gap-1 overflow-x-auto" role="tablist" aria-label="กรองตามสถานะ">
           {FILTERS.map(({ key, label }) => (

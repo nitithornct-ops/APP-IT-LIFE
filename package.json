@@ -12,7 +12,10 @@
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "npm run dev --workspace=apps/api",
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "budget": "node scripts/check-build-budgets.mjs",
+    "test": "npm run test:scripts && npm run test --workspaces --if-present",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "test:coverage": "npm run test:scripts && npm run test:coverage --workspace=apps/api && npm run test:coverage --workspace=apps/web && npm run test --workspace=packages/migration && npm run test --workspace=packages/shared && npm run test --workspace=supabase",
     "test:e2e": "npm run test:e2e --workspace=apps/web",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -20,12 +23,14 @@
     "migration:gate": "node scripts/check-migration-gate.mjs",
     "staging:gate": "node scripts/verify-staging-e2e-run.mjs",
     "runtime:gate": "node scripts/check-runtime-gate.mjs",
+    "health:production": "node scripts/check-production-health.mjs",
     "actions:gate": "node scripts/check-action-pins.mjs",
     "predeploy": "node scripts/predeploy.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e && npm run audit:prod"
+    "verify": "npm run typecheck && npm run lint && npm run test:coverage && npm run build && npm run budget && npm run test:e2e && npm run audit:prod"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",

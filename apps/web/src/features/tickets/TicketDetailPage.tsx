@@ -147,6 +147,11 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
           ...values,
           assigneeId: values.assigneeId || undefined,
           minutesSpent: values.minutesSpent ? Number(values.minutesSpent) : undefined,
+          // These fields are only shown for waiting statuses. Do not send the
+          // empty select/date values for ordinary updates: the API accepts a
+          // UUID/date here, not an empty string.
+          waitingOwnerId: values.waitingOwnerId || undefined,
+          waitingFollowUpAt: values.waitingFollowUpAt || undefined,
         }),
       }),
     onSuccess: () => {

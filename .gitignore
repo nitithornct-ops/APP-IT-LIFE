@@ -38,6 +38,7 @@ production-evidence/
 
 # Test artifacts
 coverage/
+coverage-*/
 playwright-report/
 test-results/
 # wrangler ที่ staging-e2e ติดตั้งแยกไว้รัน dev server (ลบทิ้งได้ ติดตั้งใหม่ได้ตลอด)

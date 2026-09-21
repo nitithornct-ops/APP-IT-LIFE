@@ -63,17 +63,20 @@ test.afterAll(async () => {
   if (!service) return;
   await service.from('report_exports').delete().in('actor_id', userIds);
   await service.from('tickets').delete().in('created_by', userIds);
-  await service.from('audit_logs').delete().in('actor_id', userIds);
-  await service.from('login_logs').delete().in('user_id', userIds);
+  await service.from('profiles').update({ status: 'inactive' }).in('id', userIds);
+  await service.from('user_roles').delete().in('user_id', userIds);
   for (const id of userIds.reverse()) await service.auth.admin.deleteUser(id);
 });
 
 test('live API returns every standard report, enforces RBAC and records exports', async () => {
+  // ชุดนี้เรียกรายงานทั้งเจ็ดชุดพร้อม export CSV/print ต่อกับฐานข้อมูลจริง
+  // บน CI จึงเกิน 30s ของ Playwright ได้ตามปริมาณข้อมูลจริง (แบบเดียวกับ governance.live)
+  test.setTimeout(90_000);
   const adminToken = await token(emails.admin);
   const userToken = await token(emails.user);
   const overview = await api<{ definitions: Array<{ key: string }> }>(adminToken, '/reports?rangeDays=30');
   expect(overview.definitions.map((item) => item.key)).toEqual([
-    'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'security-resilience', 'governance-compliance',
+    'service-desk', 'requests-workflows', 'assets-operations', 'asset-custody', 'asset-verification', 'security-resilience', 'governance-compliance',
   ]);
   for (const definition of overview.definitions) {
     const report = await api<{ definition: { key: string }; rows: unknown[] }>(adminToken, `/reports/${definition.key}?rangeDays=30`);

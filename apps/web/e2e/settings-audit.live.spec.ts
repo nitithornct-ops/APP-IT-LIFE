@@ -67,21 +67,21 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!service) return;
   const restore = await service.from('system_settings').update({ value: originalOrgName, updated_by: null }).eq('key', 'ORG_NAME');
-  const auditCleanup = await service.from('audit_logs').delete().in('actor_id', userIds);
-  const loginCleanup = await service.from('login_logs').delete().in('email_attempted', Object.values(emails));
-  if (restore.error || auditCleanup.error || loginCleanup.error) throw restore.error ?? auditCleanup.error ?? loginCleanup.error;
+  if (restore.error) throw restore.error;
+  const deactivate = await service.from('profiles').update({ status: 'inactive' }).in('id', userIds);
+  if (deactivate.error) throw deactivate.error;
+  const removeRoles = await service.from('user_roles').delete().in('user_id', userIds);
+  if (removeRoles.error) throw removeRoles.error;
   for (const id of userIds.reverse()) {
     const { error } = await service.auth.admin.deleteUser(id);
     if (error) throw error;
   }
-  const [setting, auditRows, loginRows, authUsers] = await Promise.all([
+  const [setting, authUsers] = await Promise.all([
     service.from('system_settings').select('value').eq('key', 'ORG_NAME').single(),
-    service.from('audit_logs').select('id', { count: 'exact', head: true }).in('actor_id', userIds),
-    service.from('login_logs').select('id', { count: 'exact', head: true }).in('email_attempted', Object.values(emails)),
     service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
-  if (setting.error || auditRows.error || loginRows.error || authUsers.error) throw setting.error ?? auditRows.error ?? loginRows.error ?? authUsers.error;
-  if (setting.data.value !== originalOrgName || auditRows.count !== 0 || loginRows.count !== 0 || authUsers.data.users.some((user) => Object.values(emails).includes(user.email ?? ''))) {
+  if (setting.error || authUsers.error) throw setting.error ?? authUsers.error;
+  if (setting.data.value !== originalOrgName || authUsers.data.users.some((user) => Object.values(emails).includes(user.email ?? ''))) {
     throw new Error('Module 22 live cleanup verification failed');
   }
 });
@@ -99,7 +99,6 @@ test('live API enforces Settings and Audit role boundaries', async () => {
   // Shared staging may be one migration behind a PR. Migration tests own the
   // exact key set; this live test verifies API shape, uniqueness and RBAC.
   expect(new Set(settingKeys).size).toBe(settingKeys.length);
-  expect(settingsData.settings.length).toBeGreaterThanOrEqual(51);
   expect(settingsData.notices.secretsStoredHere).toBe(false);
 
   const update = await request(adminToken, '/settings/ORG_NAME', { method: 'PATCH', body: JSON.stringify({ value: `LIFE Module 22 API ${runId}` }) });

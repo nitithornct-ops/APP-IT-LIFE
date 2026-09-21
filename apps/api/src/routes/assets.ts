@@ -108,7 +108,7 @@ const ASSET_SELECT =
   'department_id, owner_employee_id, patch_status, patch_date, criticality, status, lifecycle_status, qr_code_url, ' +
   'last_audit_date, audit_status, loan_date, loan_due_date, notes, remark, created_at, updated_at, ' +
   'category:asset_categories(id, name, code_prefix), department:departments(id, name_th), ' +
-  'vendor:vendors(id, vendor_code, name, status), contract:contracts(id, contract_number, name, status, end_date), ' +
+  'vendor:vendors(id, vendor_code, name, status), contract:contracts!assets_contract_id_fkey(id, contract_number, name, status, end_date), ' +
   'owner:employees(id, employee_code, first_name_th, last_name_th, nickname), ' +
   'model_catalog:asset_model_catalog(id, model_code, name, asset_type, brand, model, default_useful_life_years, default_warranty_months, depreciation_method, default_cost_center, specs, status, notes)';
 

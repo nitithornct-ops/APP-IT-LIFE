@@ -30,7 +30,7 @@ export function LineKnowledgeTab() {
 
   return (
     <div className="flex flex-col pb-4">
-      <header className="sticky top-0 z-20 border-b border-hairline bg-white/95 px-4 pb-3 pt-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+      <header className="sticky top-0 z-header border-b border-hairline bg-white/95 px-4 pb-3 pt-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
         <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100">วิธีแก้เบื้องต้น</h1>
         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">ลองแก้ด้วยตัวเองก่อนแจ้งซ่อม</p>
       </header>

@@ -24,7 +24,13 @@ export function MfaChallengePage() {
   const userId = session?.user.id ?? null;
 
   useEffect(() => {
-    if (!userId) return;
+    // Visiting /mfa directly must never create an Authenticator factor for an
+    // account whose MFA switch is off. Enrollment is only valid for an
+    // enforced challenge or an explicit setup request from the profile page.
+    if (!userId || (!mfaRequired && !setupMode)) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const { data, error: factorsError } = await supabase.auth.mfa.listFactors();
@@ -57,7 +63,7 @@ export function MfaChallengePage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [mfaRequired, setupMode, userId]);
 
   if (!isSessionLoading && !session) return <Navigate to="/login" replace />;
   if (!isSessionLoading && session && !mfaRequired && !setupMode && !loading) return <Navigate to={redirectTo} replace />;
@@ -76,6 +82,15 @@ export function MfaChallengePage() {
       setCode('');
       setSubmitting(false);
       return;
+    }
+    if (setupMode) {
+      try {
+        await apiFetch('/api/v1/auth/mfa/enable', { method: 'POST' }, { silent: true });
+      } catch {
+        setError('ยืนยัน MFA สำเร็จแล้ว แต่เปิดใช้งาน MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        setSubmitting(false);
+        return;
+      }
     }
     await refreshMfa();
     try {

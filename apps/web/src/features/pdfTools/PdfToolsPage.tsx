@@ -12,7 +12,7 @@ import {
   Undo2,
   Upload,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -41,6 +41,8 @@ import {
 } from './pdfStamps';
 import { thumbnailKey, usePdfWorkspace } from './usePdfWorkspace';
 
+const PdfFormEditor = lazy(() => import('./PdfFormEditor').then((module) => ({ default: module.PdfFormEditor })));
+
 /**
  * เครื่องมือจัดการ PDF — รวม แยก จัดเรียง หมุน ลบหน้า แปลงรูปเป็น PDF และใส่ลายน้ำ/เลขหน้า
  *
@@ -48,12 +50,13 @@ import { thumbnailKey, usePdfWorkspace } from './usePdfWorkspace';
  * จึงใช้กับเอกสารที่ยังไม่ควรออกจากเครื่องได้ และเป็นเหตุผลที่หน้านี้ไม่ผูกกับ permission ของโมดูลใด
  */
 
-type ToolTab = 'organize' | 'stamp' | 'split';
+type ToolTab = 'organize' | 'stamp' | 'split' | 'editor';
 
 const TABS: { key: ToolTab; label: string }[] = [
   { key: 'organize', label: 'จัดการหน้า' },
   { key: 'stamp', label: 'ลายน้ำและเลขหน้า' },
   { key: 'split', label: 'แยกไฟล์' },
+  { key: 'editor', label: 'แก้ไขแบบฟอร์มในระบบ' },
 ];
 
 const LABEL_POSITIONS: { value: StampPosition; label: string }[] = [
@@ -88,6 +91,7 @@ export function PdfToolsPage() {
   const { pages, sources } = workspace;
 
   const [tab, setTab] = useState<ToolTab>('organize');
+  const [editorMounted, setEditorMounted] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
   const [pageLabel, setPageLabel] = useState(DEFAULT_PAGE_LABEL);
@@ -100,6 +104,10 @@ export function PdfToolsPage() {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (tab === 'editor') setEditorMounted(true);
+  }, [tab]);
 
   // หน้าที่ถูกลบไปแล้วต้องหลุดจากรายการที่เลือกด้วย ไม่งั้นปุ่ม "บันทึกเฉพาะที่เลือก" จะนับเกินจริง
   useEffect(() => {
@@ -240,9 +248,11 @@ export function PdfToolsPage() {
           </Button>
         }
         primaryAction={
-          <Button onClick={() => void exportPages(pages, 'แก้ไขแล้ว')} disabled={pages.length === 0} isLoading={isBusy}>
-            <Download className="h-4 w-4" aria-hidden="true" /> บันทึก PDF
-          </Button>
+          tab === 'editor' ? undefined : (
+            <Button onClick={() => void exportPages(pages, 'แก้ไขแล้ว')} disabled={pages.length === 0} isLoading={isBusy}>
+              <Download className="h-4 w-4" aria-hidden="true" /> บันทึก PDF
+            </Button>
+          )
         }
       />
 
@@ -686,6 +696,22 @@ export function PdfToolsPage() {
                 </div>
               </CardBody>
             </Card>
+          )}
+
+          {editorMounted && (
+            <Suspense
+              fallback={
+                <Card id="pdf-panel-editor" role="tabpanel" aria-labelledby="pdf-tab-editor">
+                  <CardBody className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                    กำลังเตรียมตัวแก้แบบฟอร์ม…
+                  </CardBody>
+                </Card>
+              }
+            >
+              <div className={tab === 'editor' ? 'block' : 'hidden'} aria-hidden={tab !== 'editor'}>
+                <PdfFormEditor sources={sources} pages={pages} filename={baseName} />
+              </div>
+            </Suspense>
           )}
         </section>
       )}

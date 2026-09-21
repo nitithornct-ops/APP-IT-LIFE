@@ -21,20 +21,9 @@ on:
         description: "fresh-start เท่านั้น: พิมพ์ NO-LEGACY-DATA เพื่อประกาศว่ารุ่นนี้ไม่นำเข้าข้อมูลเดิม"
         required: false
         default: NO-LEGACY-DATA
-      staging_e2e_mode:
-        description: verified = อ้างอิง run ที่ผ่านจริง / deferred = staging ยังตั้งค่าไม่เสร็จ ปล่อยโดยไม่มีหลักฐาน
-        required: true
-        type: choice
-        options:
-          - verified
-          - deferred
-        default: verified
       staging_e2e_run_ref:
-        description: "verified เท่านั้น: Successful Staging Live E2E run URL/ID for this exact master commit"
-        required: false
-      staging_e2e_defer_confirm:
-        description: "deferred เท่านั้น: พิมพ์ NO-STAGING-EVIDENCE เพื่อรับว่ารุ่นนี้ขึ้นโดยไม่มีหลักฐาน E2E"
-        required: false
+        description: "Successful Staging Live E2E run URL/ID for this exact master commit"
+        required: true
       attachments_approved:
         description: All attachment migration exceptions were reviewed (ไม่มีผลในโหมด fresh-start)
         required: true
@@ -61,8 +50,7 @@ jobs:
       FRESH_START_CONFIRM: ${{ inputs.fresh_start_confirm }}
       STAGING_E2E_APPROVAL_REF: ${{ inputs.staging_e2e_run_ref }}
       STAGING_E2E_RUN_REF: ${{ inputs.staging_e2e_run_ref }}
-      STAGING_E2E_MODE: ${{ inputs.staging_e2e_mode }}
-      STAGING_E2E_DEFER_CONFIRM: ${{ inputs.staging_e2e_defer_confirm }}
+      STAGING_E2E_MODE: verified
       MIGRATION_ATTACHMENTS_APPROVED: ${{ inputs.attachments_approved }}
       PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
@@ -110,9 +98,10 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
-          npm run test
+          npm run test:coverage
           npm run audit:prod
           npm run build
+          npm run budget
       - name: Apply reviewed database migrations
         run: |
           npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
@@ -151,8 +140,5 @@ jobs:
         run: npm run build --workspace=apps/web
       - name: Deploy web
         run: npx wrangler pages deploy apps/web/dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch master
-      - name: Post-deploy smoke checks
-        shell: bash
-        run: |
-          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_API_URL/api/v1/health"
-          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_WEB_URL/login"
+      - name: Post-deploy health and SLO checks
+        run: npm run health:production

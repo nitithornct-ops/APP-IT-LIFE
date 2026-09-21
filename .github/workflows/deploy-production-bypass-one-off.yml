@@ -1,0 +1,132 @@
+name: Deploy Production Bypass (one-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to confirm the production cutover
+        required: true
+      bypass_confirmation:
+        description: Type BYPASS-PRODUCTION-GATE to confirm the approved bypass
+        required: true
+      release_note:
+        description: Short release note for the audit trail
+        required: true
+      release_sha:
+        description: Exact approved application release SHA
+        required: true
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      PRODUCTION_DEPLOY_CONFIRM: ${{ inputs.confirmation }}
+      PRODUCTION_BYPASS_CONFIRM: ${{ inputs.bypass_confirmation }}
+      PRODUCTION_RELEASE_NOTE: ${{ inputs.release_note }}
+      APPROVED_RELEASE_SHA: ef22e1c7f4c4b9fa002a6e8a898afab477d1a8fe
+      PRODUCTION_RELEASE_SHA: ${{ inputs.release_sha }}
+      MIGRATION_APPROVAL_REF: CHAT-APPROVED-BYPASS-20260915
+      STAGING_E2E_MODE: deferred
+      STAGING_E2E_DEFER_CONFIRM: NO-STAGING-EVIDENCE
+      PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+      VITE_API_BASE_URL: ${{ vars.PRODUCTION_API_URL }}
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      ALLOWED_ORIGINS: ${{ vars.PRODUCTION_WEB_URL }}
+      PUBLIC_APP_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LINE_LOGIN_ENABLED: ${{ vars.LINE_LOGIN_ENABLED }}
+      LINE_LOGIN_CHANNEL_ID: ${{ secrets.LINE_LOGIN_CHANNEL_ID }}
+      LINE_LOGIN_CHANNEL_SECRET: ${{ secrets.LINE_LOGIN_CHANNEL_SECRET }}
+      LINE_LOGIN_CALLBACK_URL: ${{ vars.LINE_LOGIN_CALLBACK_URL }}
+      LINE_SESSION_SECRET: ${{ secrets.LINE_SESSION_SECRET }}
+      NOTIFY_LINE_ENABLED: ${{ vars.NOTIFY_LINE_ENABLED }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_DEFAULT_TO: ${{ secrets.LINE_DEFAULT_TO }}
+      GOOGLE_DRIVE_ENABLED: ${{ vars.GOOGLE_DRIVE_ENABLED }}
+      GOOGLE_SA_CLIENT_EMAIL: ${{ secrets.GOOGLE_SA_CLIENT_EMAIL }}
+      GOOGLE_SA_PRIVATE_KEY: ${{ secrets.GOOGLE_SA_PRIVATE_KEY }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Reconfirm approved production bypass
+        shell: bash
+        run: |
+          test "$PRODUCTION_DEPLOY_CONFIRM" = "DEPLOY"
+          test "$PRODUCTION_BYPASS_CONFIRM" = "BYPASS-PRODUCTION-GATE"
+          test -n "$PRODUCTION_RELEASE_NOTE"
+          test "$GITHUB_REF" = "refs/heads/master"
+          test "$PRODUCTION_RELEASE_SHA" = "$APPROVED_RELEASE_SHA"
+          test "$(git rev-parse HEAD)" = "$APPROVED_RELEASE_SHA"
+      - run: npm ci
+      - name: Validate production configuration
+        run: npm run predeploy
+      - name: Verify release candidate
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test
+          npm run audit:prod
+          npm run build
+      - name: Verify current production schema and Auth configuration
+        run: npm run runtime:gate
+      - name: Synchronize Worker secrets
+        shell: bash
+        run: |
+          printf '%s' "$SUPABASE_URL" | npx wrangler secret put SUPABASE_URL --env production --cwd apps/api
+          printf '%s' "$SUPABASE_ANON_KEY" | npx wrangler secret put SUPABASE_ANON_KEY --env production --cwd apps/api
+          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production --cwd apps/api
+          printf '%s' "$ALLOWED_ORIGINS" | npx wrangler secret put ALLOWED_ORIGINS --env production --cwd apps/api
+          printf '%s' "$PUBLIC_APP_URL" | npx wrangler secret put PUBLIC_APP_URL --env production --cwd apps/api
+          printf '%s' "${LINE_LOGIN_ENABLED:-false}" | npx wrangler secret put LINE_LOGIN_ENABLED --env production --cwd apps/api
+          printf '%s' "${NOTIFY_LINE_ENABLED:-false}" | npx wrangler secret put NOTIFY_LINE_ENABLED --env production --cwd apps/api
+          if [ "${LINE_LOGIN_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$LINE_LOGIN_CHANNEL_ID" | npx wrangler secret put LINE_LOGIN_CHANNEL_ID --env production --cwd apps/api
+            printf '%s' "$LINE_LOGIN_CHANNEL_SECRET" | npx wrangler secret put LINE_LOGIN_CHANNEL_SECRET --env production --cwd apps/api
+            printf '%s' "$LINE_LOGIN_CALLBACK_URL" | npx wrangler secret put LINE_LOGIN_CALLBACK_URL --env production --cwd apps/api
+            printf '%s' "$LINE_SESSION_SECRET" | npx wrangler secret put LINE_SESSION_SECRET --env production --cwd apps/api
+          fi
+          if [ "${NOTIFY_LINE_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$LINE_CHANNEL_ACCESS_TOKEN" | npx wrangler secret put LINE_CHANNEL_ACCESS_TOKEN --env production --cwd apps/api
+            printf '%s' "$LINE_DEFAULT_TO" | npx wrangler secret put LINE_DEFAULT_TO --env production --cwd apps/api
+          fi
+          printf '%s' "${GOOGLE_DRIVE_ENABLED:-false}" | npx wrangler secret put GOOGLE_DRIVE_ENABLED --env production --cwd apps/api
+          if [ "${GOOGLE_DRIVE_ENABLED:-false}" = "true" ]; then
+            printf '%s' "$GOOGLE_SA_CLIENT_EMAIL" | npx wrangler secret put GOOGLE_SA_CLIENT_EMAIL --env production --cwd apps/api
+            printf '%s' "$GOOGLE_SA_PRIVATE_KEY" | npx wrangler secret put GOOGLE_SA_PRIVATE_KEY --env production --cwd apps/api
+            printf '%s' "$GOOGLE_DRIVE_FOLDER_ID" | npx wrangler secret put GOOGLE_DRIVE_FOLDER_ID --env production --cwd apps/api
+          fi
+      - name: Deploy API
+        run: npx wrangler deploy --env production --cwd apps/api
+      - name: Build web with production public configuration
+        run: npm run build --workspace=apps/web
+      - name: Deploy web
+        run: npx wrangler pages deploy apps/web/dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch master
+      - name: Post-deploy production smoke checks
+        shell: bash
+        run: |
+          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_API_URL/api/v1/health"
+          curl --fail --retry 5 --retry-all-errors "$PRODUCTION_WEB_URL/login"

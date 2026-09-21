@@ -1,0 +1,70 @@
+name: Production Health Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+concurrency:
+  group: production-health-monitor
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+      PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+      # vars ไม่ถูกส่งเข้า process.env เอง ถ้าไม่ map ไว้ ค่า override ที่เอกสารบอกไว้จะไม่มีผลเลย
+      # ค่าว่างไม่เป็นปัญหา เพราะ productionHealthConfig() ตกกลับไปใช้ค่าเริ่มต้นเมื่อแปลงเป็นตัวเลขไม่ได้
+      SLO_WEB_MAX_MS: ${{ vars.SLO_WEB_MAX_MS }}
+      SLO_API_LIVE_MAX_MS: ${{ vars.SLO_API_LIVE_MAX_MS }}
+      SLO_API_READY_MAX_MS: ${{ vars.SLO_API_READY_MAX_MS }}
+      SLO_DATABASE_MAX_MS: ${{ vars.SLO_DATABASE_MAX_MS }}
+      HEALTHCHECK_ATTEMPTS: ${{ vars.HEALTHCHECK_ATTEMPTS }}
+      HEALTHCHECK_TIMEOUT_MS: ${{ vars.HEALTHCHECK_TIMEOUT_MS }}
+      HEALTH_ISSUE_TITLE: '[monitor] Production health check failed'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Check production health and SLOs
+        id: health
+        continue-on-error: true
+        run: node scripts/check-production-health.mjs
+
+      - name: Open or update the health incident
+        if: steps.health.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          issue_number=$(gh issue list --state open --search "\"$HEALTH_ISSUE_TITLE\" in:title" --json number --limit 1 --jq '.[0].number')
+          body="Scheduled production health check failed at $(date -u +'%Y-%m-%dT%H:%M:%SZ'). [Open the workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for the failing endpoint and SLO evidence."
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$HEALTH_ISSUE_TITLE" --body "$body"
+          fi
+
+      - name: Close the health incident after recovery
+        if: steps.health.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          issue_number=$(gh issue list --state open --search "\"$HEALTH_ISSUE_TITLE\" in:title" --json number --limit 1 --jq '.[0].number')
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" --comment "Production health checks recovered at $(date -u +'%Y-%m-%dT%H:%M:%SZ')."
+          fi
+
+      - name: Fail the workflow when production is unhealthy
+        if: steps.health.outcome == 'failure'
+        run: exit 1

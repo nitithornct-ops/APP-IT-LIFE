@@ -64,19 +64,21 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (!service || !formTicketId) return;
-  const { data: ticket } = await service
-    .from('tickets')
-    .select('signature_storage_path')
-    .eq('id', formTicketId)
-    .maybeSingle();
-  if (ticket?.signature_storage_path) {
-    await service.storage.from('ticket-signatures').remove([String(ticket.signature_storage_path)]);
+  if (!service) return;
+  if (formTicketId) {
+    const { data: ticket } = await service
+      .from('tickets')
+      .select('signature_storage_path')
+      .eq('id', formTicketId)
+      .maybeSingle();
+    if (ticket?.signature_storage_path) {
+      await service.storage.from('ticket-signatures').remove([String(ticket.signature_storage_path)]);
+    }
+    await service.from('tickets').delete().eq('id', formTicketId);
   }
-  await service.from('tickets').delete().eq('id', formTicketId);
   if (adminUserId) {
-    await service.from('audit_logs').delete().eq('actor_id', adminUserId);
-    await service.from('login_logs').delete().eq('user_id', adminUserId);
+    await service.from('profiles').update({ status: 'inactive' }).eq('id', adminUserId);
+    await service.from('user_roles').delete().eq('user_id', adminUserId);
     await service.auth.admin.deleteUser(adminUserId);
   }
 });
@@ -121,7 +123,9 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-list-action.png'), fullPage: true });
 
   await page.goto(`/tickets/${formTicketId}/form`);
-  await expect(page.getByTestId('ticket-form-page')).toContainText(formTicketNo);
-  await expectImageLoaded(page.getByAltText('ลายเซ็นรับรอง Ticket'));
+  // หน้าแบบฟอร์มขึ้น spinner ไว้ก่อนจนกว่าจะโหลด Ticket จากฐานข้อมูลจริงเสร็จ
+  // บน CI จังหวะนี้เกิน 5 วินาทีเริ่มต้นได้ จึงรอเท่ากับจังหวะอื่นของไฟล์นี้
+  await expect(page.getByTestId('ticket-form-page')).toContainText(formTicketNo, { timeout: 20_000 });
+  await expectImageLoaded(page.locator('img[data-field="it_signature"]').first());
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-automatic-preview.png'), fullPage: true });
 });

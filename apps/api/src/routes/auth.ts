@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createAdminClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth, requireSession } from '../middleware/auth';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
-import { writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { writeLoginLog } from '../services/loginLogService';
 import { loadMfaPolicy } from '../services/mfaPolicy';
 import type { AppEnv } from '../types';
@@ -44,6 +44,45 @@ authRoute.get('/mfa-policy', requireSession, async (c) => {
   } catch {
     return c.json(fail(c.get('requestId'), 'MFA_POLICY_UNAVAILABLE', 'ตรวจสอบนโยบาย MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
   }
+});
+
+/** Mark MFA as enabled only after Supabase has verified the caller's TOTP factor. */
+authRoute.post('/mfa/enable', requireSession, async (c) => {
+  const reqId = c.get('requestId');
+  const userId = c.get('userId');
+
+  if (c.get('authAal') !== 'aal2' || !c.get('hasVerifiedMfa')) {
+    return c.json(fail(reqId, 'MFA_VERIFICATION_REQUIRED', 'กรุณายืนยันรหัส MFA ให้สำเร็จก่อนเปิดใช้งาน MFA'), 403);
+  }
+
+  const admin = createAdminClient(c.env);
+  const auditBefore = await loadAuditSnapshot(admin, 'profiles', userId);
+  if (!auditBefore) return c.json(fail(reqId, 'PROFILE_NOT_FOUND', 'ไม่พบข้อมูลผู้ใช้งาน'), 404);
+
+  const { data: updated, error } = await admin
+    .from('profiles')
+    .update({ mfa_enabled: true, updated_by: userId })
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle();
+  if (error || !updated) return dbFailJson(c, 'MFA_ENABLE_FAILED', error, 'เปิดใช้งาน MFA ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+
+  if (auditBefore.mfa_enabled !== true) {
+    await writeAuditLog(c.env, {
+      actorId: userId,
+      actorEmail: c.get('userEmail'),
+      action: 'ENABLE_MFA',
+      module: 'auth',
+      targetTable: 'profiles',
+      targetId: userId,
+      detail: { source: 'self_enrollment' },
+      requestId: reqId,
+      before: auditBefore,
+      after: updated,
+    });
+  }
+
+  return c.json(ok(reqId, { enabled: updated.mfa_enabled === true }));
 });
 
 /** ข้อมูลผู้ใช้ปัจจุบัน + บทบาท + สิทธิ์ที่ resolve แล้ว — Frontend ใช้ผลลัพธ์นี้ทำ Permission-aware Menu */
@@ -327,13 +366,26 @@ authRoute.post(
  *  - success = false ยังไม่มี Session จึงยอมให้เรียกโดยไม่ต้อง Login แต่บันทึกเป็น
  *               "ความพยายามที่ Client รายงาน" เท่านั้น (user_id เป็น null เสมอ) และค่าที่บันทึกคือสิ่งที่
  *               ผู้ใช้พิมพ์จริง ซึ่งเป็นชื่อผู้ใช้ก็ได้ ไม่ใช่อีเมลเสมอไป
- * ทั้งสองกรณีจำกัดด้วย Rate Limit ต่อ IP (edge + isolate)
+ * ทั้งสองกรณีจำกัดด้วย Rate Limit ต่อ IP: ความพยายามที่ไม่สำเร็จใช้เพดานต่ำกว่า
+ * ส่วน success=true ผ่าน Session แล้ว จึงรองรับการเข้าสู่ระบบพร้อมกันของสำนักงานได้มากขึ้น
  */
 authRoute.post(
   '/login-log',
-  edgeRateLimit({ keyFn: (c) => `login-log:${clientIp(c)}` }),
-  rateLimit({ windowMs: 60_000, max: 10, keyFn: (c) => `login-log:${clientIp(c)}` }),
   zValidator('json', loginLogSchema, zodValidationHook),
+  edgeRateLimit({
+    keyFn: (c) => {
+      const success = (c.req.valid('json' as never) as { success?: boolean }).success === true;
+      return `login-log:${success ? 'success' : 'failure'}:${clientIp(c)}`;
+    },
+  }),
+  rateLimit({
+    windowMs: 60_000,
+    max: (c) => (c.req.valid('json' as never) as { success?: boolean }).success ? 60 : 10,
+    keyFn: (c) => {
+      const success = (c.req.valid('json' as never) as { success?: boolean }).success === true;
+      return `login-log:${success ? 'success' : 'failure'}:${clientIp(c)}`;
+    },
+  }),
   async (c) => {
     const reqId = c.get('requestId');
     const body = c.req.valid('json');

@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
-import { auditHashPayload, sanitizeAuditData, sha256Hex, writeAuditLog, type AuditEventCategory } from '../services/auditService';
+import { auditHashPayload, isAuditHardeningSchemaError, sanitizeAuditData, sha256Hex, writeAuditLog, type AuditEventCategory } from '../services/auditService';
 import { loginHashPayload, type LoginLogEntry } from '../services/loginLogService';
 import type { AppEnv } from '../types';
 import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
@@ -42,11 +42,11 @@ function packageMonthBounds(month: string): { from: string; to: string } {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-async function fetchAllRows<T>(createQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+async function fetchAllRows<T>(createQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { code?: string; message: string } | null }>): Promise<T[]> {
   const rows: T[] = [];
   for (let offset = 0; ; offset += PAGE_BATCH_SIZE) {
     const { data, error } = await createQuery(offset, offset + PAGE_BATCH_SIZE - 1);
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     const page = data ?? [];
     rows.push(...page);
     if (page.length < PAGE_BATCH_SIZE) return rows;
@@ -87,7 +87,10 @@ const LOGIN_EXPORT_COLUMNS: ExportColumn<Record<string, unknown>>[] = [
 auditLogsRoute.get('/overview', requirePermission('audit.view'), zValidator('query', auditOverviewQuerySchema, zodValidationHook), async (c) => {
   const requestId = c.get('requestId');
   const since = new Date(Date.now() - c.req.valid('query').days * 86_400_000).toISOString();
-  const supabase = c.get('supabase');
+  // Permission has already been checked above. These seven aggregate reads
+  // are over immutable evidence and should not repeatedly evaluate the RLS
+  // policy for every historical row when the audit page is opened under load.
+  const supabase = createAdminClient(c.env);
   const [audit, denied, failedActions, logins, failedLogins, privilegedActions, openAlerts] = await Promise.all([
     supabase.from('audit_logs').select('id', { count: 'exact', head: true }).gte('created_at', since),
     supabase.from('audit_logs').select('id', { count: 'exact', head: true }).gte('created_at', since).eq('result', 'denied'),
@@ -97,8 +100,12 @@ auditLogsRoute.get('/overview', requirePermission('audit.view'), zValidator('que
     supabase.from('audit_logs').select('id', { count: 'exact', head: true }).gte('created_at', since).eq('privileged_action', true),
     supabase.from('audit_activity_alerts').select('id', { count: 'exact', head: true }).eq('status', 'OPEN'),
   ]);
-  const error = [audit, denied, failedActions, logins, failedLogins, privilegedActions, openAlerts].find((result) => result.error)?.error;
-  if (error) return dbFailJson(c, 'AUDIT_OVERVIEW_FAILED', error);
+  const coreError = [audit, denied, failedActions, logins, failedLogins].find((result) => result.error)?.error;
+  if (coreError) return dbFailJson(c, 'AUDIT_OVERVIEW_FAILED', coreError, 'โหลดสรุป Audit Log ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  const hardeningError = [privilegedActions, openAlerts].find((result) => result.error)?.error;
+  if (hardeningError && !isAuditHardeningSchemaError(hardeningError)) {
+    return dbFailJson(c, 'AUDIT_OVERVIEW_FAILED', hardeningError, 'โหลดสรุป Audit Log ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  }
   return c.json(ok(requestId, {
     days: c.req.valid('query').days,
     auditTotal: audit.count ?? 0,
@@ -106,8 +113,8 @@ auditLogsRoute.get('/overview', requirePermission('audit.view'), zValidator('que
     failedActions: failedActions.count ?? 0,
     loginTotal: logins.count ?? 0,
     failedLogins: failedLogins.count ?? 0,
-    privilegedActions: privilegedActions.count ?? 0,
-    openAlerts: openAlerts.count ?? 0,
+    privilegedActions: privilegedActions.error ? 0 : privilegedActions.count ?? 0,
+    openAlerts: openAlerts.error ? 0 : openAlerts.count ?? 0,
   }));
 });
 
@@ -184,7 +191,10 @@ auditLogsRoute.get('/login-logs/export', requirePermission('audit.view'), zValid
 auditLogsRoute.get('/login-logs', requirePermission('audit.view'), zValidator('query', listLoginLogsQuerySchema, zodValidationHook), async (c) => {
   const requestId = c.get('requestId');
   const { page, pageSize, email, success, eventType, from, to } = c.req.valid('query');
-  let query = c.get('supabase').from('login_logs').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));
+  // Permission has already been checked above. Use the admin client for this
+  // immutable, permission-gated evidence read so the query does not evaluate
+  // the audit.view RLS policy once per historical row under load.
+  let query = createAdminClient(c.env).from('login_logs').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));
   if (email) query = query.ilike('email_attempted', `%${email}%`);
   if (success !== undefined) query = query.eq('success', success);
   if (eventType) query = query.eq('event_type', eventType);
@@ -210,13 +220,21 @@ auditLogsRoute.get('/controls', requirePermission('audit.view'), async (c) => {
     admin.from('login_logs').select('id', { count: 'exact', head: true }),
   ]);
   const error = [policy, auditArchive, loginArchive, alerts, openAlertCount, auditHash, loginHash, auditTotal, loginTotal].find((result) => result.error)?.error;
-  if (error) return dbFailJson(c, 'AUDIT_CONTROLS_LOAD_FAILED', error);
+  if (error && !isAuditHardeningSchemaError(error)) {
+    return dbFailJson(c, 'AUDIT_CONTROLS_LOAD_FAILED', error, 'โหลด Audit Controls ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  }
   return c.json(ok(reqId, {
-    retention: policy.data,
-    archive: { auditRows: auditArchive.count ?? 0, loginRows: loginArchive.count ?? 0 },
-    integrity: { auditHashed: auditHash.count ?? 0, auditTotal: auditTotal.count ?? 0, loginHashed: loginHash.count ?? 0, loginTotal: loginTotal.count ?? 0 },
-    openAlertCount: openAlertCount.count ?? 0,
-    alerts: alerts.data ?? [],
+    available: !error,
+    retention: policy.error ? null : policy.data,
+    archive: { auditRows: auditArchive.error ? 0 : auditArchive.count ?? 0, loginRows: loginArchive.error ? 0 : loginArchive.count ?? 0 },
+    integrity: {
+      auditHashed: auditHash.error ? 0 : auditHash.count ?? 0,
+      auditTotal: auditTotal.error ? 0 : auditTotal.count ?? 0,
+      loginHashed: loginHash.error ? 0 : loginHash.count ?? 0,
+      loginTotal: loginTotal.error ? 0 : loginTotal.count ?? 0,
+    },
+    openAlertCount: openAlertCount.error ? 0 : openAlertCount.count ?? 0,
+    alerts: alerts.error ? [] : alerts.data ?? [],
   }));
 });
 
@@ -312,6 +330,9 @@ auditLogsRoute.get('/integrity', requirePermission('audit_management.verify'), z
     }));
   } catch (error) {
     console.error(JSON.stringify({ requestId: reqId, code: 'AUDIT_INTEGRITY_FAILED', error: String(error) }));
+    if (isAuditHardeningSchemaError(error)) {
+      return c.json(fail(reqId, 'AUDIT_INTEGRITY_NOT_READY', 'การตรวจสอบความถูกต้องของ Audit Log ยังไม่พร้อม กรุณาใช้ migration ล่าสุดก่อน'), 503);
+    }
     return c.json(fail(reqId, 'AUDIT_INTEGRITY_FAILED', 'Unable to verify audit evidence integrity'), 500);
   }
 });
@@ -372,7 +393,10 @@ auditLogsRoute.post('/archive', requirePermission('audit_management.manage'), zV
 
 /** Read-only list. Writes are service-role-only through auditService/loginLogService. */
 auditLogsRoute.get('/', requirePermission('audit.view'), zValidator('query', listAuditLogsQuerySchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
+  // Permission has already been checked above. Use the admin client for this
+  // immutable, permission-gated evidence read so the query does not evaluate
+  // the audit.view RLS policy once per historical row under load.
+  const supabase = createAdminClient(c.env);
   const reqId = c.get('requestId');
   const { page, pageSize, module, action, actor, result, eventCategory, privileged, from, to } = c.req.valid('query');
   let query = supabase.from('audit_logs').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(...paginationRange(page, pageSize));

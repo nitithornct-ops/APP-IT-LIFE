@@ -129,6 +129,7 @@ insert into public.permissions (key, module_key, action, description, status) va
   ('governance_document.manage', 'governance_document', 'manage', 'จัดการเอกสาร Governance และ metadata', 'active'),
   ('operations.view', 'operations', 'view', 'ดู Retention, JML และ Operational Health', 'active'),
   ('operations.manage', 'operations', 'manage', 'จัดการ Retention, JML และ Operational Health', 'active'),
+  ('system_status.view', 'system_status', 'view', 'ดูสถานะสุขภาพระบบและประวัติ Incident เฉพาะ Admin', 'active'),
   ('integration.view', 'integration', 'view', 'ดู Integration Outbox และ Record Links', 'active'),
   ('integration.manage', 'integration', 'manage', 'จัดการ Retry/Cancel ของ Integration Outbox', 'active'),
   ('cmdb.view', 'cmdb', 'view', 'ดู Configuration Item และความสัมพันธ์ใน CMDB', 'active'),

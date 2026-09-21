@@ -77,6 +77,14 @@ export const createFormTemplateSchema = z.object({
   moduleKey: z.enum(FORM_MODULE_KEYS).nullable().optional(),
 });
 
+export const importGoogleDocSchema = z.object({
+  source: z.string().trim().min(1, 'กรุณาวางลิงก์หรือรหัส Google Docs').max(2048),
+  name: z.string().trim().max(200).optional(),
+  description: z.string().trim().max(1000).optional(),
+  category: z.string().trim().min(1).max(100).default('IT Support'),
+  moduleKey: z.enum(FORM_MODULE_KEYS).nullable().optional(),
+});
+
 export const updateFormTemplateSchema = createFormTemplateSchema.partial().refine(
   (value) => Object.keys(value).length > 0,
   'ไม่มีข้อมูลที่ต้องแก้ไข',

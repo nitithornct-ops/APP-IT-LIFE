@@ -9,6 +9,7 @@ import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import { FORM_MODULES } from '../services/formModuleService';
 import { missingRequiredFields, sha256Hex } from '../services/formSchema';
+import { fetchGoogleDocHtml, googleDocsConfig } from '../services/googleDriveService';
 import type { AppEnv } from '../types';
 import { sanitizeFormHtml } from '../utils/formHtml';
 import { dbFailJson } from '../utils/dbError';
@@ -17,6 +18,7 @@ import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import {
   createFormTemplateSchema,
+  importGoogleDocSchema,
   createIssueFormSchema,
   acknowledgeIssueFormSchema,
   compareFormTemplateVersionsSchema,
@@ -128,6 +130,86 @@ formsRoute.get('/templates/:id/compare', zValidator('query', compareFormTemplate
     },
   }));
 });
+
+formsRoute.post(
+  '/templates/import-google-doc',
+  requirePermission('form.manage'),
+  rateLimit({ windowMs: 3600_000, max: 10, keyFn: (c) => `form_google_doc_import:${c.get('userId')}` }),
+  zValidator('json', importGoogleDocSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const actorId = c.get('userId');
+    const body = c.req.valid('json');
+    if (!googleDocsConfig(c.env)) {
+      return c.json(fail(reqId, 'GOOGLE_DRIVE_NOT_CONFIGURED', 'ยังไม่ได้เปิดใช้งานการเชื่อมต่อ Google Drive'), 503);
+    }
+
+    const imported = await fetchGoogleDocHtml(c.env, body.source);
+    if (!imported.ok) {
+      const status = imported.reason === 'configuration' ? 503 : imported.reason === 'rejected' ? 400 : 502;
+      return c.json(fail(reqId, imported.reason === 'configuration' ? 'GOOGLE_DRIVE_NOT_CONFIGURED' : 'GOOGLE_DOC_IMPORT_FAILED', imported.message), status);
+    }
+
+    const contentHtml = sanitizeFormHtml(imported.document.html);
+    if (!contentHtml) return c.json(fail(reqId, 'GOOGLE_DOC_IMPORT_EMPTY', 'Google Docs ไม่มีเนื้อหาที่นำมาใช้เป็นแบบฟอร์มได้'), 400);
+    if (contentHtml.length > 300_000) return c.json(fail(reqId, 'GOOGLE_DOC_IMPORT_TOO_LARGE', 'เนื้อหา Google Docs ใหญ่เกินขนาดที่ระบบรองรับหลังการนำเข้า'), 400);
+
+    const admin = createAdminClient(c.env);
+    const payload = {
+      template_code: generatedTemplateCode(),
+      name: body.name || imported.document.name,
+      description: body.description || `นำเข้าจาก Google Docs: ${imported.document.name}`,
+      category: body.category,
+      content_html: contentHtml,
+      field_schema: [],
+      acknowledgement_config: { enabled: false, statement: '' },
+      approval_signature_config: { requiredRoles: [] },
+      document_number_rule: { prefix: 'FRM', dateFormat: 'YYYYMM', padding: 5 },
+      page_settings: { size: 'A4', orientation: 'portrait', marginMm: 20 },
+      created_by: actorId,
+      updated_by: actorId,
+    };
+    const { data, error } = await admin.from('form_templates').insert(payload).select(TEMPLATE_SELECT).single();
+    if (error || !data) return dbFailJson(c, 'FORM_TEMPLATE_IMPORT_FAILED', error, 'สร้าง Template จาก Google Docs ไม่สำเร็จ');
+
+    const { error: versionError } = await admin.from('form_template_versions').insert({
+      field_schema: data.field_schema,
+      acknowledgement_config: data.acknowledgement_config,
+      approval_signature_config: data.approval_signature_config,
+      document_number_rule: data.document_number_rule,
+      template_id: data.id,
+      version: 1,
+      name: data.name,
+      description: data.description,
+      content_html: data.content_html,
+      page_settings: data.page_settings,
+      change_note: 'นำเข้าจาก Google Docs',
+      created_by: actorId,
+    });
+    if (versionError) return dbFailJson(c, 'FORM_TEMPLATE_IMPORT_FAILED', versionError, 'สร้างเวอร์ชันเริ่มต้นของ Template ไม่สำเร็จ');
+
+    if (body.moduleKey) {
+      const { error: bindingError } = await admin.rpc('assign_form_module_template', {
+        module_key_input: body.moduleKey,
+        template_id_input: data.id,
+        updated_by_input: actorId,
+      });
+      if (bindingError) return dbFailJson(c, 'FORM_MODULE_BINDING_FAILED', bindingError, 'กำหนด Template ให้โมดูลไม่สำเร็จ');
+    }
+
+    await writeAuditLog(c.env, {
+      actorId,
+      actorEmail: c.get('userEmail'),
+      action: 'IMPORT_GOOGLE_DOC',
+      module: 'form',
+      targetTable: 'form_templates',
+      targetId: data.id,
+      detail: { documentId: imported.document.documentId, source: imported.document.webViewLink, bytes: new TextEncoder().encode(contentHtml).byteLength },
+      requestId: reqId,
+    });
+    return c.json(ok(reqId, { ...data, module_key: body.moduleKey ?? null, source_document: imported.document.webViewLink }), 201);
+  },
+);
 
 formsRoute.post('/templates', requirePermission('form.manage'), zValidator('json', createFormTemplateSchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');

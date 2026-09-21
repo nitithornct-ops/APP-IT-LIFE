@@ -70,11 +70,11 @@ afterAll(async () => {
 });
 
 describe('seed data', () => {
-  it('seeds 9 roles and 126 permissions', async () => {
+  it('seeds 9 roles and 127 permissions', async () => {
     const roles = await db.query('select count(*)::int as count from public.roles');
     const permissions = await db.query('select count(*)::int as count from public.permissions');
     expect((roles.rows[0] as { count: number }).count).toBe(9);
-    expect((permissions.rows[0] as { count: number }).count).toBe(126);
+    expect((permissions.rows[0] as { count: number }).count).toBe(127);
   });
 });
 
@@ -91,6 +91,17 @@ describe('has_permission()', () => {
       db.query("select public.has_permission('role.manage') as allowed"),
     );
     expect((result.rows[0] as { allowed: boolean }).allowed).toBe(true);
+  });
+
+  it('denies the internal system status permission to a plain user', async () => {
+    const regularUser = await asUser(db, REGULAR_USER_ID, async () =>
+      db.query("select public.has_permission('system_status.view') as allowed"),
+    );
+    const admin = await asUser(db, SUPER_ADMIN_ID, async () =>
+      db.query("select public.has_permission('system_status.view') as allowed"),
+    );
+    expect((regularUser.rows[0] as { allowed: boolean }).allowed).toBe(false);
+    expect((admin.rows[0] as { allowed: boolean }).allowed).toBe(true);
   });
 
   it('denies a plain user the role.manage permission', async () => {

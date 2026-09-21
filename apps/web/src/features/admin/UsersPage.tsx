@@ -663,7 +663,7 @@ const createLocalUserSchema = z.object({
     .regex(/^[A-Za-z0-9._-]{3,32}$/, 'ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดล่าง และขีดกลาง ความยาว 3-32 ตัวอักษร'),
   password: z
     .string()
-    .min(12, 'รหัสผ่านต้องมีอย่างน้อย 12 ตัวอักษร')
+    .min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
     .regex(/[a-z]/, 'ต้องมีตัวอักษรภาษาอังกฤษตัวเล็ก')
     .regex(/[A-Z]/, 'ต้องมีตัวอักษรภาษาอังกฤษตัวใหญ่')
     .regex(/[0-9]/, 'ต้องมีตัวเลข'),
@@ -698,6 +698,7 @@ function PasswordField({
           id={id}
           type={visible ? 'text' : 'password'}
           autoComplete="new-password"
+          minLength={8}
           className="w-full rounded-md border border-slate-300 px-3 py-1.5 pr-9 text-sm dark:border-slate-600 dark:bg-slate-900"
           {...registration}
         />
@@ -874,7 +875,7 @@ function CreateLocalUserForm({
 const resetPasswordSchema = z.object({
   password: z
     .string()
-    .min(12, 'รหัสผ่านต้องมีอย่างน้อย 12 ตัวอักษร')
+    .min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
     .regex(/[a-z]/, 'ต้องมีตัวอักษรภาษาอังกฤษตัวเล็ก')
     .regex(/[A-Z]/, 'ต้องมีตัวอักษรภาษาอังกฤษตัวใหญ่')
     .regex(/[0-9]/, 'ต้องมีตัวเลข'),
@@ -921,6 +922,7 @@ function ResetPasswordModal({ user, onClose }: { user: UserListItem; onClose: ()
               id="reset-password"
               type={visible ? 'text' : 'password'}
               autoComplete="new-password"
+              minLength={8}
               className="w-full rounded-md border border-slate-300 px-3 py-1.5 pr-9 text-sm dark:border-slate-600 dark:bg-slate-900"
               {...register('password')}
             />
@@ -1309,6 +1311,18 @@ export function UsersPage() {
                             icon: user.status === 'active' ? Ban : CheckCircle2,
                             label: user.status === 'active' ? 'ระงับการใช้งาน' : 'เปิดใช้งาน',
                             onClick: () => { setStatusError(null); setPendingStatusChange(user); },
+                          },
+                          {
+                            kind: 'delete',
+                            label: user.status === 'active' ? 'ลบไม่ได้ (ต้องระงับก่อน)' : 'ลบผู้ใช้งาน',
+                            disabled: user.status === 'active',
+                            confirmTitle: `ลบผู้ใช้งาน "${loginIdentityOf(user)}" ถาวร`,
+                            confirmDescription: 'การลบจะนำบัญชีออกจากระบบ Auth และไม่สามารถกู้คืนได้ หากต้องการเก็บประวัติการทำงาน ให้ใช้การระงับบัญชีแทน',
+                            confirmLabel: 'ลบผู้ใช้งานถาวร',
+                            reasonLabel: 'เหตุผลการลบ',
+                            reasonPlaceholder: 'ระบุเหตุผลอย่างน้อย 3 ตัวอักษร',
+                            permission: 'user.manage',
+                            deleteEndpoint: `/api/v1/users/${user.id}`,
                           },
                         ]}
                       />
