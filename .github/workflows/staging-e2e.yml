@@ -2,6 +2,16 @@ name: Staging Live E2E
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/web/src/**'
+      - 'apps/web/e2e/**'
+      - 'apps/web/index.html'
+      - 'apps/api/src/**'
+      - 'supabase/migrations/**'
+      - 'supabase/seed.sql'
+      - '.github/workflows/staging-e2e.yml'
   # ชุดนี้เคยรันเฉพาะตอนกดเอง จึงไปพบว่า locator ไม่ตรง UI เอาตอนจะ deploy แล้ว (3 เคสล้มใน
   # Pre-production QA audit 2026-08-13) — ให้รันกับ PR ที่แตะหน้าจอหรือ API ด้วย เพื่อให้ E2E
   # ที่ตามการ refactor ไม่ทันถูกจับตั้งแต่ตอนรีวิว ไม่ใช่ตอน release gate
@@ -37,18 +47,6 @@ jobs:
       # workflow serves the app on localhost and must never call production
       # Turnstile during automated staging checks.
       VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
-      UAT_ADMIN_EMAIL: ${{ secrets.UAT_ADMIN_EMAIL }}
-      UAT_ADMIN_TOTP_SECRET: ${{ secrets.UAT_ADMIN_TOTP_SECRET }}
-      UAT_REQUESTER_EMAIL: ${{ secrets.UAT_REQUESTER_EMAIL }}
-      UAT_TECHNICIAN_EMAIL: ${{ secrets.UAT_TECHNICIAN_EMAIL }}
-      UAT_TECHNICIAN_TOTP_SECRET: ${{ secrets.UAT_TECHNICIAN_TOTP_SECRET }}
-      UAT_APPROVER_EMAIL: ${{ secrets.UAT_APPROVER_EMAIL }}
-      UAT_APPROVER_TOTP_SECRET: ${{ secrets.UAT_APPROVER_TOTP_SECRET }}
-      UAT_MANAGER_EMAIL: ${{ secrets.UAT_MANAGER_EMAIL }}
-      UAT_MANAGER_TOTP_SECRET: ${{ secrets.UAT_MANAGER_TOTP_SECRET }}
-      UAT_VENDOR_CODE: ${{ secrets.UAT_VENDOR_CODE }}
-      UAT_VENDOR_EMAIL: ${{ secrets.UAT_VENDOR_EMAIL }}
-      UAT_VENDOR_PASSWORD: ${{ secrets.UAT_VENDOR_PASSWORD }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -68,7 +66,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY UAT_ADMIN_EMAIL UAT_ADMIN_TOTP_SECRET UAT_REQUESTER_EMAIL UAT_TECHNICIAN_EMAIL UAT_TECHNICIAN_TOTP_SECRET UAT_APPROVER_EMAIL UAT_APPROVER_TOTP_SECRET UAT_MANAGER_EMAIL UAT_MANAGER_TOTP_SECRET UAT_VENDOR_CODE UAT_VENDOR_EMAIL UAT_VENDOR_PASSWORD; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY VITE_TURNSTILE_SITE_KEY; do
             if [ -z "${!name:-}" ]; then
               echo "::error title=Staging configuration missing::$name is required"
               missing=1

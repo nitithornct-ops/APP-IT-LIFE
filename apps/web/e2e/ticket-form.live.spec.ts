@@ -124,6 +124,6 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
 
   await page.goto(`/tickets/${formTicketId}/form`);
   await expect(page.getByTestId('ticket-form-page')).toContainText(formTicketNo);
-  await expectImageLoaded(page.getByAltText('ลายเซ็นรับรอง Ticket').first());
+  await expectImageLoaded(page.locator('img[data-field="it_signature"]').first());
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-automatic-preview.png'), fullPage: true });
 });

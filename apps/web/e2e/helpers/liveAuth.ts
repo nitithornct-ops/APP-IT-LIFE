@@ -41,7 +41,7 @@ function decodeBase32(secret: string): Buffer {
   return Buffer.from(bytes);
 }
 
-function totpCode(secret: string, offset = 0): string {
+export function totpCode(secret: string, offset = 0): string {
   const counter = Math.floor(Date.now() / 30_000) + offset;
   const message = Buffer.alloc(8);
   message.writeBigUInt64BE(BigInt(counter));
@@ -160,9 +160,16 @@ export async function createLiveAccessToken(email: string, totpSecret?: string):
   return (await createLiveSession(email, totpSecret)).access_token;
 }
 
-export async function installLiveSession(page: Page, email: string, totpSecret?: string): Promise<Session> {
+export async function seedSupabaseSession(page: Page, session: Session): Promise<void> {
   const { supabaseUrl } = liveSupabaseConfig();
   const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+  await page.addInitScript(
+    ({ storageKey, serializedSession }) => sessionStorage.setItem(storageKey, serializedSession),
+    { storageKey: `sb-${projectRef}-auth-token`, serializedSession: JSON.stringify(session) },
+  );
+}
+
+export async function installLiveSession(page: Page, email: string, totpSecret?: string): Promise<Session> {
   const session = await createLiveSession(email, totpSecret);
   const loginLog = await fetch('http://127.0.0.1:8787/api/v1/auth/login-log', {
     method: 'POST',
@@ -173,10 +180,7 @@ export async function installLiveSession(page: Page, email: string, totpSecret?:
     body: JSON.stringify({ identifier: email, success: true }),
   });
   if (!loginLog.ok) throw new Error(`Could not record live test login (${loginLog.status})`);
-  await page.addInitScript(
-    ({ storageKey, serializedSession }) => sessionStorage.setItem(storageKey, serializedSession),
-    { storageKey: `sb-${projectRef}-auth-token`, serializedSession: JSON.stringify(session) },
-  );
+  await seedSupabaseSession(page, session);
   await page.goto('/');
   return session;
 }

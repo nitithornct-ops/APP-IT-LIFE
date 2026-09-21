@@ -107,12 +107,18 @@ const REQUIRED_COLUMNS = {
     'response_sla_hours', 'resolution_sla_hours', 'response_due_at', 'form_checkmarks',
     'deletion_reason', 'deleted_by', 'privacy_consent_confirmed', 'privacy_notice_version',
     'privacy_consent_at', 'privacy_consent_channel', 'privacy_consent_text', 'privacy_anonymized_at',
+    'cause_code_id',
   ],
   ticket_categories: ['name', 'default_priority', 'response_sla_hours', 'resolution_sla_hours', 'sla_hours', 'is_security_default'],
   ticket_worklogs: ['ticket_id', 'entry_type', 'action', 'status_to', 'detail', 'is_public', 'actor_label', 'actor_line_user_id'],
-  profiles: ['email', 'username', 'full_name', 'status', 'department_id', 'position_id', 'supervisor_id'],
+  profiles: [
+    'email', 'username', 'full_name', 'status', 'department_id', 'position_id', 'supervisor_id',
+    'onboarding_completed_at', 'onboarding_dismissed_at',
+  ],
   employees: ['employee_code', 'first_name_th', 'last_name_th', 'email', 'status'],
   assets: ['asset_code', 'name', 'status', 'warranty_expire'],
+  maintenance_plans: ['work_type'],
+  software_licenses: ['unit_price'],
   personal_tasks: ['title', 'status', 'priority', 'due_date', 'recurrence_rule'],
   file_attachments: ['storage_path', 'original_filename', 'mime_type', 'size_bytes', 'module', 'target_table', 'target_id'],
   login_logs: ['user_id', 'email_attempted', 'success', 'failure_reason', 'ip_address', 'user_agent'],
@@ -140,6 +146,10 @@ const REQUIRED_COLUMNS = {
   logging_systems: ['log_system_code', 'archived_at', 'archived_by', 'archive_reason'],
   log_reviews: ['review_code', 'archived_at', 'archived_by', 'archive_reason'],
   service_requests: ['service_code', 'service_name', 'status', 'approval_status', 'due_at'],
+  vendors: ['vendor_code', 'name', 'status'],
+  vendor_portal_accounts: [
+    'vendor_id', 'username', 'email', 'status', 'auth_user_id', 'invite_status', 'mfa_enrolled_at',
+  ],
 };
 
 for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
