@@ -15,6 +15,7 @@ on:
     paths:
       - 'apps/web/src/**'
       - 'apps/web/e2e/**'
+      - 'apps/web/playwright.config.ts'
       - 'apps/web/index.html'
       - 'apps/api/src/**'
       - 'supabase/migrations/**'

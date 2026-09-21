@@ -11,6 +11,10 @@ export default defineConfig({
     : 'list',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}-{projectName}{ext}',
   expect: {
+    // ชุด live คุยกับฐานข้อมูลจริงข้ามเครือข่าย และหน้าจอรีเฟรชด้วย invalidateQueries หลังทุก
+    // mutation จังหวะ 5 วินาทีเริ่มต้นจึงสั้นเกินไปบน CI (เจอจริงสามจุดใน Staging Live E2E
+    // 2026-09-21) ส่วนชุดที่รันกับ build นิ่ง ๆ ยังคุมด้วยค่าเดิมเพื่อจับ UI ที่ช้าผิดปกติ
+    timeout: liveE2E ? 20_000 : 5_000,
     toHaveScreenshot: {
       animations: 'disabled',
       maxDiffPixelRatio: 0.03,
