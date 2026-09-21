@@ -3,6 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VendorPortalPage } from './VendorPortalPage';
 
 const vendorPortalApiFetchMock = vi.fn();
+const { signInWithPasswordMock, listFactorsMock } = vi.hoisted(() => ({
+  signInWithPasswordMock: vi.fn(),
+  listFactorsMock: vi.fn(),
+}));
+
+vi.mock('../lib/supabase', () => ({
+  supabase: {
+    auth: {
+      signInWithPassword: (...args: unknown[]) => signInWithPasswordMock(...args),
+      signOut: vi.fn(),
+      mfa: {
+        listFactors: (...args: unknown[]) => listFactorsMock(...args),
+        challengeAndVerify: vi.fn(),
+      },
+    },
+  },
+}));
 
 vi.mock('../services/vendorPortalApiClient', async () => {
   const actual = await vi.importActual<typeof import('../services/vendorPortalApiClient')>('../services/vendorPortalApiClient');
@@ -12,6 +29,16 @@ vi.mock('../services/vendorPortalApiClient', async () => {
 beforeEach(() => {
   sessionStorage.clear();
   vendorPortalApiFetchMock.mockReset();
+  signInWithPasswordMock.mockReset();
+  listFactorsMock.mockReset();
+  window.turnstile = {
+    render: vi.fn((_container, options) => {
+      options.callback('vendor-captcha-token');
+      return 'vendor-test-widget';
+    }),
+    reset: vi.fn(),
+    remove: vi.fn(),
+  };
 });
 
 afterEach(cleanup);
@@ -22,6 +49,30 @@ describe('VendorPortalPage', () => {
     expect(screen.getByRole('heading', { name: 'Outsource Portal' })).toBeVisible();
     expect(screen.getAllByRole('textbox').some((element) => element.hasAttribute('required'))).toBe(true);
     expect(screen.getAllByDisplayValue('').length).toBeGreaterThan(0);
+  });
+
+  it('passes a Turnstile token to Supabase before showing the MFA step', async () => {
+    vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
+      if (path.endsWith('/login/resolve')) return { email: 'vendor@test.local' };
+      return undefined;
+    });
+    signInWithPasswordMock.mockResolvedValue({ error: null });
+    listFactorsMock.mockResolvedValue({ data: { totp: [{ id: 'factor-1', status: 'verified' }] }, error: null });
+
+    render(<VendorPortalPage />);
+    fireEvent.change(screen.getByLabelText('รหัสบริษัท'), { target: { value: 'VND-001' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'vendor.contact' } });
+    fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: 'secret-password' } });
+    const submit = screen.getByRole('button', { name: 'เข้าสู่ระบบบริษัท' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await screen.findByRole('heading', { name: 'ยืนยันตัวตนด้วย MFA' });
+    expect(signInWithPasswordMock).toHaveBeenCalledWith({
+      email: 'vendor@test.local',
+      password: 'secret-password',
+      options: { captchaToken: 'vendor-captcha-token' },
+    });
   });
 
   it('shows only the assigned outsource list returned by the isolated portal API', async () => {

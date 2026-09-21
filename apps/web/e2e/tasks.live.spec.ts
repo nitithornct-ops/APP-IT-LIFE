@@ -99,11 +99,17 @@ test('primary task actions call the API and update the interface', async ({ page
   await page.getByLabel('แก้ไข จัดทำรายงานความพร้อมประจำเดือน', { exact: true }).click();
   await expect(page.getByTestId('task-detail-panel')).toBeVisible();
   await page.getByLabel('ชื่องาน', { exact: true }).fill('จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)');
+  const savePromise = page.waitForResponse((response) => (
+    response.request().method() === 'PATCH'
+    && /\/api\/v1\/tasks\/[^/]+$/.test(new URL(response.url()).pathname)
+  ));
   await page.getByTestId('td-save').click();
+  expect((await savePromise).ok()).toBeTruthy();
   await page.getByTestId('task-detail-close').click();
   // ชื่องานปรากฏหลายที่พร้อมกัน (การ์ดในรายการ + chip ปฏิทิน) getByText จึงชน strict mode
   // ใช้ปุ่มแก้ไขของการ์ดซึ่งมีชื่องานอยู่ใน aria-label และมีหนึ่งเดียวต่องาน
-  await expect(page.getByLabel('แก้ไข จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)', { exact: true })).toBeVisible();
+  // รายการรีเฟรชผ่าน invalidateQueries หลังบันทึก จึงรอเท่ากับจังหวะอื่นที่อ่านฐานข้อมูลจริง
+  await expect(page.getByLabel('แก้ไข จัดทำรายงานความพร้อมประจำเดือน (แก้ไขแล้ว)', { exact: true })).toBeVisible({ timeout: 20_000 });
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'CSV', exact: true }).click();

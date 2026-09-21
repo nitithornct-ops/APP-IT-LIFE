@@ -69,6 +69,9 @@ test.afterAll(async () => {
 });
 
 test('live API returns every standard report, enforces RBAC and records exports', async () => {
+  // ชุดนี้เรียกรายงานทั้งเจ็ดชุดพร้อม export CSV/print ต่อกับฐานข้อมูลจริง
+  // บน CI จึงเกิน 30s ของ Playwright ได้ตามปริมาณข้อมูลจริง (แบบเดียวกับ governance.live)
+  test.setTimeout(90_000);
   const adminToken = await token(emails.admin);
   const userToken = await token(emails.user);
   const overview = await api<{ definitions: Array<{ key: string }> }>(adminToken, '/reports?rangeDays=30');

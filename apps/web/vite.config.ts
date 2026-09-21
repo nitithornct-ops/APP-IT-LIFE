@@ -47,5 +47,20 @@ export default defineConfig({
       VITE_API_BASE_URL: 'http://localhost:8787',
       VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
     },
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: 'coverage',
+      thresholds: {
+        lines: 27,
+        statements: 24,
+        functions: 17,
+        branches: 20,
+        'src/components/**': { lines: 61, statements: 59, functions: 57, branches: 59 },
+        'src/hooks/**': { lines: 50, statements: 53, functions: 50, branches: 57 },
+        'src/utils/**': { lines: 95, statements: 88, functions: 83, branches: 78 },
+      },
+    },
   },
 });

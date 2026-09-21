@@ -1,6 +1,7 @@
 import { ArrowLeft, Building2, CheckCircle2, ClipboardList, FileSignature, Loader2, LogOut, RefreshCw, Send, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PublicBrand } from '../components/PublicBrand';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { Button } from '../components/ui/Button';
 import { RequesterSignatureInput } from '../features/tickets/RequesterSignatureInput';
 import { supabase } from '../lib/supabase';
@@ -38,6 +39,8 @@ export function VendorPortalPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [loginStep, setLoginStep] = useState<'password' | 'mfa'>('password');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [work, setWork] = useState(emptyWorkForm);
@@ -68,11 +71,20 @@ export function VendorPortalPage() {
 
   async function submitLogin() {
     setLoggingIn(true); setError('');
+    if (!captchaToken) {
+      setError('กรุณายืนยันความปลอดภัยก่อนเข้าสู่ระบบ');
+      setLoggingIn(false);
+      return;
+    }
     try {
       const identity = await vendorPortalApiFetch<{ email: string }>('/api/v1/vendor-portal/login/resolve', {
         method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username }),
       });
-      const { error: authError } = await supabase.auth.signInWithPassword({ email: identity.email, password: login.password });
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: identity.email,
+        password: login.password,
+        options: { captchaToken },
+      });
       if (authError) throw new Error('Invalid vendor credentials');
       const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
       if (factorsError) throw factorsError;
@@ -84,7 +96,10 @@ export function VendorPortalPage() {
     } catch (reason) {
       setError(errorMessage(reason, 'เข้าสู่ระบบไม่สำเร็จ'));
       await supabase.auth.signOut();
-    } finally { setLoggingIn(false); }
+    } finally {
+      setLoggingIn(false);
+      turnstileRef.current?.reset();
+    }
   }
 
   async function verifyLoginMfa() {
@@ -186,7 +201,8 @@ export function VendorPortalPage() {
         <label className="block text-sm font-semibold">Username<input required autoComplete="username" maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" value={login.username} onChange={(e) => setLogin((current) => ({ ...current, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่าน<input required type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin((current) => ({ ...current, password: e.target.value }))} className={fieldClass} /></label>
         {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
-        <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>
+        <TurnstileWidget ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
+        <Button type="submit" className="w-full" isLoading={loggingIn} disabled={!captchaToken}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>
       </form>
     </section>
   </div></main>;

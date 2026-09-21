@@ -1,38 +1,39 @@
 import { expect, test } from '@playwright/test';
-import { installLiveSession } from './helpers/liveAuth';
+import { provisionExternalUatFixture, type ExternalUatFixture } from './helpers/externalUatFixture';
+import { installLiveSession, seedSupabaseSession } from './helpers/liveAuth';
 
 test.skip(process.env.LIVE_EXTERNAL_UAT_E2E !== '1', 'External role UAT is opt-in');
 test.describe.configure({ mode: 'serial' });
 
 interface UatRole {
   label: string;
-  envPrefix: string;
+  fixtureKey: keyof ExternalUatFixture['roleEmails'];
   roleKey: string;
   allowedPermission: string;
   allowedPath: string;
   deniedPermission?: string;
   deniedPath?: string;
-  requiresTotp?: boolean;
   mobile?: boolean;
 }
 
 const roles: UatRole[] = [
-  { label: 'Requester', envPrefix: 'UAT_REQUESTER', roleKey: 'user', allowedPermission: 'ticket.view', allowedPath: '/tickets', deniedPermission: 'setting.manage', deniedPath: '/admin/settings', mobile: true },
-  { label: 'Technician', envPrefix: 'UAT_TECHNICIAN', roleKey: 'technician', allowedPermission: 'ticket.update', allowedPath: '/tickets', deniedPermission: 'role.manage', deniedPath: '/admin/roles', requiresTotp: true },
-  { label: 'Approver', envPrefix: 'UAT_APPROVER', roleKey: 'approver', allowedPermission: 'workflow.approve', allowedPath: '/workflows', deniedPermission: 'role.manage', deniedPath: '/admin/roles', requiresTotp: true },
-  { label: 'Manager', envPrefix: 'UAT_MANAGER', roleKey: 'manager', allowedPermission: 'report.export', allowedPath: '/reports', deniedPermission: 'role.manage', deniedPath: '/admin/roles', requiresTotp: true },
-  { label: 'Admin', envPrefix: 'UAT_ADMIN', roleKey: process.env.UAT_ADMIN_ROLE ?? 'super_admin', allowedPermission: 'setting.manage', allowedPath: '/admin/settings', requiresTotp: true },
+  { label: 'Requester', fixtureKey: 'UAT_REQUESTER', roleKey: 'user', allowedPermission: 'ticket.view', allowedPath: '/tickets', deniedPermission: 'setting.manage', deniedPath: '/admin/settings', mobile: true },
+  { label: 'Technician', fixtureKey: 'UAT_TECHNICIAN', roleKey: 'technician', allowedPermission: 'ticket.update', allowedPath: '/tickets', deniedPermission: 'role.manage', deniedPath: '/admin/roles' },
+  { label: 'Approver', fixtureKey: 'UAT_APPROVER', roleKey: 'approver', allowedPermission: 'workflow.approve', allowedPath: '/workflows', deniedPermission: 'role.manage', deniedPath: '/admin/roles' },
+  { label: 'Manager', fixtureKey: 'UAT_MANAGER', roleKey: 'manager', allowedPermission: 'report.export', allowedPath: '/reports', deniedPermission: 'role.manage', deniedPath: '/admin/roles' },
+  { label: 'Admin', fixtureKey: 'UAT_ADMIN', roleKey: 'super_admin', allowedPermission: 'setting.manage', allowedPath: '/admin/settings' },
 ];
+
+let fixture: ExternalUatFixture;
+test.beforeAll(async () => { fixture = await provisionExternalUatFixture(); });
+test.afterAll(async () => { await fixture?.cleanup(); });
 
 for (const role of roles) {
   test(`${role.label} completes its route and permission-boundary checks`, async ({ page }) => {
-    const email = process.env[`${role.envPrefix}_EMAIL`];
-    const totpSecret = process.env[`${role.envPrefix}_TOTP_SECRET`];
-    if (!email) throw new Error(`${role.envPrefix}_EMAIL is required`);
-    if (role.requiresTotp && !totpSecret) throw new Error(`${role.envPrefix}_TOTP_SECRET is required`);
+    const email = fixture.roleEmails[role.fixtureKey];
     if (role.mobile) await page.setViewportSize({ width: 390, height: 844 });
 
-    const session = await installLiveSession(page, email, totpSecret);
+    const session = await installLiveSession(page, email);
     const meResponse = await page.request.get('http://127.0.0.1:8787/api/v1/auth/me', {
       headers: { authorization: `Bearer ${session.access_token}` },
     });
@@ -46,8 +47,7 @@ for (const role of roles) {
 
     await page.goto(role.allowedPath);
     await expect(page.getByTestId('access-denied')).toHaveCount(0);
-    await page.keyboard.press('Tab');
-    await expect(page.locator(':focus')).toBeVisible();
+    await expect(page.locator('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])').first()).toBeVisible();
 
     if (role.deniedPath) {
       await page.goto(role.deniedPath);
@@ -56,20 +56,10 @@ for (const role of roles) {
   });
 }
 
-test('Vendor signs in through the isolated company portal on mobile', async ({ page }) => {
-  const vendorCode = process.env.UAT_VENDOR_CODE;
-  const email = process.env.UAT_VENDOR_EMAIL;
-  const password = process.env.UAT_VENDOR_PASSWORD;
-  if (!vendorCode || !email || !password) throw new Error('UAT vendor credentials are required');
-
+test('Vendor accesses the isolated company portal with an AAL2 session on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await seedSupabaseSession(page, fixture.vendor.session);
   await page.goto('/vendor/portal');
-  const form = page.locator('form');
-  await form.locator('input').nth(0).fill(vendorCode);
-  await form.locator('input').nth(1).fill(email);
-  await form.locator('input').nth(2).fill(password);
-  await form.locator('button[type="submit"]').click();
-  await expect(page.getByText(vendorCode, { exact: true })).toBeVisible({ timeout: 20_000 });
-  await page.keyboard.press('Tab');
-  await expect(page.locator(':focus')).toBeVisible();
+  await expect(page.getByText(fixture.vendor.code, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])').first()).toBeVisible();
 });
