@@ -59,7 +59,7 @@ export function googleDriveConfig(env: Bindings): GoogleDriveConfig | null {
 
 /** Auth-only configuration used when reading a Google Doc; a destination folder is not needed. */
 function serviceAccountField(value: string | undefined, field: 'client_email' | 'private_key'): string {
-  const trimmed = value?.trim() ?? '';
+  const trimmed = value?.replace(/^\uFEFF/, '').trim() ?? '';
   if (!trimmed) return '';
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>;
@@ -95,11 +95,26 @@ function base64UrlText(text: string): string {
  * (คัดลอกจากไฟล์ JSON ตรง ๆ) จึงต้องแปลงกลับก่อน ไม่งั้น importKey จะล้มโดยไม่บอกสาเหตุที่แท้จริง
  */
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  const normalized = serviceAccountField(pem, 'private_key')
+  let normalized = serviceAccountField(pem, 'private_key')
     .replace(/^['"]|['"]$/g, '')
-    .replace(/\\r?\\n/g, '\n')
     .replace(/\r\n/g, '\n')
     .trim();
+
+  // Google JSON stores line breaks as the two characters `\\n`. Secret
+  // managers can escape that value once more, so normalize a few layers
+  // without ever logging or exposing the key itself.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = normalized
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\\n/g, '\n')
+      .replace(/\r\n/g, '\n');
+    if (next === normalized) break;
+    normalized = next;
+  }
+  normalized = normalized.trim();
+
   const match = normalized.match(/-----BEGIN [A-Z ]+-----([\s\S]+?)-----END [A-Z ]+-----/);
   if (!match) throw new Error('Invalid Google service-account private key format');
   const der = match[1].replace(/\s+/g, '');

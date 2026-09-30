@@ -116,6 +116,17 @@ describe('googleDriveConfig', () => {
       folderId: 'shared-drive-folder',
     });
   });
+
+  it('accepts a private_key value copied from JSON with literal escaped newlines', async () => {
+    const fetchMock = driveFetchMock();
+    const escapedPrivateKey = privateKeyPem.replace(/\n/g, '\\n');
+    const result = await uploadCsvAsGoogleSheet(
+      { ...env, GOOGLE_SA_PRIVATE_KEY: escapedPrivateKey },
+      { name: 'json-key.csv', csv: 'a' },
+      fetchMock,
+    );
+    expect(result).toMatchObject({ ok: true });
+  });
 });
 
 describe('uploadCsvAsGoogleSheet', () => {
