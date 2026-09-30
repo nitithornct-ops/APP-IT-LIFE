@@ -24,8 +24,30 @@ export const FORM_DOCUMENT_CSS = `${FORM_FONT_CSS}
 }
 `;
 
+export interface FormDocumentMetadata {
+ documentNumber?: string | null;
+ sourceModule?: string | null;
+ sourceRecordId?: string | null;
+ issuedAt?: string | null;
+ snapshotHash?: string | null;
+}
+
+function escapeHtml(value: unknown): string {
+ return String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[character]!);
+}
+
 /** contentHtml must already be sanitized at the trust boundary. */
-export function formDocumentHtml(contentHtml: string, title: string): string {
- const safeTitle = title.replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[character]!);
- return `<!doctype html><html lang="th"><head><meta charset="utf-8"><title>${safeTitle}</title><style>html,body{margin:0;padding:0}${FORM_DOCUMENT_CSS}</style></head><body><main class="form-document">${contentHtml}</main></body></html>`;
+export function formDocumentHtml(contentHtml: string, title: string, metadata?: FormDocumentMetadata): string {
+ const metadataRows = metadata ? [
+   ['Document number', metadata.documentNumber],
+   ['Source module', metadata.sourceModule],
+   ['Source record', metadata.sourceRecordId],
+   ['Issued at', metadata.issuedAt],
+   ['Snapshot hash', metadata.snapshotHash],
+ ].filter(([, value]) => value !== null && value !== undefined && value !== '')
+   .map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('') : '';
+ const metadataBlock = metadataRows
+   ? `<section class="form-metadata" aria-label="Document metadata"><h2>Document metadata</h2><dl>${metadataRows}</dl></section>`
+   : '';
+ return `<!doctype html><html lang="th"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>html,body{margin:0;padding:0}.form-metadata{margin:0 0 18px;padding:10px 12px;border:1px solid #d4d9d5;background:#f8fbf7;font-size:9pt;color:#46534b}.form-metadata h2{margin:0 0 6px;border:0;padding:0;color:#287a48;font-size:11pt}.form-metadata dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:0}.form-metadata dl>div{display:contents}.form-metadata dt{font-weight:700}.form-metadata dd{margin:0;overflow-wrap:anywhere}${FORM_DOCUMENT_CSS}</style></head><body>${metadataBlock}<main class="form-document">${contentHtml}</main></body></html>`;
 }

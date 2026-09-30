@@ -504,7 +504,13 @@ formsRoute.post('/issues/:id/exports/pdf', requirePermission('form.export'), asy
   const { data: snapshot, error } = await createAdminClient(c.env).from('issue_form_snapshots').select('*').eq('issue_form_id', c.req.param('id')!).maybeSingle();
   if (error) return dbFailJson(c, 'FORM_SNAPSHOT_LOAD_FAILED', error);
   if (!snapshot) return c.json(fail(reqId, 'FORM_SNAPSHOT_REQUIRED', 'กรุณาออกเอกสารเพื่อสร้าง Immutable Snapshot ก่อนส่งออก PDF'), 409);
-  const html = formDocumentHtml(sanitizeFormHtml(snapshot.content_html), snapshot.document_number);
+  const html = formDocumentHtml(sanitizeFormHtml(snapshot.content_html), snapshot.document_number, {
+    documentNumber: snapshot.document_number,
+    sourceModule: snapshot.source_module,
+    sourceRecordId: snapshot.source_record_id,
+    issuedAt: snapshot.issued_at,
+    snapshotHash: snapshot.snapshot_hash,
+  });
   let pdfBytes: Uint8Array;
   try {
     pdfBytes = await renderHtmlToPdf(c.env.MYBROWSER, html);

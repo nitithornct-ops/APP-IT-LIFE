@@ -72,6 +72,10 @@ describe('Content-Security-Policy', () => {
     expect(directive('base-uri')).toEqual(["'self'"]);
   });
 
+  it('allows LINE profile images from the exact LINE CDN host', () => {
+    expect(directive('img-src')).toContain('https://profile.line-scdn.net');
+  });
+
   it('never widens executable, framed, style, or font sources to a wildcard', () => {
     for (const name of ['script-src', 'frame-src', 'style-src', 'font-src']) {
       expect(directive(name)).not.toContain('*');

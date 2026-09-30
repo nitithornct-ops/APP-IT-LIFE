@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { PublicBrand } from '../components/PublicBrand';
 import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
 import { supabase } from '../lib/supabase';
-import { apiFetch, showToast } from '../services/apiClient';
+import { ApiError, apiFetch, showToast } from '../services/apiClient';
 import type { MfaPolicyResponse } from '../stores/authContext';
 
 const loginSchema = z.object({
@@ -89,10 +89,12 @@ export function LoginPage() {
       await recordLoginAttempt(values.identifier, true);
       showToast('success', 'เข้าสู่ระบบสำเร็จ');
       navigate(redirectTo, { replace: true });
-    } catch {
+    } catch (error) {
       if (!brokerAuthenticated) await recordLoginAttempt(values.identifier, false, 'login_failed');
       // ครอบทั้งการค้นหาบัญชีและการตรวจนโยบาย MFA — ทั้งสองอย่างเป็นการเรียก API ที่ล้มได้
-      setErrorMessage('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      setErrorMessage(error instanceof ApiError && error.code === 'LOGIN_FAILED'
+        ? 'อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง'
+        : 'เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();
     }
