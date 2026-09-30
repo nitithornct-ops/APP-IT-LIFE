@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { FORM_FONT_CSS } from '@itlife/shared';
 
 const SAFE_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i;
 const SAFE_FIELD = /^[a-zA-Z0-9_.-]{1,100}$/;
@@ -57,6 +58,19 @@ function constrainStyle(element: Element): void {
   // โดยยังกินที่ในสายเนื้อหาเท่าเดิม ตัวแบ่งหน้ากระดาษ A4 จึงยังนับความสูงได้ถูก และผู้ใช้
   // สร้างแผ่นทับทั้งหน้าจอแบบ absolute/fixed ไม่ได้ z-index จำกัดหลักเดียวไว้ให้ซ้อนรูปทับ
   // ข้อความได้ แต่ดันขึ้นไปคลุม UI ของระบบไม่ได้
+  const typography: Record<string, RegExp> = {
+    'font-size': /^(?:[8-9]|[1-6][0-9]|7[0-2])pt$/,
+    'font-family': /^FormThai$/i,
+    'line-height': /^(?:1|1\.15|1\.5|1\.55|2)$/,
+    'margin-left': /^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/,
+    'margin-right': /^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/,
+    'text-indent': /^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/,
+  };
+  for (const [property, pattern] of Object.entries(typography)) {
+    const value = input.getPropertyValue(property).trim();
+    if (element.tagName !== 'IMG' && pattern.test(value)) output.push(`${property}:${value}`);
+  }
+
   if (input.getPropertyValue('position').trim().toLowerCase() === 'relative') {
     output.push('position:relative');
     const left = safeOffset(input.getPropertyValue('left'));
@@ -118,7 +132,7 @@ export function sanitizeFormHtml(input: string): string {
 }
 
 export function exportHtmlAsWord(contentHtml: string, fileName: string) {
-  const html = `<!doctype html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>@page{size:A4;margin:20mm}body{font-family:Aptos,Arial,sans-serif;font-size:11pt;line-height:1.45}h1{text-align:center;font-size:18pt}h2{font-size:14pt;border-bottom:1px solid #cbd5e1;padding-bottom:5px}img{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #94a3b8;padding:7px;vertical-align:top}th{background:#e2e8f0}</style></head><body>${sanitizeFormHtml(contentHtml)}</body></html>`;
+  const html = `<!doctype html><html lang="th" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${FORM_FONT_CSS}@page{size:A4;margin:20mm}body{font-family:FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif;font-size:11pt;line-height:1.55}h1{text-align:center;font-size:18pt}h2{font-size:14pt;border-bottom:1px solid #cbd5e1;padding-bottom:5px}img{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #94a3b8;padding:7px;vertical-align:top}th{background:#e2e8f0}</style></head><body>${sanitizeFormHtml(contentHtml)}</body></html>`;
   const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

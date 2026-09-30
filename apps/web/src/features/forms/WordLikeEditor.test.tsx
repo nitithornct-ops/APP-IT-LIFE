@@ -139,6 +139,20 @@ describe('WordLikeEditor image controls', () => {
 });
 
 describe('WordLikeEditor block controls', () => {
+  it('keeps paragraph typography and ruler indents through saving', () => {
+    const { editor, blockAt, onChange } = renderEditor();
+    const paragraph = blockAt(0);
+    selectBlock(editor, paragraph);
+    fireEvent.change(screen.getByLabelText('ขนาดอักษรย่อหน้า'), { target: { value: '16' } });
+    fireEvent.change(screen.getByLabelText('ระยะบรรทัดย่อหน้า'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('เยื้องย่อหน้าซ้าย (มม.)'), { target: { value: '15' } });
+    const saved = sanitizeFormHtml(onChange.mock.calls.at(-1)![0] as string);
+    expect(saved).toContain('font-size:16pt');
+    expect(saved).toContain('line-height:2');
+    expect(saved).toContain('margin-left:15mm');
+    expect(blockAt(2).style.fontSize).toBe('');
+  });
+
   it('offers move handles for the block the cursor is in, and moves it in the flow', async () => {
     const { editor, blockAt, onChange } = renderEditor();
     const firstParagraph = blockAt(0);

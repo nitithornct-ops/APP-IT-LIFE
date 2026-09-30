@@ -116,6 +116,17 @@ describe('googleDriveConfig', () => {
       folderId: 'shared-drive-folder',
     });
   });
+
+  it('accepts a private_key value copied from JSON with literal escaped newlines', async () => {
+    const fetchMock = driveFetchMock();
+    const escapedPrivateKey = privateKeyPem.replace(/\n/g, '\\n');
+    const result = await uploadCsvAsGoogleSheet(
+      { ...env, GOOGLE_SA_PRIVATE_KEY: escapedPrivateKey },
+      { name: 'json-key.csv', csv: 'a' },
+      fetchMock,
+    );
+    expect(result).toMatchObject({ ok: true });
+  });
 });
 
 describe('uploadCsvAsGoogleSheet', () => {
@@ -230,6 +241,46 @@ describe('safeDriveName', () => {
 });
 
 describe('fetchGoogleDocHtml', () => {
+  it.each([
+    [403, { errors: [{ reason: 'accessNotConfigured' }] }, 'configuration', 'เปิด Google Drive API'],
+    [403, { details: [{ reason: 'SERVICE_DISABLED' }] }, 'configuration', 'เปิด Google Drive API'],
+    [403, { errors: [{ reason: 'userRateLimitExceeded' }] }, 'response', 'โควตา'],
+    [429, {}, 'response', 'โควตา'],
+    [503, {}, 'response', 'ขัดข้องชั่วคราว'],
+    [403, { details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] }, 'configuration', 'OAuth'],
+    [403, { errors: [{ reason: 'domainPolicy' }] }, 'rejected', 'นโยบาย'],
+    [403, { errors: [{ reason: 'exportSizeLimitExceeded' }] }, 'rejected', '10 MB'],
+    [404, {}, 'rejected', 'client_email'],
+    [401, {}, 'auth', 'access token'],
+    [400, {}, 'response', 'HTTP 400'],
+  ])('distinguishes Google error %s %j at metadata and export', async (status, error, reason, message) => {
+    for (const stage of ['metadata', 'export']) {
+      resetGoogleDriveCaches();
+      const fetchMock = vi.fn<typeof fetch>(async (input) => {
+        const url = String(input);
+        if (isTokenCall(url)) return jsonResponse({ access_token: 'test-token', expires_in: 3600 });
+        if (stage === 'export' && !url.includes('/export?')) {
+          return jsonResponse({ mimeType: 'application/vnd.google-apps.document', name: 'Test' });
+        }
+        return jsonResponse({ error: { ...error, message: 'sensitive-upstream-message' } }, status);
+      });
+      const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+      expect(result).toMatchObject({ ok: false, reason, message: expect.stringContaining(message) });
+      expect(JSON.stringify(result)).not.toContain('sensitive-upstream-message');
+    }
+  });
+
+  it.each([403, 404, 502])('handles non-JSON errors with HTTP %s', async (status) => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => isTokenCall(input)
+      ? jsonResponse({ access_token: 'test-token', expires_in: 3600 })
+      : new Response('<html>upstream failure</html>', { status }));
+    const result = await fetchGoogleDocHtml(env, 'doc-123456789', fetchMock);
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining(`HTTP ${status}`) });
+    if (status === 403 || status === 404) {
+      expect(result).toMatchObject({ message: expect.stringContaining(env.GOOGLE_SA_CLIENT_EMAIL!) });
+    }
+  });
+
   it('accepts a Docs URL and exports the document as HTML without downloading a local file', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);

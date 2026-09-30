@@ -41,6 +41,10 @@ import type { BrandingSettings } from '../../types/settings';
 import { cn } from '../../utils/cn';
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 import { PAGE_BREAK_HTML } from '../tickets/formPagination';
+import { FORM_DOCUMENT_CSS } from '@itlife/shared';
+import { printFormDocument } from '../../utils/printFormDocument';
+import { DocumentRuler } from './DocumentRuler';
+import './documentEditor.css';
 import {
   applyOffset,
   blockFromNode,
@@ -131,6 +135,8 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   const [activeBlock, setActiveBlock] = useState<HTMLElement | null>(null);
   const [blockBounds, setBlockBounds] = useState<SelectionBounds | null>(null);
   const [blockMoved, setBlockMoved] = useState(false);
+  const [paragraphStyle, setParagraphStyle] = useState({ left: 0, right: 0, size: '11', line: '1.55', font: 'FormThai' });
+  const [printError, setPrintError] = useState('');
 
   // หน้า Vendor เปิดแบบไม่ต้องล็อกอินและเป็นโหมดอ่านอย่างเดียว จึงต้องไม่ยิงคำขอที่ต้องยืนยันตัวตน
   const brandingQuery = useQuery({
@@ -174,6 +180,13 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     setActiveBlock(live);
     setBlockBounds(boundsWithin(live));
     setBlockMoved(Boolean(live && hasOffset(live)));
+    if (live) setParagraphStyle({
+      left: Number.parseFloat(live.style.marginLeft) || 0,
+      right: Number.parseFloat(live.style.marginRight) || 0,
+      size: String(Math.round(Number.parseFloat(getComputedStyle(live).fontSize) * 0.75) || 11),
+      line: live.style.lineHeight || '1.55',
+      font: live.style.fontFamily || 'FormThai',
+    });
   }, [boundsWithin]);
 
   /**
@@ -219,6 +232,20 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
     document.execCommand(command, false, valueArg);
     emitChange();
     syncActiveBlock();
+  }
+
+  function formatParagraph(property: string, value: string) {
+    const root = editorRef.current;
+    if (!root || !activeBlock || !activeBlock.isConnected || readOnly) return;
+    const selection = window.getSelection();
+    const range = selection?.rangeCount && root.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
+    // Apply across selected paragraphs; a caret changes only its current paragraph.
+    const blocks = range && !range.collapsed
+      ? Array.from(root.querySelectorAll<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li,td,th')).filter(block => range.intersectsNode(block))
+      : [activeBlock];
+    for (const block of blocks.length ? blocks : [activeBlock]) block.style.setProperty(property, value);
+    emitChange();
+    showBlock(activeBlock);
   }
 
   /**
@@ -535,9 +562,19 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-slate-300 bg-slate-200 shadow-sm dark:border-slate-600 dark:bg-slate-900', className)}>
+    <div className={cn('document-editor overflow-hidden rounded-xl border border-slate-300 bg-slate-200 shadow-sm dark:border-slate-600 dark:bg-slate-900', className)}>
+      <style>{FORM_DOCUMENT_CSS.replace(/@page\s*\{[^}]*\}/, '')}</style>
       <div className="sticky top-0 z-card flex flex-wrap items-center gap-1 border-b border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-800">
         {!readOnly && <>
+          <select aria-label="แบบอักษรย่อหน้า" className="document-editor-select" value={paragraphStyle.font} disabled={!activeBlock} onChange={event => formatParagraph('font-family', event.target.value)}>
+            <option value="FormThai">Noto Sans Thai</option>
+          </select>
+          <select aria-label="ขนาดอักษรย่อหน้า" className="document-editor-select" value={paragraphStyle.size} disabled={!activeBlock} onChange={event => formatParagraph('font-size', `${event.target.value}pt`)}>
+            {[...new Set([8, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, Number(paragraphStyle.size)])].sort((a,b) => a-b).map(size => <option key={size} value={size}>{size} pt</option>)}
+          </select>
+          <select aria-label="ระยะบรรทัดย่อหน้า" className="document-editor-select" value={paragraphStyle.line} disabled={!activeBlock} onChange={event => formatParagraph('line-height', event.target.value)}>
+            {['1', '1.15', '1.5', '1.55', '2'].map(line => <option key={line} value={line}>ระยะบรรทัด {line}</option>)}
+          </select>
           <button type="button" className="form-toolbar-label" onMouseDown={(event) => event.preventDefault()} onClick={() => run('formatBlock', 'p')}>ปกติ</button>
           <button type="button" className="form-toolbar-label" onMouseDown={(event) => event.preventDefault()} onClick={() => run('formatBlock', 'h2')}>หัวข้อ 1</button>
           <button type="button" className="form-toolbar-label" onMouseDown={(event) => event.preventDefault()} onClick={() => run('formatBlock', 'h3')}>หัวข้อ 2</button>
@@ -553,7 +590,10 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
         </>}
         <span className="ml-auto flex items-center gap-1">
           <button type="button" title="ดาวน์โหลดไปเปิดใน Word" aria-label="ดาวน์โหลดไปเปิดใน Word" className="form-toolbar-button" onClick={() => exportHtmlAsWord(editorRef.current?.innerHTML ?? value, fileName)}><Download className="h-4 w-4" /></button>
-          <button type="button" title="พิมพ์ / บันทึก PDF" aria-label="พิมพ์ / บันทึก PDF" className="form-toolbar-button" onClick={() => window.print()}><Printer className="h-4 w-4" /></button>
+          <button type="button" title="พิมพ์ / บันทึก PDF" aria-label="พิมพ์ / บันทึก PDF" className="form-toolbar-button" onClick={() => {
+            setPrintError('');
+            void printFormDocument(editorRef.current?.innerHTML ?? value, fileName).catch(() => setPrintError('เปิดหน้าพิมพ์ไม่สำเร็จ กรุณาลองอีกครั้ง'));
+          }}><Printer className="h-4 w-4" /></button>
         </span>
       </div>
       <div
@@ -565,6 +605,8 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
         }}
         className="relative max-h-[calc(100vh-260px)] overflow-auto px-3 py-5 md:px-8"
       >
+        {!readOnly && <DocumentRuler left={paragraphStyle.left} right={paragraphStyle.right} disabled={!activeBlock}
+          onIndent={(side, amount) => formatParagraph(`margin-${side}`, `${amount}mm`)} />}
         <div
           ref={editorRef}
           role="textbox"
@@ -602,6 +644,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
               role="toolbar"
               aria-label="เครื่องมือย้ายบล็อก"
               className={cn('form-block-rail', blockBounds.top < 52 && 'form-block-rail-below')}
+              style={{ left: (boundsWithin(editorRef.current)?.left ?? blockBounds.left) + 12 - blockBounds.left }}
             >
               <button
                 type="button"
@@ -645,6 +688,12 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
             <button type="button" aria-label="ปรับขนาดรูปจากมุมขวาล่าง" className="form-image-resize-handle -bottom-1.5 -right-1.5 cursor-nwse-resize" onPointerDown={(event) => handleResizePointerDown(event, 1)} />
           </div>
         )}
+      </div>
+
+      <div className="document-editor-status" data-print-hide>
+        <span>A4 · 21 × 29.7 ซม. · ขอบกระดาษ 2 ซม.</span>
+        {!readOnly && <span>คลิกในย่อหน้าเพื่อปรับรูปแบบและไม้บรรทัด · Alt + ↑ / ↓ ย้ายย่อหน้า</span>}
+        {printError && <span role="alert">{printError}</span>}
       </div>
 
       {promptKind && (

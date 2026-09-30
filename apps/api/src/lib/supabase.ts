@@ -12,6 +12,14 @@ export function createUserScopedClient(env: Bindings, accessToken: string): Supa
   });
 }
 
+/** Public Auth client used by the server-side login broker. It never persists a
+ * session and never receives the service-role key. */
+export function createPublicAuthClient(env: Bindings): SupabaseClient {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 /**
  * Client สิทธิ์ Service Role — ใช้เฉพาะฟังก์ชัน Admin ที่ตรวจสิทธิ์แล้วเท่านั้น (bypass RLS)
  * เช่น สร้างบัญชีผู้ใช้ผ่าน Auth Admin API และการเขียน audit_logs/login_logs ที่ผู้ใช้ทั่วไปเขียนตรงไม่ได้

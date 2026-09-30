@@ -1,11 +1,13 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { createAdminClient, createUserScopedClient } from '../lib/supabase';
+import { createAdminClient, createPublicAuthClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
-import { writeAuditLog } from '../services/auditService';
+import { sha256Hex, writeAuditLog } from '../services/auditService';
+import { consumeLoginChallenge, issueLoginChallenge } from '../services/loginChallengeService';
 import { sendNotification } from '../services/notificationService';
+import { verifyTurnstile } from '../services/turnstileService';
 import type { AppEnv, VendorPortalProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
@@ -17,6 +19,7 @@ import {
   reviewOutsourceSubmissionSchema,
   submitOutsourceWorkSchema,
   vendorPortalIdentitySchema,
+  vendorPortalLoginSchema,
 } from '../validators/vendorPortal';
 
 const VENDOR_SIGNATURE_BUCKET = 'ticket-outsource-signatures';
@@ -43,6 +46,19 @@ interface SafeVendorTicketRow {
   outsource_issue_no: string | null;
   outsource_sent_at: string | null;
   ticket_categories: { name: string | null } | null;
+}
+
+async function vendorLoginRateLimitKey(c: Parameters<typeof clientIp>[0]): Promise<string> {
+  let identity = '';
+  try {
+    const body = await c.req.raw.clone().json() as { vendorCode?: unknown; username?: unknown };
+    identity = [body.vendorCode, body.username]
+      .filter((value): value is string => typeof value === 'string')
+      .join(':');
+  } catch {
+    // The validator reports malformed requests; retain an IP-scoped fallback.
+  }
+  return `vendor_login:${clientIp(c)}:${await sha256Hex(identity.trim().toLowerCase())}`;
 }
 
 function bearerToken(c: Context<AppEnv>): string | null {
@@ -157,24 +173,71 @@ vendorPortalRoute.get('/bootstrap', (c) => c.json(ok(c.get('requestId'), { enabl
 
 vendorPortalRoute.post(
   '/login/resolve',
-  edgeRateLimit({ keyFn: (c) => `vendor_login:${clientIp(c)}` }),
+  edgeRateLimit({ keyFn: vendorLoginRateLimitKey }),
   rateLimit({ windowMs: 15 * 60_000, max: 20, keyFn: (c) => `vendor_login:${clientIp(c)}` }),
   zValidator('json', vendorPortalIdentitySchema, zodValidationHook),
   async (c) => {
     const body = c.req.valid('json');
+    if (!await verifyTurnstile(c.env, body.turnstileToken, 'login', clientIp(c))) {
+      return c.json(fail(c.get('requestId'), 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
+    }
     const admin = createAdminClient(c.env);
-    const invalid = () => c.json(fail(c.get('requestId'), 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+    try {
+      const challenge = await issueLoginChallenge(admin, {
+        flow: 'vendor',
+        identifier: `${body.vendorCode}:${body.username}`,
+        ip: clientIp(c),
+        userAgent: c.req.header('user-agent') ?? '',
+      });
+      c.header('Cache-Control', 'no-store');
+      return c.json(ok(c.get('requestId'), { challenge, expiresInSeconds: 300 }));
+    } catch (challengeError) {
+      const dbError = challengeError instanceof Error ? { message: challengeError.message } : null;
+      return dbFailJson(c, 'VENDOR_LOGIN_CHALLENGE_FAILED', dbError, 'เตรียมการเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
+  },
+);
+
+vendorPortalRoute.post(
+  '/login',
+  edgeRateLimit({ keyFn: (c) => `vendor_login_submit:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 10, keyFn: (c) => `vendor_login_submit:${clientIp(c)}` }),
+  zValidator('json', vendorPortalLoginSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const body = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const validChallenge = await consumeLoginChallenge(admin, {
+      token: body.challenge,
+      flow: 'vendor',
+      identifier: `${body.vendorCode}:${body.username}`,
+      ip: clientIp(c),
+      userAgent: c.req.header('user-agent') ?? '',
+    });
+    if (!validChallenge) return c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+
     const { data: vendor } = await admin.from('vendors').select('id').eq('vendor_code', body.vendorCode).eq('status', 'Active').maybeSingle();
-    if (!vendor) return invalid();
-    const { data: account } = await admin
+    const { data: account } = vendor ? await admin
       .from('vendor_portal_accounts')
       .select('email, auth_user_id, invite_status')
       .eq('vendor_id', vendor.id)
       .eq('username', body.username)
       .eq('status', 'Active')
-      .maybeSingle();
-    if (!account?.auth_user_id || account.invite_status === 'Revoked') return invalid();
-    return c.json(ok(c.get('requestId'), { email: account.email }));
+      .maybeSingle() : { data: null };
+    if (!account?.auth_user_id || account.invite_status === 'Revoked') {
+      return c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+    }
+
+    const { data, error } = await createPublicAuthClient(c.env).auth.signInWithPassword({
+      email: account.email,
+      password: body.password,
+    });
+    if (error || !data.session || data.user?.id !== account.auth_user_id) {
+      return c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+    }
+
+    c.header('Cache-Control', 'no-store');
+    return c.json(ok(reqId, { session: data.session }));
   },
 );
 

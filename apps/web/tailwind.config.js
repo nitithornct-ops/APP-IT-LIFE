@@ -5,33 +5,33 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Sarabun', 'Noto Sans Thai', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['Sarabun', 'Noto Sans Thai', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['FormThai', 'Noto Sans Thai', 'Tahoma', 'Arial', 'sans-serif'],
+        display: ['FormThai', 'Noto Sans Thai', 'Tahoma', 'Arial', 'sans-serif'],
         mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
-        // LIFE IT navy/blue foundation measured from the design handoff.
+        // LIFE IT green/white/charcoal foundation.
         primary: {
-          50: '#eef4ff',
-          100: '#eaf0ff',
-          200: '#c9d8f7',
-          300: '#8fb0ee',
-          400: '#4b7be0',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#173a8a',
-          950: '#0b1b36',
+          50: '#ecfdf5',
+          100: '#d1fae5',
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#10b981',
+          600: '#059669',
+          700: '#047857',
+          800: '#065f46',
+          900: '#064e3b',
+          950: '#022c22',
         },
         accent: {
-          300: '#93b4f5',
-          400: '#4b7be0',
-          500: '#1d4ed8',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#059669',
         },
         sidebar: {
-          DEFAULT: '#0b1b36',
-          light: '#173a8a',
+          DEFAULT: '#022c22',
+          light: '#064e3b',
         },
         success: {
           50: '#e7f5ec',
@@ -63,9 +63,9 @@ export default {
         },
         surface: {
           DEFAULT: '#ffffff',
-          page: '#f4f6fb',
-          header: '#f7f9fc',
-          muted: '#eef1f7',
+          page: '#f5faf7',
+          header: '#f2f8f5',
+          muted: '#eaf3ee',
         },
         hairline: {
           DEFAULT: '#e3e8f2',
@@ -73,18 +73,18 @@ export default {
           control: '#dde3ef',
         },
         ink: {
-          DEFAULT: '#0f172a',
-          heading: '#0b1b36',
-          secondary: '#475569',
-          muted: '#64748b',
+          DEFAULT: '#17231f',
+          heading: '#17352b',
+          secondary: '#42524a',
+          muted: '#61726a',
           faint: '#94a3b8',
         },
       },
       boxShadow: {
         card: '0 1px 2px rgba(11,27,54,.04), 0 8px 26px rgba(11,27,54,.07)',
         elevated: '0 18px 44px rgba(11,27,54,.16)',
-        action: '0 6px 16px rgba(29,78,216,.24)',
-        nav: '0 4px 12px rgba(29,78,216,.4)',
+        action: '0 6px 16px rgba(4,120,87,.24)',
+        nav: '0 4px 12px rgba(4,120,87,.4)',
       },
       borderRadius: {
         life: '7px',

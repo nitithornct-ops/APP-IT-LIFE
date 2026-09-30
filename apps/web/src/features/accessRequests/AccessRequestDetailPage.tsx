@@ -184,7 +184,7 @@ export function AccessRequestDetailPage() {
                 </div>
               )}
               {request.evidence_after_grant && (
-                <div className="mt-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                <div className="mt-3 rounded-lg bg-primary-50 p-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
                   <strong>Evidence หลังดำเนินการ:</strong> {request.evidence_after_grant}
                 </div>
               )}

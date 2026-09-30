@@ -1,11 +1,13 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { createAdminClient, createUserScopedClient } from '../lib/supabase';
+import { createAdminClient, createPublicAuthClient, createUserScopedClient } from '../lib/supabase';
 import { requireAuth, requireSession } from '../middleware/auth';
 import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
-import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
+import { loadAuditSnapshot, sha256Hex, writeAuditLog } from '../services/auditService';
+import { consumeLoginChallenge, issueLoginChallenge } from '../services/loginChallengeService';
 import { writeLoginLog } from '../services/loginLogService';
 import { loadMfaPolicy } from '../services/mfaPolicy';
+import { verifyTurnstile } from '../services/turnstileService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -13,17 +15,27 @@ import { jwtAuthenticatorAssuranceLevel } from '../utils/jwt';
 import { zodValidationHook } from '../utils/validation';
 import {
   loginLogSchema,
+  brokerLoginSchema,
+  passwordResetRequestSchema,
   resolveLoginSchema,
   setOnboardingStateSchema,
   updateOwnPreferencesSchema,
   updateOwnProfileSchema,
 } from '../validators/auth';
 
-/**
- * อีเมลปลอมคงที่ที่คืนให้เมื่อค้นหาตัวระบุที่ผู้ใช้พิมพ์แล้วไม่พบบัญชี — ไม่มีทางตรงกับบัญชีจริง
- * เพราะ .invalid เป็น TLD สงวนตาม RFC 2606 ที่จดโดเมนจริงไม่ได้
- */
-const UNRESOLVED_LOGIN_EMAIL = 'no-such-account@no-email.invalid';
+const GENERIC_LOGIN_FAILURE = 'อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+
+async function publicLoginRateLimitKey(c: Parameters<typeof clientIp>[0], prefix: string): Promise<string> {
+  let identifier = '';
+  try {
+    const body = await c.req.raw.clone().json() as { identifier?: unknown; vendorCode?: unknown; username?: unknown };
+    identifier = [body.vendorCode, body.username, body.identifier].filter((value): value is string => typeof value === 'string').join(':');
+  } catch {
+    // The body validator will return the appropriate error; the limiter still
+    // falls back to the client context instead of disabling protection.
+  }
+  return `${prefix}:${clientIp(c)}:${await sha256Hex(identifier.trim().toLowerCase())}`;
+}
 
 export const authRoute = new Hono<AppEnv>();
 
@@ -314,51 +326,108 @@ authRoute.post('/password-change-log', requireAuth, async (c) => {
 });
 
 /**
- * แปลงสิ่งที่ผู้ใช้พิมพ์ในช่อง login (อีเมล หรือ ชื่อผู้ใช้) เป็นอีเมลที่ Supabase Auth รู้จัก
- *
- * จำเป็นเพราะ Supabase Auth รับตัวระบุได้แค่ email/phone ไม่มี username ส่วนบัญชีที่ผู้ดูแลสร้างให้
- * พนักงานที่ไม่มีอีเมลองค์กรนั้นถูกผูกไว้กับอีเมลปลอมที่ผู้ใช้ไม่เคยรู้ค่า จึงต้องถามฝั่ง Server ก่อนเสมอ
- * หน้า Login ยังเรียก signInWithPassword ตรงไปที่ Supabase เหมือนเดิม (ตามสถาปัตยกรรมใน
- * docs/architecture.md) — endpoint นี้เพิ่มแค่การ "ค้นหา" ไว้ข้างหน้า ไม่ได้ย้ายการตรวจรหัสผ่านมาที่ Worker
- *
- * กติกาที่ห้ามแก้:
- *  - คืน 200 รูปแบบเดียวเสมอ ไม่ว่าจะพบบัญชีหรือไม่ ถ้าไม่พบให้คืนอีเมลปลอมคงที่ เพื่อให้ signInWithPassword
- *    ที่ตามมาล้มด้วยข้อความเดียวกันทั้งกรณี "ไม่มีบัญชีนี้" และ "รหัสผ่านผิด" — ไม่มีสัญญาณให้ไล่เดาว่า
- *    ชื่อผู้ใช้ใดมีอยู่จริง (การคืน 404 หรือข้อความต่างกันจะทำให้ endpoint นี้กลายเป็นเครื่องมือรวบรวมรายชื่อ
- *    บัญชีของทั้งองค์กรให้คนที่ยังไม่ได้ login)
- *  - ต้องเรียก RPC ทุกครั้ง ห้าม return ก่อนคิวรีเมื่อเดาได้ว่าไม่พบ มิฉะนั้นเวลาตอบที่ต่างกันจะบอกได้เองว่า
- *    บัญชีมีจริงหรือไม่
- *  - ค้นผ่าน resolve_login_email() ซึ่งเทียบด้วย = แบบ parameterized เท่านั้น ห้ามเปลี่ยนไปต่อสตริง
- *    ตัวกรองของ PostgREST (.or()/.ilike()) กับค่าที่ผู้ใช้พิมพ์เอง เพราะ % และ , เป็นไวลด์การ์ด/ไวยากรณ์
- *    ตัวกรอง ผู้ไม่หวังดีส่ง "%" เข้ามาจะได้อีเมลจริงของผู้ใช้คนอื่นกลับไป (บั๊กชนิดเดียวกับที่ utils/search.ts แก้ไว้)
- *  - ตั้งใจไม่ใส่ edgeRateLimit ต่างจาก /login-log ด้านล่าง เพราะ binding PUBLIC_RATE_LIMITER ถูกล็อกไว้ที่
- *    10 ครั้ง/60 วินาทีต่อ key และ endpoint นี้อยู่บนเส้นทางหลักของการเข้าสู่ระบบ สำนักงานที่ออกอินเทอร์เน็ต
- *    ด้วย IP เดียวกันจะมีคน login เกิน 10 คนต่อนาทีในช่วงเช้าได้ง่าย ซึ่งจะกลายเป็น "เข้าระบบไม่ได้ทั้งสำนักงาน"
- *    การจำกัดระดับ isolate ที่ 60 ครั้ง/นาที/IP จึงพอสำหรับกันสคริปต์ยิงรัว ส่วนการกัน brute force ตัวจริง
- *    ยังเป็นหน้าที่ของ Supabase Auth ที่ปลายทาง
+ * Issue an opaque, short-lived challenge. The browser never receives the
+ * resolved Auth email; the API keeps that lookup server-side for the next step.
  */
 authRoute.post(
   '/resolve-login',
+  edgeRateLimit({ keyFn: (c) => publicLoginRateLimitKey(c, 'resolve-login') }),
   rateLimit({ windowMs: 60_000, max: 60, keyFn: (c) => `resolve-login:${clientIp(c)}` }),
   zValidator('json', resolveLoginSchema, zodValidationHook),
   async (c) => {
     const reqId = c.get('requestId');
-    const { identifier } = c.req.valid('json');
+    const { identifier, turnstileToken } = c.req.valid('json');
+    if (!await verifyTurnstile(c.env, turnstileToken, 'login', clientIp(c))) {
+      return c.json(fail(reqId, 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
+    }
 
-    const { data, error } = await createAdminClient(c.env).rpc('resolve_login_email', {
+    const admin = createAdminClient(c.env);
+    const { error } = await admin.rpc('resolve_login_email', {
       identifier_input: identifier,
     });
-
     if (error) {
       return c.json(fail(reqId, 'LOGIN_RESOLVE_FAILED', 'ตรวจสอบข้อมูลเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
     }
 
-    return c.json(ok(reqId, { email: typeof data === 'string' && data ? data : UNRESOLVED_LOGIN_EMAIL }));
+    try {
+      const challenge = await issueLoginChallenge(admin, {
+        flow: 'internal',
+        identifier,
+        ip: clientIp(c),
+        userAgent: c.req.header('user-agent') ?? '',
+      });
+      c.header('Cache-Control', 'no-store');
+      return c.json(ok(reqId, { challenge, expiresInSeconds: 300 }));
+    } catch (challengeError) {
+      const dbError = challengeError instanceof Error ? { message: challengeError.message } : null;
+      return dbFailJson(c, 'LOGIN_CHALLENGE_FAILED', dbError, 'เตรียมการเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
   },
 );
 
 /**
- * บันทึกความพยายาม Login (Frontend เรียกหลัง signInWithPassword ไม่ว่าสำเร็จหรือไม่)
+ * Secure login broker. The password crosses the API over HTTPS, is never
+ * logged, and is sent only to Supabase Auth from a non-persisting public-key
+ * client. A challenge is consumed before password verification, so it cannot
+ * be replayed to brute-force the same identifier.
+ */
+authRoute.post(
+  '/login',
+  edgeRateLimit({ keyFn: (c) => `login:${clientIp(c)}` }),
+  rateLimit({ windowMs: 60_000, max: 10, keyFn: (c) => `login:${clientIp(c)}` }),
+  zValidator('json', brokerLoginSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const body = c.req.valid('json');
+    const admin = createAdminClient(c.env);
+    const validChallenge = await consumeLoginChallenge(admin, {
+      token: body.challenge,
+      flow: 'internal',
+      identifier: body.identifier,
+      ip: clientIp(c),
+      userAgent: c.req.header('user-agent') ?? '',
+    });
+    if (!validChallenge) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+
+    const { data: email, error: resolveError } = await admin.rpc('resolve_login_email', { identifier_input: body.identifier });
+    const resolvedEmail = typeof email === 'string' && email ? email : 'no-such-account@no-email.invalid';
+    if (resolveError) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+
+    const { data, error } = await createPublicAuthClient(c.env).auth.signInWithPassword({
+      email: resolvedEmail,
+      password: body.password,
+    });
+    if (error || !data.session) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+
+    c.header('Cache-Control', 'no-store');
+    return c.json(ok(reqId, { session: data.session }));
+  },
+);
+
+/** Password-reset request is brokered for the same API-side Turnstile check and rate limit. */
+authRoute.post(
+  '/password-reset-request',
+  edgeRateLimit({ keyFn: (c) => `password-reset:${clientIp(c)}` }),
+  rateLimit({ windowMs: 15 * 60_000, max: 5, keyFn: (c) => `password-reset:${clientIp(c)}` }),
+  zValidator('json', passwordResetRequestSchema, zodValidationHook),
+  async (c) => {
+    const reqId = c.get('requestId');
+    const { email, turnstileToken } = c.req.valid('json');
+    if (!await verifyTurnstile(c.env, turnstileToken, 'password_reset', clientIp(c))) {
+      return c.json(fail(reqId, 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
+    }
+
+    const appOrigin = c.env.PUBLIC_APP_URL?.trim() || new URL(c.req.url).origin;
+    const redirectTo = new URL('/reset-password', appOrigin).toString();
+    // Supabase intentionally returns a generic response for unknown addresses.
+    // Do not reflect provider errors because they can become an enumeration side-channel.
+    await createPublicAuthClient(c.env).auth.resetPasswordForEmail(email, { redirectTo });
+    return c.json(ok(reqId, { submitted: true }));
+  },
+);
+
+/**
+ * บันทึกความพยายาม Login (Frontend เรียกหลัง API login broker ไม่ว่าสำเร็จหรือไม่)
  *
  * Login Log ใช้เป็นหลักฐานตรวจสอบย้อนหลัง จึงห้ามเชื่อคำกล่าวอ้างของ Client:
  *  - success = true  ต้องแนบ JWT ที่ใช้ได้จริงมาด้วย และระบบจะบันทึก "อีเมลจาก JWT" เท่านั้น

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loginLogSchema, resolveLoginSchema } from '../src/validators/auth';
+import { brokerLoginSchema, loginLogSchema, passwordResetRequestSchema, resolveLoginSchema } from '../src/validators/auth';
 import { createLocalUserSchema, deleteUserSchema, resetPasswordSchema, updateUserSchema } from '../src/validators/users';
 
 const validAccount = { username: 'somchai.j', password: 'Rong2568Pass', fullName: 'สมชาย ใจดี' };
@@ -73,8 +73,19 @@ describe('login endpoints', () => {
   });
 
   it('bounds the identifier it will look up', () => {
-    expect(resolveLoginSchema.safeParse({ identifier: 'somchai.j' }).success).toBe(true);
-    expect(resolveLoginSchema.safeParse({ identifier: 'a'.repeat(255) }).success).toBe(false);
-    expect(resolveLoginSchema.safeParse({ identifier: '   ' }).success).toBe(false);
+    const valid = { identifier: 'somchai.j', turnstileToken: 'test-token' };
+    expect(resolveLoginSchema.safeParse(valid).success).toBe(true);
+    expect(resolveLoginSchema.safeParse({ ...valid, identifier: 'a'.repeat(255) }).success).toBe(false);
+    expect(resolveLoginSchema.safeParse({ ...valid, identifier: '   ' }).success).toBe(false);
+  });
+
+  it('requires a one-time challenge for brokered password authentication', () => {
+    expect(brokerLoginSchema.safeParse({ identifier: 'somchai.j', password: 'Password123', challenge: 'a'.repeat(64) }).success).toBe(true);
+    expect(brokerLoginSchema.safeParse({ identifier: 'somchai.j', password: 'Password123', challenge: 'not-a-challenge' }).success).toBe(false);
+  });
+
+  it('bounds password-reset requests and requires anti-bot proof', () => {
+    expect(passwordResetRequestSchema.safeParse({ email: 'user@example.test', turnstileToken: 'test-token' }).success).toBe(true);
+    expect(passwordResetRequestSchema.safeParse({ email: 'not-an-email', turnstileToken: 'test-token' }).success).toBe(false);
   });
 });

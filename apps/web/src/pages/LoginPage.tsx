@@ -55,28 +55,30 @@ export function LoginPage() {
       return;
     }
 
+    let brokerAuthenticated = false;
     try {
-      // Supabase Auth รับได้แค่อีเมล จึงต้องถาม Backend ก่อนว่าสิ่งที่ผู้ใช้พิมพ์ผูกกับอีเมลใด
-      // (บัญชีที่ไม่มีอีเมลจริงถูกผูกกับอีเมลภายในที่ผู้ใช้ไม่รู้ค่า) เมื่อไม่พบบัญชี Backend จะคืนอีเมล
-      // ปลอมคงที่กลับมาโดยตั้งใจ เพื่อให้ผลลัพธ์ของ "ไม่มีบัญชีนี้" กับ "รหัสผ่านผิด" แยกกันไม่ออก
-      const { email } = await apiFetch<{ email: string }>(
+      // Backend ตรวจ Turnstile และคืน one-time challenge แบบ opaque เท่านั้น
+      // อีเมลจริงถูก resolve ฝั่ง API และไม่เคยถูกส่งกลับมาให้ browser
+      const { challenge } = await apiFetch<{ challenge: string }>(
         '/api/v1/auth/resolve-login',
-        { method: 'POST', body: JSON.stringify({ identifier: values.identifier }) },
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, turnstileToken: captchaToken }) },
         { silent: true },
       );
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password: values.password,
-        options: { captchaToken },
-      });
+      const brokerResult = await apiFetch<{ session: { access_token: string; refresh_token: string } }>(
+        '/api/v1/auth/login',
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, password: values.password, challenge }) },
+        { silent: true },
+      );
+      const { error } = await supabase.auth.setSession(brokerResult.session);
 
       if (error) {
-        await recordLoginAttempt(values.identifier, false, error.message);
+        await recordLoginAttempt(values.identifier, false, 'login_failed');
         setErrorMessage('อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
         return;
       }
 
+      brokerAuthenticated = true;
       const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
       const policy = await apiFetch<MfaPolicyResponse>('/api/v1/auth/mfa-policy', undefined, { silent: true });
       if (policy.required && policy.currentLevel !== 'aal2') {
@@ -88,8 +90,8 @@ export function LoginPage() {
       showToast('success', 'เข้าสู่ระบบสำเร็จ');
       navigate(redirectTo, { replace: true });
     } catch {
+      if (!brokerAuthenticated) await recordLoginAttempt(values.identifier, false, 'login_failed');
       // ครอบทั้งการค้นหาบัญชีและการตรวจนโยบาย MFA — ทั้งสองอย่างเป็นการเรียก API ที่ล้มได้
-      // ห้าม fallback ไปเดาว่าสิ่งที่พิมพ์คืออีเมลแล้ว login ต่อ เพราะบัญชีชื่อผู้ใช้จะได้พฤติกรรมคนละแบบ
       setErrorMessage('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();

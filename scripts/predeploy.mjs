@@ -14,6 +14,8 @@ const required = [
   'SUPABASE_DB_URL',
   'ALLOWED_ORIGINS',
   'PUBLIC_APP_URL',
+  'TURNSTILE_SECRET_KEY',
+  'TURNSTILE_EXPECTED_HOSTNAME',
   'CLOUDFLARE_API_TOKEN',
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_PAGES_PROJECT',
@@ -41,8 +43,8 @@ if (process.env.VITE_TURNSTILE_SITE_KEY && !/^0x[A-Za-z0-9_-]+$/.test(process.en
   errors.push('VITE_TURNSTILE_SITE_KEY must be a valid Cloudflare Turnstile sitekey');
 }
 
-// หมายเหตุ: token ของ Turnstile ถูก verify โดย Supabase Auth (ตั้ง secret ใน Supabase dashboard)
-// ไม่ใช่โดย Worker ของเรา ที่นี่จึงตรวจแค่รูปแบบของ sitekey ฝั่งหน้าเว็บ
+// Turnstile token ต้องถูก verify ที่ API trust boundary ก่อนเรียก Auth หรือเปิดเผยผลการ resolve
+// ค่า secret ตรวจเพียงว่ามีอยู่ ไม่พิมพ์ค่าออก log และไม่เก็บลง repository
 
 function requireHttps(key) {
   const value = process.env[key];
@@ -95,9 +97,9 @@ if (process.env.NOTIFY_LINE_ENABLED === 'true' && !process.env.LINE_CHANNEL_ACCE
   errors.push('LINE_CHANNEL_ACCESS_TOKEN is required when NOTIFY_LINE_ENABLED=true');
 }
 
-// CSP ของหน้าเว็บระบุ origin ของ API ไว้ตายตัวใน apps/web/public/_headers ถ้าย้าย PRODUCTION_API_URL
-// ไปโดเมนอื่นแล้วลืมแก้ไฟล์นี้ เบราว์เซอร์จะบล็อกทุกคำขอ ทั้งที่ health check ฝั่ง Worker ยังเขียว
-// และ smoke test ที่ยิงด้วย curl ก็ยังผ่าน — อาการจะโผล่กับผู้ใช้จริงเท่านั้น
+// CSP ของหน้าเว็บต้องอนุญาต API origin; custom domain ต้องระบุแบบ exact
+// ส่วน Cloudflare workers.dev ใช้ wildcard ใน public header เพื่อไม่ฝัง production origin ใน source
+// และตรวจให้แคบพอว่า wildcard นี้ใช้ได้เฉพาะ host ใต้ workers.dev เท่านั้น
 const headersPath = resolve(process.env.WEB_HEADERS_FILE ?? 'apps/web/public/_headers');
 let apiOrigin = '';
 try {
@@ -114,8 +116,14 @@ if (apiOrigin) {
       .find((directive) => /^connect-src(\s|$)/i.test(directive));
     if (!connectSrc) {
       errors.push(`${headersPath} must declare a connect-src directive`);
-    } else if (!connectSrc.split(/\s+/).slice(1).includes(apiOrigin)) {
+    } else {
+      const sources = connectSrc.split(/\s+/).slice(1);
+      const apiHostname = new URL(apiOrigin).hostname;
+      const isAllowedWorkerWildcard = apiHostname.endsWith('.workers.dev')
+        && sources.includes('https://*.workers.dev');
+      if (!sources.includes(apiOrigin) && !isAllowedWorkerWildcard) {
       errors.push(`connect-src in ${headersPath} must list PRODUCTION_API_URL (${apiOrigin}) or the browser blocks every API call`);
+      }
     }
   } catch (error) {
     errors.push(`cannot read ${headersPath}: ${error instanceof Error ? error.message : error}`);

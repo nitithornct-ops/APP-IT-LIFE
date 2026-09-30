@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { PublicBrand } from '../components/PublicBrand';
 import { TurnstileWidget, type TurnstileWidgetHandle } from '../components/TurnstileWidget';
-import { supabase } from '../lib/supabase';
+import { apiFetch } from '../services/apiClient';
 
 const forgotPasswordSchema = z.object({
   email: z.string().trim().email('กรุณากรอกอีเมลให้ถูกต้อง'),
@@ -34,16 +34,14 @@ export function ForgotPasswordPage() {
     }
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-        captchaToken,
-      });
-      if (error) {
-        setErrorMessage('ไม่สามารถยืนยันความปลอดภัยได้ กรุณาลองใหม่อีกครั้ง');
-        return;
-      }
+      await apiFetch('/api/v1/auth/password-reset-request', {
+        method: 'POST',
+        body: JSON.stringify({ email: values.email, turnstileToken: captchaToken }),
+      }, { silent: true });
       // แสดงข้อความเดียวกันเสมอไม่ว่าจะพบอีเมลนี้ในระบบหรือไม่ เพื่อป้องกัน Email/User Enumeration
       setSubmitted(true);
+    } catch {
+      setErrorMessage('ไม่สามารถยืนยันความปลอดภัยได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();
     }

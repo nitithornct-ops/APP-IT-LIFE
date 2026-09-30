@@ -2,7 +2,7 @@
 
 ระบบ Web Application สำหรับบริหารงานบริการเทคโนโลยีสารสนเทศ (ITSM) และงานกำกับดูแลด้านเทคโนโลยีขององค์กร โดยรวมงานรับแจ้งปัญหา การให้บริการ งานปฏิบัติการไอที ทรัพย์สิน โครงสร้างพื้นฐาน รายงาน และ Governance ไว้ในระบบเดียว
 
-> **สถานะโครงการ:** Pre-production / migration rehearsal
+> **สถานะโครงการ:** Production-capable source / controlled release only
 > Repository นี้เป็น **public repository** สำหรับ source code และเอกสารทางเทคนิคเท่านั้น ห้ามใช้เป็นที่เก็บข้อมูลจริงของผู้ใช้งาน ข้อมูล Ticket ไฟล์แนบ credentials หรือ secrets ดูแนวทางได้ที่ [SECURITY.md](SECURITY.md)
 
 ## ระบบนี้ทำอะไรได้บ้าง
@@ -77,7 +77,7 @@ Supabase Auth + PostgreSQL + RLS + Storage
 └── .github/workflows/       CI/CD และ quality gates
 ```
 
-โฟลเดอร์ `docs/`, `legacy-gas/` และ workflow บางส่วนอาจมีรายละเอียดภายในหรือข้อมูลสำหรับการปฏิบัติงาน ไม่ควรถือว่าเป็นเอกสาร public ที่อนุมัติให้เผยแพร่ทั้งหมด โปรดตรวจตาม [SECURITY.md](SECURITY.md) ก่อนเปิด repository ต่อสาธารณะ
+โฟลเดอร์ `docs/`, `legacy-gas/` และ workflow ต้องถือเป็น public-safe reference เท่านั้น ห้ามใส่ค่า environment จริง, identifier ของ production, PII, export, log หรือ secret ลงใน repository โปรดตรวจตาม [SECURITY.md](SECURITY.md) ก่อนเปิด PR หรือเผยแพร่เอกสารเพิ่ม
 
 ## เริ่มต้นใช้งานสำหรับนักพัฒนา
 

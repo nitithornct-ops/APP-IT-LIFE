@@ -9,7 +9,7 @@
  */
 
 /** ฟอนต์เดียวกับที่หน้าจอใช้ เพื่อให้ลายน้ำหน้าตาตรงกับที่เห็นบนเว็บ */
-const FONT_STACK = "'Sarabun', 'Segoe UI', 'Noto Sans Thai', sans-serif";
+const FONT_STACK = "'FormThai', 'Noto Sans Thai', Tahoma, Arial, sans-serif";
 
 /** วาดที่ความละเอียด 3 เท่าแล้วย่อลงตอนฝังใน PDF ข้อความจึงไม่แตกเวลาพิมพ์ */
 const STAMP_SUPERSAMPLE = 3;

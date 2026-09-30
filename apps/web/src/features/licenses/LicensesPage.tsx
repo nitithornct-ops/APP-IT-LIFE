@@ -706,7 +706,7 @@ export function LicensesPage() {
         <div className="rounded-[10px] bg-[#0B1B36] p-4 text-white shadow-sm">
           <p className="font-mono text-[10px] font-semibold tracking-wider text-white/50">LICENSE OPTIMIZATION</p>
           <p className="mt-3 text-sm font-bold">สิทธิ์ที่ยังไม่ถูกใช้งาน</p>
-          <p className="mt-1 font-mono text-3xl font-bold text-blue-300">{unusedSeats.toLocaleString('th-TH')}</p>
+          <p className="mt-1 font-mono text-3xl font-bold text-primary-300">{unusedSeats.toLocaleString('th-TH')}</p>
           <p className="mt-1 text-xs leading-5 text-white/60">จาก {underusedItems.length} รายการที่ใช้งานไม่เกิน 75% ควรทบทวนก่อนรอบต่ออายุครั้งถัดไป</p>
 
           {/* เงินที่เรียกคืนได้ (design handoff 3e) — ขึ้นเฉพาะเมื่อมีลิขสิทธิ์ที่บันทึกราคาไว้จริง

@@ -3,9 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * index.html โหลดฟอนต์ Sarabun จาก Google Fonts แต่ CSP ใน public/_headers เคยอนุญาตแค่ 'self'
- * ผลคือเบราว์เซอร์บล็อกทั้ง stylesheet และไฟล์ฟอนต์เงียบ ๆ ระบบตกไปใช้ฟอนต์ระบบแทนโดยไม่มีใครรู้
- * (พบตอน Pre-production QA audit 2026-08-13) — build ผ่าน typecheck ผ่าน แต่หน้าจอผิดจากที่ออกแบบ
+ * ฟอนต์หลักของแอปถูกฝังใน bundle แล้ว จึงไม่ต้องพึ่ง stylesheet หรือ font host ภายนอก
+ * และยังตรวจ CSP ต่อไว้เพื่อป้องกันการเปิดแหล่งฟอนต์ภายนอกโดยไม่ตั้งใจ
  *
  * เทสต์นี้จับคู่ "สิ่งที่ index.html ขอโหลด" กับ "สิ่งที่ CSP ยอม" เพื่อไม่ให้หลุดแบบเดิมอีก
  */
