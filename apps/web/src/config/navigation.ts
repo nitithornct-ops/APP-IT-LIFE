@@ -63,9 +63,11 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // route '/' ต้องมี dashboard.view อยู่แล้ว เมนูจึงต้องประกาศให้ตรงกัน ไม่งั้นบาง role กดแล้วเจอ Access Denied
       { label: 'หน้าหลัก', path: '/', icon: LayoutDashboard, permission: 'dashboard.view' },
-      { label: 'War Room', path: '/war-room', icon: RadioTower, permission: 'dashboard.view' },
       { label: 'ศูนย์งานของฉัน', path: '/my-work', icon: ClipboardList, permission: 'dashboard.view' },
+      { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
+      { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'งานส่วนตัว', path: '/tasks', icon: ListTodo, permission: 'task.view' },
+      { label: 'War Room', path: '/war-room', icon: RadioTower, permission: 'dashboard.view' },
       { label: 'เครื่องมือ PDF', path: '/pdf-tools', icon: FileStack },
       { label: 'สถานะระบบ', path: '/system-status', icon: Activity, permission: 'system_status.view' },
     ],
@@ -73,8 +75,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'บริการและกระบวนการ IT',
     items: [
-      { label: 'Ticket', path: '/tickets', icon: Ticket, permission: 'ticket.view' },
-      { label: 'คำขอบริการ', path: '/service-requests', icon: ShoppingBag, permission: 'service_request.view' },
       { label: 'คำขอสิทธิ์', path: '/access-requests', icon: KeyRound, permission: 'access_request.view' },
       { label: 'Incident', path: '/incidents', icon: Siren, permission: 'incident.view' },
       { label: 'Problem / Known Error', path: '/problems', icon: Bug, permission: 'problem.view' },

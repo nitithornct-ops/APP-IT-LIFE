@@ -5,6 +5,7 @@ import { asServiceRole, asUser, createTestDb } from './testDb';
 const REQUESTER_ID = '20000000-0000-0000-0000-000000000001';
 const TECHNICIAN_ID = '20000000-0000-0000-0000-000000000002';
 const ADMIN_ID = '20000000-0000-0000-0000-000000000003';
+const RATING_DETAILS = '{"responsiveness":5,"workQuality":5,"serviceManners":5,"expertise":5,"communication":5}';
 
 let db: PGlite;
 let statuses: string[];
@@ -31,6 +32,25 @@ async function createTicket(assetId?: string): Promise<string> {
     [REQUESTER_ID, TECHNICIAN_ID, assetId ?? null],
   ));
   return result.rows[0].id;
+}
+
+async function moveTicketToClosedWithSignoff(ticketId: string): Promise<void> {
+  await asUser(db, ADMIN_ID, () => db.query(
+    'update public.tickets set status = $1 where id = $2',
+    [statuses[2], ticketId],
+  ));
+  await asUser(db, TECHNICIAN_ID, () => db.query(
+    `update public.tickets set status = $1, resolution = 'แก้ไขแล้ว' where id = $2`,
+    [statuses[6], ticketId],
+  ));
+  await asServiceRole(db, () => db.query(
+    `select public.complete_ticket_requester_signoff(
+       $1, $2, $3, null, 5, $4::jsonb,
+       '[{"key":"responsiveness","label":"ความรวดเร็ว","score":5}]'::jsonb,
+       'ตรวจรับแล้ว', 'tickets/test/signature.png', now(), 'ลงนามตรวจรับ'
+     )`,
+    [ticketId, statuses[6], REQUESTER_ID, RATING_DETAILS],
+  ));
 }
 
 beforeAll(async () => {
@@ -165,6 +185,124 @@ describe('Ticket workflow integrity', () => {
     expect(rounds.rows[0].status).toBe('resolved');
     expect(String(rounds.rows[0].resolution_due_at)).toBe(String(oldRound.rows[0].resolution_due_at));
     expect(rounds.rows[1]).toMatchObject({ round_no: 2, status: 'open' });
+  });
+
+  it('archives and clears requester sign-off when the web requester reopens a closed Ticket', async () => {
+    const ticketId = await createTicket();
+    await moveTicketToClosedWithSignoff(ticketId);
+
+    await asServiceRole(db, () => db.query(
+      `select public.requester_reopen_ticket(
+         $1, $2, 'ยังใช้งานไม่ได้จากหน้าเว็บ', now() + interval '2 hours', now() + interval '12 hours'
+       )`,
+      [ticketId, REQUESTER_ID],
+    ));
+
+    const ticket = await db.query<{
+      status: string;
+      rating: number | null;
+      feedback: string | null;
+      feedback_at: string | null;
+      requester_signature_storage_path: string | null;
+    }>(
+      `select status, rating, feedback, feedback_at, requester_signature_storage_path
+       from public.tickets where id = $1`,
+      [ticketId],
+    );
+    expect(ticket.rows[0]).toEqual({
+      status: 'กำลังดำเนินการ',
+      rating: null,
+      feedback: null,
+      feedback_at: null,
+      requester_signature_storage_path: null,
+    });
+
+    const history = await db.query<{
+      status_before_reopen: string;
+      rating: number;
+      feedback: string;
+      requester_signature_storage_path: string;
+      source_channel: string;
+      archived_by: string | null;
+    }>(
+      `select status_before_reopen, rating, feedback, requester_signature_storage_path,
+              source_channel, archived_by
+       from public.ticket_signoff_history where ticket_id = $1`,
+      [ticketId],
+    );
+    expect(history.rows).toHaveLength(1);
+    expect(history.rows[0]).toMatchObject({
+      status_before_reopen: 'ปิดงาน',
+      rating: 5,
+      feedback: 'ตรวจรับแล้ว',
+      requester_signature_storage_path: 'tickets/test/signature.png',
+      source_channel: 'web',
+      archived_by: REQUESTER_ID,
+    });
+  });
+
+  it('archives sign-off when staff reopens a closed Ticket', async () => {
+    const ticketId = await createTicket();
+    await moveTicketToClosedWithSignoff(ticketId);
+
+    await asUser(db, ADMIN_ID, () => db.query(
+      `update public.tickets
+       set status = 'กำลังดำเนินการ', updated_by = $1
+       where id = $2`,
+      [ADMIN_ID, ticketId],
+    ));
+
+    const result = await db.query<{ rating: number | null; feedback: string | null }>(
+      'select rating, feedback from public.tickets where id = $1',
+      [ticketId],
+    );
+    expect(result.rows[0]).toEqual({ rating: null, feedback: null });
+
+    const history = await db.query<{ source_channel: string; archived_by: string | null }>(
+      'select source_channel, archived_by from public.ticket_signoff_history where ticket_id = $1',
+      [ticketId],
+    );
+    expect(history.rows).toEqual([{ source_channel: 'staff', archived_by: ADMIN_ID }]);
+  });
+
+  it('archives sign-off for a LINE requester reopen and keeps the LINE actor identity', async () => {
+    const lineUser = await asServiceRole(db, () => db.query<{ id: string }>(
+      `insert into public.line_users (line_user_id, display_name, link_status)
+       values ('UTicketIntegrityLine000000000001', 'Ticket integrity LINE user', 'Active')
+       returning id`,
+    ));
+    const ticket = await asServiceRole(db, () => db.query<{ id: string }>(
+      `insert into public.tickets
+         (title, requester_id, requester_line_user_id, source_channel, description,
+          assignee_id, response_sla_hours, resolution_sla_hours, response_due_at, due_at,
+          privacy_consent_confirmed, privacy_notice_version, privacy_consent_at,
+          privacy_consent_channel, privacy_consent_text)
+       values ('LINE integrity test', $1, $2, 'line', 'LINE workflow integrity test', $3, 4, 24,
+               now() + interval '4 hours', now() + interval '24 hours', true, 'test', now(),
+               'PUBLIC_TICKET_LINE', 'ยืนยันประกาศความเป็นส่วนตัวสำหรับการทดสอบ')
+       returning id`,
+      [REQUESTER_ID, lineUser.rows[0].id, TECHNICIAN_ID],
+    ));
+    await moveTicketToClosedWithSignoff(ticket.rows[0].id);
+
+    await asServiceRole(db, () => db.query(
+      `select public.line_requester_reopen_ticket(
+         $1, $2, $3, 'ยังใช้งานไม่ได้จาก LINE', now() + interval '2 hours', now() + interval '12 hours'
+       )`,
+      [ticket.rows[0].id, lineUser.rows[0].id, REQUESTER_ID],
+    ));
+
+    const current = await db.query<{ rating: number | null; feedback: string | null }>(
+      'select rating, feedback from public.tickets where id = $1',
+      [ticket.rows[0].id],
+    );
+    expect(current.rows[0]).toEqual({ rating: null, feedback: null });
+
+    const history = await db.query<{ source_channel: string; archived_line_user_id: string | null }>(
+      'select source_channel, archived_line_user_id from public.ticket_signoff_history where ticket_id = $1',
+      [ticket.rows[0].id],
+    );
+    expect(history.rows).toEqual([{ source_channel: 'line', archived_line_user_id: lineUser.rows[0].id }]);
   });
 
   it('stores an exact Ticket-to-PM link without replacing the PM history', async () => {

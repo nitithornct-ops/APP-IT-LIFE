@@ -1,6 +1,6 @@
 /* global self, caches, URL, fetch */
 
-const CACHE_NAME = 'life-it-shell-v1';
+const CACHE_NAME = 'life-it-shell-20260930-security-v1';
 const APP_SHELL = ['/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -20,12 +20,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
   event.respondWith(
-    caches.match(request).then((cached) => cached ?? fetch(request).then((response) => {
-      if (response.ok && (url.pathname.startsWith('/assets/') || url.pathname === '/' || url.pathname.endsWith('.js') || url.pathname.endsWith('.css'))) {
+    fetch(request).then((response) => {
+      if (response.ok && (url.pathname.startsWith('/assets/') || url.pathname === '/' || url.pathname === '/index.html' || url.pathname.endsWith('.js') || url.pathname.endsWith('.css'))) {
         const copy = response.clone();
         void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
       }
       return response;
-    }).catch(() => caches.match('/index.html'))),
+    }).catch(() => caches.match(request).then((cached) => cached ?? caches.match('/index.html'))),
   );
 });

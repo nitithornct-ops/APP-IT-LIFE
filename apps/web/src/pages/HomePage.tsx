@@ -173,7 +173,7 @@ function metricIcon(tone: DashboardTone): ReactNode {
   return <Gauge className="h-3.5 w-3.5" />;
 }
 
-function metricVisual(metric: DashboardMetric, index: number, metrics: DashboardMetric[]): ReactNode {
+function metricVisual(metric: DashboardMetric, metrics: DashboardMetric[]): ReactNode {
   const numericValue = typeof metric.value === 'number' ? metric.value : Number.parseFloat(metric.value);
   const numericMetrics = metrics.map((entry) => typeof entry.value === 'number' ? entry.value : Number.parseFloat(entry.value)).filter(Number.isFinite);
   const maximum = Math.max(1, ...numericMetrics);
@@ -181,27 +181,10 @@ function metricVisual(metric: DashboardMetric, index: number, metrics: Dashboard
     ? Math.min(100, Math.max(0, numericValue || 0))
     : Math.min(100, Math.max(8, (numericValue || 0) / maximum * 100));
 
-  if (index === 0) {
-    return (
-      <svg viewBox="0 0 120 22" preserveAspectRatio="none" className="h-5 w-full text-primary-600 dark:text-primary-300">
-        <path d="M0 17 L14 13 L28 15 L43 8 L58 12 L73 7 L88 10 L104 4 L120 6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      </svg>
-    );
-  }
-
-  if (index === 1) {
-    return (
-      <span className="flex h-5 items-end gap-0.5">
-        {[28, 45, 36, 62, 48, 76, 96].map((height, barIndex) => (
-          <span key={barIndex} className={`min-w-0 flex-1 ${barIndex > 4 ? TONE[metric.tone].bar : 'bg-primary-200 dark:bg-primary-700'}`} style={{ height: `${height}%` }} />
-        ))}
-      </span>
-    );
-  }
-
   return (
-    <span className="block h-1.5 bg-slate-100 dark:bg-slate-700">
+    <span className="block h-1.5 bg-slate-100 dark:bg-slate-700" title="สัดส่วนค่าปัจจุบัน ไม่ใช่แนวโน้มตามเวลา">
       <span className={`block h-full ${TONE[metric.tone].bar}`} style={{ width: `${percent}%` }} />
+      <span className="sr-only">ไม่มีข้อมูลแนวโน้มตามเวลา แสดงเฉพาะสัดส่วนค่าปัจจุบัน</span>
     </span>
   );
 }
@@ -357,14 +340,14 @@ export function HomePage() {
             <KpiStrip
               label="ตัวชี้วัดสำคัญ"
               variant="executive"
-            items={visibleMetrics.map(({ metric, index, key }) => ({
+              items={visibleMetrics.map(({ metric, key }) => ({
                 key,
                 label: metric.label,
                 value: metric.value,
                 note: metric.note,
                 icon: metricIcon(metric.tone),
                 href: metric.path ? withDashboardContext(metric.path, dashboard.data.leadDays) : undefined,
-                visual: metricVisual(metric, index, dashboard.data.metrics),
+                visual: metricVisual(metric, dashboard.data.metrics),
                 tone: metric.tone,
               }))}
             />

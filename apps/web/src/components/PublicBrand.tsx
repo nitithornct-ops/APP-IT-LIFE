@@ -13,7 +13,7 @@ export function PublicBrand({ className, subtitle = 'Smart Service Center' }: Pu
       <span className="public-brand-mark" aria-hidden="true">LI</span>
       <span className="min-w-0 leading-tight">
         <span className="block truncate font-display text-lg font-semibold tracking-[0.08em] text-primary-900 dark:text-primary-100">LIFE IT</span>
-        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600">{subtitle}</span>
+        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-700">{subtitle}</span>
       </span>
     </div>
   );

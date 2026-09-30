@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeFormHtml } from '../src/utils/formHtml';
 
 describe('API form HTML sanitizer', () => {
+  it('preserves editor typography and bounded paragraph indents', () => {
+    const html = '<p style="font-size:16pt;font-family:FormThai;line-height:2;margin-left:15mm;margin-right:10mm">Text</p>';
+    const saved = sanitizeFormHtml(html);
+    for (const declaration of ['font-size:16pt', 'font-family:FormThai', 'line-height:2', 'margin-left:15mm', 'margin-right:10mm']) expect(saved).toContain(declaration);
+    expect(sanitizeFormHtml('<p style="font-size:999pt;margin-left:999mm;line-height:99">Text</p>')).not.toContain('style');
+  });
+
   it('uses a strict allowlist for tags, namespaces, attributes, URLs, and CSS', () => {
     const safe = sanitizeFormHtml(`
       <h2 onclick="alert(1)">หัวข้อ</h2>

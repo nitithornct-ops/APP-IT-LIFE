@@ -1,0 +1,12 @@
+.document-editor .form-document { width:210mm; min-width:210mm; min-height:297mm; padding:20mm; }
+.document-ruler { position:sticky; top:0; z-index:5; width:210mm; margin:0 auto 16px; background:#f8fafc; color:#475569; border:1px solid #cbd5e1; box-sizing:border-box; }
+.document-ruler-ticks { position:relative; height:28px; background:repeating-linear-gradient(to right,#94a3b8 0,#94a3b8 1px,transparent 1px,transparent 5mm); background-size:100% 6px; background-repeat:no-repeat; background-position:bottom; }
+.document-ruler-ticks::after { content:''; position:absolute; inset:0 20mm; border-left:1px solid #2563eb; border-right:1px solid #2563eb; pointer-events:none; }
+.document-ruler-ticks span { position:absolute; top:2px; font:10px FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif; }
+.document-ruler-control { display:block; position:relative; height:22px; padding:2px 4px; font-size:11px; }
+.document-ruler-control input { position:absolute; left:calc(20mm - 8px); top:3px; width:calc(170mm + 16px); margin:0; accent-color:#2563eb; cursor:ew-resize; }
+.document-ruler-control output { position:absolute; right:3px; width:48px; text-align:right; }
+.document-editor-select { max-width:150px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; padding:5px; font-size:12px; }
+.document-editor-select:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+.document-editor .form-block-rail { left:-46px; bottom:auto; top:0; flex-direction:column; min-height:0; }
+.document-editor-status { display:flex; flex-wrap:wrap; gap:12px; padding:8px 12px; background:#f8fafc; color:#64748b; font-size:12px; border-top:1px solid #cbd5e1; }

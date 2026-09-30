@@ -4,6 +4,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 ALLOWED_ORIGINS=http://localhost:5173
 ENVIRONMENT=development
 PUBLIC_APP_URL=http://localhost:5173
+TURNSTILE_SECRET_KEY=
+TURNSTILE_EXPECTED_HOSTNAME=
 
 # LINE ticket portal for linked employees — optional. Leave LINE_LOGIN_ENABLED unset/false to keep it
 # off. Get these from LINE Developers Console + LINE Official Account Manager; see

@@ -31,6 +31,8 @@ const GATE_ENV_KEYS = [
   'PRODUCTION_API_URL',
   'LINE_LOGIN_ENABLED',
   'NOTIFY_LINE_ENABLED',
+  'TURNSTILE_SECRET_KEY',
+  'TURNSTILE_EXPECTED_HOSTNAME',
 ];
 
 function gateEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
@@ -104,14 +106,14 @@ describe('staging E2E gate — deferred mode', () => {
  * ตายตรงนี้แทน — เทสต์ชุดนี้ตรึงไว้ว่าสองด่านต้องยอมรับหลักฐานชุดเดียวกัน
  */
 describe('predeploy — staging evidence and CSP origin', () => {
-  async function headersFile(apiOrigin: string) {
+  async function headersFile(apiOrigin: string, connectSource = apiOrigin) {
     const directory = await mkdtemp(join(tmpdir(), 'itlife-predeploy-'));
     temporaryDirectories.push(directory);
     const path = join(directory, '_headers');
     await writeFile(path, [
       '/*',
       '  X-Content-Type-Options: nosniff',
-      `  Content-Security-Policy: default-src 'self'; connect-src 'self' ${apiOrigin} https://*.supabase.co; upgrade-insecure-requests`,
+      `  Content-Security-Policy: default-src 'self'; connect-src 'self' ${connectSource} https://*.supabase.co; upgrade-insecure-requests`,
       '',
     ].join('\n'));
     return path;
@@ -131,6 +133,8 @@ describe('predeploy — staging evidence and CSP origin', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'service',
       SUPABASE_DB_URL: 'postgresql://example',
       VITE_TURNSTILE_SITE_KEY: '0x4AAAAAAAexample',
+      TURNSTILE_SECRET_KEY: 'test-turnstile-secret',
+      TURNSTILE_EXPECTED_HOSTNAME: 'app.example.test',
       ALLOWED_ORIGINS: 'https://life-it.pages.dev',
       PUBLIC_APP_URL: 'https://life-it.pages.dev',
       CLOUDFLARE_API_TOKEN: 'token',
@@ -167,6 +171,14 @@ describe('predeploy — staging evidence and CSP origin', () => {
     const result = runPredeploy({ WEB_HEADERS_FILE: await headersFile(productionApi) });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('STAGING_E2E_APPROVAL_REF is required');
+  });
+
+  it('accepts the constrained workers.dev wildcard used by the public CSP', async () => {
+    const result = runPredeploy({
+      WEB_HEADERS_FILE: await headersFile(productionApi, 'https://*.workers.dev'),
+      STAGING_E2E_APPROVAL_REF: 'https://github.com/example/repo/actions/runs/1',
+    });
+    expect(result.status, result.stderr).toBe(0);
   });
 
   /**

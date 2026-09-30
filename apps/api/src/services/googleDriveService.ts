@@ -114,7 +114,6 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
     normalized = next;
   }
   normalized = normalized.trim();
-
   const match = normalized.match(/-----BEGIN [A-Z ]+-----([\s\S]+?)-----END [A-Z ]+-----/);
   if (!match) throw new Error('Invalid Google service-account private key format');
   const der = match[1].replace(/\s+/g, '');
@@ -252,6 +251,51 @@ function googleResponseReason(status: number): GoogleDriveFailureReason {
   return status === 401 || status === 403 || status === 404 ? 'rejected' : 'response';
 }
 
+/** Interpret structured Google errors without exposing upstream messages or credentials. */
+async function googleDocFailure(response: Response, clientEmail: string): Promise<GoogleDocHtmlImportResult> {
+  const codes: string[] = [];
+  try {
+    const payload = await response.json() as { error?: { errors?: { reason?: unknown }[]; details?: { reason?: unknown }[] } };
+    for (const items of [payload?.error?.errors, payload?.error?.details]) {
+      if (!Array.isArray(items)) continue;
+      for (const item of items) if (typeof item?.reason === 'string') codes.push(item.reason);
+    }
+  } catch {
+    // Proxies and temporary outages may return a non-JSON error body.
+  }
+  const has = (...values: string[]) => values.some((value) => codes.includes(value));
+  let reason = googleResponseReason(response.status);
+  let message: string;
+  if (has('accessNotConfigured', 'SERVICE_DISABLED')) {
+    reason = 'configuration';
+    message = 'ยังไม่ได้เปิด Google Drive API หรือ API ถูกปิดอยู่ กรุณาเปิด Google Drive API ใน Google Cloud project ของ Service Account แล้วลองอีกครั้ง';
+  } else if (response.status === 401) {
+    reason = 'auth';
+    message = 'Google ไม่ยอมรับ access token ของบัญชีระบบ ระบบล้าง token เดิมแล้ว กรุณาลองนำเข้าอีกครั้ง';
+  } else if (response.status === 429 || has('rateLimitExceeded', 'userRateLimitExceeded', 'dailyLimitExceeded', 'RATE_LIMIT_EXCEEDED', 'QUOTA_EXCEEDED')) {
+    reason = 'response';
+    message = 'Google Drive API ใช้งานเกินโควตาหรือเรียกถี่เกินไป กรุณารอสักครู่แล้วลองอีกครั้ง หรือตรวจสอบโควตาใน Google Cloud';
+  } else if (response.status >= 500) {
+    message = 'Google Drive ขัดข้องชั่วคราว กรุณาลองนำเข้าอีกครั้งภายหลัง';
+  } else if (has('insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+    reason = 'configuration';
+    message = 'สิทธิ์ OAuth ของบัญชีระบบไม่ครอบคลุม Google Drive กรุณาให้ผู้ดูแลตรวจสอบ scope ของการเชื่อมต่อ';
+  } else if (has('domainPolicy')) {
+    message = 'นโยบาย Google Workspace ขององค์กรไม่อนุญาตการเข้าถึง Drive ผ่านแอป กรุณาติดต่อผู้ดูแล Google Workspace';
+  } else if (has('exportSizeLimitExceeded')) {
+    message = 'Google Docs มีขนาดเกินขีดจำกัดการส่งออก 10 MB กรุณาลดขนาดเอกสารแล้วลองอีกครั้ง';
+  } else if (response.status === 404) {
+    message = `ไม่พบ Google Docs หรือบัญชีระบบยังไม่มีสิทธิ์อ่าน กรุณาตรวจสอบลิงก์และแชร์เอกสารให้ ${clientEmail} (อีเมล client_email ไม่ใช่ client_id ใน JSON) อย่างน้อยเป็นผู้ดู`;
+  } else if (has('insufficientFilePermissions', 'appNotAuthorizedToFile')) {
+    message = `บัญชีระบบไม่มีสิทธิ์อ่านหรือส่งออกเอกสาร กรุณาแชร์ Google Docs ให้ ${clientEmail} และตรวจสอบว่าเจ้าของอนุญาตให้ดาวน์โหลดหรือคัดลอกเนื้อหา`;
+  } else if (response.status === 403) {
+    message = `Google ปฏิเสธการเข้าถึงเอกสาร กรุณาตรวจสอบสิทธิ์ของ ${clientEmail} รวมถึงข้อจำกัดการดาวน์โหลดและนโยบาย Google Workspace`;
+  } else {
+    message = 'Google Drive ไม่สามารถอ่านหรือส่งออกเอกสารได้ กรุณาลองอีกครั้ง หากยังพบปัญหาให้แจ้งรหัส HTTP นี้แก่ผู้ดูแล';
+  }
+  return { ok: false, reason, message: `${message} (HTTP ${response.status})` };
+}
+
 /** Read a Google Doc as sanitized-by-the-caller HTML without sending a file to the browser. */
 export async function fetchGoogleDocHtml(
   env: Bindings,
@@ -287,7 +331,7 @@ export async function fetchGoogleDocHtml(
   }
   if (!metadataResponse.ok) {
     if (metadataResponse.status === 401) tokenCache.delete(config.clientEmail);
-    return { ok: false, reason: googleResponseReason(metadataResponse.status), message: 'เปิด Google Docs ไม่สำเร็จ กรุณาตรวจสอบสิทธิ์การแชร์ให้บัญชีระบบ' };
+    return googleDocFailure(metadataResponse, config.clientEmail);
   }
 
   let metadata: { id?: unknown; name?: unknown; mimeType?: unknown; trashed?: unknown; webViewLink?: unknown };
@@ -312,7 +356,7 @@ export async function fetchGoogleDocHtml(
   }
   if (!exportResponse.ok) {
     if (exportResponse.status === 401) tokenCache.delete(config.clientEmail);
-    return { ok: false, reason: googleResponseReason(exportResponse.status), message: 'Google Docs ไม่อนุญาตให้ส่งออกเนื้อหา กรุณาตรวจสอบสิทธิ์การแชร์' };
+    return googleDocFailure(exportResponse, config.clientEmail);
   }
   const contentLength = Number(exportResponse.headers.get('content-length') ?? 0);
   if (contentLength > MAX_GOOGLE_DOC_EXPORT_BYTES) {

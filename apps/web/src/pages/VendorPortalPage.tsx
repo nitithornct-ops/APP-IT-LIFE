@@ -77,14 +77,13 @@ export function VendorPortalPage() {
       return;
     }
     try {
-      const identity = await vendorPortalApiFetch<{ email: string }>('/api/v1/vendor-portal/login/resolve', {
-        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username }),
+      const { challenge } = await vendorPortalApiFetch<{ challenge: string }>('/api/v1/vendor-portal/login/resolve', {
+        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username, turnstileToken: captchaToken }),
       });
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: identity.email,
-        password: login.password,
-        options: { captchaToken },
+      const brokerResult = await vendorPortalApiFetch<{ session: { access_token: string; refresh_token: string } }>('/api/v1/vendor-portal/login', {
+        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username, password: login.password, challenge }),
       });
+      const { error: authError } = await supabase.auth.setSession(brokerResult.session);
       if (authError) throw new Error('Invalid vendor credentials');
       const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
       if (factorsError) throw factorsError;

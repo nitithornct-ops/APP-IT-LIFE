@@ -247,7 +247,7 @@ export function ReportCenterPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200" data-print-hide>
+      <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:border-primary-900 dark:bg-primary-950/30 dark:text-primary-200" data-print-hide>
         โมดูลนี้ใช้รายงานมาตรฐานที่ตรวจสอบย้อนหลังได้ พร้อม CSV, พิมพ์ผ่านเบราว์เซอร์ และดาวน์โหลด PDF จริง (Cloudflare Browser Rendering) — Field/PDF Designer แบบลากวางถูกตัดออกจากขอบเขตถาวรตามการตัดสินใจ R-05
       </div>
 

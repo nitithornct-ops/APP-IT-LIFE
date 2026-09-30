@@ -3,15 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VendorPortalPage } from './VendorPortalPage';
 
 const vendorPortalApiFetchMock = vi.fn();
-const { signInWithPasswordMock, listFactorsMock } = vi.hoisted(() => ({
-  signInWithPasswordMock: vi.fn(),
+const { setSessionMock, listFactorsMock } = vi.hoisted(() => ({
+  setSessionMock: vi.fn(),
   listFactorsMock: vi.fn(),
 }));
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: {
-      signInWithPassword: (...args: unknown[]) => signInWithPasswordMock(...args),
+      setSession: (...args: unknown[]) => setSessionMock(...args),
       signOut: vi.fn(),
       mfa: {
         listFactors: (...args: unknown[]) => listFactorsMock(...args),
@@ -29,7 +29,7 @@ vi.mock('../services/vendorPortalApiClient', async () => {
 beforeEach(() => {
   sessionStorage.clear();
   vendorPortalApiFetchMock.mockReset();
-  signInWithPasswordMock.mockReset();
+  setSessionMock.mockReset();
   listFactorsMock.mockReset();
   window.turnstile = {
     render: vi.fn((_container, options) => {
@@ -51,12 +51,13 @@ describe('VendorPortalPage', () => {
     expect(screen.getAllByDisplayValue('').length).toBeGreaterThan(0);
   });
 
-  it('passes a Turnstile token to Supabase before showing the MFA step', async () => {
+  it('passes Turnstile to the API broker before showing the MFA step', async () => {
     vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.endsWith('/login/resolve')) return { email: 'vendor@test.local' };
+      if (path.endsWith('/login/resolve')) return { challenge: 'a'.repeat(64) };
+      if (path.endsWith('/login')) return { session: { access_token: 'access-token', refresh_token: 'refresh-token' } };
       return undefined;
     });
-    signInWithPasswordMock.mockResolvedValue({ error: null });
+    setSessionMock.mockResolvedValue({ error: null });
     listFactorsMock.mockResolvedValue({ data: { totp: [{ id: 'factor-1', status: 'verified' }] }, error: null });
 
     render(<VendorPortalPage />);
@@ -68,11 +69,20 @@ describe('VendorPortalPage', () => {
     fireEvent.click(submit);
 
     await screen.findByRole('heading', { name: 'ยืนยันตัวตนด้วย MFA' });
-    expect(signInWithPasswordMock).toHaveBeenCalledWith({
-      email: 'vendor@test.local',
-      password: 'secret-password',
-      options: { captchaToken: 'vendor-captcha-token' },
+    const resolveCall = vendorPortalApiFetchMock.mock.calls.find(([path]) => path.endsWith('/login/resolve'));
+    expect(JSON.parse(resolveCall?.[1]?.body)).toMatchObject({
+      vendorCode: 'VND-001',
+      username: 'vendor.contact',
+      turnstileToken: 'vendor-captcha-token',
     });
+    const loginCall = vendorPortalApiFetchMock.mock.calls.find(([path]) => path.endsWith('/login'));
+    expect(JSON.parse(loginCall?.[1]?.body)).toMatchObject({
+      vendorCode: 'VND-001',
+      username: 'vendor.contact',
+      password: 'secret-password',
+      challenge: 'a'.repeat(64),
+    });
+    expect(setSessionMock).toHaveBeenCalledWith({ access_token: 'access-token', refresh_token: 'refresh-token' });
   });
 
   it('shows only the assigned outsource list returned by the isolated portal API', async () => {

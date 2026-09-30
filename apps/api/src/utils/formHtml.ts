@@ -60,6 +60,12 @@ export function sanitizeFormHtml(input: string): string {
     allowProtocolRelative: false,
     allowedStyles: {
       '*': {
+        'font-size': [/^(?:[8-9]|[1-6][0-9]|7[0-2])pt$/],
+        'font-family': [/^FormThai$/i],
+        'line-height': [/^(?:1|1\.15|1\.5|1\.55|2)$/],
+        'margin-left': [/^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/],
+        'margin-right': [/^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/],
+        'text-indent': [/^(?:0|[1-9]\d?|1[0-4]\d|150)mm$/],
         'text-align': [/^(?:left|right|center|justify)$/],
         // `relative` only: it shifts a block visually while the block still occupies its original
         // slot in the flow, so A4 pagination keeps measuring the document correctly and no one can

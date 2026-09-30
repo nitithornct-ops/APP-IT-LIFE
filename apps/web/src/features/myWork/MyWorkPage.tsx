@@ -252,7 +252,7 @@ export function MyWorkPage() {
                   const countdown = countdownLabel(item, now);
                   const isSnoozing = snoozeMutation.isPending && snoozeMutation.variables?.item.id === item.id;
                   return (
-                    <tr key={`${item.kind}-${item.id}`} className={cn(item.isOverdue ? 'shadow-[inset_3px_0_0_#dc2626]' : approvalKinds.has(item.kind) ? 'shadow-[inset_3px_0_0_#d97706]' : 'shadow-[inset_3px_0_0_#1d4ed8]')}>
+                    <tr key={`${item.kind}-${item.id}`} className={cn(item.isOverdue ? 'shadow-[inset_3px_0_0_#dc2626]' : approvalKinds.has(item.kind) ? 'shadow-[inset_3px_0_0_#d97706]' : 'shadow-[inset_3px_0_0_#047857]')}>
                       <td className="whitespace-nowrap"><Badge variant={itemTone(item)}>{item.source}</Badge></td>
                       <td className="max-w-[410px]"><p className="truncate font-semibold text-slate-800 dark:text-slate-100">{item.title}</p><p className="mt-0.5 font-mono text-[10px] text-slate-400">{priorityLabel(item)} · {item.status}</p></td>
                       <td className="whitespace-nowrap">{item.riskScore ? <Badge variant={item.riskScore >= 16 ? 'danger' : item.riskScore >= 10 ? 'warning' : 'secondary'}><ShieldAlert className="h-3 w-3" />{item.riskScore}</Badge> : <span className="text-xs text-slate-400">—</span>}</td>
@@ -267,7 +267,7 @@ export function MyWorkPage() {
           </Card>
 
           <aside className="space-y-3">
-            <Card className="border-primary-950 bg-primary-950 text-white dark:border-primary-800 dark:bg-[#0b1b36]">
+            <Card className="border-primary-950 bg-primary-950 text-white dark:border-primary-800 dark:bg-[#064e3b]">
               <CardHeader className="flex items-center justify-between border-white/10 text-white"><span className="flex items-center gap-2"><UserRoundCheck className="h-4 w-4 text-primary-300" />Team Queue</span><Badge variant="primary">{query.data.teamQueue.length}</Badge></CardHeader>
               <CardBody>
                 {query.data.teamQueue.length ? <div>{query.data.teamQueue.slice(0, 6).map((item) => <QueueRow key={`${item.kind}-${item.id}`} item={item} onClaim={() => claimMutation.mutate(item)} isPending={claimMutation.isPending && claimMutation.variables?.id === item.id} />)}</div> : <p className="text-xs text-white/55">ยังไม่มีงานว่างในคิวทีม</p>}

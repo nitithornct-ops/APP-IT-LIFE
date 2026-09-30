@@ -1,3 +1,4 @@
+import { formDocumentHtml } from '@itlife/shared';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { randomToken } from '../lib/lineAuth';
@@ -503,7 +504,13 @@ formsRoute.post('/issues/:id/exports/pdf', requirePermission('form.export'), asy
   const { data: snapshot, error } = await createAdminClient(c.env).from('issue_form_snapshots').select('*').eq('issue_form_id', c.req.param('id')!).maybeSingle();
   if (error) return dbFailJson(c, 'FORM_SNAPSHOT_LOAD_FAILED', error);
   if (!snapshot) return c.json(fail(reqId, 'FORM_SNAPSHOT_REQUIRED', 'กรุณาออกเอกสารเพื่อสร้าง Immutable Snapshot ก่อนส่งออก PDF'), 409);
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${snapshot.document_number}</title><style>body{font-family:Arial,"Noto Sans Thai",sans-serif;color:#111827;margin:0;padding:18mm}h1,h2,h3{break-after:avoid}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d1d5db;padding:6px;vertical-align:top}img{max-width:100%}.meta{font-size:11px;color:#4b5563;border-bottom:1px solid #d1d5db;padding-bottom:8px;margin-bottom:16px}</style></head><body><div class="meta"><strong>${snapshot.document_number}</strong> · ${snapshot.title} · source: ${snapshot.source_module}/${snapshot.source_record_id ?? '—'} · issued: ${snapshot.issued_at}</div>${snapshot.content_html}</body></html>`;
+  const html = formDocumentHtml(sanitizeFormHtml(snapshot.content_html), snapshot.document_number, {
+    documentNumber: snapshot.document_number,
+    sourceModule: snapshot.source_module,
+    sourceRecordId: snapshot.source_record_id,
+    issuedAt: snapshot.issued_at,
+    snapshotHash: snapshot.snapshot_hash,
+  });
   let pdfBytes: Uint8Array;
   try {
     pdfBytes = await renderHtmlToPdf(c.env.MYBROWSER, html);

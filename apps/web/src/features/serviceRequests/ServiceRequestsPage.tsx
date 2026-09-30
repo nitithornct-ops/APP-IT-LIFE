@@ -92,11 +92,11 @@ function errorText(error: unknown, fallback: string) {
 function StatCard({ icon, value, label, tone }: { icon: React.ReactNode; value: number; label: string; tone: 'blue' | 'slate' | 'teal' }) {
   const toneClass =
     tone === 'blue'
-      ? 'bg-blue-600 text-white border-blue-500'
+      ? 'bg-primary-600 text-white border-primary-500'
       : tone === 'teal'
         ? 'bg-teal-700 text-white border-teal-500'
         : 'bg-slate-500 text-white border-slate-400';
-  const bottomClass = tone === 'blue' ? 'bg-blue-600' : tone === 'teal' ? 'bg-teal-500' : 'bg-slate-400';
+  const bottomClass = tone === 'blue' ? 'bg-primary-600' : tone === 'teal' ? 'bg-teal-500' : 'bg-slate-400';
   return (
     <div className="relative flex min-h-[102px] items-center gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>{icon}</span>
@@ -525,7 +525,36 @@ function CatalogCards({ items, canRequest, onRequest }: { items: ServiceCatalogI
     return [...result.entries()].sort(([a], [b]) => a.localeCompare(b, 'th'));
   }, [items]);
   if (!items.length) return <EmptyState icon={<Package className="h-10 w-10" />} title="ยังไม่มีบริการที่เปิดให้ขอ" description="ติดต่อผู้ดูแลระบบเพื่อเปิดใช้งาน Service Catalog" />;
-  return <div className="space-y-6">{grouped.map(([category, categoryItems]) => <section key={category}><h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-slate-900 dark:text-white"><Folder className="h-5 w-5 text-primary-600" />{category}</h2><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{categoryItems.map((item) => <article key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800"><div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Package className="h-4 w-4" />{item.service_code}</div><h3 className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">{item.service_name}</h3><p className="mt-2 line-clamp-2 flex-1 text-sm text-slate-500 dark:text-slate-400">{item.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</p><div className="mb-3 mt-3 flex flex-wrap gap-2 text-[11px]"><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><AlarmClock className="mr-1 inline h-3 w-3" />SLA {item.sla_hours} ชม.</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ShieldCheck className="mr-1 inline h-3 w-3" />{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'ต้องอนุมัติ'}</span><span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ClipboardCheck className="mr-1 inline h-3 w-3" />{item.checklist.length} ข้อ</span>{item.suggested_knowledge.length > 0 && <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300"><BookOpen className="mr-1 inline h-3 w-3" />บทความแนะนำ {item.suggested_knowledge.length}</span>}{item.auto_assign && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"><UserRound className="mr-1 inline h-3 w-3" />Auto assign</span>}{item.auto_create_task && <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"><ClipboardList className="mr-1 inline h-3 w-3" />สร้าง Task</span>}{item.estimated_cost != null && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"><CircleDollarSign className="mr-1 inline h-3 w-3" />ประมาณ {Number(item.estimated_cost).toLocaleString('th-TH')}</span>}</div>{canRequest && <Button className="w-full" onClick={() => onRequest(item)}><Send className="h-4 w-4" />ขอรับบริการ</Button>}</article>)}</div></section>)}</div>;
+  return (
+    <div className="space-y-6">
+      {grouped.map(([category, categoryItems]) => (
+        <section key={category}>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-slate-900 dark:text-white">
+            <Folder className="h-5 w-5 text-primary-600" />{category}
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {categoryItems.map((item) => (
+              <article key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Package className="h-4 w-4" />{item.service_code}</div>
+                <h3 className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">{item.service_name}</h3>
+                <p className="mt-2 line-clamp-2 flex-1 text-sm text-slate-500 dark:text-slate-400">{item.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</p>
+                <div className="mb-3 mt-3 flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><AlarmClock className="mr-1 inline h-3 w-3" />SLA {item.sla_hours} ชม.</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ShieldCheck className="mr-1 inline h-3 w-3" />{item.approval_mode === 'none' ? 'ไม่ต้องอนุมัติ' : 'ต้องอนุมัติ'}</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-700"><ClipboardCheck className="mr-1 inline h-3 w-3" />{item.checklist.length} ข้อ</span>
+                  {item.suggested_knowledge.length > 0 && <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300"><BookOpen className="mr-1 inline h-3 w-3" />บทความแนะนำ {item.suggested_knowledge.length}</span>}
+                  {item.auto_assign && <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300"><UserRound className="mr-1 inline h-3 w-3" />Auto assign</span>}
+                  {item.auto_create_task && <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"><ClipboardList className="mr-1 inline h-3 w-3" />สร้าง Task</span>}
+                  {item.estimated_cost != null && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"><CircleDollarSign className="mr-1 inline h-3 w-3" />ประมาณ {Number(item.estimated_cost).toLocaleString('th-TH')}</span>}
+                </div>
+                {canRequest && <Button className="w-full" onClick={() => onRequest(item)}><Send className="h-4 w-4" />ขอรับบริการ</Button>}
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 function RequestTable({ items }: { items: ServiceRequestListItem[] }) {
