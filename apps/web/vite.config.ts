@@ -14,13 +14,16 @@ export default defineConfig({
          * React/Supabase ใหม่ทั้งหมด ทั้งที่ไลบรารีเหล่านั้นไม่ได้เปลี่ยน
          * (พบตอน Pre-production QA audit 2026-08-13)
          */
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-supabase': ['@supabase/supabase-js'],
-          'vendor-query': ['@tanstack/react-query'],
-          'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
-          'vendor-icons': ['lucide-react'],
-          'vendor-date': ['date-fns'],
+        manualChunks: (id) => {
+          const normalizedId = id.replaceAll('\\', '/');
+          if (normalizedId.endsWith('/packages/shared/src/formFont.ts')) return 'vendor-form-font';
+          if (normalizedId.includes('/node_modules/react/') || normalizedId.includes('/node_modules/react-dom/') || normalizedId.includes('/node_modules/react-router-dom/')) return 'vendor-react';
+          if (normalizedId.includes('/node_modules/@supabase/supabase-js/')) return 'vendor-supabase';
+          if (normalizedId.includes('/node_modules/@tanstack/react-query/')) return 'vendor-query';
+          if (normalizedId.includes('/node_modules/react-hook-form/') || normalizedId.includes('/node_modules/@hookform/resolvers/') || normalizedId.includes('/node_modules/zod/')) return 'vendor-forms';
+          if (normalizedId.includes('/node_modules/lucide-react/')) return 'vendor-icons';
+          if (normalizedId.includes('/node_modules/date-fns/')) return 'vendor-date';
+          return undefined;
         },
       },
     },

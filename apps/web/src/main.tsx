@@ -8,7 +8,6 @@ import './index.css';
 import { AuthProvider } from './stores/authContext';
 import { ThemeProvider } from './stores/themeContext';
 import { ToastProvider } from './components/ui/Toast';
-import './formFont';
 
 if ('serviceWorker' in navigator) {
   void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
