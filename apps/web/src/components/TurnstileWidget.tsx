@@ -61,6 +61,7 @@ function loadTurnstile(): Promise<TurnstileApi> {
 
 export type TurnstileWidgetHandle = {
   reset: () => void;
+  refresh: () => Promise<string>;
 };
 
 type TurnstileWidgetProps = {
@@ -72,6 +73,7 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
   function TurnstileWidget({ action, onTokenChange }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<TurnstileWidgetId | null>(null);
+    const refreshResolverRef = useRef<{ resolve: (token: string) => void; reject: (error: Error) => void } | null>(null);
     const [loadFailed, setLoadFailed] = useState(false);
     const sitekey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
@@ -81,6 +83,17 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
           window.turnstile.reset(widgetIdRef.current);
         }
         onTokenChange('');
+      },
+      refresh() {
+        if (!widgetIdRef.current || !window.turnstile) {
+          return Promise.reject(new Error('Turnstile is not ready'));
+        }
+        const refreshed = new Promise<string>((resolve, reject) => {
+          refreshResolverRef.current = { resolve, reject };
+        });
+        onTokenChange('');
+        window.turnstile.reset(widgetIdRef.current);
+        return refreshed;
       },
     }));
 
@@ -99,9 +112,21 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
             sitekey,
             action,
             theme: 'auto',
-            callback: (token) => onTokenChange(token),
-            'expired-callback': () => onTokenChange(''),
-            'error-callback': () => onTokenChange(''),
+            callback: (token) => {
+              onTokenChange(token);
+              refreshResolverRef.current?.resolve(token);
+              refreshResolverRef.current = null;
+            },
+            'expired-callback': () => {
+              onTokenChange('');
+              refreshResolverRef.current?.reject(new Error('Turnstile token expired'));
+              refreshResolverRef.current = null;
+            },
+            'error-callback': () => {
+              onTokenChange('');
+              refreshResolverRef.current?.reject(new Error('Turnstile failed'));
+              refreshResolverRef.current = null;
+            },
           });
         })
         .catch(() => {
@@ -114,6 +139,8 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
           window.turnstile.remove(widgetIdRef.current);
           widgetIdRef.current = null;
         }
+        refreshResolverRef.current?.reject(new Error('Turnstile widget unmounted'));
+        refreshResolverRef.current = null;
       };
     }, [action, onTokenChange, sitekey]);
 

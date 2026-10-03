@@ -15,6 +15,7 @@ const usernameSchema = z.string()
 export const vendorPortalIdentitySchema = z.object({
   vendorCode: z.string().trim().min(1).max(80).transform((value) => value.toUpperCase()),
   username: usernameSchema,
+  turnstileToken: z.string().trim().min(1).max(2048),
 });
 
 export const vendorPortalLoginSchema = z.object({

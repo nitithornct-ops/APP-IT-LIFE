@@ -62,13 +62,16 @@ export function LoginPage() {
       // อีเมลจริงถูก resolve ฝั่ง API และไม่เคยถูกส่งกลับมาให้ browser
       const { challenge } = await apiFetch<{ challenge: string }>(
         '/api/v1/auth/resolve-login',
-        { method: 'POST', body: JSON.stringify({ identifier: values.identifier }) },
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, turnstileToken: captchaToken }) },
         { silent: true },
       );
 
+      const loginCaptchaToken = await turnstileRef.current?.refresh();
+      if (!loginCaptchaToken) throw new Error('Turnstile is not ready');
+
       const brokerResult = await apiFetch<{ session: { access_token: string; refresh_token: string } }>(
         '/api/v1/auth/login',
-        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, password: values.password, challenge, turnstileToken: captchaToken }) },
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, password: values.password, challenge, turnstileToken: loginCaptchaToken }) },
         { silent: true },
       );
       const { error } = await supabase.auth.setSession(brokerResult.session);

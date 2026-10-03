@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   resetPasswordForEmail: vi.fn(),
   issueLoginChallenge: vi.fn(),
   consumeLoginChallenge: vi.fn(),
+  verifyTurnstile: vi.fn(),
 }));
 
 vi.mock('../src/lib/supabase', () => ({
@@ -23,6 +24,10 @@ vi.mock('../src/lib/supabase', () => ({
 vi.mock('../src/services/loginChallengeService', () => ({
   issueLoginChallenge: (...args: unknown[]) => mocks.issueLoginChallenge(...args),
   consumeLoginChallenge: (...args: unknown[]) => mocks.consumeLoginChallenge(...args),
+}));
+
+vi.mock('../src/services/turnstileService', () => ({
+  verifyTurnstile: (...args: unknown[]) => mocks.verifyTurnstile(...args),
 }));
 
 import { authRoute } from '../src/routes/auth';
@@ -49,6 +54,7 @@ beforeEach(() => {
   mocks.adminRpc.mockResolvedValue({ data: 'user@example.test', error: null });
   mocks.issueLoginChallenge.mockResolvedValue('a'.repeat(64));
   mocks.consumeLoginChallenge.mockResolvedValue(true);
+  mocks.verifyTurnstile.mockResolvedValue(true);
   mocks.signInWithPassword.mockResolvedValue({
     data: { session: { access_token: 'access-token', refresh_token: 'refresh-token' } },
     error: null,
@@ -58,10 +64,11 @@ beforeEach(() => {
 
 describe('authentication broker CAPTCHA handoff', () => {
   it('does not consume Turnstile while issuing the opaque login challenge', async () => {
-    const response = await post('/resolve-login', { identifier: 'somchai.j' });
+    const response = await post('/resolve-login', { identifier: 'somchai.j', turnstileToken: 'resolve-token' });
 
     expect(response.status).toBe(200);
     expect(mocks.issueLoginChallenge).toHaveBeenCalledOnce();
+    expect(mocks.verifyTurnstile).toHaveBeenCalledWith(expect.anything(), 'resolve-token', 'login', '192.0.2.10');
     expect(mocks.signInWithPassword).not.toHaveBeenCalled();
   });
 

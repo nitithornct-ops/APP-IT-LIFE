@@ -7,6 +7,7 @@ import { loadAuditSnapshot, sha256Hex, writeAuditLog } from '../services/auditSe
 import { consumeLoginChallenge, issueLoginChallenge } from '../services/loginChallengeService';
 import { writeLoginLog } from '../services/loginLogService';
 import { loadMfaPolicy } from '../services/mfaPolicy';
+import { verifyTurnstile } from '../services/turnstileService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -335,7 +336,10 @@ authRoute.post(
   zValidator('json', resolveLoginSchema, zodValidationHook),
   async (c) => {
     const reqId = c.get('requestId');
-    const { identifier } = c.req.valid('json');
+    const { identifier, turnstileToken } = c.req.valid('json');
+    if (!(await verifyTurnstile(c.env, turnstileToken, 'login', clientIp(c)))) {
+      return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+    }
 
     const admin = createAdminClient(c.env);
     const { error } = await admin.rpc('resolve_login_email', {

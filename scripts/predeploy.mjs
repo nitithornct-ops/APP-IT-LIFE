@@ -14,6 +14,8 @@ const required = [
   'SUPABASE_DB_URL',
   'ALLOWED_ORIGINS',
   'PUBLIC_APP_URL',
+  'TURNSTILE_SECRET_KEY',
+  'TURNSTILE_EXPECTED_HOSTNAME',
   'CLOUDFLARE_API_TOKEN',
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_PAGES_PROJECT',
@@ -41,8 +43,8 @@ if (process.env.VITE_TURNSTILE_SITE_KEY && !/^0x[A-Za-z0-9_-]+$/.test(process.en
   errors.push('VITE_TURNSTILE_SITE_KEY must be a valid Cloudflare Turnstile sitekey');
 }
 
-// Turnstile secret อยู่ใน Supabase Auth configuration เท่านั้น ส่วน deployment
-// ส่งเฉพาะ public site key ให้ browser และ Auth จะเป็นผู้ตรวจ token เพียงครั้งเดียว
+// Turnstile token ต้องถูก verify ที่ API trust boundary ก่อนเรียก Auth หรือเปิดเผยผลการ resolve
+// ค่า secret ตรวจเพียงว่ามีอยู่ ไม่พิมพ์ค่าออก log และไม่เก็บลง repository
 
 function requireHttps(key) {
   const value = process.env[key];

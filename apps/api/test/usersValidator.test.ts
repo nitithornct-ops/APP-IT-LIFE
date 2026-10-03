@@ -73,7 +73,7 @@ describe('login endpoints', () => {
   });
 
   it('bounds the identifier it will look up', () => {
-    const valid = { identifier: 'somchai.j' };
+    const valid = { identifier: 'somchai.j', turnstileToken: 'test-token' };
     expect(resolveLoginSchema.safeParse(valid).success).toBe(true);
     expect(resolveLoginSchema.safeParse({ ...valid, identifier: 'a'.repeat(255) }).success).toBe(false);
     expect(resolveLoginSchema.safeParse({ ...valid, identifier: '   ' }).success).toBe(false);

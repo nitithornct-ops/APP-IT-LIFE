@@ -7,6 +7,7 @@ import { clientIp, edgeRateLimit, rateLimit } from '../middleware/rateLimit';
 import { sha256Hex, writeAuditLog } from '../services/auditService';
 import { consumeLoginChallenge, issueLoginChallenge } from '../services/loginChallengeService';
 import { sendNotification } from '../services/notificationService';
+import { verifyTurnstile } from '../services/turnstileService';
 import type { AppEnv, VendorPortalProfile } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { verifyFileSignature } from '../utils/fileSignature';
@@ -177,6 +178,9 @@ vendorPortalRoute.post(
   zValidator('json', vendorPortalIdentitySchema, zodValidationHook),
   async (c) => {
     const body = c.req.valid('json');
+    if (!(await verifyTurnstile(c.env, body.turnstileToken, 'login', clientIp(c)))) {
+      return c.json(fail(c.get('requestId'), 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
+    }
     const admin = createAdminClient(c.env);
     try {
       const challenge = await issueLoginChallenge(admin, {

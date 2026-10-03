@@ -18,6 +18,7 @@ export type LoginLogInput = z.infer<typeof loginLogSchema>;
 /** ค้นอีเมลที่ Supabase Auth ใช้ จากชื่อผู้ใช้หรืออีเมลที่ผู้ใช้พิมพ์ — เรียกก่อน signInWithPassword */
 export const resolveLoginSchema = z.object({
   identifier: z.string().trim().min(1).max(254),
+  turnstileToken: z.string().trim().min(1).max(2048),
 });
 
 export type ResolveLoginInput = z.infer<typeof resolveLoginSchema>;

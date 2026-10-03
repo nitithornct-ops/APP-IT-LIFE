@@ -5,6 +5,7 @@ import { LoginPage } from './LoginPage';
 
 const apiFetchMock = vi.fn();
 const { setSessionMock } = vi.hoisted(() => ({ setSessionMock: vi.fn() }));
+let turnstileCallback: ((token: string) => void) | undefined;
 
 vi.mock('../lib/supabase', () => ({
   supabase: { auth: { setSession: (...args: unknown[]) => setSessionMock(...args) } },
@@ -22,12 +23,14 @@ vi.mock('../services/apiClient', async () => {
 beforeEach(() => {
   apiFetchMock.mockReset();
   setSessionMock.mockReset();
+  turnstileCallback = undefined;
   window.turnstile = {
     render: vi.fn((_container, options) => {
+      turnstileCallback = options.callback;
       options.callback('login-captcha-token');
       return 'login-test-widget';
     }),
-    reset: vi.fn(),
+    reset: vi.fn((_widgetId) => turnstileCallback?.('fresh-login-captcha-token')),
     remove: vi.fn(),
   };
 });
@@ -57,13 +60,13 @@ describe('LoginPage', () => {
 
     await waitFor(() => expect(setSessionMock).toHaveBeenCalledWith({ access_token: 'access-token', refresh_token: 'refresh-token' }));
     const resolveCall = apiFetchMock.mock.calls.find(([path]) => path.endsWith('/resolve-login'));
-    expect(JSON.parse(resolveCall?.[1]?.body)).toEqual({ identifier: 'somchai.j' });
+    expect(JSON.parse(resolveCall?.[1]?.body)).toEqual({ identifier: 'somchai.j', turnstileToken: 'login-captcha-token' });
     const loginCall = apiFetchMock.mock.calls.find(([path]) => path.endsWith('/login'));
     expect(JSON.parse(loginCall?.[1]?.body)).toEqual({
       identifier: 'somchai.j',
       password: 'correct-password',
       challenge: 'a'.repeat(64),
-      turnstileToken: 'login-captcha-token',
+      turnstileToken: 'fresh-login-captcha-token',
     });
   });
 });
