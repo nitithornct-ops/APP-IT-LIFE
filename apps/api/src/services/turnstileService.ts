@@ -8,11 +8,7 @@ interface TurnstileVerifyResponse {
   hostname?: string;
 }
 
-/**
- * Turnstile tokens are single-use and must be verified at the trust boundary.
- * Keep the token and the provider response out of logs; callers only receive a
- * boolean so an invalid token cannot disclose account state.
- */
+/** Verify a single-use token at the API trust boundary without logging it. */
 export async function verifyTurnstile(
   env: Bindings,
   token: string,

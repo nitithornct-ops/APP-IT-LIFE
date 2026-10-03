@@ -29,7 +29,7 @@ Frontend ห้ามเชื่อมต่อด้วย service-role creden
 
 ## Environment record แยกจาก repository
 
-รายละเอียดของแต่ละ environment ต้องเก็บในระบบจัดการ secrets/configuration ที่ได้รับอนุมัติ โดยใช้ชื่อมาตรฐานจากไฟล์ตัวอย่าง เช่น `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TURNSTILE_SECRET_KEY` และ `PUBLIC_APP_URL` เท่านั้น ไฟล์นี้จงใจไม่บันทึกค่า ตัวระบุ หรือผลตรวจของ environment จริง
+รายละเอียดของแต่ละ environment ต้องเก็บในระบบจัดการ secrets/configuration ที่ได้รับอนุมัติ โดยใช้ชื่อมาตรฐานจากไฟล์ตัวอย่าง เช่น `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` และ `PUBLIC_APP_URL` เท่านั้น ส่วน Turnstile secret ต้องเก็บใน Supabase Auth configuration ไม่ส่งเข้า Worker ไฟล์นี้จงใจไม่บันทึกค่า ตัวระบุ หรือผลตรวจของ environment จริง
 
 ## Gate ก่อน release
 

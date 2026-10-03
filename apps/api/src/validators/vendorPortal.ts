@@ -23,6 +23,7 @@ export const vendorPortalLoginSchema = z.object({
   username: usernameSchema,
   password: z.string().min(1).max(128),
   challenge: z.string().regex(/^[a-f0-9]{64}$/i, 'รูปแบบคำขอเข้าสู่ระบบไม่ถูกต้อง'),
+  turnstileToken: z.string().trim().min(1).max(2048),
 });
 
 export const createVendorPortalAccountSchema = z.object({

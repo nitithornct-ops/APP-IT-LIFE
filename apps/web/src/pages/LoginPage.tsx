@@ -57,7 +57,8 @@ export function LoginPage() {
 
     let brokerAuthenticated = false;
     try {
-      // Backend ตรวจ Turnstile และคืน one-time challenge แบบ opaque เท่านั้น
+      // Backend คืน one-time challenge แบบ opaque และส่ง Turnstile ต่อให้ Supabase Auth
+      // ตรวจพร้อมรหัสผ่าน เพื่อไม่ใช้ token แบบ one-time ซ้ำสองครั้ง
       // อีเมลจริงถูก resolve ฝั่ง API และไม่เคยถูกส่งกลับมาให้ browser
       const { challenge } = await apiFetch<{ challenge: string }>(
         '/api/v1/auth/resolve-login',
@@ -65,9 +66,12 @@ export function LoginPage() {
         { silent: true },
       );
 
+      const loginCaptchaToken = await turnstileRef.current?.refresh();
+      if (!loginCaptchaToken) throw new Error('Turnstile is not ready');
+
       const brokerResult = await apiFetch<{ session: { access_token: string; refresh_token: string } }>(
         '/api/v1/auth/login',
-        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, password: values.password, challenge }) },
+        { method: 'POST', body: JSON.stringify({ identifier: values.identifier, password: values.password, challenge, turnstileToken: loginCaptchaToken }) },
         { silent: true },
       );
       const { error } = await supabase.auth.setSession(brokerResult.session);

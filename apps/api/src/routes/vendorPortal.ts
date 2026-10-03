@@ -178,8 +178,8 @@ vendorPortalRoute.post(
   zValidator('json', vendorPortalIdentitySchema, zodValidationHook),
   async (c) => {
     const body = c.req.valid('json');
-    if (!await verifyTurnstile(c.env, body.turnstileToken, 'login', clientIp(c))) {
-      return c.json(fail(c.get('requestId'), 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
+    if (!(await verifyTurnstile(c.env, body.turnstileToken, 'login', clientIp(c)))) {
+      return c.json(fail(c.get('requestId'), 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
     }
     const admin = createAdminClient(c.env);
     try {
@@ -231,6 +231,7 @@ vendorPortalRoute.post(
     const { data, error } = await createPublicAuthClient(c.env).auth.signInWithPassword({
       email: account.email,
       password: body.password,
+      options: { captchaToken: body.turnstileToken },
     });
     if (error || !data.session || data.user?.id !== account.auth_user_id) {
       return c.json(fail(reqId, 'VENDOR_LOGIN_FAILED', 'Invalid vendor credentials'), 401);
