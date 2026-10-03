@@ -31,6 +31,8 @@ const GATE_ENV_KEYS = [
   'PRODUCTION_API_URL',
   'LINE_LOGIN_ENABLED',
   'NOTIFY_LINE_ENABLED',
+  'TURNSTILE_SECRET_KEY',
+  'TURNSTILE_EXPECTED_HOSTNAME',
 ];
 
 function gateEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
@@ -131,6 +133,8 @@ describe('predeploy — staging evidence and CSP origin', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'service',
       SUPABASE_DB_URL: 'postgresql://example',
       VITE_TURNSTILE_SITE_KEY: '0x4AAAAAAAexample',
+      TURNSTILE_SECRET_KEY: 'turnstile-secret',
+      TURNSTILE_EXPECTED_HOSTNAME: 'life-it.pages.dev',
       ALLOWED_ORIGINS: 'https://life-it.pages.dev',
       PUBLIC_APP_URL: 'https://life-it.pages.dev',
       CLOUDFLARE_API_TOKEN: 'token',
