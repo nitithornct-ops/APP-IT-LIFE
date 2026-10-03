@@ -6,19 +6,23 @@
 :root {
   color-scheme: light;
 
-  /* LIFE IT brand foundation: green, white, and charcoal. */
-  --life-green-950: #022c22;
-  --life-green-900: #064e3b;
-  --life-green-800: #065f46;
-  --life-green-700: #047857;
-  --life-green-600: #059669;
-  --life-green-500: #10b981;
-  --life-green-400: #34d399;
-  --life-green-300: #6ee7b7;
-  --life-green-200: #a7f3d0;
-  --life-green-100: #d1fae5;
-  --life-green-50: #ecfdf5;
-  --life-lime: #84cc16;
+  /* LIFE IT logo foundation: navy, royal blue, gold, and white. The
+     life-green names remain as compatibility aliases for existing components. */
+  --life-green-950: #091a3a;
+  --life-green-900: #102a5c;
+  --life-green-800: #17356f;
+  --life-green-700: #1d4388;
+  --life-green-600: #2454a6;
+  --life-green-500: #3567b3;
+  --life-green-400: #5f8fd1;
+  --life-green-300: #91b8eb;
+  --life-green-200: #bfd7f7;
+  --life-green-100: #dbeafe;
+  --life-green-50: #eef5ff;
+  --life-lime: #e7b928;
+  --life-gold: #d9a514;
+  --life-gold-dark: #8a6400;
+  --life-gold-soft: #fff4c2;
 
   /* สีแบรนด์ LINE — คงที่ทั้งสองธีม เพราะเป็นสีของบริการภายนอก ไม่ใช่ของเรา */
   /* Accessible presentation of LINE green. The service's #06c755 swatch has
@@ -27,19 +31,19 @@
   --line-brand: #047a36;
   --line-brand-hover: #03642d;
 
-  --color-bg: #f5faf7;
+  --color-bg: #f5f8fc;
   --color-surface: #ffffff;
-  --color-surface-secondary: #f2f8f5;
-  --color-surface-green: #ecfdf5;
-  --color-border: #dbe7e1;
-  --color-border-strong: #cbdcd3;
-  --color-text: #17231f;
-  --color-text-secondary: #42524a;
-  --color-text-muted: #61726a;
-  --color-heading: #17352b;
-  --color-action: #047857;
-  --color-action-hover: #065f46;
-  --color-action-soft: #ecfdf5;
+  --color-surface-secondary: #eef4fb;
+  --color-surface-green: #eef5ff;
+  --color-border: #d7e1ef;
+  --color-border-strong: #bccce0;
+  --color-text: #10234b;
+  --color-text-secondary: #334a70;
+  --color-text-muted: #60708c;
+  --color-heading: #102a5c;
+  --color-action: #2454a6;
+  --color-action-hover: #1d4388;
+  --color-action-soft: #eef5ff;
   --color-success: #15803d;
   --color-success-soft: #e7f5ec;
   --color-warning: #b45309;
@@ -54,9 +58,9 @@
   --radius-card: 10px;
   --radius-large: 13px;
   --radius-modal: 13px;
-  --shadow-card: 0 1px 2px rgb(6 78 59 / 0.04), 0 8px 26px rgb(6 78 59 / 0.07);
-  --shadow-hover: 0 14px 34px rgb(6 78 59 / 0.11);
-  --shadow-elevated: 0 24px 64px rgb(6 78 59 / 0.2);
+  --shadow-card: 0 1px 2px rgb(16 42 92 / 0.04), 0 8px 26px rgb(16 42 92 / 0.07);
+  --shadow-hover: 0 14px 34px rgb(16 42 92 / 0.11);
+  --shadow-elevated: 0 24px 64px rgb(16 42 92 / 0.2);
   --font-app: 'FormThai', 'Noto Sans Thai', Tahoma, Arial, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   --font-scale: 1;
@@ -81,19 +85,19 @@
 
 .dark {
   color-scheme: dark;
-  --color-bg: #07130e;
-  --color-surface: #0c1d16;
-  --color-surface-secondary: #10271e;
-  --color-surface-green: #123a2b;
+  --color-bg: #071429;
+  --color-surface: #0d1e38;
+  --color-surface-secondary: #12294a;
+  --color-surface-green: #153764;
   --color-border: rgb(255 255 255 / 0.08);
   --color-border-strong: rgb(255 255 255 / 0.12);
   --color-text: #e8eef9;
   --color-text-secondary: rgb(232 238 249 / 0.62);
   --color-text-muted: rgb(232 238 249 / 0.45);
-  --color-heading: #e7f7ee;
-  --color-action: #34d399;
-  --color-action-hover: #6ee7b7;
-  --color-action-soft: #123a2b;
+  --color-heading: #eaf2ff;
+  --color-action: #5f8fd1;
+  --color-action-hover: #91b8eb;
+  --color-action-soft: #153764;
   --color-success: #4ade80;
   --color-success-soft: rgb(74 222 128 / 0.12);
   --color-warning: #fbbf24;
@@ -143,7 +147,7 @@ a[href],
 
 ::selection {
   background: var(--life-green-200);
-  color: #052e24;
+  color: var(--life-green-900);
 }
 
 /* Accessible foundations ------------------------------------------------- */
@@ -392,7 +396,7 @@ textarea:focus-visible,
   overflow: hidden;
   min-height: 154px;
   border-color: transparent;
-  background: linear-gradient(120deg, #064e3b 0%, #047857 58%, #10b981 100%);
+  background: linear-gradient(120deg, var(--life-green-900) 0%, var(--life-green-600) 58%, var(--life-green-400) 100%);
   color: #fff;
   box-shadow: 0 20px 44px rgb(11 27 54 / 0.2);
 }
@@ -422,7 +426,7 @@ textarea:focus-visible,
 }
 
 .life-page-header--hero :where(h1, p, span) { color: inherit !important; }
-.life-page-header--hero .life-page-eyebrow { color: var(--life-lime) !important; }
+.life-page-header--hero .life-page-eyebrow { color: var(--life-gold) !important; }
 
 /* Data tables ------------------------------------------------------------ */
 .life-app table,
@@ -569,7 +573,7 @@ textarea:focus-visible,
   flex: 0 0 auto;
   place-items: center;
   border-radius: 13px;
-  background: linear-gradient(145deg, var(--life-green-900), var(--life-green-600));
+  background: linear-gradient(145deg, var(--life-green-900) 0%, var(--life-green-600) 68%, var(--life-gold) 100%);
   box-shadow: 0 8px 18px rgb(11 27 54 / 0.2);
   color: #fff;
   font-size: 0.95rem;
@@ -644,7 +648,7 @@ textarea:focus-visible,
 
 .dark .public-link,
 .dark .public-secondary-button {
-  color: #a7f3d0 !important;
+  color: var(--life-green-200) !important;
 }
 
 .dark .public-link:hover {
@@ -667,7 +671,7 @@ textarea:focus-visible,
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: linear-gradient(120deg, var(--life-green-900), var(--life-green-700) 58%, var(--life-green-500));
+  background: linear-gradient(120deg, var(--life-green-900), var(--life-green-600) 58%, var(--life-green-400));
   box-shadow: 0 18px 38px rgb(11 27 54 / 0.18);
 }
 
@@ -690,7 +694,7 @@ textarea:focus-visible,
 }
 
 .public-portal-hero > div > p:first-child {
-  color: var(--life-lime) !important;
+  color: var(--life-gold) !important;
 }
 
 /* Rich form designer and print surfaces --------------------------------- */

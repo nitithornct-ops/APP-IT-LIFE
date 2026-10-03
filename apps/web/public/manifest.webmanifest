@@ -4,7 +4,7 @@
   "description": "ตรวจนับทรัพย์สินหน้างานแบบ Offline/PWA",
   "start_url": "/field/scan",
   "display": "standalone",
-  "background_color": "#f4f6fb",
-  "theme_color": "#064e3b",
+  "background_color": "#f5f8fc",
+  "theme_color": "#102a5c",
   "icons": []
 }
