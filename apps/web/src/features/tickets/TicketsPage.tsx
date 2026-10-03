@@ -70,7 +70,7 @@ const priorityTone: Record<TicketPriority, 'secondary' | 'info' | 'warning' | 'd
 
 const priorityRowClass: Record<TicketPriority, string> = {
   ต่ำ: 'shadow-[inset_3px_0_0_#94a3b8]',
-  ปานกลาง: 'shadow-[inset_3px_0_0_#047857]',
+  ปานกลาง: 'shadow-[inset_3px_0_0_#2454a6]',
   สูง: 'shadow-[inset_3px_0_0_#d97706]',
   วิกฤต: 'shadow-[inset_3px_0_0_#dc2626]',
 };

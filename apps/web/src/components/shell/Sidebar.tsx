@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         id="app-sidebar"
         aria-label="เมนูหลัก"
         className={cn(
-          'fixed inset-y-0 left-0 flex w-[216px] flex-col border-r border-white/[.07] bg-[#064e3b] text-white shadow-[8px_0_28px_rgba(6,78,59,.12)] transition-all duration-200 dark:bg-[#022c22] dark:text-[#e8eef9] lg:z-sidebar',
+          'fixed inset-y-0 left-0 flex w-[216px] flex-col border-r border-white/[.07] bg-primary-900 text-white shadow-[8px_0_28px_rgba(16,42,92,.12)] transition-all duration-200 dark:bg-primary-950 dark:text-[#e8eef9] lg:z-sidebar',
           collapsed && 'lg:w-14',
           mobileOpen ? 'z-mobile-drawer translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
@@ -186,14 +186,14 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           <div
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-x-3 top-0 h-5 bg-gradient-to-b from-[#064e3b] to-transparent transition-opacity duration-200 dark:from-[#022c22]',
+              'pointer-events-none absolute inset-x-3 top-0 h-5 bg-gradient-to-b from-primary-900 to-transparent transition-opacity duration-200 dark:from-primary-950',
               scrollEdges.top ? 'opacity-100' : 'opacity-0',
             )}
           />
           <div
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-x-3 bottom-0 h-6 bg-gradient-to-t from-[#064e3b] to-transparent transition-opacity duration-200 dark:from-[#022c22]',
+              'pointer-events-none absolute inset-x-3 bottom-0 h-6 bg-gradient-to-t from-primary-900 to-transparent transition-opacity duration-200 dark:from-primary-950',
               scrollEdges.bottom ? 'opacity-100' : 'opacity-0',
             )}
           />

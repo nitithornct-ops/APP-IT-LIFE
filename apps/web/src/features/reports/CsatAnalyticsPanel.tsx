@@ -28,7 +28,7 @@ export function CsatAnalyticsPanel({ data }: { data: CsatAnalytics }) {
       </div>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)_280px]">
-        <article className="rounded-[10px] bg-[#064e3b] p-5 text-white shadow-card">
+        <article className="rounded-[10px] bg-primary-900 p-5 text-white shadow-card">
           <div className="flex items-center justify-between"><span className="text-xs font-semibold text-white/60">คะแนนเฉลี่ย</span><Star className="h-5 w-5 fill-amber-300 text-amber-300" aria-hidden="true" /></div>
           <p className="mt-2 font-mono text-[40px] font-extrabold leading-none">{data.average === null ? '—' : data.average.toFixed(2)}</p>
           <p className="mt-1 text-xs text-white/50">จากคะแนนเต็ม 5</p>
