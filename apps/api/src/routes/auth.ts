@@ -421,7 +421,12 @@ authRoute.post(
     const redirectTo = new URL('/reset-password', appOrigin).toString();
     // Supabase intentionally returns a generic response for unknown addresses.
     // Do not reflect provider errors because they can become an enumeration side-channel.
-    await createPublicAuthClient(c.env).auth.resetPasswordForEmail(email, { redirectTo, captchaToken: turnstileToken });
+    const { error } = await createPublicAuthClient(c.env).auth.resetPasswordForEmail(email, { redirectTo, captchaToken: turnstileToken });
+    if (error) {
+      // Keep the response generic so Auth errors cannot enumerate accounts, but
+      // do not report success when CAPTCHA or the provider rejected the request.
+      return c.json(fail(reqId, 'PASSWORD_RESET_FAILED', 'ไม่สามารถยืนยันความปลอดภัยได้ กรุณาลองใหม่อีกครั้ง'), 400);
+    }
     return c.json(ok(reqId, { submitted: true }));
   },
 );

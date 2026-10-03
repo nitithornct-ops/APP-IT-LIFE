@@ -100,4 +100,16 @@ describe('authentication broker CAPTCHA handoff', () => {
       captchaToken: 'turnstile-token',
     });
   });
+
+  it('does not report password reset success when Supabase rejects CAPTCHA', async () => {
+    mocks.resetPasswordForEmail.mockResolvedValueOnce({ data: null, error: { code: 'captcha_failed' } });
+
+    const response = await post('/password-reset-request', {
+      email: 'user@example.test',
+      turnstileToken: 'turnstile-token',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'PASSWORD_RESET_FAILED' } });
+  });
 });
