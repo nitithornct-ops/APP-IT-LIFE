@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VendorPortalPage } from './VendorPortalPage';
 
 const vendorPortalApiFetchMock = vi.fn();
+let turnstileCallback: ((token: string) => void) | undefined;
 const { setSessionMock, listFactorsMock } = vi.hoisted(() => ({
   setSessionMock: vi.fn(),
   listFactorsMock: vi.fn(),
@@ -31,12 +32,14 @@ beforeEach(() => {
   vendorPortalApiFetchMock.mockReset();
   setSessionMock.mockReset();
   listFactorsMock.mockReset();
+  turnstileCallback = undefined;
   window.turnstile = {
     render: vi.fn((_container, options) => {
+      turnstileCallback = options.callback;
       options.callback('vendor-captcha-token');
       return 'vendor-test-widget';
     }),
-    reset: vi.fn(),
+    reset: vi.fn((_widgetId) => turnstileCallback?.('fresh-vendor-captcha-token')),
     remove: vi.fn(),
   };
 });
@@ -74,14 +77,14 @@ describe('VendorPortalPage', () => {
       vendorCode: 'VND-001',
       username: 'vendor.contact',
     });
-    expect(JSON.parse(resolveCall?.[1]?.body)).not.toHaveProperty('turnstileToken');
+    expect(JSON.parse(resolveCall?.[1]?.body)).toHaveProperty('turnstileToken', 'vendor-captcha-token');
     const loginCall = vendorPortalApiFetchMock.mock.calls.find(([path]) => path.endsWith('/login'));
     expect(JSON.parse(loginCall?.[1]?.body)).toMatchObject({
       vendorCode: 'VND-001',
       username: 'vendor.contact',
       password: 'secret-password',
       challenge: 'a'.repeat(64),
-      turnstileToken: 'vendor-captcha-token',
+      turnstileToken: 'fresh-vendor-captcha-token',
     });
     expect(setSessionMock).toHaveBeenCalledWith({ access_token: 'access-token', refresh_token: 'refresh-token' });
   });
