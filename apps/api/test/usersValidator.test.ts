@@ -73,15 +73,17 @@ describe('login endpoints', () => {
   });
 
   it('bounds the identifier it will look up', () => {
-    const valid = { identifier: 'somchai.j', turnstileToken: 'test-token' };
+    const valid = { identifier: 'somchai.j' };
     expect(resolveLoginSchema.safeParse(valid).success).toBe(true);
     expect(resolveLoginSchema.safeParse({ ...valid, identifier: 'a'.repeat(255) }).success).toBe(false);
     expect(resolveLoginSchema.safeParse({ ...valid, identifier: '   ' }).success).toBe(false);
   });
 
   it('requires a one-time challenge for brokered password authentication', () => {
-    expect(brokerLoginSchema.safeParse({ identifier: 'somchai.j', password: 'Password123', challenge: 'a'.repeat(64) }).success).toBe(true);
-    expect(brokerLoginSchema.safeParse({ identifier: 'somchai.j', password: 'Password123', challenge: 'not-a-challenge' }).success).toBe(false);
+    const credentials = { identifier: 'somchai.j', password: 'Password123', turnstileToken: 'test-token' };
+    expect(brokerLoginSchema.safeParse({ ...credentials, challenge: 'a'.repeat(64) }).success).toBe(true);
+    expect(brokerLoginSchema.safeParse({ ...credentials, challenge: 'not-a-challenge' }).success).toBe(false);
+    expect(brokerLoginSchema.safeParse({ ...credentials, challenge: 'a'.repeat(64), turnstileToken: '' }).success).toBe(false);
   });
 
   it('bounds password-reset requests and requires anti-bot proof', () => {

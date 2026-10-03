@@ -43,7 +43,6 @@ jobs:
       # workflow serves the app on localhost and must never call production
       # Turnstile during automated staging checks.
       VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
-      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -77,9 +76,6 @@ jobs:
         run: |
           node -e "const fs=require('fs'); fs.writeFileSync('apps/api/.dev.vars', ['SUPABASE_URL='+process.env.SUPABASE_URL,'SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'SUPABASE_SERVICE_ROLE_KEY='+process.env.SUPABASE_SERVICE_ROLE_KEY,'ALLOWED_ORIGINS=http://localhost:5173','ENVIRONMENT=staging','PUBLIC_APP_URL=http://localhost:5173'].join('\n')+'\n')"
           node -e "const fs=require('fs'); fs.writeFileSync('apps/web/.env.local', ['VITE_APP_NAME=LIFE IT Smart Service Center (Staging E2E)','VITE_API_BASE_URL=http://localhost:8787','VITE_SUPABASE_URL='+process.env.SUPABASE_URL,'VITE_SUPABASE_ANON_KEY='+process.env.SUPABASE_ANON_KEY,'VITE_TURNSTILE_SITE_KEY='+process.env.VITE_TURNSTILE_SITE_KEY].join('\n')+'\n')"
-      - name: Add staging Turnstile verification secret
-        shell: bash
-        run: node -e "const fs=require('fs'); fs.appendFileSync('apps/api/.dev.vars', 'TURNSTILE_SECRET_KEY='+process.env.TURNSTILE_SECRET_KEY+'\\n')"
       - name: Run all live browser and API flows
         env:
           LIVE_E2E: "1"

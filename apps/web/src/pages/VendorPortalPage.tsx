@@ -78,10 +78,10 @@ export function VendorPortalPage() {
     }
     try {
       const { challenge } = await vendorPortalApiFetch<{ challenge: string }>('/api/v1/vendor-portal/login/resolve', {
-        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username, turnstileToken: captchaToken }),
+        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username }),
       });
       const brokerResult = await vendorPortalApiFetch<{ session: { access_token: string; refresh_token: string } }>('/api/v1/vendor-portal/login', {
-        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username, password: login.password, challenge }),
+        method: 'POST', body: JSON.stringify({ vendorCode: login.vendorCode, username: login.username, password: login.password, challenge, turnstileToken: captchaToken }),
       });
       const { error: authError } = await supabase.auth.setSession(brokerResult.session);
       if (authError) throw new Error('Invalid vendor credentials');

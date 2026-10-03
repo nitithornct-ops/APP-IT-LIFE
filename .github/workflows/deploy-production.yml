@@ -59,8 +59,6 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
-      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET }}
-      TURNSTILE_EXPECTED_HOSTNAME: ${{ vars.TURNSTILE_EXPECTED_HOSTNAME }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -118,8 +116,6 @@ jobs:
           printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production --cwd apps/api
           printf '%s' "$ALLOWED_ORIGINS" | npx wrangler secret put ALLOWED_ORIGINS --env production --cwd apps/api
           printf '%s' "$PUBLIC_APP_URL" | npx wrangler secret put PUBLIC_APP_URL --env production --cwd apps/api
-          printf '%s' "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY --env production --cwd apps/api
-          printf '%s' "$TURNSTILE_EXPECTED_HOSTNAME" | npx wrangler secret put TURNSTILE_EXPECTED_HOSTNAME --env production --cwd apps/api
           printf '%s' "${LINE_LOGIN_ENABLED:-false}" | npx wrangler secret put LINE_LOGIN_ENABLED --env production --cwd apps/api
           printf '%s' "${NOTIFY_LINE_ENABLED:-false}" | npx wrangler secret put NOTIFY_LINE_ENABLED --env production --cwd apps/api
           if [ "${LINE_LOGIN_ENABLED:-false}" = "true" ]; then

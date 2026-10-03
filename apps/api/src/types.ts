@@ -37,10 +37,6 @@ export interface Bindings {
   STATUS_SLO_TARGET_PERCENT?: string;
   STATUS_SLA_TARGET_PERCENT?: string;
   STATUS_RESPONSE_TIME_TARGET_MS?: string;
-  /** Cloudflare Turnstile secret used only by the API trust boundary. */
-  TURNSTILE_SECRET_KEY?: string;
-  /** Optional hostname pin for production Turnstile verification. */
-  TURNSTILE_EXPECTED_HOSTNAME?: string;
 }
 
 export interface LineUserProfile {

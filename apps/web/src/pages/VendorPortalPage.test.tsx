@@ -51,7 +51,7 @@ describe('VendorPortalPage', () => {
     expect(screen.getAllByDisplayValue('').length).toBeGreaterThan(0);
   });
 
-  it('passes Turnstile to the API broker before showing the MFA step', async () => {
+  it('passes Turnstile to the password-verifying broker request before showing the MFA step', async () => {
     vendorPortalApiFetchMock.mockImplementation(async (path: string) => {
       if (path.endsWith('/login/resolve')) return { challenge: 'a'.repeat(64) };
       if (path.endsWith('/login')) return { session: { access_token: 'access-token', refresh_token: 'refresh-token' } };
@@ -73,14 +73,15 @@ describe('VendorPortalPage', () => {
     expect(JSON.parse(resolveCall?.[1]?.body)).toMatchObject({
       vendorCode: 'VND-001',
       username: 'vendor.contact',
-      turnstileToken: 'vendor-captcha-token',
     });
+    expect(JSON.parse(resolveCall?.[1]?.body)).not.toHaveProperty('turnstileToken');
     const loginCall = vendorPortalApiFetchMock.mock.calls.find(([path]) => path.endsWith('/login'));
     expect(JSON.parse(loginCall?.[1]?.body)).toMatchObject({
       vendorCode: 'VND-001',
       username: 'vendor.contact',
       password: 'secret-password',
       challenge: 'a'.repeat(64),
+      turnstileToken: 'vendor-captcha-token',
     });
     expect(setSessionMock).toHaveBeenCalledWith({ access_token: 'access-token', refresh_token: 'refresh-token' });
   });

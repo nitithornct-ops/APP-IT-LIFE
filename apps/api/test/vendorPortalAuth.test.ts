@@ -28,7 +28,7 @@ describe('vendor portal authentication', () => {
   });
 
   it('normalizes company identity and rejects admin-supplied passwords', () => {
-    expect(vendorPortalIdentitySchema.parse({ vendorCode: 'vnd-001', username: 'Vendor.Contact', turnstileToken: 'test-token' })).toMatchObject({ vendorCode: 'VND-001', username: 'vendor.contact' });
+    expect(vendorPortalIdentitySchema.parse({ vendorCode: 'vnd-001', username: 'Vendor.Contact' })).toMatchObject({ vendorCode: 'VND-001', username: 'vendor.contact' });
     expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
     expect(createVendorPortalAccountSchema.safeParse({ username: 'vendor', email: 'a@example.com', fullName: 'A' }).success).toBe(true);
     expect(createVendorPortalAccountSchema.safeParse({ username: 'ชื่อบริษัท', email: 'a@example.com', fullName: 'A', password: 'StrongPassword123' }).success).toBe(false);
@@ -40,8 +40,10 @@ describe('vendor portal authentication', () => {
   });
 
   it('requires a broker challenge before vendor credentials are submitted', () => {
-    expect(vendorPortalLoginSchema.safeParse({ vendorCode: 'VND-001', username: 'vendor.contact', password: 'StrongPassword123', challenge: 'b'.repeat(64) }).success).toBe(true);
-    expect(vendorPortalLoginSchema.safeParse({ vendorCode: 'VND-001', username: 'vendor.contact', password: 'StrongPassword123', challenge: 'expired' }).success).toBe(false);
+    const credentials = { vendorCode: 'VND-001', username: 'vendor.contact', password: 'StrongPassword123', turnstileToken: 'test-token' };
+    expect(vendorPortalLoginSchema.safeParse({ ...credentials, challenge: 'b'.repeat(64) }).success).toBe(true);
+    expect(vendorPortalLoginSchema.safeParse({ ...credentials, challenge: 'expired' }).success).toBe(false);
+    expect(vendorPortalLoginSchema.safeParse({ ...credentials, challenge: 'b'.repeat(64), turnstileToken: '' }).success).toBe(false);
   });
 
   it('requires the signed company section to contain cause, resolution and test result', () => {

@@ -18,7 +18,6 @@ export type LoginLogInput = z.infer<typeof loginLogSchema>;
 /** ค้นอีเมลที่ Supabase Auth ใช้ จากชื่อผู้ใช้หรืออีเมลที่ผู้ใช้พิมพ์ — เรียกก่อน signInWithPassword */
 export const resolveLoginSchema = z.object({
   identifier: z.string().trim().min(1).max(254),
-  turnstileToken: z.string().trim().min(1).max(2048),
 });
 
 export type ResolveLoginInput = z.infer<typeof resolveLoginSchema>;
@@ -27,6 +26,7 @@ export const brokerLoginSchema = z.object({
   identifier: z.string().trim().min(1).max(254),
   password: z.string().min(1).max(128),
   challenge: z.string().regex(/^[a-f0-9]{64}$/i, 'รูปแบบคำขอเข้าสู่ระบบไม่ถูกต้อง'),
+  turnstileToken: z.string().trim().min(1).max(2048),
 });
 
 export const passwordResetRequestSchema = z.object({

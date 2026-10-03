@@ -7,7 +7,6 @@ import { loadAuditSnapshot, sha256Hex, writeAuditLog } from '../services/auditSe
 import { consumeLoginChallenge, issueLoginChallenge } from '../services/loginChallengeService';
 import { writeLoginLog } from '../services/loginLogService';
 import { loadMfaPolicy } from '../services/mfaPolicy';
-import { verifyTurnstile } from '../services/turnstileService';
 import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
@@ -336,10 +335,7 @@ authRoute.post(
   zValidator('json', resolveLoginSchema, zodValidationHook),
   async (c) => {
     const reqId = c.get('requestId');
-    const { identifier, turnstileToken } = c.req.valid('json');
-    if (!await verifyTurnstile(c.env, turnstileToken, 'login', clientIp(c))) {
-      return c.json(fail(reqId, 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
-    }
+    const { identifier } = c.req.valid('json');
 
     const admin = createAdminClient(c.env);
     const { error } = await admin.rpc('resolve_login_email', {
@@ -396,6 +392,10 @@ authRoute.post(
     const { data, error } = await createPublicAuthClient(c.env).auth.signInWithPassword({
       email: resolvedEmail,
       password: body.password,
+      // Supabase Auth owns CAPTCHA enforcement for sign-in. Verifying this
+      // token in the Worker first would consume the one-time Turnstile token,
+      // making the subsequent Auth request fail even with a valid password.
+      options: { captchaToken: body.turnstileToken },
     });
     if (error || !data.session) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
 
@@ -404,7 +404,7 @@ authRoute.post(
   },
 );
 
-/** Password-reset request is brokered for the same API-side Turnstile check and rate limit. */
+/** Password-reset request is brokered with rate limiting; Supabase Auth verifies Turnstile. */
 authRoute.post(
   '/password-reset-request',
   edgeRateLimit({ keyFn: (c) => `password-reset:${clientIp(c)}` }),
@@ -413,15 +413,11 @@ authRoute.post(
   async (c) => {
     const reqId = c.get('requestId');
     const { email, turnstileToken } = c.req.valid('json');
-    if (!await verifyTurnstile(c.env, turnstileToken, 'password_reset', clientIp(c))) {
-      return c.json(fail(reqId, 'CAPTCHA_REQUIRED', 'การยืนยันความปลอดภัยไม่ผ่าน กรุณาลองใหม่อีกครั้ง'), 400);
-    }
-
     const appOrigin = c.env.PUBLIC_APP_URL?.trim() || new URL(c.req.url).origin;
     const redirectTo = new URL('/reset-password', appOrigin).toString();
     // Supabase intentionally returns a generic response for unknown addresses.
     // Do not reflect provider errors because they can become an enumeration side-channel.
-    await createPublicAuthClient(c.env).auth.resetPasswordForEmail(email, { redirectTo });
+    await createPublicAuthClient(c.env).auth.resetPasswordForEmail(email, { redirectTo, captchaToken: turnstileToken });
     return c.json(ok(reqId, { submitted: true }));
   },
 );
