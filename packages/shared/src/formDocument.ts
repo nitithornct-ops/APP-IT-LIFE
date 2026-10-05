@@ -16,6 +16,7 @@ export const TICKET_REFERENCE_FORM_CSS = `
 .form-document .ticket-reference-page a { color:#111; text-decoration:underline; overflow-wrap:anywhere; }
 .form-document .ticket-reference-page .ticket-form-checkbox { color:#111; }
 .form-document .ticket-reference-page .ticket-form-text-field { min-width:3em; }
+.form-document .ticket-reference-page + .form-page-break { page-break-after:always; break-after:page; }
 @media print { .form-document .ticket-reference-page + .form-page-break { break-after:page; } }
 `;
 

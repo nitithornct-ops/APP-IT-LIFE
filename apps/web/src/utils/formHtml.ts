@@ -134,7 +134,9 @@ export function sanitizeFormHtml(input: string): string {
 
 export function exportHtmlAsWord(contentHtml: string, fileName: string) {
   const html = `<!doctype html><html lang="th" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${FORM_FONT_CSS}@page{size:A4;margin:20mm}body{font-family:FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif;font-size:11pt;line-height:1.55}h1{text-align:center;font-size:18pt}h2{font-size:14pt;border-bottom:1px solid #cbd5e1;padding-bottom:5px}img{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #94a3b8;padding:7px;vertical-align:top}th{background:#e2e8f0}</style></head><body>${sanitizeFormHtml(contentHtml)}</body></html>`;
-  const styledHtml = html.replace('</style>', `${TICKET_REFERENCE_FORM_CSS}</style>`);
+  const styledHtml = html.replace('</style>', `${TICKET_REFERENCE_FORM_CSS}</style>`)
+    .replace('<body>', '<body><div class="form-document">')
+    .replace('</body>', '</div></body>');
   const blob = new Blob(['\ufeff', styledHtml], { type: 'application/msword' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
