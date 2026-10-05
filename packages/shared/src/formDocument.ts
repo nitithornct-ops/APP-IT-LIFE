@@ -1,6 +1,24 @@
 import { FORM_FONT_CSS } from './formFont';
 
 /** Shared typography and physical page geometry for the editor and form exports. */
+export const TICKET_REFERENCE_FORM_CSS = `
+.form-document .ticket-reference-page { font-size:9pt; line-height:1.3; color:#111; }
+.form-document .ticket-reference-page h1 { font-size:11pt; line-height:1.3; margin:6px 0; font-weight:700; }
+.form-document .ticket-reference-page h2 { font-size:9pt; line-height:1.3; margin:16px 0 4px; padding-top:10px; padding-bottom:0; border:0; border-top:1px solid #111; color:#111; font-weight:700; }
+.form-document .ticket-reference-page h2:first-of-type { border:0; padding-top:0; margin-top:12px; }
+.form-document .ticket-reference-page p { margin:4px 0; }
+.form-document .ticket-reference-page table { margin:6px 0; font-size:inherit; }
+.form-document .ticket-reference-page td,.form-document .ticket-reference-page th { border:1px solid #111; padding:2px 5px; background:white; line-height:1.3; }
+.form-document .ticket-reference-page .ticket-form-lines td { border:0; padding:1px 0; }
+.form-document .ticket-reference-page .ticket-form-signoff td { border:1px dashed #888; padding:5px 10px; width:50%; }
+.form-document .ticket-reference-page img[data-field] { width:140px !important; height:28px !important; object-fit:contain; display:inline-block !important; vertical-align:middle; }
+.form-document .ticket-reference-page p:first-child > img:not([data-field]) { width:80px; height:80px; object-fit:contain; }
+.form-document .ticket-reference-page a { color:#111; text-decoration:underline; overflow-wrap:anywhere; }
+.form-document .ticket-reference-page .ticket-form-checkbox { color:#111; }
+.form-document .ticket-reference-page .ticket-form-text-field { min-width:3em; }
+@media print { .form-document .ticket-reference-page + .form-page-break { break-after:page; } }
+`;
+
 export const FORM_DOCUMENT_CSS = `${FORM_FONT_CSS}
 @page { size: A4; margin: 20mm; }
 .form-document { box-sizing:border-box; font-family:FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif; font-size:11pt; line-height:1.55; color:#202522; overflow-wrap:break-word; }
@@ -15,6 +33,7 @@ export const FORM_DOCUMENT_CSS = `${FORM_FONT_CSS}
 .form-document ul { list-style:disc; padding-left:24px; }
 .form-document ol { list-style:decimal; padding-left:24px; }
 .form-document .form-variable { border-radius:4px; background:#e9f9e7; padding:1.6px 4px; color:#287a48; font-family:monospace; font-size:.88em; }
+${TICKET_REFERENCE_FORM_CSS}
 @media print {
  .form-document { width:auto; min-height:0; padding:0; margin:0; box-shadow:none; }
  .form-document h1,.form-document h2,.form-document h3 { break-after:avoid; }

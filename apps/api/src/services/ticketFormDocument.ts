@@ -137,6 +137,28 @@ export interface TicketFormAssets {
   requesterSignatureUrl?: string | null;
   vendorSignatureUrl?: string | null;
   organizationLogoUrl?: string | null;
+  imageAttachments?: Array<{ name: string; url: string | null }>;
+}
+
+function imageAttachmentLinks(assets: TicketFormAssets): string {
+  return (assets.imageAttachments ?? []).map((image, index) =>
+    image.url && /^https:\/\//i.test(image.url)
+      ? `<a href="${escapeHtml(image.url)}" target="_blank" rel="noopener noreferrer">เปิดรูปภาพ ${index + 1}: ${escapeHtml(image.name)}</a>`
+      : `รูปภาพ ${index + 1}: ${escapeHtml(image.name)} (เปิดไฟล์ไม่ได้)`,
+  ).join(' · ');
+}
+
+/** Replace expiring attachment URLs in customized documents on each load. */
+export function refreshTicketFormAttachmentLinks(html: string, assets: TicketFormAssets): string {
+  const slot = `<span data-field="image_attachments">${imageAttachmentLinks(assets)}</span>`;
+  const pattern = /<span\b[^>]*\bdata-field\s*=\s*["']image_attachments["'][^>]*>[\s\S]*?<\/span>/gi;
+  if (pattern.test(html)) return html.replace(pattern, () => slot);
+  // Older issue-form snapshots keep their layout, but still gain live image links.
+  if (assets.imageAttachments?.length) {
+    return html.replace(/(<p\b[^>]*>(?:(?!<\/p>)[\s\S])*Screenshot(?:(?!<\/p>)[\s\S])*?)(<\/p>)/i,
+      (_match, content: string, end: string) => `${content}<br>${slot}${end}`);
+  }
+  return html;
 }
 
 export function renderTicketFormTemplate(
@@ -196,12 +218,14 @@ export function renderTicketFormTemplate(
     it_signature: signatureHtml(assets.itSignatureUrl, 'it_signature'),
     vendor_signature: signatureHtml(assets.vendorSignatureUrl, 'vendor_signature'),
     org_logo: organizationLogoHtml(assets.organizationLogoUrl),
+    image_attachments: `<span data-field="image_attachments">${imageAttachmentLinks(assets)}</span>`,
   };
 
-  return templateHtml.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key: string) => {
+  const rendered = templateHtml.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key: string) => {
     if (key in rawValues) return rawValues[key]!;
     return escapeHtml(values[key]);
   });
+  return refreshTicketFormAttachmentLinks(rendered, assets);
 }
 
 export function ticketFormFlow(ticketStatus: string, issueForm?: TicketIssueFormSource | null): TicketFormFlowStep[] {

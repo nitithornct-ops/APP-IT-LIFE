@@ -48,13 +48,13 @@ export function sanitizeFormHtml(input: string): string {
       ul: ['style'],
       ol: ['style'],
       li: ['style'],
-      table: ['style'],
+      table: ['style', 'class'],
       td: ['colspan', 'rowspan', 'style'],
       th: ['colspan', 'rowspan', 'style'],
     },
     // อนุญาตเฉพาะ class ที่ระบบใช้จริง — span.form-variable คือตัวแปรฟิลด์
     // ส่วน div.form-page-break คือจุดขึ้นหน้ากระดาษใหม่ที่ผู้ใช้สั่งไว้เอง
-    allowedClasses: { span: ['form-variable'], div: ['form-page-break'] },
+    allowedClasses: { span: ['form-variable'], div: ['form-page-break', 'ticket-reference-page'], table: ['ticket-form-lines', 'ticket-form-signoff'] },
     allowedSchemes: ['http', 'https', 'mailto'],
     allowedSchemesByTag: { img: ['https', 'data'] },
     allowProtocolRelative: false,

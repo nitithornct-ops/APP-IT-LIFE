@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { refreshTicketFormSignatureSlots, renderTicketFormTemplate, ticketFormFlow } from '../src/services/ticketFormDocument';
+import { refreshTicketFormAttachmentLinks, refreshTicketFormSignatureSlots, renderTicketFormTemplate, ticketFormFlow } from '../src/services/ticketFormDocument';
 
 describe('Ticket Form Studio document', () => {
+  it('links image attachments safely and refreshes saved links', () => {
+    const assets = { imageAttachments: [
+      { name: '<ภาพ>.png', url: 'https://signed.test/image.png?a=1&b=2' },
+      { name: 'bad.png', url: 'javascript:alert(1)' },
+    ] };
+    const html = renderTicketFormTemplate('<p>{{image_attachments}}</p>', {}, null, assets);
+    expect(html).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(html).toContain('&lt;ภาพ&gt;.png');
+    expect(html).toContain('a=1&amp;b=2');
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('<img');
+    expect(refreshTicketFormAttachmentLinks('<span data-field="image_attachments"><a href="https://expired.test">old</a></span>', assets)).toContain('https://signed.test');
+    expect(renderTicketFormTemplate('{{image_attachments}}', {})).toBe('<span data-field="image_attachments"></span>');
+    expect(renderTicketFormTemplate('<p>☐ Screenshot</p>', {}, null, assets)).toContain('เปิดรูปภาพ 1');
+  });
   it('fills the five-section template from Ticket and Vendor data without leaking HTML', () => {
     const html = renderTicketFormTemplate(
       '<h1>{{ticket_no}}</h1><p>{{requester_name}}</p><p>{{root_cause}}</p><p>{{it_signature}}</p><p>{{vendor_signature}}</p>',

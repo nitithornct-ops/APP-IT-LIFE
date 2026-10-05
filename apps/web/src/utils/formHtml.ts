@@ -1,5 +1,5 @@
 import DOMPurify from 'dompurify';
-import { FORM_FONT_CSS } from '@itlife/shared';
+import { FORM_FONT_CSS, TICKET_REFERENCE_FORM_CSS } from '@itlife/shared';
 
 const SAFE_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i;
 const SAFE_FIELD = /^[a-zA-Z0-9_.-]{1,100}$/;
@@ -8,9 +8,10 @@ const SAFE_SIGNATURE_FIELD = /^(?:requester_signature|it_signature|vendor_signat
  * class เดียวที่แต่ละแท็กเก็บไว้ได้ — ไม่ใช่รายการ class อิสระ เพื่อไม่ให้ผู้ใช้แปะ class ของ
  * ระบบมาทับสไตล์หน้าจออื่น `div.form-page-break` คือตัวแบ่งหน้ากระดาษที่ผู้ใช้สั่งเอง
  */
-const ALLOWED_ELEMENT_CLASS: Record<string, string> = {
-  span: 'form-variable',
-  div: 'form-page-break',
+const ALLOWED_ELEMENT_CLASS: Record<string, string[]> = {
+  span: ['form-variable'],
+  div: ['form-page-break', 'ticket-reference-page'],
+  table: ['ticket-form-lines', 'ticket-form-signoff'],
 };
 const ALLOWED_TAGS = [
   'p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -119,7 +120,7 @@ export function sanitizeFormHtml(input: string): string {
       if (!isSafeLinkUrl(element.getAttribute('href') ?? '')) element.removeAttribute('href');
       if (element.getAttribute('target') === '_blank') element.setAttribute('rel', 'noopener noreferrer');
     }
-    if (element.hasAttribute('class') && element.getAttribute('class') !== ALLOWED_ELEMENT_CLASS[tag]) element.removeAttribute('class');
+    if (element.hasAttribute('class') && !ALLOWED_ELEMENT_CLASS[tag]?.includes(element.getAttribute('class') ?? '')) element.removeAttribute('class');
     if (element.hasAttribute('data-field')) {
       const field = element.getAttribute('data-field') ?? '';
       const valid = (tag === 'span' && SAFE_FIELD.test(field)) || (tag === 'img' && SAFE_SIGNATURE_FIELD.test(field));
@@ -133,7 +134,8 @@ export function sanitizeFormHtml(input: string): string {
 
 export function exportHtmlAsWord(contentHtml: string, fileName: string) {
   const html = `<!doctype html><html lang="th" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>${FORM_FONT_CSS}@page{size:A4;margin:20mm}body{font-family:FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif;font-size:11pt;line-height:1.55}h1{text-align:center;font-size:18pt}h2{font-size:14pt;border-bottom:1px solid #cbd5e1;padding-bottom:5px}img{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #94a3b8;padding:7px;vertical-align:top}th{background:#e2e8f0}</style></head><body>${sanitizeFormHtml(contentHtml)}</body></html>`;
-  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const styledHtml = html.replace('</style>', `${TICKET_REFERENCE_FORM_CSS}</style>`);
+  const blob = new Blob(['\ufeff', styledHtml], { type: 'application/msword' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
