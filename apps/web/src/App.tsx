@@ -165,7 +165,7 @@ export function App() {
         <Route path="/" element={<ProtectedRoute permission="dashboard.view"><HomePage /></ProtectedRoute>} />
         <Route path="/war-room" element={<ProtectedRoute permission="dashboard.view"><WarRoomPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/files/:id/view" element={<Suspense fallback={<LazyPageFallback />}><AttachmentImagePage /></Suspense>} />
+        <Route path="/files/:id/view" element={<ProtectedRoute permission="ticket.view"><Suspense fallback={<LazyPageFallback />}><AttachmentImagePage /></Suspense></ProtectedRoute>} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
         <Route
           path="/system-status"
