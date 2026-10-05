@@ -12,6 +12,7 @@ import { sendNotification } from '../services/notificationService';
 import { createSignedUrl } from '../services/storageService';
 import { uploadRequesterSignature } from '../services/ticketSignatureService';
 import {
+  refreshTicketFormAttachmentLinks,
   refreshTicketFormSignatureSlots,
   renderTicketFormTemplate,
   ticketFormFlow,
@@ -293,6 +294,7 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     { data: worklogs, error: worklogError },
     { data: outsourceSubmission, error: outsourceSubmissionError },
     { data: organizationLogo },
+    { data: imageRows, error: imageError },
   ] = await Promise.all([
     admin
       .from('issue_forms')
@@ -314,7 +316,12 @@ ticketsRoute.get('/:id/form-document', async (c) => {
       .limit(1)
       .maybeSingle(),
     admin.from('system_settings').select('value').eq('key', 'ORG_LOGO_URL').maybeSingle(),
+    admin.from('file_attachments')
+      .select('id, storage_path, original_filename')
+      .eq('module', 'ticket').eq('target_table', 'tickets').eq('target_id', id)
+      .like('mime_type', 'image/%').order('created_at', { ascending: true }),
   ]);
+  if (imageError) return c.json(fail(reqId, 'TICKET_ATTACHMENTS_LOAD_FAILED', 'โหลดไฟล์ภาพแนบไม่สำเร็จ'), 400);
   if (issueError ?? worklogError ?? outsourceSubmissionError) return c.json(fail(reqId, 'TICKET_FORM_FLOW_LOAD_FAILED', 'โหลดข้อมูลขั้นตอนของแบบฟอร์มไม่สำเร็จ'), 400);
 
   // A module re-assignment changes the default for new work. Keep an existing
@@ -382,9 +389,15 @@ ticketsRoute.get('/:id/form-document', async (c) => {
     requesterSignatureUrl,
     vendorSignatureUrl,
     organizationLogoUrl: organizationLogo?.value ?? null,
+    imageAttachments: await Promise.all((imageRows ?? []).map(async image => {
+      const permanentUrl = appUrl(c.env, `/files/${image.id}/view`);
+      if (permanentUrl && /^https:\/\//i.test(permanentUrl)) return { name: image.original_filename, url: permanentUrl };
+      const signed = await createSignedUrl(admin, image.storage_path, 3600);
+      return { name: image.original_filename, url: 'url' in signed ? signed.url : null };
+    })),
   };
   const contentHtml = customContentHtml
-    ? refreshTicketFormSignatureSlots(customContentHtml, renderAssets)
+    ? refreshTicketFormAttachmentLinks(refreshTicketFormSignatureSlots(customContentHtml, renderAssets), renderAssets)
     : renderTicketFormTemplate(sourceHtml, renderSource, effectiveIssueForm, renderAssets);
   const templateVersion = Number(issueForm?.template_version ?? template.current_version);
   const savedCheckmarks = ticket.form_checkmarks as { templateId?: unknown; templateVersion?: unknown; indices?: unknown; textValues?: unknown } | null;

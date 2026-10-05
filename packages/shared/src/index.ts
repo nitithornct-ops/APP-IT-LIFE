@@ -8,5 +8,5 @@ export * from './tickets/rating';
 export * from './utils/csv';
 export * from './utils/vulnerabilityRisk';
 
-export { FORM_DOCUMENT_CSS, formDocumentHtml } from './formDocument';
+export { FORM_DOCUMENT_CSS, TICKET_REFERENCE_FORM_CSS, formDocumentHtml } from './formDocument';
 export { FORM_FONT_CSS } from './formFont';

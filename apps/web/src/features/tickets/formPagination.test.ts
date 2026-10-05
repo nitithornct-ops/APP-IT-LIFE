@@ -20,6 +20,15 @@ function paginate(html: string, pageHeightPx: number) {
 }
 
 describe('paginateElement', () => {
+  it('keeps reference sections on two sheets and continues long content without losing it', () => {
+    const html = '<div class="ticket-reference-page"><p data-h="30">ส่วนที่ 1</p><p data-h="30">ส่วนที่ 2</p></div><div class="form-page-break"></div><div class="ticket-reference-page"><p data-h="30">ส่วนที่ 3</p><p data-h="30">ส่วนที่ 5</p></div>';
+    const sheets = paginate(html, 100);
+    expect(sheets).toHaveLength(2);
+    expect(sheets[0]).toContain('ส่วนที่ 2');
+    expect(sheets[1]).toContain('ส่วนที่ 3');
+    expect(sheets.every(sheet => sheet.startsWith('<div class="ticket-reference-page">'))).toBe(true);
+    expect(paginate(html, 40)).toHaveLength(4);
+  });
   it('เก็บทุก block ไว้หน้าเดียวเมื่อความสูงรวมยังไม่เกินหนึ่งหน้า', () => {
     const pages = paginate('<p data-h="30">ก</p><p data-h="30">ข</p>', 100);
     expect(pages).toHaveLength(1);

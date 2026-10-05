@@ -145,6 +145,17 @@ R2 ยังเป็นที่เก็บสำเนาหลัก ขั�
 
 ## 3. ลำดับ deploy
 
+Backup เก็บ archive ที่เข้ารหัส AES-256-GCM เป็น GitHub Actions artifact อายุ 90 วัน
+ก่อนส่งสำเนาไป R2 และตรวจถอดรหัสเทียบกับต้นฉบับทุกครั้ง ต้องตั้ง secret
+`BACKUP_ENCRYPTION_KEY` ใน environment `production` เป็นคีย์สุ่ม 32 ไบต์ที่เข้ารหัส base64
+และเก็บคีย์สำหรับกู้คืนแยกจาก archive หาก R2 ยังไม่เปิด (Cloudflare code 10042)
+workflow จะเก็บสำเนาเข้ารหัสใน GitHub โดยไม่เปิด R2 หรือเพิ่มค่าบริการให้เอง
+ข้อผิดพลาดอื่นของ R2 ยังทำให้ workflow ล้มเหลวตามเดิม
+
+ใช้ `node scripts/backup-archive.mjs decrypt INPUT.enc OUTPUT.tar.gz` เพื่อถอดรหัส
+โดยส่งคีย์ผ่าน environment `BACKUP_ENCRYPTION_KEY` ห้ามส่งค่าใน command arguments
+จากนั้นตรวจ `gzip -t` และใช้ขั้นตอน restore ใน `docs/rollback.md`
+
 1. เปิด Actions → `Staging Live E2E` และเก็บหลักฐานผลผ่าน
 2. สร้าง backup และบันทึก backup ID/timestamp ลง change ticket — รัน Actions → `Backup` แล้วเก็บชื่อไฟล์
    `itlife-backup-<เวลา UTC>.tar.gz` ที่ workflow รายงานไว้

@@ -107,14 +107,25 @@ describe('form HTML utilities', () => {
     expect(html).not.toContain('class=');
   });
 
-  it('builds a Word-compatible download', () => {
+  it('builds a Word-compatible download with the two-sheet reference styling applied', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    exportHtmlAsWord('<h1>Test</h1>', 'test/form');
+    exportHtmlAsWord('<div class="ticket-reference-page"><h1>Test</h1></div><div class="form-page-break"></div><div class="ticket-reference-page"><p>Second sheet</p></div>', 'test/form');
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test');
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    const exported = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    const wordDocument = new DOMParser().parseFromString(exported, 'text/html');
+    expect(wordDocument.querySelectorAll('.form-document .ticket-reference-page')).toHaveLength(2);
+    expect(wordDocument.querySelector('.form-document .form-page-break')).not.toBeNull();
+    expect(wordDocument.querySelector('style')?.textContent).toContain('page-break-after:always');
     click.mockRestore();
     createObjectURL.mockRestore();
     revokeObjectURL.mockRestore();

@@ -124,6 +124,7 @@ const PdfToolsPage = lazy(() => import('./features/pdfTools/PdfToolsPage').then(
 const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage').then((m) => ({ default: m.SystemStatusPage })));
 const VendorPortalPage = lazy(() => import('./pages/VendorPortalPage').then((m) => ({ default: m.VendorPortalPage })));
 const VendorPortalInvitePage = lazy(() => import('./pages/VendorPortalInvitePage').then((m) => ({ default: m.VendorPortalInvitePage })));
+const AttachmentImagePage = lazy(() => import('./pages/AttachmentImagePage').then((m) => ({ default: m.AttachmentImagePage })));
 
 function LazyPageFallback() {
   return (
@@ -164,6 +165,7 @@ export function App() {
         <Route path="/" element={<ProtectedRoute permission="dashboard.view"><HomePage /></ProtectedRoute>} />
         <Route path="/war-room" element={<ProtectedRoute permission="dashboard.view"><WarRoomPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/files/:id/view" element={<ProtectedRoute permission="ticket.view"><Suspense fallback={<LazyPageFallback />}><AttachmentImagePage /></Suspense></ProtectedRoute>} />
         {/* คู่ในแอปของ /health สาธารณะ — เมนู "สถานะระบบ" ชี้มาที่นี่เพื่อไม่ให้ผู้ใช้หลุดออกจากโครงแอป */}
         <Route
           path="/system-status"

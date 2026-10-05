@@ -40,6 +40,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
       R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET || 'itlife-backups' }}
       # สำเนาที่สองนอก R2 (ไม่บังคับ) — ดู scripts/backup-to-drive.mjs และ docs/deployment.md §2.1
       BACKUP_TO_DRIVE_ENABLED: ${{ vars.BACKUP_TO_DRIVE_ENABLED }}
@@ -62,7 +63,7 @@ jobs:
         run: |
           missing=()
           for name in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY \
-                      CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID R2_BUCKET; do
+                      CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID R2_BUCKET BACKUP_ENCRYPTION_KEY; do
             [ -n "${!name}" ] || missing+=("$name")
           done
 
@@ -133,7 +134,7 @@ jobs:
           BACKUP_DIR: backup/${{ env.STAMP }}
         run: node scripts/backup-storage.mjs
 
-      - name: Upload to Cloudflare R2
+      - name: Package and verify encrypted backup
         shell: bash
         run: |
           set -euo pipefail
@@ -141,21 +142,50 @@ jobs:
           tar -czf "$ARCHIVE" -C "backup/$STAMP" .
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           ls -lh "$ARCHIVE"
+          node scripts/backup-archive.mjs encrypt "$ARCHIVE" "$ARCHIVE.enc"
+          node scripts/backup-archive.mjs decrypt "$ARCHIVE.enc" verify.tar.gz
+          cmp "$ARCHIVE" verify.tar.gz
+          gzip -t verify.tar.gz
+          tar -tzf verify.tar.gz > verify-manifest.txt
+          grep -q 'db-public.sql' verify-manifest.txt
+          grep -q 'manifest.json' verify-manifest.txt
+
+      - name: Store encrypted recovery archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-backup-${{ env.STAMP }}
+          path: ${{ env.ARCHIVE }}.enc
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload to Cloudflare R2 when enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npx wrangler r2 bucket list > r2-status.txt 2> r2-error.txt; then
+            if grep -q '10042' r2-error.txt; then
+              echo '::warning::R2 is not enabled; the verified encrypted GitHub recovery archive is retained for 90 days.'
+              exit 0
+            fi
+            cat r2-error.txt
+            exit 1
+          fi
           if ! npx wrangler r2 bucket info "$R2_BUCKET" --json >/dev/null 2>&1; then
             npx wrangler r2 bucket create "$R2_BUCKET"
           fi
           npx wrangler r2 object put "$R2_BUCKET/$ARCHIVE" \
             --file "$ARCHIVE" --content-type application/gzip --remote
+          echo 'R2_UPLOADED=true' >> "$GITHUB_ENV"
 
       # สำเนาที่ไม่เคยลองเปิดกลับมาดู ไม่นับว่าเป็นสำเนา — ดึงกลับมาตรวจว่าไฟล์ไม่เสียจริง
       - name: Verify the uploaded archive can be read back
+        if: env.R2_UPLOADED == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler r2 object get "$R2_BUCKET/$ARCHIVE" --file verify.tar.gz --remote
-          gzip -t verify.tar.gz
-          tar -tzf verify.tar.gz | grep -q 'db-public.sql'
-          tar -tzf verify.tar.gz | grep -q 'manifest.json'
+          npx wrangler r2 object get "$R2_BUCKET/$ARCHIVE" --file r2-verify.tar.gz --remote
+          cmp "$ARCHIVE" r2-verify.tar.gz
+          gzip -t r2-verify.tar.gz
           echo "ตรวจแล้ว: ไฟล์สำรองบน R2 เปิดอ่านได้และมีข้อมูลฐานข้อมูลครบ"
 
       # สำเนาที่สองไว้คนละผู้ให้บริการ — ปิดอยู่จนกว่าจะตั้ง Variable BACKUP_TO_DRIVE_ENABLED = true
@@ -168,7 +198,8 @@ jobs:
       - name: Summary
         shell: bash
         run: |
-          echo "- R2 retention: bootstrap mode keeps every verified archive" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Encrypted recovery archive: GitHub Actions artifact, retained for 90 days" >> "$GITHUB_STEP_SUMMARY"
+          echo "- R2 uploaded: ${R2_UPLOADED:-false}" >> "$GITHUB_STEP_SUMMARY"
           {
             echo "### สำรองข้อมูลสำเร็จ"
             echo ""

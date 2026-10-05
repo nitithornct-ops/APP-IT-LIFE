@@ -38,8 +38,8 @@ describe('Form Studio database controls', () => {
        where template_id = (select id from public.form_templates where template_code = 'IT-ERP-ISSUE')
        order by version`,
     ));
-    expect(templates.rows).toEqual([{ template_code: 'IT-ERP-ISSUE', current_version: 3, has_vendor_signature: true }]);
-    expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(templates.rows).toEqual([{ template_code: 'IT-ERP-ISSUE', current_version: 4, has_vendor_signature: true }]);
+    expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   });
 
   // เอกสารที่พิมพ์ออกไปใช้จริงต้องมีช่องลงนามของทุกฝ่ายและตัวเลือกงานครบตามต้นฉบับ
@@ -51,8 +51,10 @@ describe('Form Studio database controls', () => {
 
     expect(html).toContain('{{org_logo}}');
     expect(html).toContain('ระบบตรวจสอบสิทธิ์และขอรับเงิน กรมธรรม์ล่วงพ้นอายุความ');
-    expect(html).toContain('ลงชื่อ {{requester_signature}} ผู้แจ้ง');
-    expect(html).toContain('ลงชื่อ {{it_signature}} เจ้าหน้าที่ IT');
+    const signoff = html.split('<table class="ticket-form-signoff">')[1];
+    expect(signoff).toContain('ผู้แจ้ง<br>ลงชื่อ {{requester_signature}}');
+    expect(signoff).toContain('เจ้าหน้าที่ IT<br>ลงชื่อ {{it_signature}}');
+    expect(html.match(/class="ticket-reference-page"/g)).toHaveLength(2);
     expect(html).toContain('นายกรัณย์ทัศ รักษ์ธรรมกิจ');
     expect(html).toContain('{{target_completion_date}}');
   });
@@ -82,7 +84,7 @@ describe('Form Studio database controls', () => {
     ));
     const hidden = await asUser(db, USER_ID, async () => db.query('select id from public.issue_forms'));
     expect(created.rows[0].form_no).toMatch(/^FRM-\d{6}-\d{5}$/);
-    expect(created.rows[0].template_version).toBe(3);
+    expect(created.rows[0].template_version).toBe(4);
     expect(hidden.rows).toHaveLength(0);
   });
 

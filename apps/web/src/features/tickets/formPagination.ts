@@ -112,6 +112,20 @@ export function paginateElement(root: HTMLElement, options: PaginateOptions): Pa
   if (blocks.length === 0) return { pages: [] };
   if (pageHeightPx <= 0) return { pages: [root.innerHTML] };
 
+  // Preserve the reference sheets while allowing long details to continue.
+  if (blocks.some(block => block.classList.contains('ticket-reference-page'))) {
+    const pages = blocks.flatMap(block => {
+      if (isPageBreak(block)) return [];
+      if (!block.classList.contains('ticket-reference-page')) return [block.outerHTML];
+      return paginateElement(block, options).pages.map(content => {
+        const wrapper = block.cloneNode(false) as HTMLElement;
+        wrapper.innerHTML = content;
+        return wrapper.outerHTML;
+      });
+    });
+    return { pages };
+  }
+
   const pages: HTMLElement[][] = [[]];
   let usedPx = 0;
 

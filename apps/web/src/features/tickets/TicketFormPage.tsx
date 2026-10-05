@@ -10,6 +10,7 @@ import { ApiError, apiFetch, showToast } from '../../services/apiClient';
 import type { TicketFormDocument, TicketFormFlowState } from '../../types/tickets';
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 import { effectiveMarginMm, pageGeometry, paginateElement } from './formPagination';
+import { TICKET_REFERENCE_FORM_CSS } from '@itlife/shared';
 
 const flowAppearance: Record<TicketFormFlowState, { icon: typeof CheckCircle2; className: string; label: string }> = {
   complete: { icon: CheckCircle2, className: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200', label: 'เสร็จแล้ว' },
@@ -211,7 +212,7 @@ export function TicketFormPage() {
       if (cancelled || !host) return;
       host.innerHTML = interactiveFormHtml;
       const result = paginateElement(host, {
-        pageHeightPx: geometry.contentHeightPx,
+        pageHeightPx: geometry.contentHeightPx - 24,
         measureHeight: measureBlockHeight,
       });
       // ล้างทันทีหลังวัดเสร็จ ไม่ทิ้งสำเนาของเอกสารทั้งใบไว้ใน DOM ให้กินหน่วยความจำและ
@@ -304,6 +305,7 @@ export function TicketFormPage() {
   const canOpenFormStudio = hasPermission('form.view');
 
   return <div className="ticket-form-screen space-y-4">
+    <style>{TICKET_REFERENCE_FORM_CSS}</style>
     <div className="ticket-form-actions flex flex-wrap items-center justify-between gap-3">
       <Link to={`/tickets/${formDocument.ticketId}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300"><ArrowLeft className="h-4 w-4" />กลับไป Ticket</Link>
       <div className="flex flex-wrap items-center gap-2">
@@ -383,8 +385,10 @@ export function TicketFormPage() {
           aria-label={`หน้า ${index + 1} จาก ${pages.length}`}
           className="ticket-print-page form-document form-page-sheet bg-white text-slate-900 shadow-sm"
           style={sheetStyle}
-          dangerouslySetInnerHTML={{ __html: pageHtml }}
-        />)}
+        >
+          <div dangerouslySetInnerHTML={{ __html: pageHtml }} />
+          <p className="mt-2 text-right text-[9pt] text-slate-400" aria-label={`เลขหน้า ${index + 1}`}>{index + 1}</p>
+        </article>)}
         {pages.length > 0 && <p data-print-hide className="ticket-form-actions text-xs text-slate-500">
           <Eye className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
           แบ่งเป็น {pages.length} หน้า ขนาด {formDocument.pageSettings?.size ?? 'A4'} — สิ่งที่เห็นตรงกับที่จะพิมพ์ออกมา
