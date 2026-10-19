@@ -11,6 +11,13 @@ async function expectNoHorizontalOverflow(page: import('@playwright/test').Page)
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The external Turnstile iframe animates and can arrive after the screenshot.
+  // Keep this UI/accessibility gate deterministic; live login tests exercise
+  // Cloudflare's actual test widget and server-side verification separately.
+  await page.route('https://challenges.cloudflare.com/turnstile/**', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'window.turnstile = { render: function () { return "quality-gate"; }, reset: function () {}, remove: function () {} };',
+  }));
 });
 test('login passes the accessibility and responsive layout gate', async ({ page }, testInfo) => {
   await page.goto('/login');
