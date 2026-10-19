@@ -1,0 +1,133 @@
+/* A cell's paragraphs and controls stay together when its label moves beside it. */
+.data-table-cell-content {
+  min-width: 0;
+}
+
+[data-ui='row-actions'] > :is(a, button),
+[data-ui='row-actions'] > .contents > :is(a, button) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 639px) {
+  /* Sticky desktop tables must become part of the page scroll in card layout. */
+  [data-ui='table-viewport'].data-table-card-viewport {
+    max-height: none !important;
+    overflow: visible;
+  }
+
+  table.data-table-cards {
+    display: block;
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+
+  table.data-table-cards > thead {
+    display: none;
+  }
+
+  table.data-table-cards > tbody {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
+
+  table.data-table-cards > tbody > tr {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-default);
+    background: var(--color-surface);
+    padding: 2px 12px;
+    box-shadow: var(--shadow-card);
+  }
+
+  table.data-table-cards > tbody > tr > td {
+    display: grid;
+    position: static !important;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    grid-template-columns: minmax(76px, 30%) minmax(0, 1fr);
+    align-items: start;
+    gap: 4px 12px;
+    border-bottom: 1px solid var(--color-border) !important;
+    padding: 10px 0 !important;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  table.data-table-cards > tbody > tr > td[data-label]:not([data-label=''])::before {
+    content: attr(data-label);
+    grid-column: 1;
+    color: var(--color-text-muted);
+    font-size: max(12px, 0.75rem);
+    font-weight: 600;
+    line-height: 1.65;
+  }
+
+  table.data-table-cards .data-table-cell-content {
+    grid-column: 2;
+    max-width: 100%;
+    white-space: normal;
+    line-height: 1.65;
+  }
+
+  table.data-table-cards .data-table-cell-content > *,
+  table.data-table-cards .data-table-cell-content :is(.truncate, [class*='line-clamp-']) {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Card content has room to grow; text clipped for desktop can be read in full. */
+  table.data-table-cards .data-table-cell-content :is(.truncate, [class*='line-clamp-']) {
+    overflow: visible;
+    text-overflow: clip;
+    -webkit-line-clamp: unset;
+  }
+
+  table.data-table-cards > tbody > tr > :is(td:not([data-label]), td[data-label=''], td[data-table-spanning='true'], td:has([data-ui='row-actions'])) {
+    display: block;
+  }
+
+  table.data-table-cards > tbody > tr > td[data-table-spanning='true']::before,
+  table.data-table-cards > tbody > tr > td:has([data-ui='row-actions'])::before {
+    display: none;
+  }
+
+  table.data-table-cards > tbody > tr > td:empty {
+    display: none;
+  }
+
+  table.data-table-cards > tbody > tr > td:last-child {
+    border-bottom: 0 !important;
+  }
+
+  table.data-table-cards [data-ui='row-actions'] {
+    justify-content: flex-start;
+  }
+
+  [data-ui='data-table'] :is(input:not([type='checkbox']):not([type='radio']), select) {
+    min-height: 44px;
+    font-size: 18px;
+  }
+}
+
+/* Tickets switch to cards earlier so tablet users can read the full work summary. */
+@media (max-width: 1279px) {
+  [data-ui='table-viewport'].data-table-card-viewport:has(> .ticket-list-table) {
+    max-height: none !important;
+    overflow: visible;
+  }
+
+  .ticket-list-table.data-table-cards .data-table-cell-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+}

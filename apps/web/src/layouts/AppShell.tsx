@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { CommandPalette } from '../components/shell/CommandPalette';
 import { MobileBottomNav } from '../components/shell/MobileBottomNav';
 import { Sidebar } from '../components/shell/Sidebar';
 import { Topbar } from '../components/shell/Topbar';
 import { cn } from '../utils/cn';
+import { LoadingState } from '../components/ui/AsyncState';
 
 const SIDEBAR_COLLAPSED_KEY = 'itlife-sidebar-collapsed';
 
@@ -17,6 +18,11 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const closeCommandPalette = useCallback(() => setCommandPaletteOpen(false), []);
+  const openCommandPalette = useCallback(() => {
+    setMobileMenuOpen(false);
+    setCommandPaletteOpen(true);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
@@ -30,12 +36,12 @@ export function AppShell() {
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setCommandPaletteOpen(true);
+        openCommandPalette();
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [mobileMenuOpen]);
+  }, [mobileMenuOpen, openCommandPalette]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -75,21 +81,23 @@ export function AppShell() {
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className={cn('flex min-h-screen min-w-0 flex-col transition-all duration-200', collapsed ? 'lg:ml-14' : 'lg:ml-[216px]')}>
+      <div className={cn('flex min-h-screen min-w-0 flex-col transition-[margin] duration-200 motion-reduce:transition-none', collapsed ? 'lg:ml-16' : 'lg:ml-60')}>
         <Topbar
           mobileMenuOpen={mobileMenuOpen}
           onOpenMobileMenu={() => setMobileMenuOpen((open) => !open)}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          onOpenCommandPalette={openCommandPalette}
         />
         <main id="main-content" className="relative min-w-0 flex-1 px-3 py-3 sm:px-[18px] sm:py-4">
           <div className="module-page-content min-w-0" data-module-themed={!hasNativeHero}>
-            <Outlet />
+            <Suspense fallback={<LoadingState label="กำลังเปิดหน้า..." rows={3} />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
 
       <MobileBottomNav />
-      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+      <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
     </div>
   );
 }

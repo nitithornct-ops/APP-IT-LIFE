@@ -81,6 +81,32 @@ function renderPalette() {
 }
 
 describe('CommandPalette', () => {
+  it('keeps keyboard focus in the search dialog and restores body scrolling when closed', async () => {
+    document.body.style.overflow = 'auto';
+    const view = renderPalette();
+    const input = screen.getByLabelText('คำค้นหา');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(document.body.style.overflow).toBe('hidden');
+    const lastButton = screen.getAllByRole('button').at(-1)!;
+    lastButton.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(lastButton).toHaveFocus();
+    view.unmount();
+    expect(document.body.style.overflow).toBe('auto');
+    document.body.style.overflow = '';
+  });
+
+  it('keeps menu navigation available when the record search fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: false, error: { message: 'Search unavailable' } }), { status: 500, headers: { 'content-type': 'application/json' } })));
+    renderPalette();
+    fireEvent.change(screen.getByLabelText('คำค้นหา'), { target: { value: 'ใบงาน' } });
+    expect(await screen.findByRole('status')).toHaveTextContent('ค้นหาข้อมูลไม่สำเร็จ');
+    fireEvent.click(screen.getByRole('button', { name: 'ใบงาน' }));
+    expect(navigate).toHaveBeenCalledWith('/tickets');
+  });
+
   it('ค้นได้ถึงตัวข้อมูลจริง ไม่ใช่แค่ชื่อเมนู', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => searchResponse()));
     renderPalette();

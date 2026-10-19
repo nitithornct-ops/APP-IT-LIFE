@@ -19,6 +19,7 @@ export function Card({ className, 'data-ui': dataUi = 'card', ...rest }: CardPro
 export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-ui="card-header"
       className={cn(
         'border-b border-hairline-row px-4 py-3 font-bold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
         className,
@@ -66,14 +67,14 @@ export function StatCard({
   };
 
   return (
-    <Card data-ui="stat" className={cn('flex min-h-[104px] items-center gap-3 border-b-2 p-4', toneClasses[tone].border, toneClasses[tone].surface)}>
-      <div className={cn('flex h-11 w-11 min-w-11 items-center justify-center rounded-xl', toneClasses[tone].icon)}>
+    <Card data-ui="stat" data-tone={tone} className={cn('flex min-h-[104px] items-center gap-3 border-b-2 p-4', toneClasses[tone].border, toneClasses[tone].surface)}>
+      <div data-ui="kpi-icon" className={cn('flex h-11 w-11 min-w-11 items-center justify-center rounded-xl', toneClasses[tone].icon)}>
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="font-mono text-[22px] font-bold leading-tight text-ink-heading dark:text-[#e8eef9]">{value}</p>
-        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</p>
-        {note && <p className="truncate text-[11px] text-slate-400 dark:text-slate-500">{note}</p>}
+        <p data-ui="kpi-value" className="font-mono text-[22px] font-bold leading-tight text-ink-heading dark:text-[#e8eef9]">{value}</p>
+        <p data-ui="kpi-label" className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+        {note && <p data-ui="kpi-note" className="text-xs text-slate-400 dark:text-slate-500">{note}</p>}
       </div>
     </Card>
   );

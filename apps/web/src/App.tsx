@@ -1,8 +1,7 @@
 import { Loader2 } from 'lucide-react';
-import { lazy, Suspense, type ReactNode } from 'react';
-import { Route, Routes, useNavigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { DetailModal } from './components/ui/Modal';
 import { AppShell } from './layouts/AppShell';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HealthPage } from './pages/HealthPage';
@@ -128,15 +127,11 @@ const AttachmentImagePage = lazy(() => import('./pages/AttachmentImagePage').the
 
 function LazyPageFallback() {
   return (
-    <div className="flex justify-center py-20" role="status">
-      <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden="true" />
+    <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500 dark:text-slate-400" role="status">
+      <Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      <span>กำลังเปิดหน้า...</span>
     </div>
   );
-}
-
-function DetailRouteModal({ title, returnTo, background, children }: { title: string; returnTo: string; background: ReactNode; children: ReactNode }) {
-  const navigate = useNavigate();
-  return <>{background}<DetailModal title={title} description="ดูข้อมูลและดำเนินการโดยไม่ออกจากรายการ" onClose={() => navigate(returnTo, { replace: true })} contentPadding="compact" contentClassName="bg-slate-50 dark:bg-slate-900/40">{children}</DetailModal></>;
 }
 
 export function App() {
@@ -221,7 +216,7 @@ export function App() {
           element={
             <ProtectedRoute permission="incident.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียด Incident" returnTo="/incidents" background={<IncidentsPage />}><IncidentDetailPage /></DetailRouteModal>
+                <IncidentDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -241,7 +236,7 @@ export function App() {
           element={
             <ProtectedRoute permission="problem.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียด Problem" returnTo="/problems" background={<ProblemsPage />}><ProblemDetailPage /></DetailRouteModal>
+                <ProblemDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -261,7 +256,7 @@ export function App() {
           element={
             <ProtectedRoute permission="change.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียด Change" returnTo="/changes" background={<ChangesPage />}><ChangeDetailPage /></DetailRouteModal>
+                <ChangeDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -291,7 +286,7 @@ export function App() {
           element={
             <ProtectedRoute permission="asset.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียดทรัพย์สิน" returnTo="/assets" background={<AssetsPage />}><AssetDetailPage /></DetailRouteModal>
+                <AssetDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -421,7 +416,7 @@ export function App() {
           element={
             <ProtectedRoute permission="cmdb.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียด Configuration Item" returnTo="/cmdb" background={<CmdbPage />}><ConfigurationItemDetailPage /></DetailRouteModal>
+                <ConfigurationItemDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -471,7 +466,7 @@ export function App() {
           element={
             <ProtectedRoute permission="ticket.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียด Ticket" returnTo="/tickets" background={<TicketsPage />}><TicketDetailPage /></DetailRouteModal>
+                <TicketDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -491,7 +486,7 @@ export function App() {
           element={
             <ProtectedRoute permission="service_request.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียดคำขอบริการ" returnTo="/service-requests" background={<ServiceRequestsPage />}><ServiceRequestDetailPage /></DetailRouteModal>
+                <ServiceRequestDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -511,7 +506,7 @@ export function App() {
           element={
             <ProtectedRoute permission="access_request.view">
               <Suspense fallback={<LazyPageFallback />}>
-                <DetailRouteModal title="รายละเอียดคำขอสิทธิ์" returnTo="/access-requests" background={<AccessRequestsPage />}><AccessRequestDetailPage /></DetailRouteModal>
+                <AccessRequestDetailPage />
               </Suspense>
             </ProtectedRoute>
           }

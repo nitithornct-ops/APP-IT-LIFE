@@ -4,10 +4,20 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      // TH Sarabun has smaller glyphs; enlarge type without scaling spacing or controls.
+      fontSize: {
+        xs: ['1rem', { lineHeight: '1.5' }],
+        sm: ['1.125rem', { lineHeight: '1.5' }],
+        base: ['1.25rem', { lineHeight: '1.5' }],
+        lg: ['1.375rem', { lineHeight: '1.5' }],
+        xl: ['1.5rem', { lineHeight: '1.4' }],
+        '2xl': ['1.875rem', { lineHeight: '1.3' }],
+        '3xl': ['2.25rem', { lineHeight: '1.25' }],
+      },
       fontFamily: {
-        sans: ['FormThai', 'Noto Sans Thai', 'Tahoma', 'Arial', 'sans-serif'],
-        display: ['FormThai', 'Noto Sans Thai', 'Tahoma', 'Arial', 'sans-serif'],
-        mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: ['var(--font-app)'],
+        display: ['var(--font-app)'],
+        mono: ['var(--font-app)'],
       },
       colors: {
         // LIFE IT logo foundation: navy, royal blue, gold, and white.

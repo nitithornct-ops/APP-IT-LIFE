@@ -18,9 +18,9 @@ export {
 export const ciStatusTone: Record<CiStatus, 'success' | 'primary' | 'warning' | 'secondary' | 'danger'> = {
   Draft: 'secondary',
   Active: 'success',
-  Maintenance: 'primary',
-  Degraded: 'warning',
-  Retired: 'danger',
+  Maintenance: 'warning',
+  Degraded: 'danger',
+  Retired: 'secondary',
 };
 
 export const relationshipStatusTone: Record<RelationshipStatus, 'success' | 'secondary'> = {

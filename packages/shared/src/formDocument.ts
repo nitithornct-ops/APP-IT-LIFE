@@ -22,7 +22,7 @@ export const TICKET_REFERENCE_FORM_CSS = `
 
 export const FORM_DOCUMENT_CSS = `${FORM_FONT_CSS}
 @page { size: A4; margin: 20mm; }
-.form-document { box-sizing:border-box; font-family:FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif; font-size:11pt; line-height:1.55; color:#202522; overflow-wrap:break-word; }
+.form-document { box-sizing:border-box; font-family:FormThai,'TH Sarabun New',Tahoma,Arial,sans-serif; font-size:11pt; line-height:1.55; color:#202522; overflow-wrap:break-word; }
 .form-document h1 { margin:0 0 16px; font-size:18pt; font-weight:800; line-height:1.25; }
 .form-document h2 { margin:22.4px 0 10.4px; border-bottom:1px solid #d4d9d5; padding-bottom:5.6px; color:#287a48; font-size:14pt; font-weight:800; }
 .form-document h3 { margin:16px 0 6.4px; font-size:12pt; font-weight:800; }

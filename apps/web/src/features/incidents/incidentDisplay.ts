@@ -1,8 +1,8 @@
 import type { Incident } from '../../types/incidents';
 
-export const incidentStatusTone: Record<Incident['status'], 'info' | 'warning' | 'success'> = {
+export const incidentStatusTone: Record<Incident['status'], 'info' | 'primary' | 'success'> = {
   เปิด: 'info',
-  กำลังดำเนินการ: 'warning',
+  กำลังดำเนินการ: 'primary',
   ปิดเคส: 'success',
 };
 

@@ -9,7 +9,7 @@ export const assetLifecycleTone: Record<AssetLifecycleStatus, 'success' | 'prima
   checked_out: 'primary',
   repair: 'warning',
   returned: 'success',
-  disposed: 'danger',
+  disposed: 'secondary',
 };
 
 export const assetStatusTone: Record<AssetStatus, 'success' | 'primary' | 'warning' | 'secondary' | 'danger'> = {

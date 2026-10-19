@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, GitBranch, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';
@@ -245,6 +245,7 @@ function DataQualityPanel() {
 }
 
 function ImpactMap({ items }: { items: ConfigurationItem[] }) {
+  const location = useLocation();
   const layers = [
     { label: 'BUSINESS SERVICE', types: ['Business Service'] },
     { label: 'APPLICATION', types: ['Application', 'Application Service', 'Website', 'API'] },
@@ -268,7 +269,7 @@ function ImpactMap({ items }: { items: ConfigurationItem[] }) {
                 <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-wider text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-100 text-primary-700 dark:bg-primary-950 dark:text-primary-300">{layerIndex + 1}</span>{layer.label}</div>
                 <div className="space-y-2">
                   {nodes.map((node) => (
-                    <Link key={node.id} to={`/cmdb/${node.id}`} className={`block rounded-lg border bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:bg-slate-900 ${node.status === 'Degraded' ? 'border-red-300 shadow-[inset_3px_0_0_#dc2626] dark:border-red-800' : node.criticality === 'Critical' ? 'border-amber-300 dark:border-amber-800' : 'border-slate-200 dark:border-slate-700'}`}>
+                    <Link key={node.id} to={`/cmdb/${node.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className={`block rounded-lg border bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:bg-slate-900 ${node.status === 'Degraded' ? 'border-red-300 shadow-[inset_3px_0_0_#dc2626] dark:border-red-800' : node.criticality === 'Critical' ? 'border-amber-300 dark:border-amber-800' : 'border-slate-200 dark:border-slate-700'}`}>
                       <div className="flex items-center justify-between gap-2"><span className="truncate font-mono text-[10px] text-primary-700 dark:text-primary-300">{node.ci_code}</span><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${node.status === 'Active' ? 'bg-green-600' : node.status === 'Degraded' ? 'bg-red-600' : 'bg-amber-500'}`} /></div>
                       <p className="mt-1 truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{node.name}</p>
                       <p className="mt-0.5 truncate text-[10px] text-slate-500">{node.environment} · {node.status}</p>
@@ -286,6 +287,7 @@ function ImpactMap({ items }: { items: ConfigurationItem[] }) {
 }
 
 export function CmdbPage() {
+  const location = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [showDataQuality, setShowDataQuality] = useState(false);
   const table = useTableParams<'ciType' | 'environment' | 'status' | 'search'>({ filters: ['ciType', 'environment', 'status', 'search'] });
@@ -338,7 +340,7 @@ export function CmdbPage() {
         <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="ทั้งหมด" value={kpi.total} tone="primary" />
         <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Active (หน้านี้)" value={kpi.active} tone="teal" />
         <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Critical (หน้านี้)" value={kpi.critical} tone="amber" />
-        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Degraded (หน้านี้)" value={kpi.degraded} tone="gray" />
+        <StatCard icon={<Network className="h-5 w-5" aria-hidden="true" />} label="Degraded (หน้านี้)" value={kpi.degraded} tone={kpi.degraded ? 'danger' : 'gray'} />
       </div>
 
       <ImpactMap items={items} />
@@ -420,7 +422,7 @@ export function CmdbPage() {
                     <tr key={c.id} data-testid={`ci-row-${c.id}`} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{c.ci_code}</td>
                       <td className="px-2 py-2">
-                        <Link to={`/cmdb/${c.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
+                        <Link to={`/cmdb/${c.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
                           {c.name}
                         </Link>
                       </td>

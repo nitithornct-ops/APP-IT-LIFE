@@ -18,8 +18,10 @@ const variantClasses: Record<Variant, string> = {
 export function Badge({ variant = 'secondary', children }: { variant?: Variant; children: ReactNode }) {
   return (
     <span
+      data-ui="badge"
+      data-tone={variant}
       className={cn(
-        'inline-flex items-center gap-1 rounded-[5px] px-[7px] py-0.5 text-[10.5px] font-semibold leading-4',
+        'inline-flex min-h-6 max-w-full items-center gap-1 rounded-[5px] px-2 py-0.5 text-xs font-semibold leading-5',
         variantClasses[variant],
       )}
     >

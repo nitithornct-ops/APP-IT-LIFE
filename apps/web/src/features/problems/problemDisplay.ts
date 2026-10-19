@@ -1,17 +1,17 @@
 import type { KnownError, Problem } from '../../types/problems';
 
-export const problemStatusTone: Record<Problem['status'], 'info' | 'warning' | 'success'> = {
+export const problemStatusTone: Record<Problem['status'], 'info' | 'primary' | 'warning' | 'success'> = {
   เปิด: 'info',
-  กำลังวิเคราะห์: 'warning',
-  กำลังแก้ไข: 'warning',
+  กำลังวิเคราะห์: 'primary',
+  กำลังแก้ไข: 'primary',
   รอตรวจยืนยัน: 'warning',
   ปิด: 'success',
 };
 
-export const priorityTone: Record<Problem['priority'], 'secondary' | 'warning' | 'danger'> = {
+export const priorityTone: Record<Problem['priority'], 'secondary' | 'info' | 'warning' | 'danger'> = {
   ต่ำ: 'secondary',
-  ปานกลาง: 'warning',
-  สูง: 'danger',
+  ปานกลาง: 'info',
+  สูง: 'warning',
   วิกฤต: 'danger',
 };
 
@@ -19,5 +19,5 @@ export const knownErrorStatusTone: Record<KnownError['status'], 'secondary' | 'i
   ร่าง: 'secondary',
   เผยแพร่: 'info',
   แก้ไขแล้ว: 'success',
-  ยกเลิก: 'danger',
+  ยกเลิก: 'secondary',
 };

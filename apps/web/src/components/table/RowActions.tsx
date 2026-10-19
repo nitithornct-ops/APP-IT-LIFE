@@ -1,11 +1,12 @@
 import { Archive, Ban, Eye, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { useContext, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useInRouterContext, useLocation, type LinkProps } from 'react-router-dom';
 import { RequirePermission } from '../RequirePermission';
 import { ConfirmModal } from '../ui/Modal';
 import { apiFetch } from '../../services/apiClient';
 import { cn } from '../../utils/cn';
+import './data-table.css';
 
 /**
  * ชุดปุ่มท้ายแถวที่ทุกตารางใช้ร่วมกัน
@@ -28,6 +29,8 @@ export interface RowAction {
   icon?: LucideIcon;
   /** view: ลิงก์ไปหน้ารายละเอียด (ใช้แทน onClick) */
   to?: string;
+  /** Preserve the originating list context when opening a record. */
+  state?: LinkProps['state'];
   onClick?: () => void;
   /** cancel/delete: เรียกเมื่อผู้ใช้กดยืนยันในกล่องแล้วเท่านั้น — ได้เหตุผลมาด้วยเมื่อตั้ง reasonLabel */
   onConfirm?: (reason: string) => void;
@@ -84,13 +87,24 @@ const PRESETS: Record<RowAction['kind'], { label: string; icon: LucideIcon; tone
   node: { label: '', icon: Eye, tone: '', needsConfirm: false },
 };
 
-const BUTTON_CLASS = 'inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-lg border border-transparent px-2.5 py-1 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-not-allowed disabled:opacity-40';
+const BUTTON_CLASS = 'inline-flex min-h-11 min-w-11 max-w-full items-center justify-center gap-1.5 rounded-lg border border-transparent px-2.5 py-2 text-xs font-semibold leading-relaxed transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-not-allowed disabled:opacity-40';
+
+const DETAIL_LIST_PATHS = new Set(['/tickets', '/assets', '/incidents', '/problems', '/changes', '/cmdb', '/service-requests', '/access-requests']);
+
+function ContextualActionLink(props: LinkProps) {
+  const location = useLocation();
+  const listState = DETAIL_LIST_PATHS.has(location.pathname)
+    ? { listReturnTo: `${location.pathname}${location.search}` }
+    : undefined;
+  return <Link {...props} state={props.state === undefined ? listState : props.state} />;
+}
 
 export function RowActions({ recordLabel, actions, className, iconOnly = false }: RowActionsProps) {
   const [pending, setPending] = useState<RowAction | null>(null);
   const [reason, setReason] = useState('');
   const [endpointDeletePending, setEndpointDeletePending] = useState(false);
   const queryClient = useContext(QueryClientContext);
+  const inRouter = useInRouterContext();
 
   const mutateFromEndpoint = async (endpoint: string, mutationReason: string) => {
     setEndpointDeletePending(true);
@@ -121,20 +135,27 @@ export function RowActions({ recordLabel, actions, className, iconOnly = false }
   return (
     <>
       <div
-        className={cn('flex flex-wrap items-center justify-end gap-1', className)}
+        data-ui="row-actions"
+        className={cn('flex max-w-full flex-wrap items-center justify-end gap-2', className)}
         role="group"
         aria-label={`การดำเนินการสำหรับ ${recordLabel}`}
       >
         {visible.map((action, index) => {
-          if (action.kind === 'node') return <span key={index} className="contents">{action.node}</span>;
+          if (action.kind === 'node') {
+            return action.permission
+              ? <RequirePermission key={index} permission={action.permission}><span className="contents">{action.node}</span></RequirePermission>
+              : <span key={index} className="contents">{action.node}</span>;
+          }
           const base = PRESETS[action.kind];
           const Icon = action.icon ?? base.icon;
           const label = action.label ?? base.label;
-          const content = <><Icon className="h-3.5 w-3.5" aria-hidden /><span className={iconOnly ? 'sr-only' : undefined}>{label}</span></>;
-          const buttonClassName = cn(BUTTON_CLASS, iconOnly && 'w-10 justify-center px-0', base.tone);
+          const content = <><Icon className="h-4 w-4 shrink-0" aria-hidden /><span className={iconOnly ? 'sr-only' : 'min-w-0 whitespace-normal text-left'}>{label}</span></>;
+          const buttonClassName = cn(BUTTON_CLASS, iconOnly && 'w-11 px-0', base.tone);
 
           const button = action.to && !action.disabled
-            ? <Link key={index} to={action.to} title={label} aria-label={`${label} ${recordLabel}`} className={buttonClassName}>{content}</Link>
+            ? inRouter
+              ? <ContextualActionLink key={index} to={action.to} state={action.state} title={label} aria-label={`${label} ${recordLabel}`} className={buttonClassName}>{content}</ContextualActionLink>
+              : <a key={index} href={action.to} title={label} aria-label={`${label} ${recordLabel}`} className={buttonClassName}>{content}</a>
             : (
               <button
                 key={index}

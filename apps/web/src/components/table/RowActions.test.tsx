@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RowActions } from './RowActions';
@@ -25,6 +25,56 @@ afterEach(() => {
 });
 
 describe('RowActions', () => {
+  it('preserves the list filters in navigation state by default', () => {
+    function CurrentLocation() {
+      const location = useLocation();
+      return <output data-testid="location-state">{JSON.stringify(location.state)}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/assets?page=3&status=InUse']}>
+        <RowActions recordLabel="AST-001" actions={[{ kind: 'view', to: '/assets/1' }]} />
+        <CurrentLocation />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'ดู AST-001' }));
+    expect(screen.getByTestId('location-state')).toHaveTextContent(JSON.stringify({ listReturnTo: '/assets?page=3&status=InUse' }));
+  });
+
+  it('retains explicit navigation state and avoids treating a detail page as a list', () => {
+    function CurrentLocation() {
+      const location = useLocation();
+      return <output data-testid="location-state">{JSON.stringify(location.state)}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/tickets/1']}>
+        <RowActions recordLabel="TCK-1" actions={[
+          { kind: 'view', label: 'เปิดพร้อมบริบท', to: '/tickets/2', state: { from: '/tickets?page=4' } },
+          { kind: 'view', label: 'เปิดใบถัดไป', to: '/tickets/3' },
+        ]} />
+        <CurrentLocation />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'เปิดพร้อมบริบท TCK-1' }));
+    expect(screen.getByTestId('location-state')).toHaveTextContent(JSON.stringify({ from: '/tickets?page=4' }));
+    fireEvent.click(screen.getByRole('link', { name: 'เปิดใบถัดไป TCK-1' }));
+    expect(screen.getByTestId('location-state')).toHaveTextContent('null');
+  });
+
+  it('renders standalone action buttons and links without requiring a router', () => {
+    const onClick = vi.fn();
+    render(<RowActions recordLabel="AST-1" actions={[{ kind: 'view', to: '/assets/1' }, { kind: 'edit', onClick }]} />);
+    expect(screen.getByRole('link', { name: 'ดู AST-1' })).toHaveAttribute('href', '/assets/1');
+    fireEvent.click(screen.getByRole('button', { name: 'แก้ไข AST-1' }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('applies the same permission check to caller-supplied controls', () => {
+    renderActions(<RowActions recordLabel="AST-1" actions={[{ kind: 'node', permission: 'asset.update', node: <button>โอนย้าย</button> }]} />);
+    expect(screen.queryByRole('button', { name: 'โอนย้าย' })).not.toBeInTheDocument();
+  });
+
   it('names every button after the row it belongs to, so a screen reader user knows which record they are on', () => {
     renderActions(
       <RowActions

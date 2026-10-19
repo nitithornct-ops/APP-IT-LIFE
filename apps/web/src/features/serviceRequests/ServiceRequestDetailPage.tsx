@@ -1,7 +1,8 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Clock3, DollarSign, ExternalLink, Loader2, Paperclip, PauseCircle, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -11,6 +12,7 @@ import { useAuth } from '../../stores/authContext';
 import type { AssignableStaff } from '../../types/tickets';
 import type { ServiceRequestDetail, ServiceRequestStatus, ServiceRequestTaskStatus } from '../../types/serviceRequests';
 import { formatThaiDate } from '../../utils/date';
+import { requestPriorityTone, requestStatusTone } from './serviceRequestDisplay';
 
 const REQUEST_STATUSES: ServiceRequestStatus[] = [
   'รอมอบหมาย',
@@ -22,18 +24,6 @@ const REQUEST_STATUSES: ServiceRequestStatus[] = [
 ];
 
 const TASK_STATUSES: ServiceRequestTaskStatus[] = ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น', 'ข้าม'];
-
-const statusTone: Record<ServiceRequestStatus, 'secondary' | 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  รออนุมัติ: 'warning',
-  รอมอบหมาย: 'info',
-  กำลังดำเนินการ: 'primary',
-  รอผู้ใช้งาน: 'warning',
-  รอผู้ให้บริการ: 'warning',
-  รอยืนยันผล: 'warning',
-  ปิดงาน: 'success',
-  ปฏิเสธ: 'danger',
-  ยกเลิก: 'secondary',
-};
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -417,6 +407,8 @@ function AttachmentsPanel({ request, canUpload }: { request: ServiceRequestDetai
 }
 
 export function ServiceRequestDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/service-requests');
   const { id } = useParams<{ id: string }>();
   const { me, hasPermission } = useAuth();
 
@@ -456,7 +448,7 @@ export function ServiceRequestDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to="/service-requests"
+        to={listReturnTo}
         className="flex w-fit items-center gap-1 text-sm text-primary-700 hover:underline dark:text-primary-300"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -468,7 +460,7 @@ export function ServiceRequestDetailPage() {
           eyebrow="บริการและกระบวนการ IT / คำขอบริการ"
           title={request.service_name}
           description="รายละเอียดคำขอบริการ ขั้นอนุมัติ และความคืบหน้าของงานที่เกี่ยวข้อง"
-          meta={<><Badge variant={statusTone[request.status]}>{request.status}</Badge><Badge variant="secondary">{request.priority}</Badge></>}
+          meta={<><Badge variant={requestStatusTone[request.status]}>{request.status}</Badge><Badge variant={requestPriorityTone[request.priority]}>{request.priority}</Badge></>}
         />
         {canCancel && <CancelButton requestId={request.id} />}
       </div>

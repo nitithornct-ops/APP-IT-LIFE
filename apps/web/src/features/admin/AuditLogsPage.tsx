@@ -115,7 +115,7 @@ function AuditDetailModal({ log, onClose }: { log: AuditLogItem; onClose: () => 
         <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
           <h3 className="mb-3 font-bold text-slate-800 dark:text-slate-100">ค่าที่เปลี่ยน</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <DataTable mode="server" toolbar={false} pagination={false} showAllColumnsButton={false} rowNumber={false} containerClassName="border-0 shadow-none" className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
                 <tr>
                   <th className="px-3 py-2">ฟิลด์</th>
@@ -135,7 +135,7 @@ function AuditDetailModal({ log, onClose }: { log: AuditLogItem; onClose: () => 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         </div>
       )}

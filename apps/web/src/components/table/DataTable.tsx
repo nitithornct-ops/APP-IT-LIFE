@@ -31,6 +31,7 @@ import {
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/cn';
 import { downloadCsv } from '../../utils/csv';
+import './data-table.css';
 
 /**
  * client = ตารางถือข้อมูลครบชุด จึงค้นหา/กรอง/แบ่งหน้า/ส่งออกในตัวได้
@@ -81,7 +82,7 @@ interface DataTableProps extends TableHTMLAttributes<HTMLTableElement> {
   freezeFirstColumn?: boolean;
   /**
    * บนจอแคบให้เรียงเป็นการ์ดแทนการเลื่อนแนวนอน
-   * ต้องใส่ data-label ให้ <td> ทุกช่องก่อน ไม่งั้นการ์ดจะไม่มีชื่อฟิลด์กำกับ
+   * ใช้ชื่อหัวคอลัมน์กำกับแต่ละช่องให้อัตโนมัติ และใช้ data-label ที่หน้าใส่มาแทนได้
    */
   cardOnMobile?: boolean;
   /** จำคอลัมน์ที่ซ่อนและจำนวนแถวต่อหน้าไว้ใน localStorage ด้วยคีย์นี้ */
@@ -346,18 +347,29 @@ function withVisibleColumns(node: ReactNode, hiddenColumns: Set<number>): ReactN
   );
 }
 
-function withMobileLabels(node: ReactNode, headers: string[]): ReactNode {
+function withMobileLabels(node: ReactNode, headers: string[], wrapContent: boolean): ReactNode {
   if (!isValidElement<{ children?: ReactNode }>(node)) return node;
   const cells = rowCells(node);
   const isTableRow = cells.some((cell) => isValidElement(cell) && cell.type === 'td');
-  if (!isTableRow) return node;
+  // หน้าอาจใช้ Fragment ห่อแถวหลักกับแถวขยายไว้ด้วยกัน
+  if (!isTableRow) return cloneElement(node, {}, cells.map((child) => withMobileLabels(child, headers, wrapContent)));
 
   return cloneElement(
     node,
     {},
     cells.map((cell, index) => {
       if (!isValidElement<Record<string, unknown>>(cell) || cell.type !== 'td') return cell;
-      return cloneElement(cell, { 'data-label': cell.props['data-label'] ?? headers[index] ?? '' });
+      const spanning = Number(cell.props.colSpan ?? 1) > 1;
+      return cloneElement(
+        cell,
+        {
+          'data-label': cell.props['data-label'] ?? (spanning ? undefined : headers[index] ?? ''),
+          'data-table-spanning': spanning ? 'true' : undefined,
+        },
+        // Keep paragraphs, badges and controls in one content column on narrow screens.
+        // Without the wrapper every direct child becomes a separate flex/grid item.
+        wrapContent && !spanning ? <div className="data-table-cell-content">{cell.props.children as ReactNode}</div> : cell.props.children as ReactNode,
+      );
     }),
   );
 }
@@ -511,7 +523,8 @@ export function DataTable({
       return cloneElement(head, {}, headRows);
     }
     if (index === bodyIndex && body) {
-      let bodyRows = visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), visibleColumns.map((column) => headers[column])));
+      // Hidden cells retain their original index; labels must use the original headers too.
+      let bodyRows = visibleRows.map((row) => withMobileLabels(withVisibleColumns(row, hiddenColumns), headers, cardOnMobile));
       // เติมเลขลำดับก่อนช่องเลือกเสมอ ลำดับคอลัมน์ที่ได้จึงเป็น [เลือก][ลำดับ][ข้อมูล]
       if (rowNumber) bodyRows = bodyRows.map((row) => withRowNumbers(row, nextRowNumber));
       if (selectable) {
@@ -570,7 +583,7 @@ export function DataTable({
     <div
       data-ui="data-table"
       className={cn(
-        'w-full overflow-visible rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
+        'min-w-0 w-full overflow-visible rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
         containerClassName,
       )}
     >
@@ -585,7 +598,7 @@ export function DataTable({
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="ค้นหาในรายการ..."
-                className="h-10 w-full rounded-[10px] border border-slate-300 bg-white pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40"
+                className="min-h-11 w-full rounded-[10px] border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40"
               />
             </label>
             {headers.length > 0 && (
@@ -597,7 +610,7 @@ export function DataTable({
                     aria-label="เลือกคอลัมน์สำหรับกรอง"
                     value={filterColumn}
                     onChange={(event) => { setFilterColumn(event.target.value); setFilterValue(''); }}
-                    className="h-10 w-full appearance-none rounded-[10px] border border-slate-300 bg-white pl-9 pr-7 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                    className="min-h-11 w-full appearance-none rounded-[10px] border border-slate-300 bg-white pl-9 pr-7 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                   >
                     <option value="">กรองข้อมูล</option>
                     {headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header}</option>)}
@@ -610,7 +623,7 @@ export function DataTable({
                     value={filterValue}
                     onChange={(event) => setFilterValue(event.target.value)}
                     placeholder={`กรอง ${headers[Number(filterColumn)]}...`}
-                    className="h-10 min-w-0 flex-1 rounded-[10px] border border-slate-300 bg-white px-3 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="min-h-11 min-w-0 flex-1 rounded-[10px] border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 )}
               </div>
@@ -638,7 +651,7 @@ export function DataTable({
                           type="button"
                           disabled={isLastVisible}
                           onClick={() => setHiddenColumnNames((current) => visible ? [...current, header] : current.filter((item) => item !== header))}
-                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                          className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-700"
                         >
                           <span className={cn('grid h-4 w-4 place-items-center rounded border', visible ? 'border-primary-600 bg-primary-600 text-white' : 'border-slate-300 dark:border-slate-600')}>
                             {visible && <Check className="h-3 w-3" aria-hidden="true" />}
@@ -692,13 +705,14 @@ export function DataTable({
         </div>
       )}
       <div
-        className={cn('w-full overflow-x-auto', stickyHeader && 'overflow-y-auto')}
+        data-ui="table-viewport"
+        className={cn('w-full overflow-x-auto', stickyHeader && 'overflow-y-auto', cardOnMobile && 'data-table-card-viewport')}
         style={stickyHeader ? { maxHeight: maxBodyHeight } : undefined}
       >
         <table
           className={cn(
             'w-full min-w-[720px] border-separate border-spacing-0 text-left text-[13.5px]',
-            '[&_thead]:h-8 [&_thead]:bg-surface-header [&_thead]:font-mono [&_thead]:text-[10px] [&_thead]:font-semibold [&_thead]:uppercase [&_thead]:tracking-[.08em] [&_thead]:text-ink-muted dark:[&_thead]:bg-white/[.028] dark:[&_thead]:text-white/45',
+            '[&_thead]:h-8 [&_thead]:bg-surface-header [&_thead]:text-xs [&_thead]:font-semibold [&_thead]:text-ink-muted dark:[&_thead]:bg-white/[.028] dark:[&_thead]:text-white/45',
             '[&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-hairline [&_th]:px-[13px] [&_th]:py-1.5 dark:[&_th]:border-white/[.07]',
             '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-primary-50/50 dark:[&_tbody_tr:hover]:bg-slate-700/40',
             '[&_td]:min-h-11 [&_td]:border-b [&_td]:border-hairline-row [&_td]:px-[13px] [&_td]:py-2 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-white/[.07]',
@@ -760,7 +774,7 @@ export function TableToolbar({ searchValue, searchPlaceholder = 'ค้นหา
           <label className="relative block w-full max-w-sm">
             <span className="sr-only">ค้นหา</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-            <input type="search" value={searchValue ?? ''} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder} className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40" />
+            <input type="search" value={searchValue ?? ''} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40" />
           </label>
         )}
         {filters}
@@ -792,15 +806,15 @@ export function TablePagination({ page, pageSize, totalItems, totalPages: suppli
     <nav className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-4 text-sm sm:flex-row dark:border-slate-700" aria-label="การแบ่งหน้าตาราง">
       <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
         <label htmlFor={pageSizeId}>แสดงต่อหน้า</label>
-        <select id={pageSizeId} aria-label="จำนวนรายการต่อหน้า" value={pageSize} disabled={!onPageSizeChange} onChange={(event) => onPageSizeChange?.(Number(event.target.value))} className="h-9 rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-700 disabled:cursor-default disabled:opacity-80 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+        <select id={pageSizeId} aria-label="จำนวนรายการต่อหน้า" value={pageSize} disabled={!onPageSizeChange} onChange={(event) => onPageSizeChange?.(Number(event.target.value))} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-700 disabled:cursor-default disabled:opacity-80 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
           {(pageSizeOptions.includes(pageSize) ? pageSizeOptions : [...pageSizeOptions, pageSize].sort((a, b) => a - b)).map((size) => <option key={size} value={size}>{size}</option>)}
         </select>
         <span>{itemLabel} {start.toLocaleString('th-TH')}–{end.toLocaleString('th-TH')} จาก {totalItems.toLocaleString('th-TH')}</span>
       </div>
       <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" aria-label="หน้าก่อนหน้า" disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)} className="h-9 min-h-9 w-9 px-0"><ChevronLeft className="h-4 w-4" aria-hidden="true" /></Button>
+        <Button type="button" variant="outline" size="sm" aria-label="หน้าก่อนหน้า" disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)} className="h-11 min-h-11 w-11 px-0"><ChevronLeft className="h-4 w-4" aria-hidden="true" /></Button>
         <span className="min-w-24 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">หน้า {safePage.toLocaleString('th-TH')} / {totalPages.toLocaleString('th-TH')}</span>
-        <Button type="button" variant="outline" size="sm" aria-label="หน้าถัดไป" disabled={safePage >= totalPages} onClick={() => onPageChange(safePage + 1)} className="h-9 min-h-9 w-9 px-0"><ChevronRight className="h-4 w-4" aria-hidden="true" /></Button>
+        <Button type="button" variant="outline" size="sm" aria-label="หน้าถัดไป" disabled={safePage >= totalPages} onClick={() => onPageChange(safePage + 1)} className="h-11 min-h-11 w-11 px-0"><ChevronRight className="h-4 w-4" aria-hidden="true" /></Button>
       </div>
     </nav>
   );

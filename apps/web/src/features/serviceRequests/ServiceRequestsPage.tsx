@@ -26,10 +26,12 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { StatCard } from '../../components/ui/Card';
+import { requestPriorityTone, requestStatusTone } from './serviceRequestDisplay';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FormModal } from '../../components/ui/Modal';
 import { PageTitle } from '../../components/ui/PageTitle';
@@ -45,18 +47,6 @@ import { formatThaiDate } from '../../utils/date';
 import { ServiceCatalogPreview, type ServiceCatalogPreviewData } from './ServiceCatalogPreview';
 
 type WorkspaceTab = 'catalog' | 'mine' | 'action' | 'all' | 'manage';
-
-const requestStatusTone: Record<ServiceRequestStatus, 'secondary' | 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  รออนุมัติ: 'warning',
-  รอมอบหมาย: 'info',
-  กำลังดำเนินการ: 'primary',
-  รอผู้ใช้งาน: 'warning',
-  รอผู้ให้บริการ: 'warning',
-  รอยืนยันผล: 'warning',
-  ปิดงาน: 'success',
-  ปฏิเสธ: 'danger',
-  ยกเลิก: 'secondary',
-};
 
 const catalogStatusLabel: Record<ServiceCatalogStatus, string> = {
   draft: 'Draft / ร่าง',
@@ -87,26 +77,6 @@ const labelClass = 'block text-sm font-semibold text-slate-700 dark:text-slate-2
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
-}
-
-function StatCard({ icon, value, label, tone }: { icon: React.ReactNode; value: number; label: string; tone: 'blue' | 'slate' | 'teal' }) {
-  const toneClass =
-    tone === 'blue'
-      ? 'bg-primary-600 text-white border-primary-500'
-      : tone === 'teal'
-        ? 'bg-teal-700 text-white border-teal-500'
-        : 'bg-slate-500 text-white border-slate-400';
-  const bottomClass = tone === 'blue' ? 'bg-primary-600' : tone === 'teal' ? 'bg-teal-500' : 'bg-slate-400';
-  return (
-    <div className="relative flex min-h-[102px] items-center gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>{icon}</span>
-      <div>
-        <p className="text-2xl font-extrabold leading-none text-slate-900 dark:text-white">{value}</p>
-        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
-      </div>
-      <span className={`absolute inset-x-0 bottom-0 h-0.5 ${bottomClass}`} />
-    </div>
-  );
 }
 
 const requestSchema = z.object({
@@ -558,8 +528,9 @@ function CatalogCards({ items, canRequest, onRequest }: { items: ServiceCatalogI
 }
 
 function RequestTable({ items }: { items: ServiceRequestListItem[] }) {
+  const location = useLocation();
   if (!items.length) return <EmptyState icon={<ClipboardList className="h-10 w-10" />} title="ไม่พบคำขอบริการ" description="รายการที่ตรงกับเงื่อนไขจะแสดงที่นี่" />;
-  return <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"><DataTable className="w-full min-w-[840px] text-left text-sm"><thead className="bg-slate-50 text-xs font-bold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">รหัส</th><th className="px-4 py-3">บริการ</th><th className="px-4 py-3">ความเร่งด่วน</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">ครบกำหนด</th><th className="px-4 py-3">ยื่นเมื่อ</th><th className="px-4 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{items.map((request) => <tr key={request.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-4 py-3 font-mono text-xs text-slate-500">{request.service_code}</td><td className="px-4 py-3"><Link to={`/service-requests/${request.id}`} className="font-bold text-primary-700 hover:underline dark:text-primary-300">{request.service_name}</Link></td><td className="px-4 py-3"><Badge variant="secondary">{request.priority}</Badge></td><td className="px-4 py-3"><Badge variant={requestStatusTone[request.status]}>{request.status}</Badge></td><td className="px-4 py-3 text-slate-500">{request.due_at ? formatThaiDate(request.due_at, 'd MMM yyyy HH:mm') : '—'}</td><td className="px-4 py-3 text-slate-500">{formatThaiDate(request.created_at, 'd MMM yyyy HH:mm')}</td><td className="px-4 py-3 text-right"><RowActions recordLabel={request.service_code} actions={[{ kind: 'view', to: `/service-requests/${request.id}` }, { kind: 'delete', permission: 'service_request.close', deleteEndpoint: `/api/v1/record-deletions/service-requests/${request.id}` }]} /></td></tr>)}</tbody></DataTable></div>;
+  return <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"><DataTable className="w-full min-w-[840px] text-left text-sm"><thead className="bg-slate-50 text-xs font-bold text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"><tr><th className="px-4 py-3">รหัส</th><th className="px-4 py-3">บริการ</th><th className="px-4 py-3">ความเร่งด่วน</th><th className="px-4 py-3">สถานะ</th><th className="px-4 py-3">ครบกำหนด</th><th className="px-4 py-3">ยื่นเมื่อ</th><th className="px-4 py-3 text-right">ดำเนินการ</th></tr></thead><tbody>{items.map((request) => <tr key={request.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-4 py-3 font-mono text-xs text-slate-500">{request.service_code}</td><td className="px-4 py-3"><Link to={`/service-requests/${request.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-bold text-primary-700 hover:underline dark:text-primary-300">{request.service_name}</Link></td><td className="px-4 py-3"><Badge variant={requestPriorityTone[request.priority]}>{request.priority}</Badge></td><td className="px-4 py-3"><Badge variant={requestStatusTone[request.status]}>{request.status}</Badge></td><td className="px-4 py-3 text-slate-500">{request.due_at ? formatThaiDate(request.due_at, 'd MMM yyyy HH:mm') : '—'}</td><td className="px-4 py-3 text-slate-500">{formatThaiDate(request.created_at, 'd MMM yyyy HH:mm')}</td><td className="px-4 py-3 text-right"><RowActions recordLabel={request.service_code} actions={[{ kind: 'view', to: `/service-requests/${request.id}` }, { kind: 'delete', permission: 'service_request.close', deleteEndpoint: `/api/v1/record-deletions/service-requests/${request.id}` }]} /></td></tr>)}</tbody></DataTable></div>;
 }
 
 function CatalogManagement({ items, onCreate, onEdit, onPreview }: { items: ServiceCatalogItem[]; onCreate: () => void; onEdit: (item: ServiceCatalogItem) => void; onPreview: (item: ServiceCatalogItem) => void }) {
@@ -617,10 +588,17 @@ export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: W
   const queryClient = useQueryClient();
   const canManage = hasPermission('service_catalog.manage');
   const canRequest = hasPermission('service_request.create');
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const urlTab: WorkspaceTab | undefined = requestedTab === 'catalog' || requestedTab === 'mine' || requestedTab === 'action' || requestedTab === 'all' || requestedTab === 'manage' ? requestedTab : undefined;
-  const [tab, setTab] = useState<WorkspaceTab>(urlTab ?? initialTab);
+  const tab = urlTab ?? initialTab;
+  function setTab(nextTab: WorkspaceTab) {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('tab', nextTab);
+      return next;
+    });
+  }
   const [requestItem, setRequestItem] = useState<ServiceCatalogItem>();
   const [suggestedRequestItem, setSuggestedRequestItem] = useState<ServiceCatalogItem>();
   const [editingItem, setEditingItem] = useState<ServiceCatalogItem | null>();
@@ -668,8 +646,8 @@ export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: W
 
   return <div className="space-y-6" data-testid="service-catalog-workspace">
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / คำขอบริการ" title={<><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</>} description="เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว" />{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setPreviewItem(null); setPublishError(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Grid3X3 className="h-6 w-6" />} value={activeCatalog.length} label="บริการที่เลือกได้" tone="blue" /><StatCard icon={<Users className="h-6 w-6" />} value={openMine} label="คำขอของฉันที่เปิดอยู่" tone="slate" /><StatCard icon={<ClipboardCheck className="h-6 w-6" />} value={approvalItems.length} label="รอฉันอนุมัติ" tone="slate" /><StatCard icon={<AlarmClock className="h-6 w-6" />} value={overdue} label="คิวเกิน SLA" tone="teal" /></div>
-    <div className="flex gap-2 overflow-x-auto border-b border-slate-200 dark:border-slate-700">{tabs.filter((item) => item.show).map((item) => <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`whitespace-nowrap border-b-[3px] px-5 py-3 text-sm font-bold transition ${tab === item.key ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}>{item.label}{item.count !== undefined && ` (${item.count})`}</button>)}</div>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<Grid3X3 className="h-6 w-6" />} value={activeCatalog.length} label="บริการที่เลือกได้" tone="primary" /><StatCard icon={<Users className="h-6 w-6" />} value={openMine} label="คำขอของฉันที่เปิดอยู่" tone="primary" /><StatCard icon={<ClipboardCheck className="h-6 w-6" />} value={approvalItems.length} label="รอฉันอนุมัติ" tone={approvalItems.length ? 'amber' : 'gray'} /><StatCard icon={<AlarmClock className="h-6 w-6" />} value={overdue} label="คิวเกิน SLA" tone={overdue ? 'danger' : 'gray'} /></div>
+    <div className="flex gap-2 overflow-x-auto border-b border-slate-200 dark:border-slate-700">{tabs.filter((item) => item.show).map((item) => <button key={item.key} type="button" aria-current={tab === item.key ? 'page' : undefined} onClick={() => setTab(item.key)} className={`whitespace-nowrap border-b-[3px] px-5 py-3 text-sm font-bold transition ${tab === item.key ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}>{item.label}{item.count !== undefined && ` (${item.count})`}</button>)}</div>
     {tab === 'catalog' && <CatalogCards items={activeCatalog} canRequest={canRequest} onRequest={beginRequest} />}
     {tab === 'mine' && <RequestTable items={mineItems} />}
     {tab === 'action' && <RequestTable items={approvalItems} />}

@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, GitPullRequestArrow, Grid3X3, Lightbulb, Loader2, Network, Plus, ShieldAlert, Siren, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -109,8 +109,8 @@ function RiskMatrix() {
   return (
     <Card data-testid="incident-risk-matrix">
       <CardHeader className="flex items-center gap-2"><Grid3X3 className="h-4 w-4" /> Risk Matrix 5×5 — เคสที่ยังเปิด</CardHeader>
-      <CardBody>
-        <div className="grid min-w-[520px] grid-cols-6 gap-1 overflow-x-auto text-center text-xs">
+      <CardBody className="overflow-x-auto">
+        <div className="grid min-w-[520px] grid-cols-6 gap-1 text-center text-xs">
           <div className="p-2 font-bold">L \ I</div>
           {[1, 2, 3, 4, 5].map((impact) => <div key={impact} className="p-2 font-bold">{impact}</div>)}
           {[5, 4, 3, 2, 1].map((likelihood) => [
@@ -127,6 +127,7 @@ function RiskMatrix() {
 }
 
 export function IncidentsPage() {
+  const location = useLocation();
   const { hasPermission } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
@@ -168,7 +169,7 @@ export function IncidentsPage() {
           {flowColumns.map((column, index) => <section key={column.key} className="relative min-w-0 rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-950/20">
             {index < 2 && <ArrowRight className="absolute -right-5 top-6 z-content hidden h-4 w-4 text-slate-400 lg:block" />}
             <div className="flex items-center gap-2"><span className={`flex h-8 w-8 items-center justify-center rounded-lg ${column.tone}`}><column.icon className="h-4 w-4" /></span><div><p className="font-mono text-[10px] font-bold tracking-wider text-slate-600 dark:text-slate-300">{column.label}</p><p className="text-xs text-slate-500">{column.description}</p></div></div>
-            <div className="mt-3 space-y-2">{column.rows.map((row) => <Link key={row.id} to={row.to} className="block rounded-lg border border-slate-200 bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[10px] font-semibold text-primary-700 dark:text-primary-300">{row.code}</span><span className="truncate text-[10px] text-slate-400">{row.status}</span></div><p className="mt-1 truncate text-xs font-semibold">{row.title}</p></Link>)}{column.rows.length === 0 && <p className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400 dark:border-slate-700">ไม่มีรายการหรือไม่มีสิทธิ์เข้าถึง</p>}</div>
+            <div className="mt-3 space-y-2">{column.rows.map((row) => <Link key={row.id} to={row.to} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="block rounded-lg border border-slate-200 bg-white p-2.5 transition hover:border-primary-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-mono text-[10px] font-semibold text-primary-700 dark:text-primary-300">{row.code}</span><span className="truncate text-[10px] text-slate-400">{row.status}</span></div><p className="mt-1 truncate text-xs font-semibold">{row.title}</p></Link>)}{column.rows.length === 0 && <p className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400 dark:border-slate-700">ไม่มีรายการหรือไม่มีสิทธิ์เข้าถึง</p>}</div>
           </section>)}
         </CardBody>
       </Card>
@@ -195,7 +196,7 @@ export function IncidentsPage() {
           )}
           {!query.isError && query.data && items.length === 0 && <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title="ไม่พบ Incident" />}
           {items.length > 0 && <div className="overflow-x-auto"><DataTable mode="server" sort={sort} onSortChange={table.setSort} rowNumberStart={(page - 1) * pageSize + 1} className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="px-2 py-2" data-sort-key="incident_number">เลขที่</th><th className="px-2 py-2" data-sort-key="title">เหตุการณ์</th><th className="px-2 py-2" data-sort-key="risk_score" data-sort-label="เรียงตามคะแนนความเสี่ยง">ความรุนแรง/Risk</th><th className="px-2 py-2">PDPA</th><th className="px-2 py-2">ผู้รับผิดชอบ</th><th className="px-2 py-2">สถานะ</th><th className="px-2 py-2 text-right">ดำเนินการ</th></tr></thead><tbody>
-            {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p>{item.affected_system && <p className="mt-1 text-xs text-slate-400">{item.affected_system}</p>}{item.major_incident && <Badge variant="danger"><Siren className="h-3 w-3" /> Major</Badge>}{item.affected_ci_id && <p className="mt-1 flex items-center gap-1 text-xs text-slate-400"><Network className="h-3 w-3" /> CI linked</p>}</td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.incident_commander?.full_name ?? item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td><td className="px-2 py-2 text-right"><RowActions recordLabel={item.incident_number} actions={[{ kind: 'view', to: `/incidents/${item.id}` }, { kind: 'archive', permission: 'incident.manage', archiveEndpoint: `/api/v1/record-deletions/incidents/${item.id}` }]} /></td></tr>)}
+            {items.map((item) => <tr key={item.id} data-testid={`incident-row-${item.id}`} className="border-t border-slate-100 dark:border-slate-700"><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.incident_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.report_date, 'd MMM yyyy HH:mm')}</p></td><td className="px-2 py-2"><Link to={`/incidents/${item.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-medium hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.category}</p>{item.affected_system && <p className="mt-1 text-xs text-slate-400">{item.affected_system}</p>}{item.major_incident && <Badge variant="danger"><Siren className="h-3 w-3" /> Major</Badge>}{item.affected_ci_id && <p className="mt-1 flex items-center gap-1 text-xs text-slate-400"><Network className="h-3 w-3" /> CI linked</p>}</td><td className="px-2 py-2"><div className="flex gap-1"><Badge variant={item.severity ? riskTone[item.severity] : 'secondary'}>{item.severity ?? 'ยังไม่จำแนก'}</Badge>{item.risk_level && <Badge variant={riskTone[item.risk_level]}>Risk {item.risk_level} ({item.risk_score})</Badge>}</div></td><td className="px-2 py-2">{item.contains_personal_data ? <Badge variant="danger">PII</Badge> : '—'}</td><td className="px-2 py-2 text-slate-500">{item.incident_commander?.full_name ?? item.assignee?.full_name ?? '—'}</td><td className="px-2 py-2"><Badge variant={incidentStatusTone[item.status]}>{item.status}</Badge></td><td className="px-2 py-2 text-right"><RowActions recordLabel={item.incident_number} actions={[{ kind: 'view', to: `/incidents/${item.id}` }, { kind: 'archive', permission: 'incident.manage', archiveEndpoint: `/api/v1/record-deletions/incidents/${item.id}` }]} /></td></tr>)}
           </tbody></DataTable></div>}
           {query.data && <TablePagination page={query.data.pagination.page} pageSize={pageSize} totalItems={query.data.pagination.totalItems} totalPages={query.data.pagination.totalPages} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
         </CardBody>

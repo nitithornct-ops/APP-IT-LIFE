@@ -30,7 +30,7 @@ export function renderReportHtml(dataset: ReportDataset): string {
 <style>
   * { box-sizing: border-box; }
   ${FORM_FONT_CSS}
-  body { font-family: FormThai, 'Noto Sans Thai', Tahoma, Arial, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 12px; }
+  body { font-family: FormThai, 'TH Sarabun New', Tahoma, Arial, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 12px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   .subtitle { color: #64748b; margin: 0 0 16px; }
   .meta { color: #94a3b8; font-size: 10px; margin-bottom: 16px; }
@@ -89,7 +89,7 @@ export function renderExecutivePackHtml(pack: ExecutivePack): string {
   return `<!doctype html>
 <html lang="th">
 <head><meta charset="utf-8" /><style>
-  * { box-sizing: border-box; } ${FORM_FONT_CSS} body { font-family: FormThai,'Noto Sans Thai',Tahoma,Arial,sans-serif; color:#1e293b; margin:0; padding:28px; font-size:12px; }
+  * { box-sizing: border-box; } ${FORM_FONT_CSS} body { font-family: FormThai,'TH Sarabun New',Tahoma,Arial,sans-serif; color:#1e293b; margin:0; padding:28px; font-size:12px; }
   h1 { font-size:21px; margin:0 0 6px; color:#0f3d56; } h2 { font-size:14px; margin:20px 0 8px; color:#0f3d56; }
   .subtitle,.meta { color:#64748b; margin:0 0 6px; } .meta { font-size:10px; margin-bottom:18px; }
   .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:16px; }

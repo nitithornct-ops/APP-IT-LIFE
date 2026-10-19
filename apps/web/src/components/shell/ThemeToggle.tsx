@@ -20,7 +20,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={cycle}
-      className="flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 dark:text-slate-300 dark:hover:bg-white/[.07]"
+      className="flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-white/[.07]"
       aria-label={`ธีม: ${LABEL[theme]} (กดเพื่อเปลี่ยน)`}
       title={`ธีม: ${LABEL[theme]}`}
     >

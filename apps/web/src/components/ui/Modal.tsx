@@ -208,7 +208,7 @@ export function Modal({
             aria-label="ปิดหน้าต่าง"
             disabled={closeDisabled}
             onClick={requestClose}
-            className="rounded-xl p-2 text-slate-400 transition hover:bg-primary-50 hover:text-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
+            className="grid h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-primary-50 hover:text-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>

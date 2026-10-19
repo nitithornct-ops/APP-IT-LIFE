@@ -37,6 +37,7 @@ export function Toast({ toast, onClose }: { toast: ToastMessage | null; onClose:
       role={toast.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
       data-ui="toast"
+      data-tone={toast.tone === 'success' ? 'success' : 'danger'}
       className={cn(
         'fixed left-1/2 top-4 z-toast flex w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-elevated sm:left-auto sm:right-4 sm:translate-x-0 dark:bg-slate-800',
         toast.tone === 'success'
@@ -46,7 +47,7 @@ export function Toast({ toast, onClose }: { toast: ToastMessage | null; onClose:
     >
       <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{toast.message}</span>
-      <button type="button" onClick={onClose} aria-label="ปิดข้อความแจ้งเตือน" className="grid h-8 w-8 place-items-center rounded-lg hover:bg-primary-50 dark:hover:bg-slate-700">
+      <button type="button" onClick={onClose} aria-label="ปิดข้อความแจ้งเตือน" className="grid h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 place-items-center rounded-lg hover:bg-primary-50 dark:hover:bg-slate-700">
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>

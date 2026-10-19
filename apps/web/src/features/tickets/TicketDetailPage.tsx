@@ -2,9 +2,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { TICKET_RATING_CRITERIA, type TicketRatingCriterion } from '@itlife/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, FileText, History, Paperclip, RotateCcw, Star, Ticket as TicketIcon, Wrench } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { LoadingState } from '../../components/ui/AsyncState';
@@ -31,7 +31,9 @@ import { isConversationEntry } from './ticketConversation';
 import { TicketFeedbackPanel } from './TicketFeedbackPanel';
 import { TicketSignaturePanel } from './TicketSignaturePanel';
 import { canSubmitTicketFeedback } from './ticketFeedback';
-import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import { LOCKED_TICKET_STATUSES, ticketPriorityTone, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import { getTicketReturnTo } from './ticketNavigation';
+import './tickets.css';
 
 const TICKET_STATUSES: TicketStatus[] = [
   'ใหม่',
@@ -129,9 +131,17 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
   });
   const selectedStatus = watch('status');
   const selectedAssigneeId = watch('assigneeId');
+  const lastServerDefaults = useRef('');
 
   useEffect(() => {
-    reset(ticketWorkDefaults(ticket));
+    const defaults = ticketWorkDefaults(ticket);
+    const signature = JSON.stringify([ticket.id, defaults]);
+    // Polling returns a new object every 15 seconds, even when nothing changed.
+    // Only reset when the server's saved work values actually change.
+    if (signature !== lastServerDefaults.current) {
+      reset(defaults);
+      lastServerDefaults.current = signature;
+    }
   }, [reset, ticket]);
 
   useEffect(() => {
@@ -154,7 +164,8 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
           waitingFollowUpAt: values.waitingFollowUpAt || undefined,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (_data, values) => {
+      reset({ ...values, note: '', minutesSpent: '' });
       void queryClient.invalidateQueries({ queryKey: ['tickets', ticket.id] });
       void queryClient.invalidateQueries({ queryKey: ['tickets'] });
       setServerError(null);
@@ -418,6 +429,8 @@ function EscalateIncidentPanel({ ticket }: { ticket: TicketDetail }) {
 
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const returnTo = getTicketReturnTo(location.state);
   const [searchParams] = useSearchParams();
   const { me, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -431,6 +444,11 @@ export function TicketDetailPage() {
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
+  const hasTicket = Boolean(ticketQuery.data);
+  const focusOnWork = searchParams.get('action') === 'edit';
+  useEffect(() => {
+    if (hasTicket && !focusOnWork) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [id, hasTicket, focusOnWork]);
 
   const staffQuery = useQuery({
     queryKey: ['tickets', 'assignable-staff'],
@@ -469,7 +487,7 @@ export function TicketDetailPage() {
         icon={<TicketIcon className="h-10 w-10" aria-hidden="true" />}
         title="ไม่พบ Ticket นี้"
         description="Ticket อาจไม่มีอยู่แล้ว หรือบัญชีของคุณไม่มีสิทธิ์เข้าถึง"
-        action={<Link to="/tickets" className="inline-flex min-h-10 items-center border border-slate-300 px-3 text-sm font-semibold text-primary-700 dark:border-slate-600 dark:text-primary-300">กลับไปรายการ Ticket</Link>}
+        action={<Link to={returnTo} className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-primary-700 dark:border-slate-600 dark:text-primary-300">กลับไปรายการ Ticket</Link>}
       />
     );
   }
@@ -502,7 +520,7 @@ export function TicketDetailPage() {
     });
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="ticket-detail-workspace flex min-w-0 flex-col gap-4">
       <PageHeader
         eyebrow={`Ticket / ${ticket.ticket_no}`}
         title={<span className="inline-flex items-center gap-2">{ticket.title}{ticket.is_security && <AlertTriangle className="h-5 w-5 text-danger-700" aria-label="Security" />}</span>}
@@ -510,23 +528,36 @@ export function TicketDetailPage() {
         leading={<TicketIcon className="h-5 w-5" />}
         meta={<>
           <StatusBadge display={{ label: ticketStatusLabel[ticket.status], tone: ticketStatusTone[ticket.status] }} />
-          <Badge variant="secondary">{ticket.priority}</Badge>
+          <Badge variant={ticketPriorityTone[ticket.priority]}>{ticket.priority}</Badge>
           <SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || ticket.sla_state === 'paused')} fallback={ticket.due_at ? `ครบกำหนด ${formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm')}` : 'ไม่กำหนด SLA'} />
         </>}
         secondaryActions={<>
-          <Link to="/tickets" className="inline-flex min-h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:bg-slate-800 dark:text-primary-300">
+          <Link to={returnTo} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:bg-slate-800 dark:text-primary-300">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />กลับไปรายการ
           </Link>
-          <Link to={`/tickets/${ticket.id}/form`} className="inline-flex min-h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:bg-slate-800 dark:text-primary-300">
+          <Link to={`/tickets/${ticket.id}/form`} state={{ ticketReturnTo: returnTo }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-slate-600 dark:bg-slate-800 dark:text-primary-300">
             <FileText className="h-4 w-4" aria-hidden="true" />ดูแบบฟอร์ม
           </Link>
         </>}
         primaryAction={canReopen ? <ReopenButton ticketId={ticket.id} /> : undefined}
       />
 
+      <Card>
+        <CardHeader>รายละเอียด</CardHeader>
+        <CardBody>
+          <p className="whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-200">{ticket.description}</p>
+          {ticket.resolution && (
+            <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+              <strong>ผลการแก้ไข:</strong> {ticket.resolution}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
       <DetailLayout
+        asideFirstOnMobile={canUpdateWork}
         aside={<>
-          {canUpdateWork && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} focusOnLoad={searchParams.get('action') === 'edit'} canRecommend={canRecommendTechnician} />}
+          {canUpdateWork && <UpdateWorkPanel ticket={ticket} staff={staffQuery.data ?? []} vendors={vendorOptionsQuery.data ?? []} focusOnLoad={focusOnWork} canRecommend={canRecommendTechnician} />}
           {/* ทางลัดไปจอมือถือหน้างาน — บันทึกผล ตัดอะไหล่ และแนบรูปในหน้าเดียวโดยไม่ต้องสลับหลายหน้า */}
           {canUpdateWork && (
             <Link
@@ -633,17 +664,7 @@ export function TicketDetailPage() {
            )}
         </>}
       >
-          <Card>
-            <CardHeader>รายละเอียด</CardHeader>
-            <CardBody>
-              <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{ticket.description}</p>
-              {ticket.resolution && (
-                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                  <strong>ผลการแก้ไข:</strong> {ticket.resolution}
-                </div>
-              )}
-            </CardBody>
-          </Card>
+
 
           {(ticket.attachments ?? []).length > 0 && (
             <Card>

@@ -1,3 +1,4 @@
+import { useTableParams } from '../../hooks/useTableParams';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
@@ -5,7 +6,7 @@ import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSel
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, Bug, Hourglass, Loader2, Plus, Send } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -326,13 +327,13 @@ function CompactEmpty({ children }: { children: string }) {
 }
 
 export function ProblemsPage() {
+  const location = useLocation();
+  const table = useTableParams<'search' | 'status' | 'priority'>({ filters: ['search', 'status', 'priority'] });
+  const { search, status, priority } = table.filters;
   const { hasPermission } = useAuth();
   const canManage = hasPermission('problem.manage');
   const [problemForm, setProblemForm] = useState(false);
   const [knownForm, setKnownForm] = useState(false);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [priority, setPriority] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const references = useQuery({
     queryKey: ['problems', 'references'],
@@ -388,9 +389,9 @@ export function ProblemsPage() {
           <h2 id="problems-heading" className="text-lg font-semibold text-slate-900 dark:text-slate-100">Problems</h2>
           {(items.length > 0 || search || status || priority) && (
             <div className="flex flex-wrap gap-2 text-xs">
-              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหา Problem..." className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900" />
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{PROBLEM_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-              <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900"><option value="">ทุก Priority</option>{PROBLEM_PRIORITIES.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+              <input aria-label="ค้นหารายการ" type="search" value={search} onChange={(event) => table.setFilter('search', event.target.value, { replace: true })} placeholder="ค้นหา Problem..." className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900" />
+              <select aria-label="กรองสถานะ" value={status} onChange={(event) => table.setFilter('status', event.target.value)} className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option>{PROBLEM_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+              <select aria-label="กรองความเร่งด่วน" value={priority} onChange={(event) => table.setFilter('priority', event.target.value)} className="h-9 rounded-full border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900"><option value="">ทุก Priority</option>{PROBLEM_PRIORITIES.map((value) => <option key={value} value={value}>{value}</option>)}</select>
             </div>
           )}
         </div>
@@ -401,8 +402,8 @@ export function ProblemsPage() {
             <thead><tr><th>เลขที่</th><th>ปัญหา</th><th>เชื่อมโยง</th><th>Owner</th><th>Priority</th><th>สถานะ</th><th className="text-right">ดำเนินการ</th></tr></thead>
             <tbody>{items.map((item) => (
               <tr key={item.id}>
-                <td><Link to={`/problems/${item.id}`} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.problem_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.created_at, 'd MMM yyyy')}</p></td>
-                <td><Link to={`/problems/${item.id}`} className="font-semibold hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.affected_system ?? '—'}</p></td>
+                <td><Link to={`/problems/${item.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-mono text-xs text-primary-700 hover:underline dark:text-primary-300">{item.problem_number}</Link><p className="text-xs text-slate-400">{formatThaiDate(item.created_at, 'd MMM yyyy')}</p></td>
+                <td><Link to={`/problems/${item.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-semibold hover:underline">{item.title}</Link><p className="text-xs text-slate-400">{item.affected_system ?? '—'}</p></td>
                 <td className="text-xs">Incident {item.problem_incidents.length} · Ticket {item.problem_tickets.length}</td>
                 <td className="text-slate-500">{item.owner?.full_name ?? '—'}</td>
                 <td><Badge variant={priorityTone[item.priority]}>{item.priority}</Badge></td>
@@ -424,7 +425,7 @@ export function ProblemsPage() {
             <tbody>{knownItems.map((item) => (
               <tr key={item.id} data-testid={`known-error-row-${item.id}`}>
                 <td className="font-mono text-xs">{item.known_error_number}</td>
-                <td><Link to={`/problems/${item.problem_id}`} className="text-primary-700 hover:underline dark:text-primary-300">{item.problem?.problem_number}</Link></td>
+                <td><Link to={`/problems/${item.problem_id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="text-primary-700 hover:underline dark:text-primary-300">{item.problem?.problem_number}</Link></td>
                 <td><b>{item.title}</b><p className="text-xs text-slate-500">{item.symptoms ?? '—'}</p></td>
                 <td className="max-w-sm whitespace-pre-wrap text-xs">{item.workaround}</td>
                 <td className="text-xs"><PublishKnownErrorButton item={item} canManage={canManage} /></td>

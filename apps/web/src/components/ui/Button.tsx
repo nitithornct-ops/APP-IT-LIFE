@@ -17,8 +17,8 @@ const variantClasses: Record<Variant, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'min-h-9 rounded-[7px] px-3 text-xs',
-  md: 'min-h-10 rounded-[7px] px-4 text-[13.5px]',
+  sm: 'min-h-[44px] rounded-[7px] px-3 text-sm',
+  md: 'min-h-[44px] rounded-[7px] px-4 text-sm',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -40,6 +40,7 @@ export function Button({
     <button
       type="button"
       data-ui="button"
+      data-variant={variant}
       disabled={disabled || isLoading}
       className={cn(
         'inline-flex items-center justify-center gap-2 font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60',

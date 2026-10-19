@@ -53,4 +53,63 @@ describe('CreateTicketForm', () => {
     expect(screen.queryByText('ลายเซ็นผู้แจ้ง')).not.toBeInTheDocument();
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  function renderForm(onClose = vi.fn()) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><CreateTicketForm categories={[{ id: 'category-1', name: 'คอมพิวเตอร์', default_priority: 'ปานกลาง', response_sla_hours: 4, resolution_sla_hours: 24, sla_hours: 24, is_security_default: false, status: 'active', notes: null, created_at: '2026-10-19T00:00:00Z' }]} assets={[]} assetsLoading={false} requester={{ fullName: 'ผู้แจ้งทดสอบ', position: 'เจ้าหน้าที่', department: 'IT', phone: '1234' }} onClose={onClose} /></QueryClientProvider>);
+    return onClose;
+  }
+
+  function fillRequiredFields() {
+    fireEvent.change(screen.getByLabelText(/หัวข้อปัญหา/), { target: { value: 'เครื่องพิมพ์ใช้งานไม่ได้' } });
+    fireEvent.change(screen.getByLabelText(/ประเภทงานที่ขอรับบริการ/), { target: { value: 'category-1' } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/), { target: { value: 'เชื่อมต่อเครื่องพิมพ์ไม่ได้' } });
+  }
+
+  it('keeps the form open on invalid input and associates errors with fields', async () => {
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: 'เปิด Ticket' }));
+    await waitFor(() => expect(screen.getByLabelText(/หัวข้อปัญหา/)).toHaveAttribute('aria-invalid', 'true'));
+    expect(screen.getByLabelText(/หัวข้อปัญหา/)).toHaveAccessibleDescription('กรุณากรอกหัวข้อปัญหา');
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('asks before Escape discards entered data and keeps the body locked', async () => {
+    const onClose = renderForm();
+    fireEvent.change(screen.getByLabelText(/หัวข้อปัญหา/), { target: { value: 'งานที่ยังไม่ได้ส่ง' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('alertdialog')).toBeVisible();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.body.style.overflow).toBe('hidden');
+    fireEvent.click(screen.getByRole('button', { name: 'กลับไปแก้ไข' }));
+    expect(screen.getByLabelText(/หัวข้อปัญหา/)).toHaveValue('งานที่ยังไม่ได้ส่ง');
+  });
+
+  it('does not close or submit again while a save is pending', async () => {
+    apiFetchMock.mockImplementation(() => new Promise(() => {}));
+    const onClose = renderForm();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole('button', { name: 'เปิด Ticket' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'เปิด Ticket' })).toBeDisabled());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed attachment on the created ticket without creating another ticket', async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 'created-1' }).mockRejectedValueOnce(new Error('Upload failed')).mockResolvedValueOnce({});
+    const onClose = renderForm();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText('แนบหลักฐาน/ภาพหน้าจอ'), { target: { files: [new File(['test'], 'photo.png', { type: 'image/png' })] } });
+    fireEvent.click(screen.getByRole('button', { name: 'เปิด Ticket' }));
+    await screen.findByRole('alert');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'ลองแนบไฟล์อีกครั้ง' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(apiFetchMock.mock.calls.filter(([url]) => url === '/api/v1/tickets')).toHaveLength(1);
+    expect(apiFetchMock.mock.calls.filter(([url]) => url === '/api/v1/files')).toHaveLength(2);
+    const retryBody = apiFetchMock.mock.calls[2]![1]!.body as FormData;
+    expect(retryBody.get('targetId')).toBe('created-1');
+  });
 });

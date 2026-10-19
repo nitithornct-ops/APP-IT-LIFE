@@ -49,6 +49,13 @@ test-results/
 .tmp-*/
 .codex-*-tmp/
 .codex-python-shim/
+.codex/
+.agents/
+.claude/
+
+# Local review notes; source, tests and deployment runbooks remain versioned.
+docs/system-ui-update.md
+docs/ticket-ux-review.md
 
 # Editor / OS
 .DS_Store

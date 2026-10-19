@@ -117,6 +117,20 @@ describe('Ticket work panel', () => {
     expect(screen.getByLabelText('ผลการแก้ไข (จำเป็นก่อนส่งให้ผู้แจ้งตรวจรับ)')).toHaveValue('ติดตั้งไดรเวอร์แล้ว');
   });
 
+  it('preserves an unsaved update when polling returns the same saved values', () => {
+    const ticket = makeTicket();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const panel = (data: TicketDetail) => <QueryClientProvider client={queryClient}><UpdateWorkPanel ticket={data} staff={[]} vendors={[]} /></QueryClientProvider>;
+    const { rerender } = render(panel(ticket));
+    fireEvent.change(screen.getByLabelText('สถานะ'), { target: { value: 'รออะไหล่' } });
+    fireEvent.change(screen.getByLabelText('เวลาที่ใช้ (นาที)'), { target: { value: '30' } });
+
+    rerender(panel({ ...ticket, worklogs: [] }));
+
+    expect(screen.getByLabelText('สถานะ')).toHaveValue('รออะไหล่');
+    expect(screen.getByLabelText('เวลาที่ใช้ (นาที)')).toHaveValue(30);
+  });
+
   it('shows state-specific requirements before calling the API', async () => {
     renderWorkPanel(makeTicket({ status: 'เสร็จสิ้น' }));
     expect(screen.queryByRole('option', { name: 'ปิดงาน' })).not.toBeInTheDocument();
