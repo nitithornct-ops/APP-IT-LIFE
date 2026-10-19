@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './index.css';
+import './styles/system.css';
 import { AuthProvider } from './stores/authContext';
 import { ThemeProvider } from './stores/themeContext';
 import { ToastProvider } from './components/ui/Toast';

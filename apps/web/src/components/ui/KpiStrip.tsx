@@ -29,11 +29,11 @@ function KpiContent({ item, variant }: { item: KpiStripItem; variant: 'default' 
     return (
       <>
         <span className="flex items-start justify-between gap-2">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-white/45">{item.label}</span>
-          {item.icon && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300" aria-hidden="true">{item.icon}</span>}
+          <span data-ui="kpi-label" className="text-xs font-semibold text-slate-500 dark:text-white/45">{item.label}</span>
+          {item.icon && <span data-ui="kpi-icon" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300" aria-hidden="true">{item.icon}</span>}
         </span>
-        <span className="mt-2 block font-mono text-[22px] font-bold leading-none text-ink-heading dark:text-[#e8eef9]">{item.value}</span>
-        {item.note && <span className="mt-1 block min-h-4 text-[10px] text-slate-400 dark:text-slate-500">{item.note}</span>}
+        <span data-ui="kpi-value" className="mt-2 block text-[22px] font-bold leading-none text-ink-heading dark:text-[#e8eef9]">{item.value}</span>
+        {item.note && <span data-ui="kpi-note" className="mt-1 block min-h-4 text-xs text-slate-400 dark:text-slate-500">{item.note}</span>}
         {item.visual && <span className="mt-auto block pt-3" aria-hidden="true">{item.visual}</span>}
       </>
     );
@@ -41,17 +41,17 @@ function KpiContent({ item, variant }: { item: KpiStripItem; variant: 'default' 
   const tone = KPI_TONES[item.tone ?? 'primary'];
   return (
     <>
-      {item.icon && <span className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl', tone.icon)} aria-hidden="true">{item.icon}</span>}
+      {item.icon && <span data-ui="kpi-icon" className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-xl', tone.icon)} aria-hidden="true">{item.icon}</span>}
       <span className="min-w-0">
-        <span className="block font-mono text-[22px] font-bold leading-none text-ink-heading dark:text-[#e8eef9]">{item.value}</span>
-        <span className="mt-1 block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">{item.label}</span>
-        {item.note && <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-500">{item.note}</span>}
+        <span data-ui="kpi-value" className="block font-mono text-[22px] font-bold leading-none text-ink-heading dark:text-[#e8eef9]">{item.value}</span>
+        <span data-ui="kpi-label" className="mt-1 block text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">{item.label}</span>
+        {item.note && <span data-ui="kpi-note" className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-500">{item.note}</span>}
       </span>
     </>
   );
 }
 
-/** KPI แบบแถบเดียว เซลล์กว้างเท่ากันและยุบเป็นหนึ่งเซลล์ต่อแถวเมื่อจอแคบกว่า 420px */
+/** KPI ใช้กริดร่วม: สองคอลัมน์บนมือถือและเพิ่มคอลัมน์ตามพื้นที่บนเดสก์ท็อป */
 export function KpiStrip({
   items,
   label = 'สรุปข้อมูล',
@@ -63,6 +63,8 @@ export function KpiStrip({
 }) {
   return (
     <section
+      data-ui="kpi-strip"
+      data-variant={variant}
       className="grid grid-cols-1 gap-[9px] min-[420px]:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]"
       aria-label={label}
     >
@@ -79,12 +81,12 @@ export function KpiStrip({
         const ariaLabel = item.ariaLabel ?? `${item.label}: ${String(item.value)}`;
 
         if (item.href) {
-          return <Link key={item.key} to={item.href} className={className} aria-label={ariaLabel}><KpiContent item={item} variant={variant} /></Link>;
+          return <Link key={item.key} to={item.href} data-tone={item.tone ?? 'primary'} className={className} aria-label={ariaLabel}><KpiContent item={item} variant={variant} /></Link>;
         }
         if (item.onClick) {
-          return <button key={item.key} type="button" onClick={item.onClick} className={className} aria-label={ariaLabel} aria-pressed={item.active}><KpiContent item={item} variant={variant} /></button>;
+          return <button key={item.key} type="button" data-tone={item.tone ?? 'primary'} onClick={item.onClick} className={className} aria-label={ariaLabel} aria-pressed={item.active}><KpiContent item={item} variant={variant} /></button>;
         }
-        return <div key={item.key} className={className}><KpiContent item={item} variant={variant} /></div>;
+        return <div key={item.key} data-tone={item.tone ?? 'primary'} className={className}><KpiContent item={item} variant={variant} /></div>;
       })}
     </section>
   );

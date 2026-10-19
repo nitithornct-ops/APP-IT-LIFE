@@ -3,7 +3,7 @@ import { knownErrorStatusTone, priorityTone, problemStatusTone } from './problem
 
 describe('Problem display mappings', () => {
   it('maps active and closed Problem statuses', () => {
-    expect(problemStatusTone['กำลังวิเคราะห์']).toBe('warning');
+    expect(problemStatusTone['กำลังวิเคราะห์']).toBe('primary');
     expect(problemStatusTone['ปิด']).toBe('success');
   });
 

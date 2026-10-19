@@ -1,0 +1,231 @@
+/* Shared UI contract: the same Thai type, semantic colors and controls on
+   authenticated pages, public portals and overlays rendered into body. */
+:root {
+  --app-header-height: 64px;
+  --ui-primary-text: var(--color-action);
+}
+
+.dark {
+  --ui-primary-text: var(--life-green-200);
+}
+
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard'], [data-ui='toast']) {
+  font-family: var(--font-app);
+  line-height: 1.65;
+}
+
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :where(.font-mono) {
+  font-family: var(--font-app);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+}
+
+/* Keep code and editable document metrics intentional. */
+:is(pre, code, kbd, textarea.font-mono, .font-code) {
+  font-family: var(--font-code);
+}
+
+:is(.life-app, .life-public, [data-ui='modal']) :is(pre, code, kbd, textarea.font-mono, .font-code) {
+  font-family: var(--font-code);
+}
+
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :is(.text-xs, [class*='text-[9'], [class*='text-[10'], [class*='text-[11'], [class*='text-[12'], [class*='text-[13'], [class*='text-[14']) {
+  font-size: max(16px, 1rem);
+  line-height: 1.65;
+}
+
+:is(.life-app, .life-public, [data-ui='modal']) :where(.font-extrabold) {
+  font-weight: 700;
+}
+
+.life-page-eyebrow {
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.65;
+}
+
+[data-tone] {
+  --ui-tone-text: var(--color-text-secondary);
+  --ui-tone-bg: var(--color-surface-secondary);
+}
+
+[data-tone='primary'] {
+  --ui-tone-text: var(--ui-primary-text);
+  --ui-tone-bg: var(--color-action-soft);
+}
+
+:is([data-tone='info'], [data-tone='teal']) {
+  --ui-tone-text: var(--color-info);
+  --ui-tone-bg: var(--color-info-soft);
+}
+
+[data-tone='success'] {
+  --ui-tone-text: var(--color-success);
+  --ui-tone-bg: var(--color-success-soft);
+}
+
+:is([data-tone='warning'], [data-tone='amber']) {
+  --ui-tone-text: var(--color-warning);
+  --ui-tone-bg: var(--color-warning-soft);
+}
+
+:is([data-tone='danger'], [data-tone='error']) {
+  --ui-tone-text: var(--color-danger);
+  --ui-tone-bg: var(--color-danger-soft);
+}
+
+[data-tone='purple'] {
+  --ui-tone-text: var(--color-purple);
+  --ui-tone-bg: var(--color-purple-soft);
+}
+
+[data-ui='badge'] {
+  min-height: 24px;
+  padding: 2px 8px;
+  border-color: color-mix(in srgb, var(--ui-tone-text) 25%, var(--ui-tone-bg));
+  background-color: var(--ui-tone-bg);
+  color: var(--ui-tone-text) !important;
+  font-family: var(--font-app);
+  font-size: max(16px, 1rem);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+[data-ui='kpi-strip'] {
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-ui='kpi-strip'] > * {
+  min-width: 0;
+}
+
+[data-ui='kpi-strip'][data-variant='default'] > *,
+[data-ui='stat'] {
+  border-bottom-color: var(--ui-tone-text);
+}
+
+[data-ui='stat'] {
+  min-width: 0;
+  border-radius: var(--radius-card);
+  border-color: var(--color-border);
+  border-bottom-color: var(--ui-tone-text);
+  background: var(--color-surface);
+}
+
+[data-ui='kpi-icon'] {
+  background-color: var(--ui-tone-bg);
+  color: var(--ui-tone-text);
+}
+
+[data-ui='kpi-label'] {
+  font-size: max(17px, 1.0625rem);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+[data-ui='kpi-note'] {
+  font-size: max(16px, 1rem);
+  line-height: 1.5;
+}
+
+[data-ui='card-header'] {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+[data-ui='button'] {
+  min-height: 44px;
+  font-family: var(--font-app);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+[data-ui='button'] > svg {
+  flex-shrink: 0;
+}
+
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :where(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']), select, textarea):not(.form-document *, .form-toolbar *, .form-page-sheet *) {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: var(--radius-default);
+  line-height: 1.5;
+}
+
+[data-ui='filter-bar'] .filter-bar-fields > * {
+  flex: 1 1 160px;
+  max-width: none;
+}
+
+[data-ui='filter-bar'] :is(input, select) {
+  font-size: max(18px, 1.125rem);
+}
+
+[data-ui='modal'] > header {
+  background: var(--color-surface);
+}
+
+[data-ui='modal'] > footer {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+[role='combobox'] {
+  min-height: 44px;
+}
+
+.life-app [role='combobox'] input,
+[data-ui='modal'] [role='combobox'] input {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[role='listbox'] {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+[role='listbox'] [role='option'] {
+  min-height: 44px;
+  color: var(--color-text);
+}
+
+[role='listbox'] :is(.text-slate-400, .text-slate-500, .text-slate-600) {
+  color: var(--color-text-muted);
+}
+
+[data-ui='toast'] {
+  border-color: color-mix(in srgb, var(--ui-tone-text) 30%, var(--color-surface));
+  background: var(--color-surface);
+  color: var(--ui-tone-text);
+}
+
+@media (min-width: 1024px) {
+  [data-ui='kpi-strip'] {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
+  [data-ui='kpi-strip'][data-variant='default'] > * {
+    min-height: 100px;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  [data-ui='kpi-strip'] [data-ui='kpi-icon'] {
+    width: 32px;
+    height: 32px;
+  }
+
+  :is(.life-app, .life-public, [data-ui='modal']) :where(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='range']):not(.form-document *, .form-toolbar *, .form-page-sheet *) {
+    font-size: 18px;
+  }
+
+  [data-ui='filter-bar'] .filter-bar-fields > * {
+    flex-basis: auto;
+    width: 100%;
+  }
+}

@@ -1,7 +1,8 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Circle, GitPullRequestArrow, Loader2, ShieldAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -33,6 +34,8 @@ function ActionError({ error }: { error: unknown }) {
 }
 
 export function ChangeDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/changes');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -58,7 +61,7 @@ export function ChangeDetailPage() {
 
   return <div className="flex flex-col gap-4" data-testid="change-detail-page">
     {change.configuration_item && <Card data-testid="change-ci-link"><CardHeader>Configuration Item (CI)</CardHeader><CardBody><Link to={`/cmdb/${change.configuration_item.id}`} className="text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300">{change.configuration_item.ci_code} — {change.configuration_item.name}</Link><p className="mt-1 text-xs text-slate-500">{change.configuration_item.ci_type} · {change.configuration_item.environment} · {change.configuration_item.criticality}</p></CardBody></Card>}
-    <button type="button" onClick={() => navigate('/changes')} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700"><ArrowLeft className="h-4 w-4" /> กลับไป Change Management</button>
+    <button type="button" onClick={() => navigate(listReturnTo)} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700"><ArrowLeft className="h-4 w-4" /> กลับไป Change Management</button>
     <div className="flex flex-wrap items-start justify-between gap-2"><PageTitle eyebrow={`บริการและกระบวนการ IT / ${change.change_number}`} title={<>{change.title}</>} description={<>{change.system_affected}</>} /><div className="flex gap-2"><Badge variant={changeRiskTone[change.risk_level]}>Risk {change.risk_level}</Badge><Badge variant={changeStatusTone[change.status]}>{change.status}</Badge></div></div>
     {change.status === 'ปฏิเสธ' ? <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"><ShieldAlert className="h-5 w-5" /> คำขอนี้ถูกปฏิเสธ: {change.approval_comment}</div> : <Workflow status={change.status} />}
 

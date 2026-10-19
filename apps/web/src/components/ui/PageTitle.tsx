@@ -40,9 +40,9 @@ export function PageTitle({ eyebrow, title, description, meta, leading, variant 
         </span>
       )}
       <div className="min-w-0">
-        <p className="life-page-eyebrow font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-700 dark:text-primary-300">{eyebrow}</p>
-        <h1 className="mt-0.5 text-[22px] font-extrabold text-ink-heading dark:text-[#e8eef9]">{title}</h1>
-        <p className="mt-1 max-w-3xl text-[13.5px] text-slate-500 dark:text-white/45">{description}</p>
+        <p className="life-page-eyebrow text-xs font-semibold text-primary-700 dark:text-primary-300">{eyebrow}</p>
+        <h1 className="mt-0.5 break-words text-[28px] font-bold text-ink-heading dark:text-[#e8eef9]">{title}</h1>
+        <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-white/45">{description}</p>
         {meta && <div className="mt-2 flex flex-wrap items-center gap-2">{meta}</div>}
       </div>
     </div>

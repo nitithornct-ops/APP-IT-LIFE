@@ -1,10 +1,11 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { DataTable } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, Loader2, Paperclip, QrCode, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -687,6 +688,8 @@ function AssetAttachments({ assetId, attachments, onDone }: { assetId: string; a
 }
 
 export function AssetDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/assets');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -732,7 +735,7 @@ export function AssetDetailPage() {
 
   return (
     <div className="flex flex-col gap-4" data-testid="asset-detail-page">
-      <button type="button" onClick={() => navigate('/assets')} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400">
+      <button type="button" onClick={() => navigate(listReturnTo)} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         กลับไปทะเบียนทรัพย์สิน
       </button>

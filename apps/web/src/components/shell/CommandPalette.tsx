@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -50,6 +50,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const groups = useNavItems();
   const canSearchCmdb = groups.some((group) => group.items.some((item) => item.path === '/cmdb'));
@@ -118,16 +120,46 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
 
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setActiveIndex(0);
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [open]);
+    if (!open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    setQuery('');
+    setActiveIndex(0);
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    const handleDialogKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+      if (event.key !== 'Tab') return;
+      const controls = dialogRef.current?.querySelectorAll<HTMLElement>('input, button');
+      const first = controls?.[0];
+      const last = controls?.[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleDialogKey);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleDialogKey);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [open, onClose]);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [query]);
+
+  useEffect(() => {
+    resultsRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, rows]);
 
   function goTo(row: PaletteRow | undefined) {
     if (!row) return;
@@ -138,15 +170,13 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveIndex((index) => Math.min(index + 1, rows.length - 1));
+      setActiveIndex((index) => Math.max(0, Math.min(index + 1, rows.length - 1)));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setActiveIndex((index) => Math.max(index - 1, 0));
     } else if (event.key === 'Enter') {
       event.preventDefault();
       goTo(rows[activeIndex]);
-    } else if (event.key === 'Escape') {
-      onClose();
     }
   }
 
@@ -156,10 +186,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-modal-backdrop flex items-start justify-center bg-slate-900/45 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-modal-backdrop flex items-start justify-center bg-slate-900/45 px-3 pt-[6dvh] backdrop-blur-sm sm:pt-[12vh]"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="ค้นหาด่วน"
@@ -175,12 +206,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             onKeyDown={handleKeyDown}
             placeholder="ค้นหาเมนู เลขที่ใบงาน รหัสทรัพย์สิน..."
             aria-label="คำค้นหา"
-            className="flex-1 border-none bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+            aria-describedby="command-palette-help"
+            className="min-h-[44px] min-w-0 flex-1 border-none bg-transparent text-base text-slate-800 outline-none placeholder:text-slate-500 dark:text-slate-100 sm:text-sm"
           />
           {(recordsQuery.isFetching || cmdbQuery.isFetching) && <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
+          <button type="button" onClick={onClose} aria-label="ปิดการค้นหา" className="flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-slate-700"><X className="h-5 w-5" aria-hidden="true" /></button>
         </div>
 
-        <div className="max-h-[58vh] overflow-y-auto p-2">
+        <div ref={resultsRef} className="max-h-[58dvh] overflow-y-auto p-2">
+          {(recordsQuery.isError || cmdbQuery.isError) && <p role="status" className="px-3 py-2 text-sm text-red-700 dark:text-red-300">ค้นหาข้อมูลไม่สำเร็จ ลองพิมพ์คำค้นใหม่ หรือเลือกเมนูด้านล่าง</p>}
           {rows.length === 0 && !recordsQuery.isFetching && !cmdbQuery.isFetching && (
             <p className="px-4 py-8 text-center text-sm text-slate-400">
               {trimmed.length > 0 && trimmed.length < MIN_QUERY_LENGTH
@@ -190,7 +224,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           )}
 
           {menuSections.length > 0 && (
-            <p className="px-3 pb-1 pt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">เมนู</p>
+            <p className="px-3 pb-1 pt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">เมนู</p>
           )}
 
           {sections.map((section) => {
@@ -198,24 +232,25 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             rowOffset += section.rows.length;
             return (
               <div key={section.label} className="mb-1.5">
-                <p className="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-primary-600 dark:text-primary-300"><span className="h-1.5 w-1.5 rounded-full bg-primary-500" />{section.label}</p>
+                <p className="flex items-center gap-2 px-3 py-1 text-xs font-semibold leading-5 text-primary-700 dark:text-primary-300"><span className="h-1.5 w-1.5 rounded-full bg-primary-500" aria-hidden="true" />{section.label}</p>
                 {section.rows.map((row, index) => {
                   const position = offset + index;
                   return (
                     <button
                       key={row.key}
                       type="button"
+                      data-active={position === activeIndex}
                       onClick={() => goTo(row)}
                       onMouseEnter={() => setActiveIndex(position)}
                       className={cn(
-                        'flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                        'flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm leading-6 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                         position === activeIndex ? 'bg-primary-50 text-primary-800 dark:bg-slate-700 dark:text-white' : 'text-slate-700 dark:text-slate-200',
                       )}
                     >
                       {row.icon && <row.icon className="h-[18px] w-[18px] shrink-0 text-primary-600 dark:text-primary-300" aria-hidden="true" />}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{row.label}</span>
-                        {row.hint && <span className="block truncate text-xs text-slate-400">{row.hint}</span>}
+                        {row.hint && <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{row.hint}</span>}
                       </span>
                     </button>
                   );
@@ -225,7 +260,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           })}
         </div>
 
-        <div className="flex gap-4 border-t border-slate-100 px-4 py-2 text-xs text-slate-400 dark:border-slate-700">
+        <div id="command-palette-help" className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
           <span>
             <kbd className="rounded border border-slate-300 px-1.5 py-0.5 dark:border-slate-600">↑↓</kbd> เลือก
           </span>

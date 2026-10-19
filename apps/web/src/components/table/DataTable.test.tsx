@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { Fragment } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataTable } from './DataTable';
 
@@ -17,6 +18,59 @@ function dataCellTexts(): (string | null)[] {
 }
 
 describe('DataTable', () => {
+  it('keeps the correct mobile field labels when a preceding column is hidden', () => {
+    render(
+      <DataTable rowNumber={false}>
+        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานที่</th></tr></thead>
+        <tbody><tr><td>AST-001</td><td>เครื่องสำรอง</td><td>อาคารสำนักงาน</td></tr></tbody>
+      </DataTable>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /คอลัมน์/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'รหัส' }));
+
+    expect(screen.getByText('AST-001').closest('td')).not.toBeVisible();
+    expect(screen.getByText('เครื่องสำรอง').closest('td')).toHaveAttribute('data-label', 'ชื่อ');
+    expect(screen.getByText('อาคารสำนักงาน').closest('td')).toHaveAttribute('data-label', 'สถานที่');
+  });
+
+  it('groups multiple cell paragraphs together and labels rows inside a Fragment', () => {
+    const longName = 'เครื่องคอมพิวเตอร์สำหรับฝ่ายวางแผนและพัฒนาระบบสารสนเทศประจำอาคารสำนักงาน';
+    render(
+      <DataTable mode="server" toolbar={false} pagination={false}>
+        <thead><tr><th>ทรัพย์สิน</th><th>สถานะ</th></tr></thead>
+        <tbody>
+          <Fragment>
+            <tr><td><p>{longName}</p><p>AST-001</p><div>ฝ่ายเทคโนโลยีสารสนเทศ</div></td><td>ใช้งาน</td></tr>
+            <tr><td colSpan={2}>ประวัติการเปลี่ยนผู้รับผิดชอบ</td></tr>
+          </Fragment>
+        </tbody>
+      </DataTable>,
+    );
+
+    const cell = screen.getByText(longName).closest('td');
+    expect(cell).toHaveAttribute('data-label', 'ทรัพย์สิน');
+    expect(cell?.children).toHaveLength(1);
+    expect(cell?.firstElementChild?.children).toHaveLength(3);
+    const expanded = screen.getByText('ประวัติการเปลี่ยนผู้รับผิดชอบ').closest('td');
+    expect(expanded).toHaveAttribute('data-table-spanning', 'true');
+    expect(expanded).toHaveAttribute('colspan', '3');
+    expect(expanded).not.toHaveAttribute('data-label');
+  });
+
+  it('keeps horizontal table opt-out and its original cell content available', () => {
+    render(
+      <DataTable cardOnMobile={false} rowNumber={false} toolbar={false} pagination={false}>
+        <thead><tr><th>สิทธิ์</th></tr></thead>
+        <tbody><tr><td><span>ticket.view</span></td></tr></tbody>
+      </DataTable>,
+    );
+
+    const cell = screen.getByText('ticket.view').closest('td');
+    expect(cell?.firstElementChild?.tagName).toBe('SPAN');
+    expect(screen.getByRole('table')).not.toHaveClass('data-table-cards');
+  });
+
   it('uses the global 10-row pagination and changes only table rows', () => {
     render(
       <DataTable>

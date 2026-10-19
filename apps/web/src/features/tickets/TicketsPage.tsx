@@ -6,17 +6,13 @@ import {
   BarChart3,
   Clock3,
   FileText,
-  MapPin,
-  Paperclip,
   Plus,
   ShieldAlert,
   Star,
   Tags,
   Ticket as TicketIcon,
-  UserRound,
-  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTableParams } from '../../hooks/useTableParams';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -33,19 +29,20 @@ import { KpiStrip } from '../../components/ui/KpiStrip';
 import { LoadingState } from '../../components/ui/AsyncState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { QueryError } from '../../components/ui/QueryError';
-import { FormModal } from '../../components/ui/Modal';
+import { FormModal, Modal } from '../../components/ui/Modal';
 import { SlaBadge } from '../../components/ui/SlaBadge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useAuth } from '../../stores/authContext';
-import { ApiError, apiFetch } from '../../services/apiClient';
+import { ApiError, apiFetch, showToast } from '../../services/apiClient';
 import type { Department, Position, TicketCategory } from '../../types/admin';
 import type { PaginatedResult } from '../../types/admin';
 import type { AssetOption } from '../../types/assets';
-import type { AssignableStaff, TicketDetail, TicketListItem, TicketPriority, TicketQueueSummary, TicketStatus } from '../../types/tickets';
+import type { AssignableStaff, TicketListItem, TicketPriority, TicketQueueSummary, TicketStatus } from '../../types/tickets';
 import { formatThaiDate } from '../../utils/date';
 import { cn } from '../../utils/cn';
-import { LOCKED_TICKET_STATUSES, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import { LOCKED_TICKET_STATUSES, ticketPriorityTone as priorityTone, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
+import './tickets.css';
 
 const TICKET_STATUSES: TicketStatus[] = [
   'ใหม่',
@@ -61,12 +58,6 @@ const TICKET_STATUSES: TicketStatus[] = [
 ];
 
 const TICKET_PRIORITIES: TicketPriority[] = ['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต'];
-const priorityTone: Record<TicketPriority, 'secondary' | 'info' | 'warning' | 'danger'> = {
-  ต่ำ: 'secondary',
-  ปานกลาง: 'info',
-  สูง: 'warning',
-  วิกฤต: 'danger',
-};
 
 const priorityRowClass: Record<TicketPriority, string> = {
   ต่ำ: 'shadow-[inset_3px_0_0_#94a3b8]',
@@ -79,73 +70,6 @@ const priorityRowClass: Record<TicketPriority, string> = {
 const BULK_STATUSES: TicketStatus[] = ['รับเรื่องแล้ว', 'กำลังดำเนินการ'];
 
 type TicketBulkResult = BulkResult<{ id: string; ticketNo: string; status: string }>;
-
-function TicketPreviewPane({ id, onClose }: { id: string; onClose: () => void }) {
-  const ticketQuery = useQuery({
-    queryKey: ['tickets', id],
-    queryFn: () => apiFetch<TicketDetail>(`/api/v1/tickets/${id}`),
-  });
-
-  return (
-    <aside className="min-w-0 overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]" aria-label="รายละเอียด Ticket ที่เลือก">
-      <div className="flex h-11 items-center gap-2 border-b border-hairline-row px-3 dark:border-white/[.07]">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-slate-500 dark:text-white/45">รายละเอียดในคิว</span>
-        <button type="button" onClick={onClose} className="ml-auto grid h-8 w-8 place-items-center rounded-[7px] text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/[.07] dark:hover:text-white" aria-label="ปิดแผงรายละเอียด">
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-      {ticketQuery.isLoading && <LoadingState label="กำลังโหลดใบงานที่เลือก..." rows={4} />}
-      {ticketQuery.isError && <QueryError title="โหลดใบงานไม่สำเร็จ" error={ticketQuery.error} onRetry={() => void ticketQuery.refetch()} isRetrying={ticketQuery.isFetching} />}
-      {ticketQuery.data && (() => {
-        const ticket = ticketQuery.data;
-        return (
-          <div className="space-y-4 p-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] font-semibold text-primary-700 dark:text-primary-300">{ticket.ticket_no}</span>
-                <StatusBadge display={{ label: ticketStatusLabel[ticket.status], tone: ticketStatusTone[ticket.status] }} />
-                <Badge variant={priorityTone[ticket.priority]}>{ticket.priority}</Badge>
-              </div>
-              <h2 className="mt-2 text-lg font-extrabold leading-snug text-ink-heading dark:text-[#e8eef9]">{ticket.title}</h2>
-              <p className="mt-2 text-[13.5px] leading-6 text-slate-600 dark:text-white/62">{ticket.description}</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><p className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400">SLA</p><div className="mt-1"><SlaBadge display={ticketSlaBadge(ticket.due_at, ticket.status, new Date(), ticket.is_sla_paused || ticket.sla_state === 'paused')} fallback="ไม่กำหนด SLA" /></div></div>
-              <div className="rounded-[9px] bg-surface-header p-3 dark:bg-white/[.035]"><p className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400">สร้างเมื่อ</p><p className="mt-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-white/70">{formatThaiDate(ticket.created_at, 'd MMM yyyy HH:mm')}</p></div>
-            </div>
-
-            <div className="space-y-2 border-y border-hairline-row py-3 text-xs dark:border-white/[.07]">
-              <p className="flex items-center gap-2 text-slate-600 dark:text-white/62"><UserRound className="h-4 w-4 text-slate-400" aria-hidden="true" /><span className="w-24 text-slate-400">ผู้แจ้ง</span><span className="font-semibold">{requesterName(ticket)}</span></p>
-              <p className="flex items-center gap-2 text-slate-600 dark:text-white/62"><UserRound className="h-4 w-4 text-slate-400" aria-hidden="true" /><span className="w-24 text-slate-400">ผู้รับผิดชอบ</span><span className="font-semibold">{ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? 'ยังไม่ได้มอบหมาย'}</span></p>
-              <p className="flex items-center gap-2 text-slate-600 dark:text-white/62"><MapPin className="h-4 w-4 text-slate-400" aria-hidden="true" /><span className="w-24 text-slate-400">สถานที่</span><span className="font-semibold">{ticket.location || 'ไม่ระบุ'}</span></p>
-              <p className="flex items-center gap-2 text-slate-600 dark:text-white/62"><Paperclip className="h-4 w-4 text-slate-400" aria-hidden="true" /><span className="w-24 text-slate-400">ไฟล์แนบ</span><span className="font-mono font-semibold">{ticket.attachments.length.toLocaleString('th-TH')}</span></p>
-            </div>
-
-            <div>
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-slate-500 dark:text-white/45">ความเคลื่อนไหวล่าสุด</p>
-              <div className="mt-3 space-y-3">
-                {ticket.worklogs.slice(0, 4).map((log) => (
-                  <div key={log.id} className="relative pl-5 before:absolute before:left-1 before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-primary-700 after:absolute after:bottom-[-14px] after:left-[7px] after:top-4 after:w-px after:bg-hairline last:after:hidden dark:after:bg-white/[.08]">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-white/70">{log.action}</p>
-                    {log.detail && <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 dark:text-white/45">{log.detail}</p>}
-                    <p className="mt-1 font-mono text-[9px] text-slate-400">{formatThaiDate(log.created_at, 'd MMM HH:mm')} · {log.actor?.full_name ?? 'ระบบ'}</p>
-                  </div>
-                ))}
-                {ticket.worklogs.length === 0 && <p className="text-xs text-slate-400">ยังไม่มีบันทึกการดำเนินงาน</p>}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 border-t border-hairline-row pt-3 dark:border-white/[.07]">
-              <Link to={`/tickets/${ticket.id}`}><Button size="sm">ดำเนินการใบงาน</Button></Link>
-              <Link to={`/tickets/${ticket.id}/form`}><Button size="sm" variant="outline">ดูแบบฟอร์ม</Button></Link>
-            </div>
-          </div>
-        );
-      })()}
-    </aside>
-  );
-}
 
 /**
  * แผงดำเนินการกับ Ticket ที่เลือกไว้หลายใบ
@@ -265,6 +189,7 @@ function sourceLabel(source: string): string {
 }
 
 interface TicketKpiCounts {
+  all: number;
   newTickets: number;
   inProgress: number;
   critical: number;
@@ -319,10 +244,13 @@ export function CreateTicketForm({
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [createdTicket, setCreatedTicket] = useState<{ id: string } | null>(null);
+  const formId = useId();
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
     defaultValues: {
@@ -336,25 +264,12 @@ export function CreateTicketForm({
     },
   });
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
-
   const mutation = useMutation({
     mutationFn: async (values: TicketForm) => {
       if (attachment && attachment.size > 10 * 1024 * 1024) {
         throw new ApiError('FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
       }
-      const ticket = await apiFetch<{ id: string }>('/api/v1/tickets', {
+      const ticket = createdTicket ?? await apiFetch<{ id: string }>('/api/v1/tickets', {
         method: 'POST',
         body: JSON.stringify({
           ...values,
@@ -363,166 +278,125 @@ export function CreateTicketForm({
           erpModule: values.erpModule || undefined,
           incidentAt: new Date(values.incidentAt).toISOString(),
         }),
-      });
+      }, { silent: true });
 
+      setCreatedTicket(ticket);
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
       if (attachment) {
         const data = new FormData();
         data.append('file', attachment);
         data.append('module', 'ticket');
         data.append('targetTable', 'tickets');
         data.append('targetId', ticket.id);
-        await apiFetch('/api/v1/files', { method: 'POST', body: data });
+        await apiFetch('/api/v1/files', { method: 'POST', body: data }, { silent: true });
       }
       return ticket;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      showToast('success', 'ส่งใบแจ้งซ่อมเรียบร้อยแล้ว สามารถติดตามได้จากรายการแจ้งซ่อม');
       onClose();
     },
     onError: (error) => setServerError(error instanceof ApiError ? error.message : 'แจ้งซ่อมไม่สำเร็จ'),
   });
 
   const fieldClass =
-    'min-h-[45px] w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40';
+    'min-h-11 min-w-0 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-primary-900/40';
   const labelClass = 'mb-1.5 block text-[13px] font-semibold text-slate-600 dark:text-slate-300';
 
+  const titleField = register('title');
+
   return (
-    <FormModal title="เปิด Ticket แจ้งซ่อม" description="กรอกข้อมูลส่วนที่ 1 เพื่อส่งเข้าคิวบริการและสร้างแบบฟอร์มอัตโนมัติ" size="lg" closeDisabled={mutation.isPending} onClose={onClose}>
-      <form
-        onSubmit={handleSubmit((values) => {
-          setServerError(null);
-          mutation.mutate(values);
-        })}
-        noValidate
-      >
-        <div className="grid grid-cols-1 gap-x-3 gap-y-5 px-5 py-6 md:grid-cols-3">
-          <div className="md:col-span-3">
-            <p className="text-sm font-bold text-primary-800 dark:text-primary-200">ส่วนที่ 1: ข้อมูลผู้แจ้ง และรายละเอียดปัญหา</p>
-            <p className="mt-1 text-xs text-slate-500">ข้อมูลผู้แจ้งอ้างอิงจากบัญชีที่เข้าสู่ระบบ และจะถูกเก็บเป็นข้อมูล ณ วันที่แจ้ง</p>
-          </div>
-
-          <div>
-            <label className={labelClass}>ชื่อ-นามสกุล</label>
-            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.fullName || '—'}</div>
-          </div>
-
-          <div>
-            <label className={labelClass}>ตำแหน่ง</label>
-            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.position || '—'}</div>
-          </div>
-
-          <div>
-            <label className={labelClass}>ส่วนงาน</label>
-            <div className={`${fieldClass} flex items-center bg-slate-50 text-slate-600 dark:bg-slate-800`}>{requester.department || '—'}</div>
-          </div>
-
-          <div>
-            <label htmlFor="tk-phone" className={labelClass}>เบอร์โทรศัพท์</label>
-            <input id="tk-phone" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
-          </div>
-
-          <div>
-            <label htmlFor="tk-incident-at" className={labelClass}>
-              วันที่และเวลาที่พบปัญหา <span className="text-red-500">*</span>
+    <FormModal
+      title="เปิด Ticket แจ้งซ่อม"
+      description="ระบุปัญหาและข้อมูลติดต่อ ช่องที่มี * จำเป็นต้องกรอก"
+      size="lg"
+      contentPadding="none"
+      className="ticket-create-dialog"
+      initialFocusRef={titleRef}
+      isDirty={isDirty || Boolean(attachment) || Boolean(createdTicket)}
+      closeDisabled={mutation.isPending}
+      onClose={onClose}
+      footer={<>
+        <Button type="button" variant="outline" className="min-h-11 flex-1 sm:flex-none" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button>
+        <Button type="submit" form={formId} className="min-h-11 flex-1 sm:flex-none" isLoading={mutation.isPending}>{createdTicket ? 'ลองแนบไฟล์อีกครั้ง' : 'เปิด Ticket'}</Button>
+      </>}
+    >
+      <form id={formId} onSubmit={handleSubmit((values) => { setServerError(null); mutation.mutate(values); })} noValidate>
+        <div className="space-y-5 p-4 sm:p-6">
+          <section aria-label="ข้อมูลผู้แจ้ง" className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-900/50">
+            <p className="font-semibold text-slate-800 dark:text-slate-100">ผู้แจ้ง: <span>{requester.fullName || '—'}</span></p>
+            <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400"><span>{requester.position || '—'}</span> · <span>{requester.department || '—'}</span></p>
+          </section>
+          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+            <legend className="mb-3 text-sm font-bold text-primary-800 dark:text-primary-200">1. ปัญหาที่ต้องการแจ้ง</legend>
+            <div className="sm:col-span-2">
+              <label htmlFor="tk-title" className={labelClass}>หัวข้อปัญหา <span className="text-red-500">*</span></label>
+              <input id="tk-title" className={fieldClass} placeholder="เช่น เครื่องพิมพ์เชื่อมต่อไม่ได้" aria-invalid={Boolean(errors.title)} aria-describedby={errors.title ? 'tk-title-error' : undefined} {...titleField} ref={(element) => { titleField.ref(element); titleRef.current = element; }} />
+              {errors.title && <p id="tk-title-error" className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="tk-category" className={labelClass}>ประเภทงานที่ขอรับบริการ <span className="text-red-500">*</span></label>
+              <select id="tk-category" className={fieldClass} aria-invalid={Boolean(errors.categoryId)} aria-describedby={errors.categoryId ? 'tk-category-error' : undefined} {...register('categoryId')}>
+                <option value="">-- เลือกประเภทงาน --</option>
+                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+              {errors.categoryId && <p id="tk-category-error" className="mt-1 text-xs text-red-600">{errors.categoryId.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="tk-incident-at" className={labelClass}>วันที่และเวลาที่พบปัญหา <span className="text-red-500">*</span></label>
+              <input id="tk-incident-at" type="datetime-local" className={fieldClass} aria-invalid={Boolean(errors.incidentAt)} aria-describedby={errors.incidentAt ? 'tk-incident-error' : undefined} {...register('incidentAt')} />
+              {errors.incidentAt && <p id="tk-incident-error" className="mt-1 text-xs text-red-600">{errors.incidentAt.message}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="tk-description" className={labelClass}>รายละเอียดปัญหา <span className="text-red-500">*</span></label>
+              <textarea id="tk-description" rows={3} className={fieldClass + ' min-h-28 resize-y py-3'} placeholder="พบอาการอะไร เกิดขึ้นเมื่อใด และลองแก้ไขอย่างไรแล้วบ้าง" aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? 'tk-description-error' : undefined} {...register('description')} />
+              {errors.description && <p id="tk-description-error" className="mt-1 text-xs text-red-600">{errors.description.message}</p>}
+            </div>
+          </fieldset>
+          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
+            <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">2. สถานที่และข้อมูลติดต่อ</legend>
+            <div>
+              <label htmlFor="tk-location" className={labelClass}>สถานที่ตั้งเครื่อง</label>
+              <input id="tk-location" className={fieldClass} placeholder="เช่น อาคาร A ชั้น 2 ห้องบัญชี" {...register('location')} />
+            </div>
+            <div>
+              <label htmlFor="tk-phone" className={labelClass}>เบอร์โทรศัพท์</label>
+              <input id="tk-phone" type="tel" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
+            </div>
+          </fieldset>
+          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
+            <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">3. ข้อมูลเพิ่มเติม (ถ้ามี)</legend>
+            <div>
+              <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
+              <select id="tk-priority" className={fieldClass} {...register('priority')}>
+                <option value="">ให้ระบบกำหนดตามประเภทงาน</option>
+                {TICKET_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="tk-asset" className={labelClass}>ผูกกับ Asset (ถ้ามี)</label>
+              <select id="tk-asset" className={fieldClass} disabled={assetsLoading} {...register('assetId')}>
+                <option value="">{assetsLoading ? 'กำลังโหลด...' : '-- ไม่ระบุอุปกรณ์ --'}</option>
+                {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.asset_code} — {asset.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="tk-erp-module" className={labelClass}>ERP Module (ถ้ามี)</label>
+              <input id="tk-erp-module" className={fieldClass} placeholder="เช่น Finance, Inventory" {...register('erpModule')} />
+              {errors.erpModule && <p className="mt-1 text-xs text-red-600">{errors.erpModule.message}</p>}
+            </div>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 self-end text-sm text-slate-700 dark:text-slate-200">
+              <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" {...register('isSecurity')} />สงสัยภัยคุกคาม
             </label>
-            <input id="tk-incident-at" type="datetime-local" className={fieldClass} {...register('incidentAt')} />
-            {errors.incidentAt && <p className="mt-1 text-xs text-red-600">{errors.incidentAt.message}</p>}
-          </div>
-
+          </fieldset>
           <div>
-            <label htmlFor="tk-category" className={labelClass}>
-              ประเภทงานที่ขอรับบริการ <span className="text-red-500">*</span>
-            </label>
-            <select id="tk-category" className={fieldClass} {...register('categoryId')}>
-              <option value="">-- เลือก --</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
-              ))}
-            </select>
-            {errors.categoryId && <p className="mt-1 text-xs text-red-600">{errors.categoryId.message}</p>}
-          </div>
-
-          <div className="md:col-span-2">
-            <label htmlFor="tk-title" className={labelClass}>
-              หัวข้อปัญหา <span className="text-red-500">*</span>
-            </label>
-            <input id="tk-title" autoFocus className={fieldClass} {...register('title')} />
-            {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
-            <select id="tk-priority" className={fieldClass} {...register('priority')}>
-              <option value="">-- เลือก --</option>
-              <option value="ต่ำ">ต่ำ</option>
-              <option value="ปานกลาง">ปานกลาง</option>
-              <option value="สูง">สูง</option>
-              <option value="วิกฤต">วิกฤต</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="tk-erp-module" className={labelClass}>ERP Module (ถ้ามี)</label>
-            <input id="tk-erp-module" className={fieldClass} placeholder="เช่น Finance, Inventory" {...register('erpModule')} />
-            {errors.erpModule && <p className="mt-1 text-xs text-red-600">{errors.erpModule.message}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="tk-location" className={labelClass}>สถานที่ตั้งเครื่อง</label>
-            <input id="tk-location" className={fieldClass} {...register('location')} />
-          </div>
-
-          <div className="md:col-span-2">
-            <label htmlFor="tk-asset" className={labelClass}>ผูกกับ Asset (ถ้ามี)</label>
-            <select id="tk-asset" className={fieldClass} disabled={assetsLoading} {...register('assetId')}>
-              <option value="">{assetsLoading ? 'กำลังโหลด...' : '-- เลือก --'}</option>
-              {assets.map((asset) => (
-                <option key={asset.id} value={asset.id}>{asset.asset_code} — {asset.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <label className="flex min-h-[45px] cursor-pointer items-center gap-2 self-end pb-2 text-sm text-slate-700 dark:text-slate-200">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-              {...register('isSecurity')}
-            />
-            สงสัยภัยคุกคาม
-          </label>
-
-          <div className="md:col-span-3">
-            <label htmlFor="tk-description" className={labelClass}>
-              รายละเอียดปัญหา <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              id="tk-description"
-              rows={4}
-              className={`${fieldClass} min-h-[108px] resize-y py-3`}
-              {...register('description')}
-            />
-            {errors.description && <p className="mt-1 text-xs text-red-600">{errors.description.message}</p>}
-          </div>
-
-          <div className="md:col-span-3">
             <label htmlFor="tk-attachment" className={labelClass}>แนบหลักฐาน/ภาพหน้าจอ</label>
-            <input
-              id="tk-attachment"
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
-              className="block min-h-[45px] w-full cursor-pointer rounded-xl border border-slate-300 bg-white text-sm text-slate-600 file:mr-3 file:min-h-[43px] file:cursor-pointer file:border-0 file:border-r file:border-slate-300 file:bg-white file:px-3 file:text-sm file:text-slate-700 hover:file:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:file:border-slate-600 dark:file:bg-slate-800 dark:file:text-slate-200"
-            />
-            <p className="mt-1 text-xs text-slate-400">รองรับรูปภาพ เอกสาร และ PDF ขนาดไม่เกิน 10 MB</p>
+            <input id="tk-attachment" type="file" disabled={mutation.isPending} accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} className="block min-h-11 w-full min-w-0 cursor-pointer rounded-xl border border-slate-300 bg-white text-sm text-slate-600 file:mr-3 file:min-h-11 file:border-0 file:border-r file:border-slate-300 file:bg-slate-50 file:px-3 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:file:border-slate-600 dark:file:bg-slate-800 dark:file:text-slate-200" />
+            <p className="mt-1 text-xs text-slate-500">รองรับรูปภาพ เอกสาร และ PDF ขนาดไม่เกิน 10 MB</p>
           </div>
-
-          {serverError && <p className="text-sm text-red-600 md:col-span-3">{serverError}</p>}
+          {serverError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{createdTicket ? 'สร้างใบแจ้งซ่อมแล้ว แต่แนบไฟล์ไม่สำเร็จ กดลองแนบไฟล์อีกครั้งโดยไม่สร้างใบงานซ้ำ หรือยกเลิกเพื่อกลับไปรายการ' : serverError}</div>}
         </div>
-
-        <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/50">
-          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>ยกเลิก</Button>
-          <Button type="submit" isLoading={mutation.isPending}>เปิด Ticket</Button>
-        </footer>
       </form>
     </FormModal>
   );
@@ -551,7 +425,7 @@ export function TicketsPage() {
     next.delete('newForAsset');
     setSearchParams(next, { replace: true });
   }, [newForAssetId, searchParams, setSearchParams]);
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const ticketNavigationState = { ticketReturnTo: `/tickets${searchParams.size ? `?${searchParams}` : ''}` };
   // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBulk, setShowBulk] = useState(false);
@@ -627,13 +501,14 @@ export function TicketsPage() {
   const kpiQuery = useQuery({
     queryKey: ['tickets', 'filter-counts', me?.profile.id],
     queryFn: async (): Promise<TicketKpiCounts> => {
-      const [newTickets, inProgress, critical, mine] = await Promise.all([
+      const [all, newTickets, inProgress, critical, mine] = await Promise.all([
+        ticketFilterCount(''),
         ticketFilterCount(`status=${encodeURIComponent('ใหม่')}`),
         ticketFilterCount(`status=${encodeURIComponent('กำลังดำเนินการ')}`),
         ticketFilterCount(`priority=${encodeURIComponent('วิกฤต')}`),
         ticketFilterCount('mine=true'),
       ]);
-      return { newTickets, inProgress, critical, mine };
+      return { all, newTickets, inProgress, critical, mine };
     },
     staleTime: 60_000,
   });
@@ -670,7 +545,7 @@ export function TicketsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="ticket-workspace flex min-w-0 flex-col gap-5">
       <PageHeader
         eyebrow="บริการและกระบวนการ IT / Ticket"
         title="แจ้งซ่อม / Help Desk"
@@ -690,7 +565,7 @@ export function TicketsPage() {
         </>}
         primaryAction={
           <RequirePermission permission="ticket.create">
-            <Button size="sm" onClick={() => setShowCreate((value) => !value)}>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" aria-hidden="true" /> เปิด Ticket
             </Button>
           </RequirePermission>
@@ -714,6 +589,14 @@ export function TicketsPage() {
 
       {bulkResult && <BulkResultSummary result={bulkResult} itemLabel="ใบงาน" onDismiss={() => setBulkResult(null)} />}
 
+      {showCreate && !categoriesQuery.data && (
+        <Modal title="เปิด Ticket แจ้งซ่อม" onClose={closeCreate} contentPadding="default">
+          {categoriesQuery.isError
+            ? <QueryError title="โหลดประเภทงานไม่สำเร็จ" error={categoriesQuery.error} onRetry={() => void categoriesQuery.refetch()} isRetrying={categoriesQuery.isFetching} />
+            : <LoadingState label="กำลังเตรียมแบบฟอร์มแจ้งซ่อม..." />}
+        </Modal>
+      )}
+
       {showCreate && categoriesQuery.data && (
         <CreateTicketForm
           categories={categoriesQuery.data}
@@ -735,8 +618,9 @@ export function TicketsPage() {
         items={[
           {
             key: 'all',
+            tone: 'gray',
             label: 'Ticket ทั้งหมด',
-            value: totalItems,
+            value: kpiQuery.data?.all ?? '—',
             note: 'ตามสิทธิ์ที่เข้าถึงได้',
             icon: <FileText className="h-4 w-4" />,
             active: activeFilterCount === 0,
@@ -744,6 +628,7 @@ export function TicketsPage() {
           },
           {
             key: 'new',
+            tone: 'teal',
             label: 'Ticket ใหม่',
             value: kpiQuery.data?.newTickets ?? '—',
             note: 'ยังไม่ได้รับเรื่อง',
@@ -762,6 +647,7 @@ export function TicketsPage() {
           },
           {
             key: 'critical',
+            tone: 'danger',
             label: 'ความเร่งด่วนวิกฤต',
             value: kpiQuery.data?.critical ?? '—',
             note: 'ต้องจัดลำดับก่อนงานทั่วไป',
@@ -771,6 +657,7 @@ export function TicketsPage() {
           },
           {
             key: 'mine',
+            tone: 'gray',
             label: 'Ticket ของฉัน',
             value: kpiQuery.data?.mine ?? '—',
             note: 'รายการที่ฉันเป็นผู้แจ้ง',
@@ -780,6 +667,7 @@ export function TicketsPage() {
           },
           {
             key: 'overdue',
+            tone: 'danger',
             label: 'เกิน SLA ในหน้านี้',
             value: overdueOnPage,
             note: 'จัดการก่อนคิวทั่วไป',
@@ -796,20 +684,21 @@ export function TicketsPage() {
           </div>
           {queue && <Button size="sm" variant="ghost" onClick={() => table.setFilter('queue', '')}>ล้างคิว</Button>}
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
           {([
             ['unassigned', 'ยังไม่มีผู้รับผิดชอบ', queueQuery.data?.unassigned ?? '—', 'secondary'],
             ['near_sla', 'ใกล้เกิน SLA', queueQuery.data?.nearSla ?? '—', 'warning'],
             ['overdue', 'เกิน SLA', queueQuery.data?.overdue ?? '—', 'danger'],
             ['waiting_follow_up', 'รอติดตาม', queueQuery.data?.waitingFollowUp ?? '—', 'warning'],
-            ['awaiting_acceptance', 'รอตรวจรับ', queueQuery.data?.awaitingAcceptance ?? '—', 'primary'],
-            ['paused', 'พัก SLA', queueQuery.data?.paused ?? '—', 'info'],
+            ['awaiting_acceptance', 'รอตรวจรับ', queueQuery.data?.awaitingAcceptance ?? '—', 'warning'],
+            ['paused', 'พัก SLA', queueQuery.data?.paused ?? '—', 'warning'],
           ] as const).map(([key, label, value, tone]) => (
             <button
               key={key}
               type="button"
+              aria-pressed={queue === key}
               onClick={() => table.setFilters({ queue: queue === key ? '' : key, status: '', categoryId: '', priority: '', search: '', mine: '' })}
-              className={cn('rounded-lg border px-3 py-2 text-left transition hover:border-primary-300 hover:bg-primary-50 dark:border-white/[.08] dark:hover:bg-white/[.05]', queue === key && 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20')}
+              className={cn('min-h-11 rounded-lg border px-3 py-2 text-left transition hover:border-primary-300 hover:bg-primary-50 dark:border-white/[.08] dark:hover:bg-white/[.05]', queue === key && 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20')}
             >
               <span className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300"><span>{label}</span><Badge variant={tone}>{value}</Badge></span>
             </button>
@@ -894,7 +783,7 @@ export function TicketsPage() {
           </div>
         )}
 
-        <div className={cn('grid items-start gap-3', selectedTicketId && 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,.78fr)]')}>
+        <div className="min-w-0">
         {ticketsQuery.data && ticketsQuery.data.items.length > 0 && (
               <DataTable
                 mode="server"
@@ -902,7 +791,6 @@ export function TicketsPage() {
                 sort={effectiveSort}
                 onSortChange={table.setSort}
                 rowNumberStart={(page - 1) * pageSize + 1}
-                stickyHeader
                 cardOnMobile
                 itemLabel="ใบงาน"
                 currentPageExport={false}
@@ -911,7 +799,7 @@ export function TicketsPage() {
                 onSelectionChange={setSelectedIds}
                 selectionActions={<Button type="button" size="sm" onClick={() => setShowBulk(true)}>ดำเนินการกับที่เลือก</Button>}
                 containerClassName="rounded-card"
-                className="min-w-[920px] w-full text-left"
+                className="ticket-list-table min-w-[920px] w-full text-left"
               >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                   <tr>
@@ -928,15 +816,9 @@ export function TicketsPage() {
                     <tr
                       key={ticket.id}
                       data-row-id={ticket.id}
-                      aria-selected={selectedTicketId === ticket.id}
-                      onClick={(event) => {
-                        if ((event.target as HTMLElement).closest('a,button,input,select,textarea')) return;
-                        setSelectedTicketId((current) => current === ticket.id ? null : ticket.id);
-                      }}
                       className={cn(
-                        'cursor-pointer align-top transition hover:bg-primary-50/60 dark:hover:bg-white/[.05]',
+                        'align-top transition hover:bg-primary-50/60 dark:hover:bg-white/[.05]',
                         priorityRowClass[ticket.priority],
-                        selectedTicketId === ticket.id && 'bg-primary-50 dark:bg-primary-900/25',
                       )}
                     >
                       <td className="px-3 py-3" data-label="เลขที่">
@@ -944,7 +826,7 @@ export function TicketsPage() {
                         <div className="mt-1"><Badge variant={priorityTone[ticket.priority]}>{ticket.priority}</Badge></div>
                       </td>
                       <td className="max-w-[260px] px-3 py-3" data-label="เรื่อง">
-                        <Link to={`/tickets/${ticket.id}`} className="font-semibold text-slate-800 hover:text-primary-700 hover:underline dark:text-slate-100 dark:hover:text-primary-300">
+                        <Link to={`/tickets/${ticket.id}`} state={ticketNavigationState} className="font-semibold text-slate-800 hover:text-primary-700 hover:underline dark:text-slate-100 dark:hover:text-primary-300">
                           {ticket.title}
                         </Link>
                         {ticket.is_security && <AlertTriangle className="ml-1 inline h-3.5 w-3.5 text-red-500" aria-label="Security" />}
@@ -968,13 +850,14 @@ export function TicketsPage() {
                           recordLabel={ticket.ticket_no}
                           iconOnly
                           actions={[
-                            { kind: 'view', to: `/tickets/${ticket.id}`, label: 'รายละเอียด' },
-                            { kind: 'custom', icon: FileText, to: `/tickets/${ticket.id}/form`, label: 'ดูแบบฟอร์ม' },
+                            { kind: 'view', to: `/tickets/${ticket.id}`, state: ticketNavigationState, label: 'รายละเอียด' },
+                            { kind: 'custom', icon: FileText, to: `/tickets/${ticket.id}/form`, state: ticketNavigationState, label: 'ดูแบบฟอร์ม' },
                             {
                               kind: 'edit',
                               label: 'ดำเนินการ',
                               hidden: !canManageTicket || ticket.status === 'เสร็จสิ้น' || LOCKED_TICKET_STATUSES.includes(ticket.status),
                               to: `/tickets/${ticket.id}?action=edit#ticket-work-panel`,
+                              state: ticketNavigationState,
                             },
                             {
                               kind: 'cancel',
@@ -999,7 +882,6 @@ export function TicketsPage() {
                 </tbody>
               </DataTable>
         )}
-        {selectedTicketId && <TicketPreviewPane id={selectedTicketId} onClose={() => setSelectedTicketId(null)} />}
         </div>
 
         {ticketsQuery.data && (

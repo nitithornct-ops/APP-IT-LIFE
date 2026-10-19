@@ -1,7 +1,8 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSelect';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -171,6 +172,8 @@ function KnownErrorCard({ item }: { item: KnownError }) {
 }
 
 export function ProblemDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/problems');
   const { id = '' } = useParams();
   const { hasPermission } = useAuth();
   const canManage = hasPermission('problem.manage');
@@ -181,7 +184,7 @@ export function ProblemDetailPage() {
   const { problem, knownErrors } = query.data;
   const linkedChanges = problem.problem_changes ?? [];
   return <div className="flex flex-col gap-4" data-testid="problem-detail-page">
-    <Link to="/problems" className="flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4" /> กลับไปรายการ Problem</Link>
+    <Link to={listReturnTo} className="flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4" /> กลับไปรายการ Problem</Link>
     <div className="flex flex-wrap items-start justify-between gap-2"><PageTitle eyebrow={`บริการและกระบวนการ IT / ${problem.problem_number}`} title={<>{problem.title}</>} description={<>สร้างเมื่อ {formatThaiDate(problem.created_at, 'd MMM yyyy HH:mm')}</>} /><div className="flex gap-1"><Badge variant={priorityTone[problem.priority]}>{problem.priority}</Badge><Badge variant={problemStatusTone[problem.status]}>{problem.status}</Badge></div></div>
     <Card><CardHeader>ภาพรวม Problem</CardHeader><CardBody className="grid gap-4 sm:grid-cols-4"><Info label="หมวด">{problem.category ?? '—'}</Info><Info label="ระบบ">{problem.affected_system ?? '—'}</Info><Info label="Owner">{problem.owner?.full_name ?? problem.owner?.email ?? '—'}</Info><Info label="Recurrence Count"><span className={problem.recurrence_count ? 'font-bold text-amber-700 dark:text-amber-300' : ''}>{problem.recurrence_count}</span></Info><div className="sm:col-span-2"><Info label="ผลกระทบ"><p className="whitespace-pre-wrap">{problem.impact ?? '—'}</p></Info></div><Info label="Review date">{problem.review_date ? formatThaiDate(problem.review_date, 'd MMM yyyy') : '—'}</Info><Info label="Review Meeting">{problem.review_meeting_at ? `${formatThaiDate(problem.review_meeting_at, 'd MMM yyyy HH:mm')} · ${problem.review_meeting_owner?.full_name ?? problem.review_meeting_owner?.email ?? '—'}` : '—'}</Info><Info label="หลักฐาน">{problem.evidence_url ? <a href={problem.evidence_url} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline">เปิดหลักฐาน <ExternalLink className="inline h-3 w-3" /></a> : '—'}</Info><Info label="ปิดเมื่อ">{problem.closed_at ? formatThaiDate(problem.closed_at, 'd MMM yyyy HH:mm') : '—'}</Info></CardBody></Card>
     <div className="grid gap-4 sm:grid-cols-3"><Card><CardHeader>Root Cause</CardHeader><CardBody><p className="whitespace-pre-wrap text-sm">{problem.root_cause ?? '—'}</p></CardBody></Card><Card><CardHeader>Workaround</CardHeader><CardBody><p className="whitespace-pre-wrap text-sm">{problem.workaround ?? '—'}</p></CardBody></Card><Card><CardHeader>Permanent Fix / Change</CardHeader><CardBody><p className="whitespace-pre-wrap text-sm">{problem.permanent_fix ?? '—'}</p>{linkedChanges.map(({ change }) => <Link key={change.id} to={`/changes/${change.id}`} className="mt-2 block text-xs text-primary-700 hover:underline dark:text-primary-300">{change.change_number} · {change.status}</Link>)}</CardBody></Card></div>
@@ -189,7 +192,7 @@ export function ProblemDetailPage() {
     <Card><CardHeader>ความสัมพันธ์</CardHeader><CardBody className="grid gap-4 sm:grid-cols-3"><div><h3 className="mb-2 text-sm font-bold">Incidents ({problem.problem_incidents.length})</h3>{problem.problem_incidents.map(({ incident }) => <Link key={incident.id} to={`/incidents/${incident.id}`} className="block text-sm text-primary-700 hover:underline">{incident.incident_number} — {incident.title}</Link>)}</div><div><h3 className="mb-2 text-sm font-bold">Tickets ({problem.problem_tickets.length})</h3>{problem.problem_tickets.map(({ ticket }) => <Link key={ticket.id} to={`/tickets/${ticket.id}`} className="block text-sm text-primary-700 hover:underline">{ticket.title}</Link>)}</div><div><h3 className="mb-2 text-sm font-bold">Linked CI ({problem.problem_configuration_items?.length ?? 0})</h3>{(problem.problem_configuration_items ?? []).map(({ configuration_item }) => <Link key={configuration_item.id} to={`/cmdb/${configuration_item.id}`} className="block text-sm text-primary-700 hover:underline">{configuration_item.ci_code} — {configuration_item.name}</Link>)}</div></CardBody></Card>
     {canManage && references.data && <ManagementPanel detail={query.data} references={references.data} />}
     <CorrectiveActionsPanel problem={problem} references={references.data} canManage={canManage} />
-    <div className="flex items-center justify-between"><h2 className="text-lg font-bold">Known Errors ({knownErrors.length})</h2><Link to="/problems" className="text-sm text-primary-700 hover:underline">จัดการ Known Error</Link></div>
+    <div className="flex items-center justify-between"><h2 className="text-lg font-bold">Known Errors ({knownErrors.length})</h2><Link to={listReturnTo} className="text-sm text-primary-700 hover:underline">จัดการ Known Error</Link></div>
     {knownErrors.map((item) => <KnownErrorCard key={item.id} item={item} />)}
   </div>;
 }

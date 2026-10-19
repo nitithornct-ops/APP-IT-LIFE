@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, CircleDot, Clock3, Download, Eye, Loader2, MinusCircle, PenLine, Printer, RotateCcw, Save, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../stores/authContext';
@@ -11,6 +11,7 @@ import type { TicketFormDocument, TicketFormFlowState } from '../../types/ticket
 import { exportHtmlAsWord, sanitizeFormHtml } from '../../utils/formHtml';
 import { effectiveMarginMm, pageGeometry, paginateElement } from './formPagination';
 import { TICKET_REFERENCE_FORM_CSS } from '@itlife/shared';
+import { getTicketReturnTo } from './ticketNavigation';
 
 const flowAppearance: Record<TicketFormFlowState, { icon: typeof CheckCircle2; className: string; label: string }> = {
   complete: { icon: CheckCircle2, className: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200', label: 'เสร็จแล้ว' },
@@ -108,6 +109,8 @@ type FormMode = 'view' | 'edit';
 
 export function TicketFormPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const returnTo = getTicketReturnTo(location.state);
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
   /**
@@ -307,7 +310,7 @@ export function TicketFormPage() {
   return <div className="ticket-form-screen space-y-4">
     <style>{TICKET_REFERENCE_FORM_CSS}</style>
     <div className="ticket-form-actions flex flex-wrap items-center justify-between gap-3">
-      <Link to={`/tickets/${formDocument.ticketId}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300"><ArrowLeft className="h-4 w-4" />กลับไป Ticket</Link>
+      <Link to={`/tickets/${formDocument.ticketId}`} state={{ ticketReturnTo: returnTo }} className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300"><ArrowLeft className="h-4 w-4" />กลับไป Ticket</Link>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{formDocument.ticketStatus}</Badge>
         {formDocument.isCustomized && <Badge variant="warning">แก้ไขเฉพาะใบนี้</Badge>}

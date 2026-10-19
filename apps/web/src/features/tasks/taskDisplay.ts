@@ -24,7 +24,7 @@ export const statusTone: Record<TaskStatus, 'secondary' | 'info' | 'warning' | '
   รอผู้อื่นดำเนินการ: 'warning',
   พักไว้ก่อน: 'info',
   เสร็จแล้ว: 'success',
-  ยกเลิก: 'danger',
+  ยกเลิก: 'secondary',
 };
 
 export const priorityTone: Record<TaskPriority, 'secondary' | 'info' | 'warning' | 'danger'> = {

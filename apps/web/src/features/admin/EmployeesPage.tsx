@@ -463,7 +463,7 @@ export function EmployeesPage() {
         <StatCard icon={<UsersRound className="h-5 w-5" />} label="พนักงานทั้งหมด" value={overview?.total ?? 0} tone="primary" />
         <StatCard icon={<UserRoundCog className="h-5 w-5" />} label="Active" value={overview?.active ?? 0} tone="teal" />
         <StatCard icon={<Boxes className="h-5 w-5" />} label="มีทรัพย์สินครอบครอง" value={overview?.employeesWithAssignments ?? 0} tone="gray" />
-        <StatCard icon={<GitBranch className="h-5 w-5" />} label="Lifecycle ค้าง" value={overview?.pendingLifecycle ?? 0} tone="teal" />
+        <StatCard icon={<GitBranch className="h-5 w-5" />} label="Lifecycle ค้าง" value={overview?.pendingLifecycle ?? 0} tone={overview?.pendingLifecycle ? 'amber' : 'gray'} />
         <StatCard icon={<Box className="h-5 w-5" />} label="รายการที่ครอบครอง" value={overview?.assignmentTotal ?? 0} tone="gray" />
       </div>
 

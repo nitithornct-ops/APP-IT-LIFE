@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, ShieldCheck, ToggleLeft, ToggleRight, XCircle } from 'lucide-react';
 import { useState } from 'react';
@@ -118,9 +119,9 @@ export function NotificationRulesPanel({ data }: { data: IntegrationCenterRespon
           </form>}
 
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-[980px] w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 dark:bg-slate-900/50"><tr><th className="px-3 py-2">Event / module</th><th className="px-3 py-2">Severity</th><th className="px-3 py-2">Channel</th><th className="px-3 py-2">Recipient</th><th className="px-3 py-2">Template / route</th><th className="px-3 py-2">State</th></tr></thead>
+            <DataTable mode="server" toolbar={false} pagination={false} showAllColumnsButton={false} rowNumber={false} containerClassName="border-0 shadow-none" className="min-w-[980px] w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 dark:bg-slate-900/50"><tr><th className="px-3 py-2">Event / module</th><th className="px-3 py-2">Severity</th><th className="px-3 py-2">Channel</th><th className="px-3 py-2">Recipient</th><th className="px-3 py-2">Template / route</th><th className="px-3 py-2">State</th></tr></thead>
               <tbody>{databaseRules.map((rule) => <RuleRow key={rule.id} rule={rule} canManage={data.canManage} pending={toggleRule.isPending} onToggle={(enabled) => toggleRule.mutate({ id: rule.id, enabled })} />)}</tbody>
-            </table>
+            </DataTable>
             {!databaseRules.length && <p className="py-8 text-center text-xs text-slate-500">ยังไม่มีกฎในฐานข้อมูล</p>}
           </div>
           {toggleRule.isError && <p className="mt-2 text-xs text-danger-700" role="alert">{errorMessage(toggleRule.error)}</p>}

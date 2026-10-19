@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ChevronDown, ChevronsLeft, ChevronsRight, X } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useNavItems } from '../../hooks/useNavItems';
 import { apiFetch } from '../../services/apiClient';
@@ -38,11 +38,46 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
     staleTime: 5 * 60 * 1000,
   });
   const navRef = useRef<HTMLElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [desktop, setDesktop] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   const [scrollEdges, setScrollEdges] = useState({ top: false, bottom: false });
   const [logoFailed, setLogoFailed] = useState(false);
   const [closedGroups, setClosedGroups] = useState<string[]>(readClosedGroups);
   const logoUrl = brandingQuery.data?.logoUrl ?? '';
   const organizationName = brandingQuery.data?.organizationName || 'LIFE IT';
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)');
+    const update = () => setDesktop(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen || desktop) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const sidebar = sidebarRef.current;
+    sidebar?.querySelector<HTMLButtonElement>('[data-drawer-close]')?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !sidebar) return;
+      const controls = Array.from(sidebar.querySelectorAll<HTMLElement>('button, a[href]'))
+        .filter((element) => getComputedStyle(element).visibility !== 'hidden' && element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    sidebar?.addEventListener('keydown', trapFocus);
+    return () => {
+      sidebar?.removeEventListener('keydown', trapFocus);
+      previousFocus?.focus();
+    };
+  }, [desktop, mobileOpen]);
 
   useEffect(() => setLogoFailed(false), [logoUrl]);
 
@@ -101,17 +136,20 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         ต้องแสดงเต็มรูปแบบพร้อมป้ายชื่อเสมอไม่ว่าจะเคยย่อเมนูไว้บนเดสก์ท็อปหรือไม่ (พฤติกรรมเดียวกับระบบเดิม)
       */}
       <aside
+        ref={sidebarRef}
         id="app-sidebar"
         aria-label="เมนูหลัก"
+        role={mobileOpen && !desktop ? 'dialog' : undefined}
+        aria-modal={mobileOpen && !desktop ? true : undefined}
         className={cn(
-          'fixed inset-y-0 left-0 flex w-[216px] flex-col border-r border-white/[.07] bg-primary-900 text-white shadow-[8px_0_28px_rgba(16,42,92,.12)] transition-all duration-200 dark:bg-primary-950 dark:text-[#e8eef9] lg:z-sidebar',
-          collapsed && 'lg:w-14',
-          mobileOpen ? 'z-mobile-drawer translate-x-0' : '-translate-x-full lg:translate-x-0',
+          'fixed inset-y-0 left-0 flex w-[240px] max-w-[calc(100vw-48px)] flex-col border-r border-white/[.07] bg-primary-900 text-white shadow-[8px_0_28px_rgba(16,42,92,.12)] transition-[transform,width] duration-200 motion-reduce:transition-none dark:bg-primary-950 dark:text-[#e8eef9] lg:z-sidebar',
+          collapsed && 'lg:w-16',
+          mobileOpen ? 'visible z-mobile-drawer translate-x-0' : 'invisible -translate-x-full lg:visible lg:translate-x-0',
         )}
       >
-        <div className="flex h-[46px] min-h-[46px] items-center gap-2.5 border-b border-white/[.07] px-[13px]">
+        <div className="flex min-h-[var(--app-header-height,64px)] items-center gap-2.5 border-b border-white/[.07] px-3">
           <div className={cn(
-            'flex h-[30px] w-[30px] min-w-[30px] items-center justify-center overflow-hidden rounded-[9px] border text-[11px] font-extrabold shadow-nav',
+            'flex h-9 w-9 min-w-9 items-center justify-center overflow-hidden rounded-xl border text-xs font-bold shadow-nav',
             logoUrl && !logoFailed ? 'border-white/20 bg-white p-1' : 'border-primary-500 bg-primary-700 text-white',
           )}>
             {logoUrl && !logoFailed
@@ -119,16 +157,17 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
               : 'LI'}
           </div>
           <div className={cn('min-w-0 leading-tight', collapsed && 'lg:hidden')}>
-            <p className="truncate text-[13px] font-extrabold text-white" title={organizationName}>{organizationName}</p>
-            <p className="truncate font-mono text-[9px] font-medium tracking-wide text-white/45">SMART SERVICE CENTER</p>
+            <p className="truncate text-sm font-bold leading-6 text-white" title={organizationName}>{organizationName}</p>
+            <p className="truncate text-xs font-medium leading-5 text-white/70">ศูนย์บริการไอที</p>
           </div>
+          <button type="button" data-drawer-close onClick={onCloseMobile} aria-label="ปิดเมนูหลัก" className="ml-auto flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white lg:hidden"><X className="h-5 w-5" aria-hidden="true" /></button>
         </div>
 
         <div className="relative min-h-0 flex-1">
           <nav
             ref={navRef}
             onScroll={updateScrollEdges}
-            className={cn('sidebar-scrollbar h-full overflow-y-auto overflow-x-hidden overscroll-contain py-3', collapsed ? 'px-3' : 'px-2.5')}
+            className="sidebar-scrollbar h-full overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3"
             aria-label="เมนูหลัก"
           >
             {groups.map((group) => {
@@ -141,18 +180,18 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                   onClick={() => toggleGroup(group.title)}
                   aria-expanded={!groupClosed}
                   className={cn(
-                    'flex min-h-8 w-full items-center gap-2 px-2 py-1 text-left font-mono text-[9px] font-semibold uppercase leading-4 tracking-[0.1em] text-white/35 transition-colors hover:text-white/75',
+                    'flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-semibold leading-5 text-white/70 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
                     collapsed && 'lg:hidden',
                   )}
                 >
                   <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', groupActive ? 'bg-primary-400' : 'bg-white/20')} aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{group.title}</span>
+                  <span className="min-w-0 flex-1 break-words">{group.title}</span>
                   <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform duration-200', groupClosed && '-rotate-90')} aria-hidden="true" />
                 </button>
                 <div className={cn(
                   'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
-                  groupClosed ? 'grid-rows-[0fr] opacity-60' : 'grid-rows-[1fr] opacity-100',
-                  collapsed && 'lg:grid-rows-[1fr] lg:opacity-100',
+                  groupClosed ? 'invisible grid-rows-[0fr] opacity-60' : 'visible grid-rows-[1fr] opacity-100',
+                  collapsed && 'lg:visible lg:grid-rows-[1fr] lg:opacity-100',
                 )}>
                   <div className="min-h-0 overflow-hidden">
                   {group.items.map((item) => (
@@ -162,18 +201,19 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                     end={item.path === '/'}
                     onClick={onCloseMobile}
                     title={item.label}
+                    aria-label={item.label}
                     className={({ isActive }) =>
                       cn(
-                        'group/nav my-0.5 flex min-h-9 items-center gap-2.5 rounded-[9px] px-2.5 py-1.5 text-[12.5px] font-medium leading-4 transition-[background-color,color,box-shadow,transform] duration-150 ease-out',
-                        collapsed && 'lg:mx-auto lg:w-8 lg:justify-center lg:px-0',
+                        'group/nav my-0.5 flex min-h-[44px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+                        collapsed && 'lg:mx-auto lg:w-11 lg:justify-center lg:px-0',
                         isActive
                           ? 'bg-primary-700 font-semibold text-white shadow-nav'
-                          : 'text-white/62 hover:translate-x-0.5 hover:bg-white/[.07] hover:text-white',
+                          : 'text-white/80 hover:bg-white/[.07] hover:text-white',
                       )
                     }
                   >
-                    <item.icon className="h-4 w-4 shrink-0 text-current transition-colors" aria-hidden="true" />
-                    <span className={cn('truncate', collapsed && 'lg:hidden')}>{item.label}</span>
+                    <item.icon className="h-[18px] w-[18px] shrink-0 text-current transition-colors" aria-hidden="true" />
+                    <span className={cn('min-w-0 break-words', collapsed && 'lg:hidden')}>{item.label}</span>
                     <span className={cn('ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500 opacity-0', collapsed && 'lg:hidden', groupActive && pathMatches(location.pathname, item.path) && 'opacity-100')} aria-hidden="true" />
                   </NavLink>
                   ))}
@@ -199,12 +239,12 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           />
         </div>
 
-        <div className="hidden min-h-[46px] items-center border-t border-white/[.07] px-2 lg:flex">
-          <span className={cn('flex-1 px-1 font-mono text-[9px] font-medium text-white/30', collapsed && 'hidden')}>LIFE IT · SERVICE READY</span>
+        <div className="hidden min-h-16 items-center border-t border-white/[.07] px-2 lg:flex">
+          <span className={cn('flex-1 px-1 text-xs font-medium text-white/60', collapsed && 'hidden')}>LIFE IT · พร้อมให้บริการ</span>
           <button
             type="button"
             onClick={onToggleCollapsed}
-            className="flex h-8 w-8 items-center justify-center rounded-[9px] text-white/45 hover:bg-white/[.08] hover:text-white"
+            className="flex h-11 min-h-[44px] w-11 min-w-[44px] items-center justify-center rounded-xl text-white/70 hover:bg-white/[.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
             title={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
           >

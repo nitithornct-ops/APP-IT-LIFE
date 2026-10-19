@@ -6,7 +6,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Boxes, CalendarClock, ClipboardCheck, Loader2, Plus, Repeat2, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
 import { RowActions } from '../../components/table/RowActions';
@@ -368,6 +368,7 @@ function CreateAssetForm({ categories, vendors, contracts, models, onClose }: { 
 }
 
 export function AssetsPage() {
+  const location = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [showModelCatalog, setShowModelCatalog] = useState(false);
   const queryClient = useQueryClient();
@@ -540,7 +541,7 @@ export function AssetsPage() {
                     <tr key={a.id} data-row-id={a.id} data-testid={`asset-row-${a.id}`} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="px-2 py-2 font-mono text-xs text-slate-500 dark:text-slate-400" data-label="รหัส">{a.asset_code}</td>
                       <td className="px-2 py-2" data-label="ชื่อทรัพย์สิน">
-                        <Link to={`/assets/${a.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
+                        <Link to={`/assets/${a.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
                           {a.name}
                         </Link>
                       </td>

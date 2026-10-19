@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, KeyRound, Loader2, Plus, ShieldX, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -289,6 +289,7 @@ function SubmitAccessRequestForm({
 }
 
 export function AccessRequestsPage() {
+  const location = useLocation();
   const { me, hasPermission } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const table = useTableParams<'status' | 'mine' | 'pendingMyApproval'>({ filters: ['status', 'mine', 'pendingMyApproval'] });
@@ -432,7 +433,7 @@ export function AccessRequestsPage() {
                   {requestsQuery.data.items.map((r) => (
                     <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="px-2 py-2">
-                        <Link to={`/access-requests/${r.id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
+                        <Link to={`/access-requests/${r.id}`} state={{ listReturnTo: `${location.pathname}${location.search}` }} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
                           {r.access_systems?.name ?? '—'}
                         </Link>
                         {r.requester_id === me?.profile.id && <span className="ml-1 text-xs text-slate-400">(ของฉัน)</span>}

@@ -567,7 +567,7 @@ export function WordLikeEditor({ value, onChange, fileName, readOnly = false, cl
       <div className="sticky top-0 z-card flex flex-wrap items-center gap-1 border-b border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-800">
         {!readOnly && <>
           <select aria-label="แบบอักษรย่อหน้า" className="document-editor-select" value={paragraphStyle.font} disabled={!activeBlock} onChange={event => formatParagraph('font-family', event.target.value)}>
-            <option value="FormThai">Noto Sans Thai</option>
+            <option value="FormThai">TH Sarabun New</option>
           </select>
           <select aria-label="ขนาดอักษรย่อหน้า" className="document-editor-select" value={paragraphStyle.size} disabled={!activeBlock} onChange={event => formatParagraph('font-size', `${event.target.value}pt`)}>
             {[...new Set([8, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, Number(paragraphStyle.size)])].sort((a,b) => a-b).map(size => <option key={size} value={size}>{size} pt</option>)}

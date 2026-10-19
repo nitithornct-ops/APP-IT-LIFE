@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity, BellRing, CheckCircle2, Clock3, Code2, ExternalLink, Link2, Loader2, Mail,
@@ -116,10 +117,10 @@ export function IntegrationCenterPanel({ data, onAction, actionPending = false, 
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><BellRing className="h-4 w-4 text-primary-600" />กติกาแจ้งเตือนที่ใช้งานจริง</span><Badge variant="secondary">{data.templates ? 'จัดการจาก Notification Rules table' : <><Code2 className="h-3 w-3" />จัดการจาก Source Code</>}</Badge></CardHeader>
           <div className="overflow-x-auto">
-            <table className="min-w-[620px] w-full text-left">
+            <DataTable mode="server" toolbar={false} pagination={false} showAllColumnsButton={false} rowNumber={false} containerClassName="border-0 shadow-none" className="min-w-[620px] w-full text-left">
               <thead className="bg-slate-50 font-mono text-[10px] uppercase tracking-wider text-slate-400 dark:bg-slate-900/50"><tr><th className="px-4 py-2.5">เหตุการณ์</th><th className="px-3 py-2.5">ช่องทาง</th><th className="px-3 py-2.5">ผู้รับ</th><th className="px-3 py-2.5">สถานะ</th></tr></thead>
               <tbody>{data.rules.map((rule) => <tr key={rule.id} className="border-t border-slate-100 text-xs dark:border-white/[.07]"><td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{rule.event}</td><td className="px-3 py-3 text-slate-600 dark:text-slate-300">{rule.channel}</td><td className="px-3 py-3 text-slate-500">{rule.recipients}</td><td className="px-3 py-3"><Badge variant={STATUS_COPY[rule.status].badge}>{STATUS_COPY[rule.status].label}</Badge></td></tr>)}</tbody>
-            </table>
+            </DataTable>
           </div>
           <div className="flex gap-2 border-t border-primary-100 bg-primary-50 px-4 py-3 text-[11px] leading-5 text-primary-800 dark:border-primary-900 dark:bg-primary-950/30 dark:text-primary-200"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><p>{data.templates ? 'กฎอ่านจากฐานข้อมูลและแก้ไขได้จากแผงด้านล่าง การเปลี่ยนแปลงมี audit trail และไม่เปิดเผย secret' : 'กฎเหล่านี้สะท้อน flow ที่มีในระบบจริง ปัจจุบันยังไม่มีตาราง Notification Rule จึงไม่แสดง toggle ที่กดแล้วไม่เกิดผล'}</p></div>
         </Card>

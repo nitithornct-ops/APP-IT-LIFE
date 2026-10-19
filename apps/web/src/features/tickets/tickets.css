@@ -1,0 +1,183 @@
+/* Ticket-specific density; type and semantic colors live in styles/system.css. */
+/* Keep queue controls consistent without changing other modules. */
+.ticket-workspace > [data-ui='kpi-strip'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ticket-workspace > [data-ui='kpi-strip'] > * {
+  min-height: 92px;
+}
+
+.ticket-workspace :where([data-ui='button'], [role='search'] input, [role='search'] select, [role='search'] button),
+.ticket-detail-workspace :where([data-ui='button'], input:not([type='checkbox']):not([type='radio']), select) {
+  min-height: 44px;
+}
+
+.ticket-workspace [data-ui='data-table'] {
+  min-width: 0;
+}
+
+.ticket-create-dialog input:not([type='checkbox']),
+.ticket-create-dialog select,
+.ticket-create-dialog textarea {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.ticket-create-dialog [data-ui='button'],
+.ticket-create-dialog > header > button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (min-width: 1024px) {
+  .ticket-workspace > [data-ui='kpi-strip'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .ticket-workspace > [data-ui='kpi-strip'] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1279px) {
+  .ticket-list-table.data-table-cards {
+    display: block;
+    min-width: 0 !important;
+  }
+
+  .ticket-list-table.data-table-cards thead {
+    display: none;
+  }
+
+  .ticket-list-table.data-table-cards tbody {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .ticket-list-table.data-table-cards tbody tr {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-default);
+    background: var(--color-surface);
+    padding: 4px 12px;
+  }
+
+  .ticket-list-table.data-table-cards tbody td {
+    display: grid;
+    position: static !important;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    grid-template-columns: minmax(76px, 30%) minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 4px;
+    align-items: start;
+    padding: 10px 0 !important;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-list-table.data-table-cards tbody td[data-label]::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+    font-weight: 700;
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 12px;
+  }
+
+  .ticket-list-table.data-table-cards tbody td > .data-table-cell-content {
+    grid-column: 2;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .ticket-list-table.data-table-cards .data-table-cell-content > * {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-list-table.data-table-cards .data-table-cell-content :is(.truncate, [class*='line-clamp-']) {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-line-clamp: unset;
+  }
+
+  .ticket-list-table.data-table-cards tbody td[data-label='เรื่อง'] {
+    display: block;
+  }
+
+  .ticket-list-table.data-table-cards tbody td[data-label='เรื่อง']::before,
+  .ticket-list-table.data-table-cards tbody td[data-label='ลำดับ'] {
+    display: none;
+  }
+
+  .ticket-list-table.data-table-cards tbody td[data-label='เรื่อง'] a {
+    display: inline-block;
+    min-height: 44px;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .ticket-list-table.data-table-cards tbody td:not([data-label]) {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .ticket-list-table.data-table-cards tbody td:has([data-ui='row-actions']) {
+    display: block;
+  }
+
+  .ticket-list-table.data-table-cards tbody td:has([data-ui='row-actions'])::before {
+    display: none;
+  }
+
+  .ticket-list-table [role='group'] {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .ticket-list-table [role='group'] > :is(a, button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1279px) {
+  .ticket-list-table.data-table-cards tbody {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (max-width: 639px) {
+  .ticket-workspace .life-page-header [data-ui='button'] {
+    flex: 1 1 auto;
+  }
+
+  .ticket-workspace > [data-ui='kpi-strip'] > * {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .ticket-workspace > [data-ui='kpi-strip'] > * > [aria-hidden='true'] {
+    width: 32px;
+    height: 32px;
+  }
+
+  .ticket-workspace [role='search'] input {
+    font-size: 16px;
+  }
+}

@@ -1,6 +1,13 @@
-import type { TicketStatus } from '../../types/tickets';
+import type { TicketPriority, TicketStatus } from '../../types/tickets';
 
 export type TicketStatusTone = 'secondary' | 'info' | 'warning' | 'success' | 'danger' | 'primary';
+
+export const ticketPriorityTone: Record<TicketPriority, TicketStatusTone> = {
+  ต่ำ: 'secondary',
+  ปานกลาง: 'info',
+  สูง: 'warning',
+  วิกฤต: 'danger',
+};
 
 export const ticketStatusTone: Record<TicketStatus, TicketStatusTone> = {
   ใหม่: 'info',

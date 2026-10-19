@@ -1,3 +1,4 @@
+import { DataTable } from '../../components/table/DataTable';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, CheckCircle2, CircleGauge, Clock3, Loader2, PauseCircle, ShieldAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -68,10 +69,10 @@ export function SlaImpactPanel({ data }: { data: SlaImpactResponse }) {
         <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between bg-slate-50 px-3 py-2 dark:bg-slate-900/40"><p className="text-xs font-bold text-slate-600 dark:text-slate-300">SLA ตามหมวดงาน</p><span className="text-[11px] text-slate-400">{data.policies.length} หมวดที่เปิดใช้</span></div>
           <div className="max-h-52 overflow-auto">
-            <table className="w-full min-w-[520px] text-left text-xs">
+            <DataTable mode="server" toolbar={false} pagination={false} showAllColumnsButton={false} rowNumber={false} containerClassName="border-0 shadow-none" className="w-full min-w-[520px] text-left text-xs">
               <thead className="sticky top-0 bg-white text-slate-400 dark:bg-slate-800"><tr><th className="px-3 py-2 font-semibold">หมวดงาน</th><th className="px-3 py-2 font-semibold">Priority</th><th className="px-3 py-2 text-right font-semibold">ตอบรับ</th><th className="px-3 py-2 text-right font-semibold">แก้ไขเสร็จ</th></tr></thead>
               <tbody>{data.policies.map((policy) => <tr key={policy.id} className="border-t border-slate-100 dark:border-slate-700"><td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">{policy.name}</td><td className="px-3 py-2.5 text-slate-500">{policy.priority}</td><td className="px-3 py-2.5 text-right font-mono">{policy.responseHours} ชม.</td><td className="px-3 py-2.5 text-right font-mono font-bold">{policy.resolutionHours} ชม.</td></tr>)}</tbody>
-            </table>
+            </DataTable>
           </div>
         </div>
 

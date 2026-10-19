@@ -1,7 +1,8 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -119,6 +120,8 @@ function ProcessPanel({ requestId }: { requestId: string }) {
 }
 
 export function AccessRequestDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/access-requests');
   const { id } = useParams<{ id: string }>();
   const { me, hasPermission } = useAuth();
 
@@ -147,7 +150,7 @@ export function AccessRequestDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link to="/access-requests" className="flex w-fit items-center gap-1 text-sm text-primary-700 hover:underline dark:text-primary-300">
+      <Link to={listReturnTo} className="flex w-fit items-center gap-1 text-sm text-primary-700 hover:underline dark:text-primary-300">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         กลับไปรายการคำขอสิทธิ์
       </Link>

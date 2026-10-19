@@ -1,5 +1,5 @@
 import { Bell } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useMarkAllNotificationsRead,
@@ -19,6 +19,8 @@ export function NotificationBell() {
   const { me } = useAuth();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
   const { data: unread } = useUnreadNotificationCount();
   const { data: list, isLoading } = useNotificationsList(open);
   const markRead = useMarkNotificationRead();
@@ -31,8 +33,20 @@ export function NotificationBell() {
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && open) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
 
   if (me?.profile.notification_in_app_enabled === false) return null;
 
@@ -41,10 +55,13 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="relative flex h-8 w-8 items-center justify-center rounded-[7px] text-slate-600 hover:bg-primary-50 hover:text-primary-800 dark:text-slate-300 dark:hover:bg-white/[.07]"
+        className="relative flex h-11 min-h-[44px] w-11 min-w-[44px] items-center justify-center rounded-[7px] text-slate-600 hover:bg-primary-50 hover:text-primary-800 dark:text-slate-300 dark:hover:bg-white/[.07]"
         aria-label="การแจ้งเตือน"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
         {unreadCount > 0 && (
@@ -55,14 +72,14 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-dropdown mt-2 w-80 overflow-hidden rounded-card border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800">
+        <div id={panelId} role="region" aria-label="รายการแจ้งเตือน" className="fixed inset-x-3 top-[calc(var(--app-header-height,64px)+8px)] z-dropdown max-w-[calc(100vw-24px)] overflow-hidden rounded-card border border-slate-200 bg-white shadow-elevated sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-700">
             <span className="text-sm font-medium text-slate-800 dark:text-slate-100">การแจ้งเตือน</span>
             <button
               type="button"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending || unreadCount === 0}
-              className="min-h-10 px-2 text-xs font-semibold text-primary-700 hover:underline disabled:text-slate-400 disabled:no-underline dark:text-primary-300"
+              className="min-h-[44px] px-2 text-sm font-semibold text-primary-700 hover:underline disabled:text-slate-400 disabled:no-underline dark:text-primary-300"
             >
               อ่านทั้งหมด
             </button>

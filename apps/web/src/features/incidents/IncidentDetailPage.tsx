@@ -1,8 +1,9 @@
+import { getListReturnTo } from '../../components/shell/listNavigation';
 import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, Clock3, ExternalLink, Loader2, Network, Plus, ShieldCheck, Siren } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -226,6 +227,8 @@ function ClosePanel({ incident }: { incident: Incident }) {
 }
 
 export function IncidentDetailPage() {
+  const location = useLocation();
+  const listReturnTo = getListReturnTo(location.state, '/incidents');
   const { id = '' } = useParams<{ id: string }>();
   const { hasPermission } = useAuth();
   const canManage = hasPermission('incident.manage');
@@ -240,7 +243,7 @@ export function IncidentDetailPage() {
   const { incident, regulatoryNotifications, notificationClocks, notificationTimeline, ciRelationships } = query.data;
   const ci = incident.affected_ci;
   return <div className="flex flex-col gap-4" data-testid="incident-detail-page">
-    <Link to="/incidents" className="flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4" /> กลับไปรายการ Incident</Link>
+    <Link to={listReturnTo} className="flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4" /> กลับไปรายการ Incident</Link>
     <div className="flex flex-wrap items-start justify-between gap-2"><PageTitle eyebrow={`บริการและกระบวนการ IT / ${incident.incident_number}`} title={<>{incident.title}</>} description={<>รายงานโดย {incident.reporter?.full_name ?? incident.reporter?.email ?? '—'} · {formatThaiDate(incident.report_date, 'd MMM yyyy HH:mm')}</>} /><div className="flex flex-wrap gap-1"><Badge variant={incidentStatusTone[incident.status]}>{incident.status}</Badge>{incident.severity && <Badge variant={riskTone[incident.severity]}>{incident.severity}</Badge>}{incident.risk_level && <Badge variant={riskTone[incident.risk_level]}>Risk {incident.risk_level} ({incident.risk_score})</Badge>}{incident.major_incident && <Badge variant="danger"><Siren className="h-3 w-3" /> Major Incident</Badge>}{incident.contains_personal_data && <Badge variant="danger">ข้อมูลส่วนบุคคล</Badge>}</div></div>
     {incident.contains_personal_data && !incident.dpo_notified_at && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200"><AlertTriangle className="mr-1 inline h-4 w-4" />DPO ยังไม่รับทราบ{incident.dpo_notify_deadline ? ` · กำหนด ${formatThaiDate(incident.dpo_notify_deadline, 'd MMM yyyy HH:mm')}` : ''}</div>}
     <Card><CardHeader>รายละเอียดเหตุการณ์</CardHeader><CardBody className="grid grid-cols-2 gap-4 sm:grid-cols-4"><Info label="ประเภท">{incident.category}</Info><Info label="Detection Source">{incident.detection_source}</Info><Info label="Incident Commander">{incident.incident_commander?.full_name ?? '—'}</Info><Info label="ผู้รับผิดชอบ">{incident.assignee?.full_name ?? '—'}</Info><div className="col-span-full"><Info label="รายละเอียด"><p className="whitespace-pre-wrap">{incident.description}</p></Info></div>{incident.source_ticket && <Info label="ต้นทาง"><Link to={`/tickets/${incident.source_ticket.id}`} className="text-primary-700 hover:underline">Ticket: {incident.source_ticket.title}</Link></Info>}{incident.evidence_url && <Info label="หลักฐาน"><a href={incident.evidence_url} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline">เปิดหลักฐาน <ExternalLink className="inline h-3 w-3" /></a></Info>}</CardBody></Card>

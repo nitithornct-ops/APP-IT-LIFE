@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Bundle TH Sarabun New locally so all devices use the same Thai typeface. */
+@font-face {
+  font-family: 'TH Sarabun New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/th-sarabun-new-regular.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/th-sarabun-new-bold.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/th-sarabun-new-italic.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/th-sarabun-new-bold-italic.woff') format('woff');
+}
+
 /* LIFE IT design tokens — aligned with the IT Service Redesign handoff. --- */
 :root {
   color-scheme: light;
@@ -44,7 +77,7 @@
   --color-action: #2454a6;
   --color-action-hover: #1d4388;
   --color-action-soft: #eef5ff;
-  --color-success: #15803d;
+  --color-success: #166534;
   --color-success-soft: #e7f5ec;
   --color-warning: #b45309;
   --color-warning-soft: #fef3e2;
@@ -61,8 +94,11 @@
   --shadow-card: 0 1px 2px rgb(16 42 92 / 0.04), 0 8px 26px rgb(16 42 92 / 0.07);
   --shadow-hover: 0 14px 34px rgb(16 42 92 / 0.11);
   --shadow-elevated: 0 24px 64px rgb(16 42 92 / 0.2);
-  --font-app: 'FormThai', 'Noto Sans Thai', Tahoma, Arial, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-app: 'TH Sarabun New', Tahoma, Arial, sans-serif;
+  --font-mono: var(--font-app);
+  --font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --color-purple: #6d28d9;
+  --color-purple-soft: #f3edfe;
   --font-scale: 1;
 
   /* Shared application layer scale. Keep this in sync with tailwind.config.js. */
@@ -92,8 +128,8 @@
   --color-border: rgb(255 255 255 / 0.08);
   --color-border-strong: rgb(255 255 255 / 0.12);
   --color-text: #e8eef9;
-  --color-text-secondary: rgb(232 238 249 / 0.62);
-  --color-text-muted: rgb(232 238 249 / 0.45);
+  --color-text-secondary: #c1cde0;
+  --color-text-muted: #a9b9d2;
   --color-heading: #eaf2ff;
   --color-action: #5f8fd1;
   --color-action-hover: #91b8eb;
@@ -106,6 +142,8 @@
   --color-danger-soft: rgb(248 113 113 / 0.12);
   --color-info: #5eead4;
   --color-info-soft: rgb(94 234 212 / 0.14);
+  --color-purple: #d8b4fe;
+  --color-purple-soft: rgb(124 58 237 / 0.16);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 28px rgb(0 0 0 / 0.18);
   --shadow-hover: 0 16px 38px rgb(0 0 0 / 0.24);
   --shadow-elevated: 0 24px 64px rgb(0 0 0 / 0.36);
@@ -125,8 +163,8 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-app);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: max(18px, 0.875rem);
+  line-height: 1.65;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -259,16 +297,14 @@ textarea:focus-visible,
   box-shadow: var(--shadow-card);
 }
 
-/* ขนาดหัวข้อของ PageTitle ต้องระบุที่นี่ ไม่ใช่ปล่อยให้ utility class ทำงาน
-   เพราะกฎรวม `.life-app h1` ด้านล่างมี specificity 0-1-1 เท่ากับ class เดี่ยวของ Tailwind ไม่ได้
-   แต่สูงกว่า และ index.css ไม่ได้อยู่ใน @layer ตัว clamp() จึงกลบ text-[22px] ทิ้งทุกครั้ง
-   ผลคือหัวข้อโตได้ถึง 32px บนจอกว้าง ทั้งที่ 01-design-tokens.md กำหนดไว้ 18–22px / 800 */
+/* Match PageTitle explicitly because the general heading rule has higher
+   specificity than Tailwind utilities. TH Sarabun needs a larger type size. */
 .life-app .life-page-title h1,
 .life-public .life-page-title h1 {
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 28px;
+  font-weight: 700;
   line-height: 1.3;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 /* Typography and neutral utility migration ------------------------------ */
@@ -297,7 +333,7 @@ textarea:focus-visible,
 .life-app h2,
 .life-public h2,
 .life-public h2 {
-  font-size: 1.2rem;
+  font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -434,7 +470,7 @@ textarea:focus-visible,
   border-collapse: separate;
   border-spacing: 0;
   color: var(--color-text);
-  font-size: 0.8125rem;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -450,10 +486,10 @@ textarea:focus-visible,
   border-color: var(--color-border) !important;
   color: var(--color-text-secondary) !important;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: max(16px, 1rem);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .life-app table td,
@@ -777,7 +813,7 @@ textarea:focus-visible,
 
 /* Responsive data tables ------------------------------------------------- */
 @media (max-width: 639px) {
-  html { font-size: calc(93.75% * var(--font-scale)); }
+  html { font-size: calc(100% * var(--font-scale)); }
 
   .life-app #main-content {
     padding: 0.85rem 0.85rem 6.25rem !important;
@@ -789,40 +825,6 @@ textarea:focus-visible,
     min-height: auto;
     padding: 1rem;
   }
-
-  table.data-table-cards {
-    display: block;
-    min-width: 0 !important;
-  }
-  table.data-table-cards thead { display: none; }
-  table.data-table-cards tbody { display: block; }
-  table.data-table-cards tbody tr {
-    display: block;
-    margin: 0.65rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-default);
-    background: var(--color-surface);
-    padding: 0.35rem 0.8rem;
-    box-shadow: var(--shadow-card);
-  }
-  table.data-table-cards tbody td {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.65rem 0 !important;
-    border-bottom: 1px solid var(--color-border) !important;
-    text-align: right;
-  }
-  table.data-table-cards tbody td[data-label]::before {
-    content: attr(data-label);
-    flex: 0 0 40%;
-    color: var(--color-text-muted);
-    text-align: left;
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-  table.data-table-cards tbody tr td:last-child { border-bottom: 0 !important; }
 
   .form-document { width: 100%; min-height: 70vh; padding: 24px; }
 }
