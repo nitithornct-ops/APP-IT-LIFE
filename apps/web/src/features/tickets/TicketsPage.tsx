@@ -254,6 +254,9 @@ export function CreateTicketForm({
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
     defaultValues: {
+      title: '',
+      description: '',
+      location: '',
       assetId: initialAssetId ?? '',
       categoryId: '',
       isSecurity: false,
@@ -369,7 +372,7 @@ export function CreateTicketForm({
             <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">3. ข้อมูลเพิ่มเติม (ถ้ามี)</legend>
             <div>
               <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
-              <select id="tk-priority" className={fieldClass} {...register('priority')}>
+              <select id="tk-priority" className={fieldClass} {...register('priority', { setValueAs: (value: string) => value || undefined })}>
                 <option value="">ให้ระบบกำหนดตามประเภทงาน</option>
                 {TICKET_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}
               </select>

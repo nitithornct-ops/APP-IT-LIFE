@@ -33,6 +33,7 @@ for (const width of [390, 768, 1440]) {
       expect(await field.evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
       await page.screenshot({ path: testInfo.outputPath(`create-${width}-${theme}-120.png`) });
       await page.keyboard.press('Escape');
+      await expect(page.getByRole('alertdialog')).toHaveCount(0);
       await expect(dialog).toHaveCount(0);
 
       await page.getByRole('link', { name: ticket.title, exact: true }).click();

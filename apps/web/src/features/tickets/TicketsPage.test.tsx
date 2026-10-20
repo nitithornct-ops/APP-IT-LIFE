@@ -85,6 +85,15 @@ describe('CreateTicketForm', () => {
     expect(screen.getByLabelText(/หัวข้อปัญหา/)).toHaveValue('งานที่ยังไม่ได้ส่ง');
   });
 
+  it('closes an untouched form after field blur without a discard warning', async () => {
+    const onClose = renderForm();
+    fireEvent.blur(screen.getByLabelText(/หัวข้อปัญหา/));
+    fireEvent.change(screen.getByLabelText('ระดับความรุนแรง'), { target: { value: '' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
   it('does not close or submit again while a save is pending', async () => {
     apiFetchMock.mockImplementation(() => new Promise(() => {}));
     const onClose = renderForm();
