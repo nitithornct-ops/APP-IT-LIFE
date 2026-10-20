@@ -169,7 +169,7 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
         <Button type="button" isLoading={mutation.isPending && mutation.variables?.status === 'กำลังทำ'} onClick={() => void submit('กำลังทำ')} data-testid="task-create-start">บันทึกและเริ่มงาน</Button>
       </>}
     >
-      <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={(event) => event.preventDefault()}>
+      <form data-ui="form-grid" className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={(event) => event.preventDefault()}>
         <label className={`${labelClass} sm:col-span-2`}>ชื่องาน <span className="text-red-600">*</span>
           <input autoFocus aria-label="ชื่องาน" {...register('title')} className={fieldClass} placeholder="ระบุชื่องานที่ต้องดำเนินการ" />
           {errors.title && <span className="mt-1 block text-xs font-normal text-red-600">{errors.title.message}</span>}
@@ -203,7 +203,7 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
 
         <fieldset className="sm:col-span-2">
           <legend className={labelClass}>การประเมินเวลา</legend>
-          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+          <div data-ui="form-grid" className="mt-1 grid gap-2 sm:grid-cols-2">
             <label className={labelClass}>Estimate Hours<input aria-label="Estimate Hours" type="number" min={0} step="0.25" {...register('estimateHours')} className={fieldClass} placeholder="เช่น 2.5" /></label>
             <label className={labelClass}>Actual Hours<input aria-label="Actual Hours" type="number" min={0} step="0.25" {...register('actualHours')} className={fieldClass} placeholder="บันทึกเมื่อทำเสร็จ" /></label>
           </div>
@@ -224,7 +224,7 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
           <select aria-label="การแจ้งเตือน" {...register('reminderPreset')} className={fieldClass}>{REMINDER_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
         </label>
 
-        {recurrence === 'กำหนดเอง' && <div className="grid grid-cols-[100px_1fr] gap-2 sm:col-span-2">
+        {recurrence === 'กำหนดเอง' && <div data-ui="form-grid" className="grid grid-cols-[100px_1fr] gap-2 sm:col-span-2">
           <label className={labelClass}>ทุก ๆ<input aria-label="ช่วงการทำซ้ำ" type="number" min={1} max={99} {...register('recurrenceRule.interval')} className={fieldClass} /></label>
           <label className={labelClass}>หน่วย<select aria-label="หน่วยการทำซ้ำ" {...register('recurrenceRule.frequency')} className={fieldClass}><option value="daily">วัน</option><option value="weekly">สัปดาห์</option><option value="monthly">เดือน</option><option value="yearly">ปี</option></select></label>
         </div>}

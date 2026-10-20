@@ -133,7 +133,7 @@ export function MfaChallengePage() {
           </div>
         )}
 
-        {(!setupMode || enrollment) && <form onSubmit={verify} className="mt-6 space-y-4">
+        {(!setupMode || enrollment) && <form data-ui="form-stack" onSubmit={verify} className="mt-6 space-y-4">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">รหัส MFA</label>
           <input
             id="mfa-code"

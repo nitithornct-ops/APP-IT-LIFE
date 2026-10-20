@@ -35,7 +35,7 @@ function CriterionRow({ criterion, canManage }: { criterion: TicketRatingCriteri
 
   return (
     <div className={`rounded-xl border p-3 ${criterion.status === 'active' ? 'border-slate-200 dark:border-slate-700' : 'border-dashed border-slate-300 bg-slate-50 opacity-75 dark:border-slate-600 dark:bg-slate-900/40'}`}>
-      <div className="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.5fr)_90px_auto] lg:items-end">
+      <div data-ui="form-grid" className="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.5fr)_90px_auto] lg:items-end">
         <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อหัวข้อ
           <input aria-label={`ชื่อหัวข้อ ${criterion.label}`} disabled={!canManage} value={label} maxLength={160} onChange={(event) => setLabel(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900" />
         </label>
@@ -87,7 +87,7 @@ export function TicketRatingCriteriaSetting({ canManage }: { canManage: boolean 
       <CardHeader className="flex items-center gap-2"><ListChecks className="h-5 w-5 text-primary-600" />หัวข้อแบบประเมิน Ticket</CardHeader>
       <CardBody className="space-y-4">
         <div><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">เพิ่ม แก้ไข และเปิด–ปิดหัวข้อประเมิน</p><p className="mt-1 text-xs text-slate-500">การเปลี่ยนชื่อมีผลกับแบบประเมินใหม่เท่านั้น ผลที่ส่งแล้วจะคงชื่อหัวข้อเดิมไว้</p></div>
-        {canManage && <form onSubmit={submit} className="grid gap-3 rounded-xl bg-primary-50 p-3 dark:bg-primary-950/20 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
+        {canManage && <form data-ui="form-grid" onSubmit={submit} className="grid gap-3 rounded-xl bg-primary-50 p-3 dark:bg-primary-950/20 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
           <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">หัวข้อใหม่
             <input aria-label="หัวข้อประเมินใหม่" value={label} maxLength={160} onChange={(event) => setLabel(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
           </label>

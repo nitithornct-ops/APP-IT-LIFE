@@ -188,7 +188,7 @@ export function Modal({
         data-ui="modal"
         data-testid={testId}
         className={cn(
-          'global-modal-panel relative z-modal my-auto flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800',
+          'global-modal-panel relative z-modal my-auto flex max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] w-full flex-col overflow-hidden rounded-modal border border-slate-200 bg-white shadow-elevated dark:border-slate-700 dark:bg-slate-800',
           sizeClasses[size],
           className,
         )}
@@ -231,9 +231,9 @@ export function Modal({
           <section ref={discardDialogRef} role="alertdialog" aria-modal="true" aria-labelledby={`${titleId}-discard`} data-ui="modal-discard" className="global-modal-panel w-full max-w-md rounded-modal border border-slate-200 bg-white p-5 shadow-elevated dark:border-slate-700 dark:bg-slate-800">
             <div className="flex gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200"><AlertTriangle className="h-5 w-5" aria-hidden="true" /></span>
-              <div><h3 id={`${titleId}-discard`} className="font-display font-semibold tracking-[0.02em] text-slate-900 dark:text-white">ออกโดยไม่บันทึก?</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">มีข้อมูลที่ยังไม่ได้บันทึก คุณต้องการออกจากหน้านี้หรือไม่</p></div>
+              <div><h3 id={`${titleId}-discard`} className="font-display font-semibold text-slate-900 dark:text-white">ออกโดยไม่บันทึก?</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">มีข้อมูลที่ยังไม่ได้บันทึก คุณต้องการออกจากหน้านี้หรือไม่</p></div>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
               <Button type="button" variant="outline" onClick={() => setShowDiscardConfirm(false)}>กลับไปแก้ไข</Button>
               <Button type="button" variant="danger" onClick={() => onCloseRef.current()}>ออกโดยไม่บันทึก</Button>
             </div>

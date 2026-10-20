@@ -54,7 +54,7 @@ function CreateIncidentForm({ references, onClose }: { references: IncidentRefer
   });
   const fieldClass = 'w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
   return (
-    <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40" noValidate data-testid="incident-create-form">
+    <form data-ui="form-grid" onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40" noValidate data-testid="incident-create-form">
       <div className="flex items-center justify-between sm:col-span-2">
         <h3 className="font-bold text-slate-800 dark:text-slate-100">รับแจ้งเหตุการณ์</h3>
         <button type="button" onClick={onClose} aria-label="ปิด"><X className="h-4 w-4" /></button>

@@ -201,7 +201,7 @@ function LicenseForm({
         </button>
       </CardHeader>
       <CardBody>
-        <form
+        <form data-ui="form-grid"
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
           onSubmit={(event) => {
             event.preventDefault();
@@ -427,7 +427,7 @@ function AllocationPanel({
         <div className="rounded-lg bg-white p-2 dark:bg-slate-900"><p className="text-slate-500">Reclaimed</p><p className="mt-1 font-mono text-lg font-bold text-slate-700 dark:text-slate-200">{reclaimedQty}</p></div>
       </div>
 
-      <form className="mt-4 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); setError(null); assignMutation.mutate(); }}>
+      <form data-ui="form-grid" className="mt-4 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); setError(null); assignMutation.mutate(); }}>
         <select aria-label="ประเภทผู้รับสิทธิ์" value={assigneeType} onChange={(event) => { setAssigneeType(event.target.value as (typeof LICENSE_ALLOCATION_TYPES)[number]); setEmployeeId(''); setAssetId(''); }} className={fieldClass}>
           <option value="user">User</option>
           <option value="device">Device</option>

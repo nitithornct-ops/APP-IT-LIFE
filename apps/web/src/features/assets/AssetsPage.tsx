@@ -76,7 +76,7 @@ function CreateModelCatalogForm({ onClose }: { onClose: () => void }) {
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['assets', 'models'] }); onClose(); },
     onError: (value) => setError(value instanceof ApiError ? value.message : 'สร้าง Model ไม่สำเร็จ'),
   });
-  return <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid gap-3 p-5 sm:grid-cols-2" noValidate>
+  return <form data-ui="form-grid" onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid gap-3 p-5 sm:grid-cols-2" noValidate>
     <label className="text-xs font-semibold">Model Code<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('modelCode')} />{errors.modelCode && <span className="mt-1 block text-red-600">{errors.modelCode.message}</span>}</label>
     <label className="text-xs font-semibold">ชื่อ Model<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('name')} />{errors.name && <span className="mt-1 block text-red-600">{errors.name.message}</span>}</label>
     <label className="text-xs font-semibold">Asset Type<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" {...register('assetType')}>{ASSET_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
@@ -246,7 +246,7 @@ function CreateAssetForm({ categories, vendors, contracts, models, onClose }: { 
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-3"
       noValidate

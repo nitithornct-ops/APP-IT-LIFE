@@ -87,7 +87,7 @@ export function AppShell() {
           onOpenMobileMenu={() => setMobileMenuOpen((open) => !open)}
           onOpenCommandPalette={openCommandPalette}
         />
-        <main id="main-content" className="relative min-w-0 flex-1 px-3 py-3 sm:px-[18px] sm:py-4">
+        <main id="main-content" className="relative min-w-0 flex-1">
           <div className="module-page-content min-w-0" data-module-themed={!hasNativeHero}>
             <Suspense fallback={<LoadingState label="กำลังเปิดหน้า..." rows={3} />}>
               <Outlet />

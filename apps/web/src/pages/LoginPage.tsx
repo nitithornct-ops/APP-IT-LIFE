@@ -78,7 +78,7 @@ export function LoginPage() {
 
       if (error) {
         await recordLoginAttempt(values.identifier, false, 'login_failed');
-        setErrorMessage('อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+        setErrorMessage('สร้างเซสชันเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         return;
       }
 
@@ -96,9 +96,12 @@ export function LoginPage() {
     } catch (error) {
       if (!brokerAuthenticated) await recordLoginAttempt(values.identifier, false, 'login_failed');
       // ครอบทั้งการค้นหาบัญชีและการตรวจนโยบาย MFA — ทั้งสองอย่างเป็นการเรียก API ที่ล้มได้
+      const loginErrors = ['LOGIN_UNAVAILABLE', 'LOGIN_CAPTCHA_FAILED', 'LOGIN_RATE_LIMITED'];
       setErrorMessage(error instanceof ApiError && error.code === 'LOGIN_FAILED'
         ? 'อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง'
-        : 'เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        : error instanceof ApiError && loginErrors.includes(error.code)
+          ? error.message
+          : 'เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       turnstileRef.current?.reset();
     }

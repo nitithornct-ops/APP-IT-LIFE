@@ -18,8 +18,8 @@ export interface PageTitleProps {
  * (bold 29 / extrabold 18 / semibold 8) และไม่มีหน้าไหนมี eyebrow เลย เวลาสลับหน้าไปมาจึงรู้สึกว่า
  * เป็นคนละระบบ ทั้งที่กรอบการ์ดถูก CSS ครอบให้เหมือนกันแล้ว
  *
- * ขนาดที่ใช้ตรง 01-design-tokens.md ข้อ 1: หัวข้อส่วน 18–22px / 800, eyebrow mono 10px / 600
- * letter-spacing .06–.14em, ข้อความรอง 13.5px
+ * ใช้ typography tokens จาก system.css: ชื่อหน้า 26–28px และขยายตาม A−/A+
+ * ไม่เพิ่ม letter-spacing ภาษาไทย และแยกขนาดเอกสาร A4 ออกจาก UI
  *
  * แยกจาก PageHeader เพราะหลายหน้ามีแถบเครื่องมือของตัวเองอยู่แล้ว (ปุ่ม, tab, ตัวกรอง) การบังคับให้
  * ทุกหน้าเข้าโครง PageHeader ทั้งก้อนจะต้องรื้อ layout ของปุ่มพวกนั้นด้วย ซึ่งเสี่ยงกว่าประโยชน์ที่ได้
@@ -41,7 +41,7 @@ export function PageTitle({ eyebrow, title, description, meta, leading, variant 
       )}
       <div className="min-w-0">
         <p className="life-page-eyebrow text-xs font-semibold text-primary-700 dark:text-primary-300">{eyebrow}</p>
-        <h1 className="mt-0.5 break-words text-[28px] font-bold text-ink-heading dark:text-[#e8eef9]">{title}</h1>
+        <h1 className="mt-1 break-words text-2xl font-semibold text-ink-heading dark:text-[#e8eef9]">{title}</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-white/45">{description}</p>
         {meta && <div className="mt-2 flex flex-wrap items-center gap-2">{meta}</div>}
       </div>

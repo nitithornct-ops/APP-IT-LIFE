@@ -85,12 +85,12 @@ function RoleEditor({ role, cloneFrom, owners, onClose }: { role?: Role; cloneFr
   });
 
   return (
-    <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-4" noValidate>
+    <form data-ui="form-grid" onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-4" noValidate>
       <div className="flex items-center justify-between rounded-lg bg-primary-50 px-3 py-2 dark:bg-primary-900/30">
         <div><p className="text-sm font-semibold text-primary-900 dark:text-primary-100">{isEditing ? 'แก้ไขบทบาท' : isCloning ? 'คัดลอกบทบาท' : 'สร้างบทบาทใหม่'}</p><p className="text-xs text-primary-700/80 dark:text-primary-200/80">กำหนด metadata การกำกับดูแลก่อนเชื่อมกับ Permission Matrix</p></div>
         <button type="button" onClick={onClose} aria-label="ปิดฟอร์ม"><X className="h-4 w-4 text-primary-700" /></button>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div><label htmlFor="role-key" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Role key</label><input id="role-key" data-autofocus disabled={isEditing} placeholder="เช่น service_desk_lead" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:disabled:bg-slate-700" {...register('key')} />{isEditing && <p className="mt-1 text-[11px] text-slate-500">Role key ใช้เป็นรหัสอ้างอิงและเปลี่ยนภายหลังไม่ได้</p>}{errors.key && <p className="mt-1 text-xs text-red-600">{errors.key.message}</p>}</div>
         <div><label htmlFor="role-name-th" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อบทบาท (ไทย)</label><input id="role-name-th" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('nameTh')} />{errors.nameTh && <p className="mt-1 text-xs text-red-600">{errors.nameTh.message}</p>}</div>
         <div><label htmlFor="role-name-en" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อบทบาท (อังกฤษ)</label><input id="role-name-en" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('nameEn')} /></div>
@@ -133,7 +133,7 @@ function RoleVersionModal({ role, onClose }: { role: Role; onClose: () => void }
     {versionsQuery.isLoading && <div className="flex justify-center py-8" role="status"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
     {versionsQuery.isError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">โหลดประวัติเวอร์ชันไม่สำเร็จ</p>}
     {versions.length > 0 && <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">เปรียบเทียบจาก<select value={fromVersion} onChange={(event) => setFromVersion(event.target.value ? Number(event.target.value) : '')} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— เลือกเวอร์ชัน —</option>{versions.map((version) => <option key={version.id} value={version.version_number}>Version {version.version_number} · {version.change_type}</option>)}</select></label>
         <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">เปรียบเทียบกับ<select value={toVersion} onChange={(event) => setToVersion(event.target.value ? Number(event.target.value) : '')} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— เลือกเวอร์ชัน —</option>{versions.map((version) => <option key={version.id} value={version.version_number}>Version {version.version_number} · {version.change_type}</option>)}</select></label>
       </div>

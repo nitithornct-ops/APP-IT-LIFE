@@ -84,7 +84,7 @@ export function TaskDependenciesSection({ task }: { task: Task }) {
       ) : (
         <p className="text-xs text-slate-500 dark:text-slate-400">ยังไม่มีงานที่ต้องรอให้เสร็จก่อน</p>
       )}
-      <form onSubmit={(event) => { event.preventDefault(); if (dependsOnTaskId) addMutation.mutate(); }} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,.8fr)_auto]">
+      <form data-ui="form-grid" onSubmit={(event) => { event.preventDefault(); if (dependsOnTaskId) addMutation.mutate(); }} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,.8fr)_auto]">
         <select aria-label="เลือกงานที่ต้องทำก่อน" value={dependsOnTaskId} onChange={(event) => setDependsOnTaskId(event.target.value)} className={inputClass}>
           <option value="">เลือก Task ที่ต้องเสร็จก่อน</option>
           {options.map((item) => <option key={item.id} value={item.id}>{item.task_no} — {item.title}</option>)}
@@ -137,7 +137,7 @@ export function TaskRelationsSection({ task }: { task: Task }) {
       ) : (
         <p className="text-xs text-slate-500 dark:text-slate-400">เชื่อม Incident, Change, Asset, Contract หรือ Risk ได้จากที่นี่</p>
       )}
-      <form onSubmit={(event) => { event.preventDefault(); if (recordId) addMutation.mutate(); }} className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_auto]">
+      <form data-ui="form-grid" onSubmit={(event) => { event.preventDefault(); if (recordId) addMutation.mutate(); }} className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_auto]">
         <select aria-label="ประเภทข้อมูลที่เชื่อมโยง" value={recordType} onChange={(event) => { setRecordType(event.target.value as TaskRecordType); setRecordId(''); }} className={inputClass}>
           {(Object.keys(recordTypeLabels) as TaskRecordType[]).map((value) => <option key={value} value={value}>{recordTypeLabels[value]}</option>)}
         </select>

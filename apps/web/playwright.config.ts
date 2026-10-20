@@ -51,6 +51,11 @@ export default defineConfig({
       testMatch: '**/quality-gates.spec.ts',
       use: { ...devices['Desktop Safari'] },
     },
+    {
+      name: 'webkit-ui',
+      testMatch: '**/tickets-ux.spec.ts',
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
   webServer: liveE2E
     ? [

@@ -21,7 +21,7 @@
 .ticket-create-dialog select,
 .ticket-create-dialog textarea {
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--ui-body-size);
 }
 
 .ticket-create-dialog [data-ui='button'],
@@ -90,7 +90,7 @@
     font-weight: 700;
     grid-column: 1;
     grid-row: 1;
-    font-size: 12px;
+    font-size: var(--ui-note-size);
   }
 
   .ticket-list-table.data-table-cards tbody td > .data-table-cell-content {
@@ -126,7 +126,7 @@
   .ticket-list-table.data-table-cards tbody td[data-label='เรื่อง'] a {
     display: inline-block;
     min-height: 44px;
-    font-size: 15px;
+    font-size: var(--ui-body-size);
     line-height: 1.7;
   }
 
@@ -178,6 +178,6 @@
   }
 
   .ticket-workspace [role='search'] input {
-    font-size: 16px;
+    font-size: var(--ui-body-size);
   }
 }

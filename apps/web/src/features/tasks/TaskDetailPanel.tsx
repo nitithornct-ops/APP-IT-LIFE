@@ -139,7 +139,7 @@ function EditTaskForm({ task }: { task: Task }) {
   });
 
   return (
-    <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 sm:grid-cols-2" noValidate>
+    <form data-ui="form-grid" onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 sm:grid-cols-2" noValidate>
       <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sm:col-span-2">
         <label htmlFor="td-title" className={labelCls()}>
@@ -279,7 +279,7 @@ function EditTaskForm({ task }: { task: Task }) {
       </div>
 
       {recurrence === 'กำหนดเอง' && (
-        <div className="grid grid-cols-[90px_1fr] gap-2 sm:col-span-2">
+        <div data-ui="form-grid" className="grid grid-cols-[90px_1fr] gap-2 sm:col-span-2">
           <div>
             <label htmlFor="td-recurrence-interval" className={labelCls()}>
               ทุก ๆ
@@ -380,7 +380,7 @@ function ReminderSection({ task }: { task: Task }) {
         <h3 className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><BellRing className="h-4 w-4 text-primary-600" /> การแจ้งเตือน</h3>
         <Badge variant={current?.status === 'sent' ? 'success' : current ? 'warning' : 'secondary'}>{statusLabel}</Badge>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid gap-2 sm:grid-cols-2">
         <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">ช่วงเวลา
           <select value={preset} disabled={disabled} onChange={(event) => { const value = event.target.value as ReminderPreset; setPreset(value); const calculated = reminderDateTimeForPreset(task, value); if (calculated) setRemindAt(calculated); }} className={`${inputCls()} mt-1`}>
             {REMINDER_PRESETS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}

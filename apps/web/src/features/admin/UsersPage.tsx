@@ -111,7 +111,7 @@ function UserPermissionOverridesPanel({ userId, allPermissions }: { userId: stri
       </div>
 
       {showCreate && (
-        <form
+        <form data-ui="form-grid"
           onSubmit={handleSubmit((values) => createMutation.mutate(values))}
           className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-800"
           noValidate
@@ -553,7 +553,7 @@ function InviteUserForm({
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-800"
       noValidate
@@ -756,7 +756,7 @@ function CreateLocalUserForm({
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-800"
       noValidate

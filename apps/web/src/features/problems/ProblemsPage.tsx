@@ -121,7 +121,7 @@ function CreateProblemForm({ references, onClose }: { references: ProblemReferen
         mutation.mutate();
       }}
     >
-      <div className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-4">
+      <div data-ui="form-grid" className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-4">
         <label className={`${labelClass} sm:col-span-2`}>
           ชื่อปัญหา<RequiredMark />
           <input data-autofocus data-testid="problem-create-title" value={form.title} onChange={(event) => set('title', event.target.value)} maxLength={200} className={fieldClass} />
@@ -244,7 +244,7 @@ function CreateKnownErrorForm({ references, onClose }: { references: ProblemRefe
         mutation.mutate();
       }}
     >
-      <div className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-4">
+      <div data-ui="form-grid" className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-4">
         <label className={labelClass}>
           Problem ID<RequiredMark />
           <select data-autofocus required data-testid="known-error-problem" value={form.problemId} onChange={(event) => set('problemId', event.target.value)} className={fieldClass}>

@@ -17,8 +17,8 @@ const variantClasses: Record<Variant, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'min-h-[44px] rounded-[7px] px-3 text-sm',
-  md: 'min-h-[44px] rounded-[7px] px-4 text-sm',
+  sm: 'min-h-[44px] rounded-[7px] px-3 py-2 text-sm',
+  md: 'min-h-[44px] rounded-[7px] px-4 py-2 text-base',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -34,6 +34,7 @@ export function Button({
   disabled,
   className,
   children,
+  onClick,
   ...rest
 }: ButtonProps) {
   return (
@@ -49,6 +50,12 @@ export function Button({
         className,
       )}
       {...rest}
+      onClick={(event) => {
+        // Safari does not focus buttons on pointer activation. Establish the
+        // opener before a dialog mounts so its normal focus restoration works.
+        event.currentTarget.focus();
+        onClick?.(event);
+      }}
     >
       {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
       {children}

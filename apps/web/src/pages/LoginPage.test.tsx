@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoginPage } from './LoginPage';
+import { ApiError } from '../services/apiClient';
 
 const apiFetchMock = vi.fn();
 const { setSessionMock } = vi.hoisted(() => ({ setSessionMock: vi.fn() }));
@@ -41,6 +42,27 @@ afterEach(() => {
 });
 
 describe('LoginPage', () => {
+  it.each([
+    ['LOGIN_UNAVAILABLE', 'ระบบเข้าสู่ระบบยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ', 503],
+    ['LOGIN_CAPTCHA_FAILED', 'ยืนยันความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 400],
+    ['LOGIN_RATE_LIMITED', 'เข้าสู่ระบบถี่เกินไป กรุณารอสักครู่แล้วลองใหม่', 429],
+    ['LOGIN_FAILED', 'อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง', 401],
+  ])('shows the appropriate message for %s', async (code, message, status) => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path.endsWith('/resolve-login')) throw new ApiError(code, message, status);
+      if (path.endsWith('/login-log')) return { recorded: true };
+      throw new Error(`Unexpected path ${path}`);
+    });
+    render(<MemoryRouter><LoginPage /></MemoryRouter>);
+    fireEvent.change(screen.getByLabelText('อีเมล หรือ ชื่อผู้ใช้'), { target: { value: 'somchai.j' } });
+    fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: 'password' } });
+    const submit = screen.getByRole('button', { name: 'เข้าสู่ระบบ' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(setSessionMock).not.toHaveBeenCalled();
+  });
+
   it('forwards Turnstile to the request that verifies the password', async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path.endsWith('/resolve-login')) return { challenge: 'a'.repeat(64) };

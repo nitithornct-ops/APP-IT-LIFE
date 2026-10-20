@@ -195,7 +195,7 @@ export function LineNewTicketForm({ profile, categories, startWithAssetCode, onC
           <p className="mt-1 text-right text-[10px] text-slate-400">{description.length}/3000</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div data-ui="form-grid" className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="line-ticket-location" className={LABEL}>สถานที่</label>
             <input

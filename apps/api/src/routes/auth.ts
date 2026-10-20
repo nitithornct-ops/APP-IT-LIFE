@@ -337,8 +337,11 @@ authRoute.post(
   async (c) => {
     const reqId = c.get('requestId');
     const { identifier, turnstileToken } = c.req.valid('json');
+    if (!c.env.TURNSTILE_SECRET_KEY?.trim()) {
+      return c.json(fail(reqId, 'LOGIN_UNAVAILABLE', 'ระบบเข้าสู่ระบบยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ'), 503);
+    }
     if (!(await verifyTurnstile(c.env, turnstileToken, 'login', clientIp(c)))) {
-      return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+      return c.json(fail(reqId, 'LOGIN_CAPTCHA_FAILED', 'ยืนยันความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 400);
     }
 
     const admin = createAdminClient(c.env);
@@ -391,7 +394,7 @@ authRoute.post(
 
     const { data: email, error: resolveError } = await admin.rpc('resolve_login_email', { identifier_input: body.identifier });
     const resolvedEmail = typeof email === 'string' && email ? email : 'no-such-account@no-email.invalid';
-    if (resolveError) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
+    if (resolveError) return c.json(fail(reqId, 'LOGIN_UNAVAILABLE', 'ตรวจสอบข้อมูลเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 503);
 
     const { data, error } = await createPublicAuthClient(c.env).auth.signInWithPassword({
       email: resolvedEmail,
@@ -401,6 +404,15 @@ authRoute.post(
       // making the subsequent Auth request fail even with a valid password.
       options: { captchaToken: body.turnstileToken },
     });
+    if (error?.code === 'captcha_failed') {
+      return c.json(fail(reqId, 'LOGIN_CAPTCHA_FAILED', 'ยืนยันความปลอดภัยไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'), 400);
+    }
+    if (error?.status === 429) {
+      return c.json(fail(reqId, 'LOGIN_RATE_LIMITED', 'เข้าสู่ระบบถี่เกินไป กรุณารอสักครู่แล้วลองใหม่'), 429);
+    }
+    if (error && (error.status === 0 || (error.status ?? 0) >= 500)) {
+      return c.json(fail(reqId, 'LOGIN_UNAVAILABLE', 'บริการเข้าสู่ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง'), 503);
+    }
     if (error || !data.session) return c.json(fail(reqId, 'LOGIN_FAILED', GENERIC_LOGIN_FAILURE), 401);
 
     c.header('Cache-Control', 'no-store');

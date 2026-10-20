@@ -98,7 +98,7 @@ export function NotificationRulesPanel({ data }: { data: IntegrationCenterRespon
         <CardBody>
           {data.canManage && <form className="rounded-xl border border-primary-100 bg-primary-50/40 p-3 dark:border-primary-900 dark:bg-primary-950/20" onSubmit={(event) => { event.preventDefault(); createRule.mutate(); }}>
             <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100"><Plus className="h-4 w-4 text-primary-600" />เพิ่มกฎใหม่</div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div data-ui="form-grid" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-[11px] font-semibold">Rule code<input className={fieldClass} value={ruleForm.ruleCode} onChange={(event) => setRuleForm({ ...ruleForm, ruleCode: event.target.value })} placeholder="backup-failed-critical" /></label>
               <label className="text-[11px] font-semibold">Event<input className={fieldClass} value={ruleForm.eventKey} onChange={(event) => setRuleForm({ ...ruleForm, eventKey: event.target.value })} placeholder="backup.failed" /></label>
               <label className="text-[11px] font-semibold">Module<input className={fieldClass} value={ruleForm.moduleKey} onChange={(event) => setRuleForm({ ...ruleForm, moduleKey: event.target.value })} placeholder="backup_monitoring" /></label>
@@ -114,7 +114,7 @@ export function NotificationRulesPanel({ data }: { data: IntegrationCenterRespon
               <label className="text-[11px] font-semibold">Priority<input type="number" min={0} max={9999} className={fieldClass} value={ruleForm.priority} onChange={(event) => setRuleForm({ ...ruleForm, priority: event.target.value })} /></label>
               <label className="flex items-end gap-2 pb-2 text-[11px] font-semibold"><input type="checkbox" checked={ruleForm.quietEnabled} onChange={(event) => setRuleForm({ ...ruleForm, quietEnabled: event.target.checked })} />Quiet hours</label>
             </div>
-            {ruleForm.quietEnabled && <div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-[11px] font-semibold">Quiet start<input type="time" className={fieldClass} value={ruleForm.quietStart} onChange={(event) => setRuleForm({ ...ruleForm, quietStart: event.target.value })} /></label><label className="text-[11px] font-semibold">Quiet end<input type="time" className={fieldClass} value={ruleForm.quietEnd} onChange={(event) => setRuleForm({ ...ruleForm, quietEnd: event.target.value })} /></label></div>}
+            {ruleForm.quietEnabled && <div data-ui="form-grid" className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-[11px] font-semibold">Quiet start<input type="time" className={fieldClass} value={ruleForm.quietStart} onChange={(event) => setRuleForm({ ...ruleForm, quietStart: event.target.value })} /></label><label className="text-[11px] font-semibold">Quiet end<input type="time" className={fieldClass} value={ruleForm.quietEnd} onChange={(event) => setRuleForm({ ...ruleForm, quietEnd: event.target.value })} /></label></div>}
             <div className="mt-3 flex flex-wrap items-center gap-2"><Button type="submit" size="sm" isLoading={createRule.isPending} disabled={!canCreateRule}><Save className="h-3.5 w-3.5" />บันทึกกฎ</Button>{createRule.isError && <span className="text-xs text-danger-700" role="alert">{errorMessage(createRule.error)}</span>}</div>
           </form>}
 
@@ -131,7 +131,7 @@ export function NotificationRulesPanel({ data }: { data: IntegrationCenterRespon
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Save className="h-4 w-4 text-primary-600" />Template Management</span><Badge variant="secondary">{templates.length} templates</Badge></CardHeader>
         <CardBody>
-          {data.canManage && <form className="grid gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(event) => { event.preventDefault(); createTemplate.mutate(); }}>
+          {data.canManage && <form data-ui="form-grid" className="grid gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(event) => { event.preventDefault(); createTemplate.mutate(); }}>
             <label className="text-[11px] font-semibold">Template key<input className={fieldClass} value={templateForm.templateKey} onChange={(event) => setTemplateForm({ ...templateForm, templateKey: event.target.value })} placeholder="incident-critical-line" /></label>
             <label className="text-[11px] font-semibold">Name<input className={fieldClass} value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} placeholder="Incident critical - LINE" /></label>
             <label className="text-[11px] font-semibold">Channel<select className={fieldClass} value={templateForm.channel} onChange={(event) => setTemplateForm({ ...templateForm, channel: event.target.value })}>{CHANNELS.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}</select></label>

@@ -85,7 +85,7 @@ export function VendorPortalInvitePage() {
         <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-700"><KeyRound className="h-5 w-5" /></div>
         <h1 className="font-display text-2xl font-semibold text-slate-800">ตั้งค่า Vendor Portal</h1>
         <p className="mt-1 text-sm text-slate-500">ตั้ง Password ของคุณเอง แล้วผูก MFA ก่อนเริ่มใช้งาน</p>
-        <form onSubmit={acceptInvite} className="mt-6 space-y-4">
+        <form data-ui="form-stack" onSubmit={acceptInvite} className="mt-6 space-y-4">
           <label className="block text-sm font-medium text-slate-700">Password ใหม่<input required type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
           <label className="block text-sm font-medium text-slate-700">ยืนยัน Password<input required type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="public-field mt-1 w-full px-3 py-3" /></label>
           {enrollment && <div className="rounded-xl border border-slate-200 bg-white p-4 text-center"><p className="text-sm font-semibold text-slate-700">สแกน QR ด้วย Authenticator</p><img src={enrollment.qrCode} alt="QR code สำหรับตั้งค่า MFA" className="mx-auto mt-3 h-44 w-44" /><p className="mt-3 text-xs text-slate-500">หรือใช้ Secret นี้</p><code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">{enrollment.secret}</code></div>}

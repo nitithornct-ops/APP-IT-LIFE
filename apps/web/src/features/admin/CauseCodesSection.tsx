@@ -61,7 +61,7 @@ function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode
   });
 
   return (
-    <form
+    <form data-ui="form-stack"
       className="space-y-3 p-5"
       onSubmit={(event) => {
         event.preventDefault();
@@ -105,7 +105,7 @@ function CreateCauseCodeForm({ cause, categories, onClose }: { cause?: CauseCode
         </select>
       </label>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
           Effective Date
           <input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} className={fieldClass} />

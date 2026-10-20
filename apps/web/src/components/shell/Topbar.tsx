@@ -119,6 +119,7 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
                 <p className="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">{me?.profile.full_name}</p>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{me?.roles[0]?.role_name_th}</p>
               </div>
+              <div className="border-b border-slate-100 px-3 py-3 dark:border-slate-700 sm:hidden"><p className="mb-2 text-sm">????????????</p><FontSizeControl mobile /></div>
               <Link to="/profile" onClick={() => setAccountOpen(false)} className="mt-1 flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-200 dark:hover:bg-slate-700"><UserCircle className="h-4 w-4" aria-hidden="true" />โปรไฟล์ของฉัน</Link>
               <button type="button" onClick={() => { setAccountOpen(false); void signOut(); }} className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:bg-red-950/40"><LogOut className="h-4 w-4" aria-hidden="true" />ออกจากระบบ</button>
             </div>

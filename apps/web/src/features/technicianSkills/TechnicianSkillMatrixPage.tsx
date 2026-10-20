@@ -352,7 +352,7 @@ function AssessmentForm({
                   })}
                 </div>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div data-ui="form-grid" className="mt-3 grid gap-2 sm:grid-cols-2">
                 <label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300">
                   Skill
                   <input type="text" value={entry.skill} maxLength={160} onChange={(event) => setDraft((current) => ({ ...current, [category.id]: { ...entry, skill: event.target.value } }))} placeholder={category.name} aria-label={`Skill ${category.name}`} className="mt-1 w-full rounded-[7px] border border-hairline-control px-2.5 py-1.5 text-[11.5px] font-normal text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-white/[.12] dark:bg-white/[.04] dark:text-slate-200" />
