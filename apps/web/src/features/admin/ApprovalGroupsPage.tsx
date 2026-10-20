@@ -59,7 +59,7 @@ function CreateGroupForm({ departments, onClose }: { departments: Department[]; 
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40"
       noValidate
@@ -200,7 +200,7 @@ function GroupMembersPanel({ groupId, allUsers }: { groupId: string; allUsers: U
       </div>
 
       {showAdd && (
-        <form
+        <form data-ui="form-grid"
           onSubmit={handleSubmit((values) => addMutation.mutate(values))}
           className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-800"
           noValidate

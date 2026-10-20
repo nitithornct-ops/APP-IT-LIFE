@@ -26,6 +26,7 @@ const controlClass = 'min-h-11 w-full rounded-xl border border-slate-300 bg-whit
 export function SearchableSelect({ label, options, value, onChange, required, placeholder = 'พิมพ์ค้นหาเพื่อเลือก', disabled, testId }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -52,27 +53,47 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
     setOpen(false);
   };
 
+  useEffect(() => {
+    if (open) menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[activeIndex]?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, open]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && open) {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       setSearch('');
-    } else if (event.key === 'Enter' && filtered[0]) {
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      pick(filtered[0].id);
+      setOpen(true);
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((current) => !open ? 0 : (current + direction + filtered.length) % Math.max(1, filtered.length));
+    } else if (event.key === 'Enter' && open) {
+      event.preventDefault();
+      const option = filtered[activeIndex];
+      if (option) pick(option.id);
+    } else if (event.key === 'Tab') {
+      setOpen(false);
+      setSearch('');
     }
   };
 
   return (
-    <div ref={rootRef} className="relative" data-testid={testId}>
-      <span className="mb-1.5 block text-[13px] font-semibold text-slate-700 dark:text-slate-200">{label}{required && <span className="ml-1 text-red-600">*</span>}</span>
-      <div ref={controlRef} role="combobox" aria-expanded={open} aria-controls={listId} aria-haspopup="listbox" className={`${controlClass} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} onClick={() => !disabled && setOpen(true)}>
+    <div data-ui="picker" ref={rootRef} className="relative" data-testid={testId}>
+      <label htmlFor={listId + '-input'} className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">{label}{required && <span className="ml-1 text-red-600">*</span>}</label>
+      <div ref={controlRef} className={`${controlClass} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`} onClick={() => !disabled && setOpen(true)}>
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
           <input
             type="search"
+            id={listId + '-input'}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={open && filtered[activeIndex] ? listId + '-option-' + activeIndex : undefined}
             value={open ? search : selected?.label ?? ''}
-            onChange={(event) => { setSearch(event.target.value); setOpen(true); }}
+            onChange={(event) => { setSearch(event.target.value); setActiveIndex(0); setOpen(true); }}
             onFocus={() => !disabled && setOpen(true)}
             onKeyDown={handleKeyDown}
             placeholder={selected ? selected.label : placeholder}
@@ -81,23 +102,34 @@ export function SearchableSelect({ label, options, value, onChange, required, pl
             aria-label={label}
             className="min-w-0 flex-1 bg-transparent py-0.5 text-sm outline-none placeholder:text-slate-400"
           />
-          {value && <button type="button" aria-label={`ล้าง ${label}`} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={(event) => { event.stopPropagation(); onChange(''); setSearch(''); }}><X className="h-4 w-4" aria-hidden="true" /></button>}
+          {value && <button type="button" disabled={disabled} aria-label={`ล้าง ${label}`} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={(event) => { event.stopPropagation(); onChange(''); setSearch(''); }}><X className="h-4 w-4" aria-hidden="true" /></button>}
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
         </div>
       </div>
       {open && !disabled && menuPosition && createPortal(
         <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-modal-popover overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
-          {filtered.map((option) => (
-            <button key={option.id} type="button" role="option" aria-selected={option.id === value} className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${option.id === value ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`} onClick={() => pick(option.id)}>
+          {filtered.map((option, index) => (
+            <button
+              key={option.id}
+              type="button"
+              role="option"
+              id={listId + '-option-' + index}
+              tabIndex={-1}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              aria-selected={option.id === value}
+              className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${option.id === value || activeIndex === index ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`}
+              onClick={() => pick(option.id)}
+            >
               <span className="mt-0.5 h-4 w-4 shrink-0">{option.id === value && <Check className="h-4 w-4 text-primary-600" aria-hidden="true" />}</span>
-              <span className="min-w-0"><span className="block truncate font-medium">{option.label}</span>{option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}</span>
+              <span className="min-w-0"><span className="block whitespace-normal font-medium">{option.label}</span>{option.description && <span className="block whitespace-normal text-xs text-slate-500">{option.description}</span>}</span>
             </button>
           ))}
         </div>,
         document.body,
       )}
-      <p className="mt-1 text-[11px] text-slate-400">ค้นหาและเลือกจากทะเบียนกลาง ไม่ต้องกรอก UUID</p>
+      <p className="mt-2 text-xs text-slate-500">พิมพ์ค้นหา ใช้ปุ่มลูกศรเลือกรายการ แล้วกด Enter</p>
     </div>
   );
 }

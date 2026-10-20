@@ -25,6 +25,7 @@ const controlClass = 'min-h-11 w-full rounded-xl border border-slate-300 bg-whit
 export function SearchableMultiSelect({ label, options, value, onChange, placeholder = 'ค้นหาแล้วเลือกได้หลายรายการ', className = '', testId }: SearchableMultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -46,27 +47,38 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
     onChange(value.includes(id) ? value.filter((item) => item !== id) : [...value, id]);
   };
 
+  useEffect(() => {
+    if (open) menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[activeIndex]?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, open]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && open) {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
-    } else if (event.key === 'Enter' && filtered[0]) {
+      setSearch('');
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      toggle(filtered[0].id);
+      setOpen(true);
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((current) => !open ? 0 : (current + direction + filtered.length) % Math.max(1, filtered.length));
+    } else if (event.key === 'Enter' && open) {
+      event.preventDefault();
+      const option = filtered[activeIndex];
+      if (option) toggle(option.id);
     } else if (event.key === 'Backspace' && !search && value.length) {
       onChange(value.slice(0, -1));
+    } else if (event.key === 'Tab') {
+      setOpen(false);
+      setSearch('');
     }
   };
 
   return (
-    <div ref={rootRef} className={`relative ${className}`} data-testid={testId}>
-      <span className="mb-1.5 block text-[13px] font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+    <div data-ui="picker" ref={rootRef} className={`relative ${className}`} data-testid={testId}>
+      <label htmlFor={listId + '-input'} className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</label>
       <div
         ref={controlRef}
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-haspopup="listbox"
         className={controlClass}
         onClick={() => setOpen(true)}
       >
@@ -83,8 +95,14 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
             <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
             <input
               type="search"
+              id={listId + '-input'}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={open}
+              aria-controls={open ? listId : undefined}
+              aria-activedescendant={open && filtered[activeIndex] ? listId + '-option-' + activeIndex : undefined}
               value={search}
-              onChange={(event) => { setSearch(event.target.value); setOpen(true); }}
+              onChange={(event) => { setSearch(event.target.value); setActiveIndex(0); setOpen(true); }}
               onFocus={() => setOpen(true)}
               onKeyDown={handleKeyDown}
               placeholder={selected.length ? 'ค้นหาเพิ่ม...' : placeholder}
@@ -96,28 +114,32 @@ export function SearchableMultiSelect({ label, options, value, onChange, placeho
         </div>
       </div>
       {open && menuPosition && createPortal(
-        <div ref={menuRef} id={listId} role="listbox" aria-label={label} style={menuPosition} className="fixed z-modal-popover overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div ref={menuRef} id={listId} role="listbox" aria-multiselectable="true" aria-label={label} style={menuPosition} className="fixed z-modal-popover overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {filtered.length === 0 && <p className="px-3 py-3 text-xs text-slate-500">ไม่พบรายการที่ค้นหา</p>}
-          {filtered.map((option) => {
+          {filtered.map((option, index) => {
             const checked = value.includes(option.id);
             return (
               <button
                 key={option.id}
                 type="button"
                 role="option"
+                id={listId + '-option-' + index}
+                tabIndex={-1}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveIndex(index)}
                 aria-selected={checked}
-                className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${checked ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`}
+                className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-50 dark:hover:bg-slate-800 ${checked || activeIndex === index ? 'bg-primary-50/70 dark:bg-primary-900/30' : ''}`}
                 onClick={() => toggle(option.id)}
               >
                 <span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${checked ? 'border-primary-600 bg-primary-600 text-white' : 'border-slate-300 dark:border-slate-600'}`}>{checked ? '✓' : ''}</span>
-                <span className="min-w-0"><span className="block truncate font-medium">{option.label}</span>{option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}</span>
+                <span className="min-w-0"><span className="block whitespace-normal font-medium">{option.label}</span>{option.description && <span className="block whitespace-normal text-xs text-slate-500">{option.description}</span>}</span>
               </button>
             );
           })}
         </div>,
         document.body,
       )}
-      <p className="mt-1 text-[11px] text-slate-400">เลือกแล้ว {selected.length} รายการ · พิมพ์ค้นหาแล้วกด Enter เพื่อเลือก</p>
+      <p className="mt-2 text-xs text-slate-500">เลือกแล้ว {selected.length} รายการ · ใช้ปุ่มลูกศรและ Enter เพื่อเลือก</p>
     </div>
   );
 }

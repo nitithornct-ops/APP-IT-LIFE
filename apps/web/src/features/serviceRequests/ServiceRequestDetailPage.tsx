@@ -141,7 +141,7 @@ function UpdateWorkPanel({ request, staff }: { request: ServiceRequestDetail; st
     <Card>
       <CardHeader>อัปเดตงาน</CardHeader>
       <CardBody>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div data-ui="form-grid" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="sr-upd-status" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               สถานะ

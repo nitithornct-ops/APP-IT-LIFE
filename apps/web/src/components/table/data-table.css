@@ -65,7 +65,7 @@
     content: attr(data-label);
     grid-column: 1;
     color: var(--color-text-muted);
-    font-size: max(12px, 0.75rem);
+    font-size: var(--ui-note-size);
     font-weight: 600;
     line-height: 1.65;
   }
@@ -115,7 +115,7 @@
 
   [data-ui='data-table'] :is(input:not([type='checkbox']):not([type='radio']), select) {
     min-height: 44px;
-    font-size: 18px;
+    font-size: max(16px, var(--ui-body-size));
   }
 }
 

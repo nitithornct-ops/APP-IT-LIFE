@@ -57,7 +57,7 @@ function CreateRelationshipForm({ nodeOptions, onClose }: { nodeOptions: CiNodeO
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40"
       noValidate

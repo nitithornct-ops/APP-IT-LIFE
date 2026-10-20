@@ -131,7 +131,7 @@ function EditCiForm({ detail, employees, assetOptions, vendorOptions, contractOp
   );
 
   return (
-    <form onSubmit={onSubmit} data-testid="ci-edit-form" className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40" noValidate>
+    <form data-ui="form-grid" onSubmit={onSubmit} data-testid="ci-edit-form" className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40" noValidate>
       <div>
         <label htmlFor="ed-application-service" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Application Service</label>
         <input id="ed-application-service" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('applicationService')} />
@@ -312,7 +312,7 @@ function CreateRelationshipForm({ ciId, nodeOptions, onClose }: { ciId: string; 
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       data-testid="ci-rel-create-form"
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900/40"

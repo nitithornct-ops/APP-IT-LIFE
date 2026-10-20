@@ -85,7 +85,7 @@ export function TaskTemplatesPanel({ onClose, onApplied }: { onClose: () => void
       <div className="flex flex-col gap-5">
         <section className="rounded-xl border border-primary-100 bg-primary-50/50 p-4 dark:border-primary-900 dark:bg-primary-950/20">
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">สร้าง Template ใหม่</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div data-ui="form-grid" className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อ Template
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder="เช่น ตรวจ Backup ทุกเดือน" className={`${inputClass} mt-1`} maxLength={150} />
             </label>

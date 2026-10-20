@@ -36,7 +36,7 @@ function CreateChangeForm({ references, onClose }: { references: ChangeReference
   });
 
   return <Card data-testid="change-create-form"><CardHeader className="flex items-center justify-between"><span>ยื่นคำขอเปลี่ยนแปลง</span><button type="button" onClick={onClose} aria-label="ปิด"><X className="h-4 w-4" /></button></CardHeader><CardBody>
-    <form className="grid gap-3 sm:grid-cols-3" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}>
+    <form data-ui="form-grid" className="grid gap-3 sm:grid-cols-3" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}>
       <label className="text-xs font-semibold sm:col-span-2">Configuration Item (CI)<select data-testid="change-create-ci" value={configurationItemId} onChange={(e) => setConfigurationItemId(e.target.value)} className={fieldClass}><option value="">— ไม่ระบุ —</option>{references.configurationItems.map((item) => <option key={item.id} value={item.id}>{item.ci_code} — {item.name} ({item.environment})</option>)}</select></label>
       <label className="text-xs font-semibold sm:col-span-2">หัวข้อ<input required maxLength={200} data-testid="change-create-title" value={form.title} onChange={(e) => set('title', e.target.value)} className={fieldClass} /></label>
       <label className="text-xs font-semibold">ระบบที่ได้รับผลกระทบ<input required maxLength={150} data-testid="change-create-system" value={form.systemAffected} onChange={(e) => set('systemAffected', e.target.value)} className={fieldClass} /></label>

@@ -346,7 +346,7 @@ export function AssetVerificationPage() {
           </label>
           {selectedCampaign ? <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900/50"><p className="font-mono text-[10px] text-slate-400">{selectedCampaign.campaign_code}</p><p className="mt-0.5 font-semibold">{selectedCampaign.location || 'ไม่จำกัดสถานที่'} · แผน {selectedCampaign.planned_date}</p></div> : <div />}
           {selectedCampaign && <Badge variant={selectedCampaign.status === 'active' ? 'success' : 'secondary'}>{selectedCampaign.status === 'active' ? 'กำลังตรวจ' : 'ปิดแล้ว'}</Badge>}
-          {!selectedCampaign && <div className="md:col-span-3 grid gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+          {!selectedCampaign && <div data-ui="form-grid" className="md:col-span-3 grid gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">ชื่อ Campaign<input id="field-campaign-name" value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" /></label>
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่หลัก (ไม่บังคับ)<input value={campaignLocation} onChange={(event) => setCampaignLocation(event.target.value)} placeholder="เช่น อาคาร A / ชั้น 3" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal dark:border-slate-600 dark:bg-slate-900" /></label>
             <Button isLoading={createCampaign.isPending} disabled={!canUpdate || !campaignName.trim()} onClick={() => createCampaign.mutate()}>สร้าง Campaign</Button>
@@ -419,7 +419,7 @@ function VerificationRow({
         <div className="flex items-center gap-2"><Badge variant={item.syncState === 'synced' ? 'success' : 'warning'}>{item.syncState === 'synced' ? 'ซิงก์แล้ว' : 'รอซิงก์'}</Badge><button type="button" aria-label={`ลบ ${item.assetCode} ออกจาก Batch`} onClick={() => onRemove(item)} disabled={disabled} className="rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-700 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button></div>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div data-ui="form-grid" className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">ผลตรวจ
           <select aria-label={`ผลตรวจ ${item.assetCode}`} value={item.result} onChange={(event) => onChange(item.clientRef, { result: event.target.value as FieldScanResult, syncState: 'pending', photoUploaded: false })} disabled={disabled} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-600 dark:bg-slate-900">{RESULT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
         </label>

@@ -2,6 +2,33 @@
 
 เอกสารนี้เป็นสัญญาร่วมของ presentation layer สำหรับหน้าใน `apps/web` โดยใช้ component และ class สีเดิมของระบบเท่านั้น ห้ามสร้าง status mapping ซ้ำในหน้า และห้ามแก้ theme token เพื่อทำตามตัวอย่างนี้
 
+## ตัวอักษรและระยะห่าง (ปรับปรุง 19 ตุลาคม 2569)
+
+UI ใช้ stack `'Sukhumvit Set', Tahoma, Arial, sans-serif` ผ่าน `--font-app` ส่วนเอกสารใช้ `--font-document` เป็น TH Sarabun New แยกกัน ห้ามเปลี่ยนฟอนต์เอกสารตาม UI โดยอัตโนมัติ ขณะนี้ยังไม่มีไฟล์ Sukhumvit Set สำหรับฝังในเว็บใน repository จึงใช้ฟอนต์ที่ติดตั้งในเครื่องหรือ fallback จริง ดูข้อกำหนดไฟล์ที่ `apps/web/src/assets/fonts/README.md` และห้ามรายงานว่าโหลด Sukhumvit Set สำเร็จจากค่า CSS font-family เพียงอย่างเดียว
+
+`tailwind.config.js` กำหนด text-xs = 14px, text-sm = 15px, text-base = 16px, text-lg = 18px, text-xl = 20px, text-2xl = 28px ที่ขนาดเริ่มต้น หัวข้อหน้าจาก `PageTitle` ใช้ 26–28px ผ่าน token ส่วนกลางและขยายตาม A−/A+ ใช้ line-height ประมาณ 1.6 และไม่เพิ่ม letter-spacing ภาษาไทย ข้อความรองต้องแยกลำดับจากเนื้อหาโดยไม่เล็กกว่า 14px ยกเว้นพื้นที่เอกสารหรือโค้ดที่มีข้อกำหนดเฉพาะ
+
+ค่าระยะห่างอยู่ใน `styles/system.css`:
+
+| Token | ค่าเริ่มต้น | การใช้งาน |
+| --- | --- | --- |
+| `--ui-label-gap` | 8px | ชื่อช่องถึงช่องกรอก |
+| `--ui-field-gap` | 20px | ช่องกรอกที่อยู่กลุ่มเดียวกัน |
+| `--ui-section-gap` | 28px; มือถือ 24px | กลุ่มข้อมูล |
+| `--ui-card-padding` | 24px; มือถือ 20px | ขอบภายในการ์ด |
+| `--ui-page-gutter` | 32px; มือถือ 16px | ขอบเนื้อหาหน้า |
+| `--ui-control-height` | 44px | ความสูงขั้นต่ำของปุ่มหลักและช่องกรอก |
+
+ฟอร์มที่จัดเป็น grid ใช้ `data-ui="form-grid"` เพื่อใช้ field gap ส่วนกลาง และเรียงหนึ่งคอลัมน์ต่ำกว่า 640px ฟอร์มแบบเรียงกลุ่มใช้ `data-ui="form-stack"` อย่าใส่สอง attribute นี้กับ grid สำหรับ KPI, calendar, Kanban หรือเนื้อหาเอกสาร ช่องข้อความยาวใช้เต็มแถว ชื่อช่องอยู่เหนือช่องกรอก ข้อผิดพลาดและคำแนะนำอยู่ใกล้ช่อง รักษาค่าร่างเมื่อ request ล้มเหลวและรักษา contract ของแต่ละโมดูล
+
+`index.css` เป็นเจ้าของสี รูปลักษณ์พื้นฐานและ print rules; `system.css` เป็นเจ้าของค่าตัวอักษร ระยะห่าง และข้อกำหนด shared UI; CSS ของโมดูลใช้เฉพาะข้อยกเว้นที่มีเหตุผล ห้ามเพิ่มกฎครอบ text-size ทั้งแอปเพื่อชดเชยฟอนต์อีก เมื่อเพิ่มข้อยกเว้นต้องตรวจ computed style รวมทั้ง overlay ที่ render ไปยัง body
+
+A−/A+ มีระดับ 90/100/110/120% และจดจำค่าเดิม บนมือถือเข้าจากเมนูบัญชีผู้ใช้ ปุ่มและช่องกรอกใช้ min-height พร้อม padding เพื่อโตตามข้อความ แผงดำเนินงานใน `DetailLayout` เลื่อนตามหน้า ไม่ตรึงทั้งแผงที่อาจสูงเกิน viewport
+
+SearchableSelect/MultiSelect รองรับลูกศร, Enter, Tab และ Escape โดย Escape ปิดรายการตัวเลือกก่อนปิด Modal รายการใน dropdown ต้องอ่านชื่อเต็มได้และคง focus ที่ช่องค้นหาระหว่างเลือก
+
+เอกสาร A4 ใช้ขนาดตัวอักษรเป็น pt และระยะภายในที่ไม่ขยายตาม font scale ของ UI ตรวจ page break, ตาราง, ลายเซ็น และไฟล์ส่งออกแยกจากหน้าแอป ดู `e2e/print-typography.spec.ts`
+
 ## โครงหน้ามาตรฐาน
 
 เรียงส่วนประกอบตามลำดับนี้: `PageHeader` → `KpiStrip` (เมื่อมีตัวเลขช่วยตัดสินใจ) → `FilterBar` → เนื้อหา โดย `FilterBar` ต้องต่อกับขอบบนของตาราง
@@ -111,7 +138,7 @@
 - client mode มี search, filter, clear, sort, export และ pagination 10/25/50 ในตัว
 - server mode ให้หน้าเป็นเจ้าของ search/filter/pagination แต่ `DataTable` ยังจัดการ column visibility และ export หน้าปัจจุบัน
 - ถ้าหน้ามีการส่งออกผลที่กรองครบทุกหน้าอยู่แล้ว ให้ตั้ง `currentPageExport={false}` เพื่อไม่ให้มี action ซ้ำ
-- ต่ำกว่า 768px ตารางจะแสดงเป็น record card หนึ่งใบต่อแถวจาก label ของหัวคอลัมน์
+- ต่ำกว่า 640px ตารางส่วนกลางแสดงเป็น record card หนึ่งใบต่อแถวจาก label ของหัวคอลัมน์ ส่วน Ticket มีข้อยกเว้นเพื่ออ่านเรื่องงานได้ครบ: ต่ำกว่า 640px หนึ่งการ์ดต่อแถว, 640–1279px สองการ์ดต่อแถว, ตั้งแต่ 1280px เป็นตาราง ห้ามย้าย breakpoint นี้โดยไม่ตรวจพื้นที่คอลัมน์และข้อความจริง
 
 ### Row actions
 
@@ -144,7 +171,7 @@
 
 ## Accessibility และ responsive
 
-interactive control ต้องมีพื้นที่กดอย่างน้อย 40px, icon-only button ต้องมี `aria-label`, และใช้ focus style เดิมของระบบ ทุก action ต้องเข้าถึงได้ด้วย keyboard หน้ารายการต้องตรวจที่ 1440px, 768px และ 390px ก่อนส่งมอบ
+interactive control หลักต้องมีพื้นที่กดอย่างน้อย 44px, icon-only button ต้องมี `aria-label`, และใช้ focus style เดิมของระบบ ทุก action ต้องเข้าถึงได้ด้วย keyboard หน้ารายการต้องตรวจที่ 1440px, 768px และ 390px ก่อนส่งมอบ ทั้งสองธีมและขนาดข้อความ 120% พร้อมตรวจการซูมและข้อความยาว
 
 งานลบต้องใช้ confirm flow เดิมและเรียก soft-delete contract ที่มีอยู่ ห้ามเพิ่ม hard delete ใน presentation layer
 

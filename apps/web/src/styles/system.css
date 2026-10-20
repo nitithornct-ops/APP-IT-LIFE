@@ -3,6 +3,17 @@
 :root {
   --app-header-height: 64px;
   --ui-primary-text: var(--color-action);
+  --ui-page-title: clamp(1.625rem, 2vw, 1.75rem);
+  --ui-section-title: 1.25rem;
+  --ui-label-size: 0.9375rem;
+  --ui-body-size: 1rem;
+  --ui-note-size: 0.875rem;
+  --ui-label-gap: 0.5rem;
+  --ui-field-gap: 1.25rem;
+  --ui-section-gap: 1.75rem;
+  --ui-card-padding: 1.5rem;
+  --ui-page-gutter: 2rem;
+  --ui-control-height: 2.75rem;
 }
 
 .dark {
@@ -11,10 +22,10 @@
 
 :is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard'], [data-ui='toast']) {
   font-family: var(--font-app);
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
-:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :where(.font-mono) {
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :where(.font-mono):not(.form-document *, .form-page-sheet *) {
   font-family: var(--font-app);
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
@@ -29,9 +40,9 @@
   font-family: var(--font-code);
 }
 
-:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :is(.text-xs, [class*='text-[9'], [class*='text-[10'], [class*='text-[11'], [class*='text-[12'], [class*='text-[13'], [class*='text-[14']) {
-  font-size: max(16px, 1rem);
-  line-height: 1.65;
+:is(.life-app, .life-public, [data-ui='modal'], [data-ui='modal-discard']) :is(.text-xs, [class*='text-[9'], [class*='text-[10'], [class*='text-[11'], [class*='text-[12'], [class*='text-[13'], [class*='text-[14']):not(.form-document *, .form-page-sheet *, .form-toolbar *, .document-ruler *) {
+  font-size: var(--ui-note-size);
+  line-height: 1.6;
 }
 
 :is(.life-app, .life-public, [data-ui='modal']) :where(.font-extrabold) {
@@ -41,7 +52,7 @@
 .life-page-eyebrow {
   letter-spacing: normal;
   text-transform: none;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 [data-tone] {
@@ -86,7 +97,7 @@
   background-color: var(--ui-tone-bg);
   color: var(--ui-tone-text) !important;
   font-family: var(--font-app);
-  font-size: max(16px, 1rem);
+  font-size: var(--ui-note-size);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -119,13 +130,13 @@
 }
 
 [data-ui='kpi-label'] {
-  font-size: max(17px, 1.0625rem);
+  font-size: var(--ui-label-size);
   font-weight: 700;
   line-height: 1.5;
 }
 
 [data-ui='kpi-note'] {
-  font-size: max(16px, 1rem);
+  font-size: var(--ui-note-size);
   line-height: 1.5;
 }
 
@@ -135,7 +146,7 @@
 }
 
 [data-ui='button'] {
-  min-height: 44px;
+  min-height: max(44px, var(--ui-control-height));
   font-family: var(--font-app);
   line-height: 1.5;
   text-wrap: pretty;
@@ -150,7 +161,9 @@
   min-width: 0;
   max-width: 100%;
   border-radius: var(--radius-default);
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: var(--ui-body-size);
+  padding-block: 0.5rem;
 }
 
 [data-ui='filter-bar'] .filter-bar-fields > * {
@@ -159,7 +172,7 @@
 }
 
 [data-ui='filter-bar'] :is(input, select) {
-  font-size: max(18px, 1.125rem);
+  font-size: var(--ui-body-size);
 }
 
 [data-ui='modal'] > header {
@@ -221,11 +234,78 @@
   }
 
   :is(.life-app, .life-public, [data-ui='modal']) :where(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='range']):not(.form-document *, .form-toolbar *, .form-page-sheet *) {
-    font-size: 18px;
+    font-size: max(16px, var(--ui-body-size));
   }
 
   [data-ui='filter-bar'] .filter-bar-fields > * {
     flex-basis: auto;
     width: 100%;
   }
+}
+
+/* Form grids opt in explicitly; document contents retain their print metrics. */
+.life-app #main-content { padding: 1.5rem var(--ui-page-gutter); }
+
+.life-page-header,
+.module-page-content[data-module-themed='true'] > :first-child > :first-child:not(.life-page-header):has(.life-page-title),
+.module-page-content[data-module-themed='true'] > :first-child > .life-page-title:first-child {
+  padding: var(--ui-card-padding);
+}
+
+[data-ui='form-grid'] { gap: var(--ui-field-gap); min-width: 0; }
+[data-ui='form-stack'] > * + * { margin-top: var(--ui-section-gap); }
+
+:is(.life-app, .life-public, [data-ui='modal']) label:has(> input:not([type='checkbox']):not([type='radio']), > select, > textarea):not(:has(> .sr-only), .form-document *, .form-page-sheet *, [data-ui='filter-bar'] *) {
+  display: block;
+  font-size: var(--ui-label-size);
+  line-height: 1.6;
+}
+
+:is(.life-app, .life-public, [data-ui='modal']) label:has(> input:not([type='checkbox']):not([type='radio']), > select, > textarea):not(:has(> .sr-only), .form-document *, .form-page-sheet *, [data-ui='filter-bar'] *) > :is(input, select, textarea) {
+  display: block;
+  margin-top: var(--ui-label-gap);
+  font-weight: 400;
+}
+
+:is(.life-app, .life-public, [data-ui='modal']) label[for]:not(.sr-only, .form-document *, .form-page-sheet *) {
+  margin-bottom: var(--ui-label-gap);
+  font-size: var(--ui-label-size);
+  line-height: 1.6;
+}
+
+:is(.life-app, .life-public, [data-ui='modal']) label:has(> :is(input[type='checkbox'], input[type='radio'])) {
+  min-height: 44px;
+  align-content: center;
+}
+
+.life-bottom-nav a, #app-sidebar nav a { line-height: 1.6; }
+.life-page-title h1 { overflow-wrap: anywhere; }
+
+:is(.life-app, .life-public, [data-ui='modal']) [data-ui='picker'] input[role='combobox'] {
+  min-height: 28px;
+  padding-block: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-ui='picker'] button[aria-label] {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  :root {
+    --ui-card-padding: 1.25rem;
+    --ui-page-gutter: 1rem;
+    --ui-section-gap: 1.5rem;
+  }
+  .life-app #main-content {
+    padding: 1rem var(--ui-page-gutter) calc(7rem + env(safe-area-inset-bottom)) !important;
+  }
+  [data-ui='form-grid'] { grid-template-columns: minmax(0, 1fr); }
+  [data-ui='form-grid'] > * { grid-column: 1 / -1; }
 }

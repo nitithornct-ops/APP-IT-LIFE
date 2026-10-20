@@ -21,7 +21,7 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
     <div
       data-ui="card-header"
       className={cn(
-        'border-b border-hairline-row px-4 py-3 font-bold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
+        'border-b border-hairline-row px-[var(--ui-card-padding)] py-4 text-lg font-semibold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
         className,
       )}
       {...rest}
@@ -30,14 +30,14 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
 }
 
 export function CardBody({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-4 py-4', className)} {...rest} />;
+  return <div className={cn('p-[var(--ui-card-padding)]', className)} {...rest} />;
 }
 
 export function CardFooter({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'rounded-b-card border-t border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40',
+        'rounded-b-card border-t border-slate-100 bg-slate-50/70 px-[var(--ui-card-padding)] py-4 dark:border-slate-700 dark:bg-slate-900/40',
         className,
       )}
       {...rest}

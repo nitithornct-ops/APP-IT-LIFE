@@ -205,7 +205,7 @@ function DeactivateEmployeeSection() {
         ระงับสิทธิ์ผู้พ้นสภาพ
       </CardHeader>
       <CardBody>
-        <form
+        <form data-ui="form-grid"
           onSubmit={handleSubmit((values) => mutation.mutate(values))}
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"
           noValidate

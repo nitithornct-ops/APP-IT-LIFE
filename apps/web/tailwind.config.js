@@ -4,15 +4,15 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // TH Sarabun has smaller glyphs; enlarge type without scaling spacing or controls.
+      // UI metrics are independent of the document font and respect A−/A+.
       fontSize: {
-        xs: ['1rem', { lineHeight: '1.5' }],
-        sm: ['1.125rem', { lineHeight: '1.5' }],
-        base: ['1.25rem', { lineHeight: '1.5' }],
-        lg: ['1.375rem', { lineHeight: '1.5' }],
-        xl: ['1.5rem', { lineHeight: '1.4' }],
-        '2xl': ['1.875rem', { lineHeight: '1.3' }],
-        '3xl': ['2.25rem', { lineHeight: '1.25' }],
+        xs: ['0.875rem', { lineHeight: '1.6' }],
+        sm: ['0.9375rem', { lineHeight: '1.6' }],
+        base: ['1rem', { lineHeight: '1.6' }],
+        lg: ['1.125rem', { lineHeight: '1.6' }],
+        xl: ['1.25rem', { lineHeight: '1.6' }],
+        '2xl': ['1.75rem', { lineHeight: '1.5' }],
+        '3xl': ['2rem', { lineHeight: '1.5' }],
       },
       fontFamily: {
         sans: ['var(--font-app)'],

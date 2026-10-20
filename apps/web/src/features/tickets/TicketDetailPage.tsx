@@ -180,7 +180,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
         <p className="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400">อัปเดตผู้รับผิดชอบ สถานะ เวลา และผลการแก้ไขจากจุดนี้</p>
       </CardHeader>
       <CardBody>
-        <form
+        <form data-ui="form-grid"
           onSubmit={handleSubmit((values) => {
             const requirementError = validateTicketWorkUpdateRequirements(values, ticket);
             if (requirementError) {
@@ -310,7 +310,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
           {(selectedStatus === 'รออะไหล่' || selectedStatus === 'รอผู้ใช้งาน') && (
             <div className="col-span-full rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-950/20">
               <p className="mb-2 text-xs font-bold text-amber-900 dark:text-amber-200">ข้อมูลการพัก SLA</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
                 <label className="sm:col-span-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
                   รออะไร <span className="text-red-600">*</span>
                   <textarea rows={2} maxLength={1000} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('waitingReason')} />

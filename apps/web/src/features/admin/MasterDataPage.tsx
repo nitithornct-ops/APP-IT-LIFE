@@ -103,7 +103,7 @@ function CreateTicketCategoryForm({ category, onClose }: { category?: TicketCate
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40"
       noValidate
@@ -334,7 +334,7 @@ function CreateAssetCategoryForm({ category, onClose }: { category?: AssetCatego
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40"
       noValidate
@@ -518,7 +518,7 @@ function CreateAccessSystemForm({ system, onClose }: { system?: AccessSystem; on
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40"
       noValidate
@@ -710,7 +710,7 @@ function CreateAccessControlItemForm({
   });
 
   return (
-    <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40" noValidate>
+    <form data-ui="form-grid" onSubmit={handleSubmit((values) => mutation.mutate(values))} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-700 dark:bg-slate-900/40" noValidate>
       <div className="flex items-center justify-between sm:col-span-2">
         <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{item ? 'แก้ไข RBAC item' : 'เพิ่ม RBAC item'}</h3>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" aria-hidden="true" /></button>
@@ -962,7 +962,7 @@ function MasterDataRegistrySection() {
         {showImport && <MasterDataImportModal onClose={() => setShowImport(false)} />}
         {mergeSource && <MasterDataMergeModal source={mergeSource} candidates={sourceCandidates} onClose={() => setMergeSource(null)} />}
         {auditItem && <MasterDataAuditHistoryModal item={auditItem} onClose={() => setAuditItem(null)} />}
-        <div className="mb-4 grid gap-2 md:grid-cols-[minmax(220px,1fr)_190px_150px]"><label className="relative block"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><span className="sr-only">ค้นหา Master Data</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหา Code, Name หรือชนิดข้อมูล" className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></label><select aria-label="กรองชนิดข้อมูล" value={kindFilter} onChange={(event) => setKindFilter(event.target.value as MasterDataKind | '')} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกชนิดข้อมูล</option>{MASTER_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><select aria-label="กรองสถานะ" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option><option value="active">ใช้งาน</option><option value="inactive">Inactive</option></select></div>
+        <div data-ui="form-grid" className="mb-4 grid gap-2 md:grid-cols-[minmax(220px,1fr)_190px_150px]"><label className="relative block"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><span className="sr-only">ค้นหา Master Data</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหา Code, Name หรือชนิดข้อมูล" className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></label><select aria-label="กรองชนิดข้อมูล" value={kindFilter} onChange={(event) => setKindFilter(event.target.value as MasterDataKind | '')} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกชนิดข้อมูล</option>{MASTER_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><select aria-label="กรองสถานะ" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">ทุกสถานะ</option><option value="active">ใช้งาน</option><option value="inactive">Inactive</option></select></div>
         {query.isLoading && <div className="flex justify-center py-10" role="status"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
         {query.isError && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">โหลดทะเบียนกลางไม่สำเร็จ กรุณาลองใหม่</p>}
         {!query.isLoading && !query.isError && filtered.length === 0 && <EmptyState icon={<Database className="h-10 w-10" />} title="ไม่พบรายการ Master Data" message="ลองเปลี่ยนตัวกรองหรือเพิ่มรายการใหม่จากส่วนจัดการด้านล่าง" />}

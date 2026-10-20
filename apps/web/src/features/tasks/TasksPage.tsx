@@ -381,7 +381,7 @@ export function TasksPage() {
         />
 
         {showAdvancedFilters && (
-          <div className="grid gap-2 border-x border-b border-hairline bg-surface-header p-3 dark:border-white/[.08] dark:bg-white/[.025] sm:grid-cols-3">
+          <div data-ui="form-grid" className="grid gap-2 border-x border-b border-hairline bg-surface-header p-3 dark:border-white/[.08] dark:bg-white/[.025] sm:grid-cols-3">
             <select aria-label="กรองหมวดหมู่" value={category} onChange={(event) => table.setFilter('category', event.target.value)} className={filterControlClass}><option value="">หมวดหมู่: ทั้งหมด</option>{TASK_CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select>
             <label className={`${filterControlClass} flex items-center gap-2`}><span className="shrink-0 text-slate-400">จาก</span><input aria-label="วันครบกำหนดตั้งแต่" type="date" value={dueFrom} onChange={(event) => table.setFilter('dueFrom', event.target.value)} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs" /></label>
             <label className={`${filterControlClass} flex items-center gap-2`}><span className="shrink-0 text-slate-400">ถึง</span><input aria-label="วันครบกำหนดถึง" type="date" value={dueTo} min={dueFrom || undefined} onChange={(event) => table.setFilter('dueTo', event.target.value)} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs" /></label>

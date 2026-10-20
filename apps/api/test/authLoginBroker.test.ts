@@ -39,6 +39,7 @@ const env: Bindings = {
   ALLOWED_ORIGINS: 'http://localhost:5173',
   PUBLIC_APP_URL: 'https://app.example.test',
   ENVIRONMENT: 'test',
+  TURNSTILE_SECRET_KEY: 'test-turnstile-secret',
 };
 
 function post(path: string, body: Record<string, unknown>) {
@@ -63,12 +64,58 @@ beforeEach(() => {
 });
 
 describe('authentication broker CAPTCHA handoff', () => {
-  it('does not consume Turnstile while issuing the opaque login challenge', async () => {
+  it('verifies Turnstile before issuing the opaque login challenge', async () => {
     const response = await post('/resolve-login', { identifier: 'somchai.j', turnstileToken: 'resolve-token' });
 
     expect(response.status).toBe(200);
     expect(mocks.issueLoginChallenge).toHaveBeenCalledOnce();
     expect(mocks.verifyTurnstile).toHaveBeenCalledWith(expect.anything(), 'resolve-token', 'login', '192.0.2.10');
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('reports missing CAPTCHA configuration without blaming credentials', async () => {
+    const response = await authRoute.request('/resolve-login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '192.0.2.11' },
+      body: JSON.stringify({ identifier: 'somchai.j', turnstileToken: 'token' }),
+    }, { ...env, TURNSTILE_SECRET_KEY: undefined });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'LOGIN_UNAVAILABLE' } });
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.issueLoginChallenge).not.toHaveBeenCalled();
+  });
+
+  it('reports a rejected challenge CAPTCHA separately from credentials', async () => {
+    mocks.verifyTurnstile.mockResolvedValueOnce(false);
+    const response = await post('/resolve-login', { identifier: 'somchai.j', turnstileToken: 'expired-token' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'LOGIN_CAPTCHA_FAILED' } });
+    expect(mocks.issueLoginChallenge).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ code: 'captcha_failed', status: 400 }, 400, 'LOGIN_CAPTCHA_FAILED'],
+    [{ code: 'over_request_rate_limit', status: 429 }, 429, 'LOGIN_RATE_LIMITED'],
+    [{ code: 'unexpected_failure', status: 500 }, 503, 'LOGIN_UNAVAILABLE'],
+    [{ status: 0 }, 503, 'LOGIN_UNAVAILABLE'],
+    [{ code: 'invalid_credentials', status: 400 }, 401, 'LOGIN_FAILED'],
+  ])('maps provider error %j to %s %s', async (error, status, code) => {
+    mocks.signInWithPassword.mockResolvedValueOnce({ data: { session: null }, error });
+    const response = await post('/login', {
+      identifier: 'somchai.j', password: 'password', challenge: 'a'.repeat(64), turnstileToken: 'token',
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ error: { code } });
+  });
+
+  it('reports a database lookup failure as service unavailable', async () => {
+    mocks.adminRpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202' } });
+    const response = await post('/login', {
+      identifier: 'somchai.j', password: 'password', challenge: 'a'.repeat(64), turnstileToken: 'token',
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'LOGIN_UNAVAILABLE' } });
     expect(mocks.signInWithPassword).not.toHaveBeenCalled();
   });
 

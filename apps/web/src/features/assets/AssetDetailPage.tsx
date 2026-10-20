@@ -144,7 +144,7 @@ function EditAssetForm({
   });
 
   return (
-    <form
+    <form data-ui="form-grid"
       onSubmit={handleSubmit((values) => mutation.mutate(values))}
       data-testid="asset-edit-form"
       className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 sm:grid-cols-3"
@@ -386,7 +386,7 @@ function AssignForm({ employees, departments, onSubmit, isLoading, error }: { em
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   return (
-    <div data-testid="asset-form-assign" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-assign" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้รับ/ผู้ถือครอง</label>
         <select value={toEmployeeId} onChange={(e) => setToEmployeeId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
@@ -438,7 +438,7 @@ function ReturnForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
   return (
-    <div data-testid="asset-form-return" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-return" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่รับคืน</label>
         <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="คลัง IT" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
@@ -468,7 +468,7 @@ function TransferForm({ employees, departments, onSubmit, isLoading, error }: { 
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   return (
-    <div data-testid="asset-form-transfer" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-transfer" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้รับใหม่</label>
         <select value={toEmployeeId} onChange={(e) => setToEmployeeId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
@@ -521,7 +521,7 @@ function RepairSendForm({ vendors, onSubmit, isLoading, error }: { vendors: Cont
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   return (
-    <div data-testid="asset-form-repair-send" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-repair-send" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผู้ให้บริการซ่อม</label>
         <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">— ระบุชื่อเอง —</option>{vendors.filter((vendor) => vendor.status === 'Active').map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.vendor_code} — {vendor.name}</option>)}</select>
@@ -550,7 +550,7 @@ function RepairReturnForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
   return (
-    <div data-testid="asset-form-repair-return" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-repair-return" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">สถานที่รับคืน</label>
         <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="คลัง IT" className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
@@ -578,7 +578,7 @@ function VerifyForm({ onSubmit, isLoading, error }: { onSubmit: (v: Record<strin
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
   return (
-    <div data-testid="asset-form-verify" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div data-ui="form-grid" data-testid="asset-form-verify" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ผลการตรวจนับ</label>
         <select value={result} onChange={(e) => setResult(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">

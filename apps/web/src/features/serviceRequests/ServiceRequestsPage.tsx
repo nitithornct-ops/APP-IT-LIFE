@@ -138,7 +138,7 @@ function RequestDialog({ item, onClose }: { item: ServiceCatalogItem; onClose: (
             </div>
           )}
           <label className={labelClass}>หัวข้อคำขอ<input className={fieldClass} {...register('summary')} /></label>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div data-ui="form-grid" className="grid gap-4 sm:grid-cols-2">
             <label className={labelClass}>ขอให้ใคร (เว้นว่างหากขอให้ตนเอง)<input className={fieldClass} {...register('requestedFor')} /></label>
             <label className={labelClass}>ความเร่งด่วน<select className={fieldClass} {...register('priority')}><option>ต่ำ</option><option>ปานกลาง</option><option>สูง</option><option>วิกฤต</option></select></label>
           </div>
@@ -434,7 +434,7 @@ function CatalogEditor({ item, approvalGroups, departments, owners, onClose }: {
       <FormModal title={item ? 'แก้ไขรายการบริการ' : 'เพิ่มรายการบริการ'} description="กำหนด Metadata, SLA, สิทธิ์ และแบบฟอร์มของบริการ" size="xl" closeDisabled={mutation.isPending || publishMutation.isPending} onClose={onClose}>
       <form onSubmit={handleSubmit((values) => mutation.mutate(values))} noValidate>
         <div className="p-5">
-          <div className="grid gap-x-5 gap-y-4 md:grid-cols-6">
+          <div data-ui="form-grid" className="grid gap-x-5 gap-y-4 md:grid-cols-6">
             <label className={`${labelClass} md:col-span-2`}>รหัสบริการ <span className="text-red-500">*</span><input className={fieldClass} {...register('serviceCode')} /><span className="mt-1 block text-xs font-normal text-slate-400">A-Z, 0-9, _ และ -</span>{errors.serviceCode && <span className="mt-1 block text-xs text-red-600">{errors.serviceCode.message}</span>}</label>
             <label className={`${labelClass} md:col-span-2`}>ชื่อบริการ <span className="text-red-500">*</span><input className={fieldClass} {...register('serviceName')} />{errors.serviceName && <span className="mt-1 block text-xs text-red-600">{errors.serviceName.message}</span>}</label>
             <label className={`${labelClass} md:col-span-2`}>หมวดบริการ<input className={fieldClass} {...register('category')} /></label>

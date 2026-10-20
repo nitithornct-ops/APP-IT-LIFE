@@ -254,6 +254,9 @@ export function CreateTicketForm({
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
     defaultValues: {
+      title: '',
+      description: '',
+      location: '',
       assetId: initialAssetId ?? '',
       categoryId: '',
       isSecurity: false,
@@ -328,7 +331,7 @@ export function CreateTicketForm({
             <p className="font-semibold text-slate-800 dark:text-slate-100">ผู้แจ้ง: <span>{requester.fullName || '—'}</span></p>
             <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400"><span>{requester.position || '—'}</span> · <span>{requester.department || '—'}</span></p>
           </section>
-          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+          <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             <legend className="mb-3 text-sm font-bold text-primary-800 dark:text-primary-200">1. ปัญหาที่ต้องการแจ้ง</legend>
             <div className="sm:col-span-2">
               <label htmlFor="tk-title" className={labelClass}>หัวข้อปัญหา <span className="text-red-500">*</span></label>
@@ -354,7 +357,7 @@ export function CreateTicketForm({
               {errors.description && <p id="tk-description-error" className="mt-1 text-xs text-red-600">{errors.description.message}</p>}
             </div>
           </fieldset>
-          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
+          <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
             <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">2. สถานที่และข้อมูลติดต่อ</legend>
             <div>
               <label htmlFor="tk-location" className={labelClass}>สถานที่ตั้งเครื่อง</label>
@@ -365,11 +368,11 @@ export function CreateTicketForm({
               <input id="tk-phone" type="tel" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
             </div>
           </fieldset>
-          <fieldset disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
+          <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
             <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">3. ข้อมูลเพิ่มเติม (ถ้ามี)</legend>
             <div>
               <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
-              <select id="tk-priority" className={fieldClass} {...register('priority')}>
+              <select id="tk-priority" className={fieldClass} {...register('priority', { setValueAs: (value: string) => value || undefined })}>
                 <option value="">ให้ระบบกำหนดตามประเภทงาน</option>
                 {TICKET_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}
               </select>

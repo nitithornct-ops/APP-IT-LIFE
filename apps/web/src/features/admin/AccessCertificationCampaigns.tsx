@@ -61,7 +61,7 @@ function CreateCampaignForm({ options, onClose }: { options: AccessCertification
   const valid = values.code.trim().length >= 2 && values.name.trim().length > 0 && values.reviewerId.length > 0 && values.dueDate.length === 10;
 
   return (
-    <form
+    <form data-ui="form-stack"
       className="space-y-4"
       onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }}
       noValidate
@@ -69,7 +69,7 @@ function CreateCampaignForm({ options, onClose }: { options: AccessCertification
       <div className="rounded-lg border border-primary-100 bg-primary-50/70 p-3 text-xs text-primary-900 dark:border-primary-900 dark:bg-primary-950/30 dark:text-primary-100">
         ระบบจะถ่าย Evidence Snapshot ของสิทธิ์ที่กำลังใช้งาน/รอเริ่มทั้งหมดในขอบเขตที่เลือกทันทีที่เปิด Campaign
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-semibold text-slate-700 dark:text-slate-200">
           Campaign Code *
           <input value={values.code} onChange={(event) => update('code', event.target.value.toUpperCase())} placeholder="ERP-ACCESS-2569" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
@@ -83,7 +83,7 @@ function CreateCampaignForm({ options, onClose }: { options: AccessCertification
         ชื่อ Campaign *
         <input value={values.name} onChange={(event) => update('name', event.target.value)} placeholder="ทบทวนสิทธิ์ ERP ประจำปี 2569" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-semibold text-slate-700 dark:text-slate-200">
           ขอบเขตระบบ
           <select value={values.systemId} onChange={(event) => update('systemId', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
@@ -123,7 +123,7 @@ function EscalationForm({ campaign, onClose }: { campaign: AccessCertificationCa
   });
   return (
     <FormModal title="Escalate Campaign" description="ส่งต่อให้ Reviewer เร่งทบทวนรายการที่เกินกำหนด" size="sm" onClose={onClose}>
-      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }} noValidate>
+      <form data-ui="form-stack" className="space-y-4" onSubmit={(event) => { event.preventDefault(); setError(null); mutation.mutate(); }} noValidate>
         <p className="text-sm text-slate-600 dark:text-slate-300">Reviewer: <strong>{campaign.reviewer?.full_name ?? '—'}</strong></p>
         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
           เหตุผล *
