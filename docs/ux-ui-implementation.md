@@ -1,6 +1,6 @@
 # LIFE IT UX/UI implementation
 
-อัปเดต 20 ตุลาคม 2569 งานนี้แก้ภายใน workspace เท่านั้น
+อัปเดต 20 ตุลาคม 2569 เตรียมเผยแพร่ผ่าน release PR #79
 
 ## ผลที่ทำแล้ว
 
@@ -32,17 +32,15 @@
 | มาตรฐานและไฟล์ฟอนต์ | `docs/ui-patterns.md`, `apps/web/src/assets/fonts/README.md` |
 | เพิ่มการตรวจ | `e2e/ux-system.spec.ts`, `e2e/print-typography.spec.ts`, `components/forms/SearchablePickers.test.tsx` |
 
-พาธในตารางส่วนประกอบอ้างอิงจาก `apps/web/src` รายการไฟล์และจำนวน form grid รายโมดูลอยู่ที่ [changed-files.json](../.tmp/ux-ui-review/changed-files.json)
+พาธในตารางส่วนประกอบอ้างอิงจาก `apps/web/src` ดูรายการไฟล์ที่เปลี่ยนใน [release PR #79](https://github.com/nitithornct-ops/APP-IT-LIFE/pull/79/files)
 
 ## หลักฐานภาพ
 
-- [เปิดภาพก่อน–หลังทั้ง 3 หน้าและ 3 ขนาด](../.tmp/ux-ui-review/index.html)
-- ภาพก่อนแก้: `.tmp/ux-ui-before/`
-- ภาพตรวจรับล่าสุด รวม 120% และโหมดมืด: `.tmp/ux-ui-acceptance/`
-- รายงานฟอนต์ที่ render จริง: ไฟล์ `rendered-thai-fonts.json` ใต้ผลทดสอบ `ux-system` ในโฟลเดอร์ตรวจรับ
-- ตัวอย่าง PDF A4 สองหน้า: ไฟล์ `ticket-a4.pdf` ใต้ผลทดสอบ `print-typography` ในโฟลเดอร์ตรวจรับ
+- ดาวน์โหลดภาพตรวจรับ รวม 120% และโหมดมืด จาก artifact `staging-e2e-evidence` ของ [Staging Live E2E](https://github.com/nitithornct-ops/APP-IT-LIFE/actions/workflows/staging-e2e.yml) โดย artifact เก็บไว้ 14 วัน
+- รายงานฟอนต์ที่ render จริง: ไฟล์ `rendered-thai-fonts.json` ใต้ผลทดสอบ `ux-system` ใน artifact
+- ตัวอย่าง PDF A4 สองหน้า: ไฟล์ `ticket-a4.pdf` ใต้ผลทดสอบ `print-typography` ใน artifact
 
-ภาพและ PDF ใช้ข้อมูลจำลอง ฟอนต์ในภาพหลังแก้เป็น fallback ของเครื่องทดสอบ ต้องตรวจเทียบใหม่เมื่อได้ Sukhumvit Set จริง ไฟล์หลักฐานอยู่ใน `.tmp` ซึ่งไม่ถูก commit
+ภาพและ PDF ใช้ข้อมูลจำลอง ฟอนต์ในภาพหลังแก้เป็น fallback ของเครื่องทดสอบ ต้องตรวจเทียบใหม่เมื่อได้ Sukhumvit Set จริง ภาพก่อน–หลังในเครื่องผู้พัฒนาเป็นหลักฐานเฉพาะเครื่องและไม่ได้รวมใน repository
 
 ## ผลตรวจสอบ
 
@@ -76,6 +74,5 @@ npm.cmd run test:e2e --workspace=apps/web -- tickets-ux.spec.ts ux-system.spec.t
 2. ยังไม่ได้ตรวจบน iPhone/Android/แท็บเล็ตจริง หรือ browser zoom 200% จริง ผลปัจจุบันเป็น viewport จำลองและ A−/A+ ถึง 120%
 3. ยังไม่ได้เปิดทุก flow ของทุกโมดูลด้วย role และข้อมูลจริง แม้ shared styles และ form grid ถูกนำไปใช้แล้ว Unit suite ไม่แทนการตรวจงานจริงทุกหน้าจอ
 4. ยังไม่ได้ตรวจเอกสารจริงทุกแม่แบบใน Microsoft Word หรือเครื่องพิมพ์จริง ตรวจแล้วเฉพาะตัวอย่าง PDF และ contract ส่งออกเดิม
-5. เครื่องไม่มี Git executable จึงไม่ได้ commit หรือเปลี่ยน branch อ่าน `.git/HEAD` ได้ branch `release/system-ui-sarabun-20261019` สำเนาซอร์สก่อนเริ่มใน `.tmp/ux-source-before` ตรงกับ Git index สำหรับไฟล์ที่ตรวจ แต่ไม่ได้ยืนยัน staged diff เทียบ HEAD ทั้ง repository
 
 โค้ดและมาตรฐานส่วนกลางพร้อมให้ตรวจในเครื่อง ส่วนการติดตั้ง Sukhumvit Set และการตรวจบนอุปกรณ์/ข้อมูลจริงยังต้องทำต่อก่อนสรุปว่าตรวจรับครบทั้งระบบ
