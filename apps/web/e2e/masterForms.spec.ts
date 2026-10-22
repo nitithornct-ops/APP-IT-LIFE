@@ -46,6 +46,7 @@ test('master forms show their purpose and download a blank Word form', async ({ 
   await page.screenshot({ path: testInfo.outputPath('master-forms-desktop.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
+  await expect(page.getByLabel('ขอบเขตแบบฟอร์ม')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: 'ดาวน์โหลดแม่แบบ Word' }).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('master-forms-mobile.png'), fullPage: true, animations: 'disabled' });
 });
