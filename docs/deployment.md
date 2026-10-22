@@ -145,6 +145,11 @@ R2 ยังเป็นที่เก็บสำเนาหลัก ขั�
 
 ## 3. ลำดับ deploy
 
+รวมงาน `Verify Production Config` เข้า `Deploy Production` แล้ว: workflow จะตรวจ Cloudflare access,
+Pages project, production branch และ hostname ก่อนเปลี่ยนฐานข้อมูลหรือ Worker ทุกครั้ง
+จึงไม่ต้องรัน workflow ตรวจ config แยกอีก ส่วน PR Checks, Staging Live E2E, CodeQL,
+Backup และ Production Health Monitor ยังใช้งานและเก็บไว้
+
 Backup เก็บ archive ที่เข้ารหัส AES-256-GCM เป็น GitHub Actions artifact อายุ 90 วัน
 ก่อนส่งสำเนาไป R2 และตรวจถอดรหัสเทียบกับต้นฉบับทุกครั้ง ต้องตั้ง secret
 `BACKUP_ENCRYPTION_KEY` ใน environment `production` เป็นคีย์สุ่ม 32 ไบต์ที่เข้ารหัส base64

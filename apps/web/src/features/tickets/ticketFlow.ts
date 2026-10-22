@@ -53,3 +53,35 @@ export function getTicketFlowIndex(status: TicketStatus, worklogs: readonly Tick
 export function isTicketFlowInterrupted(status: TicketStatus): boolean {
   return status === 'ยกเลิก' || status === 'ยกระดับเป็น Incident';
 }
+
+/** Staff actions for PATCH /tickets/:id. Closing and reopening use their dedicated flows. */
+export function ticketWorkStatuses(status: TicketStatus): TicketStatus[] {
+  if (status === 'เสร็จสิ้น' || status === 'ปิดงาน' || isTicketFlowInterrupted(status)) return [status];
+  if (status === 'ใหม่') return [status, 'รับเรื่องแล้ว', 'กำลังดำเนินการ', 'ส่งต่อ Outsource', 'ยกเลิก'];
+  return [...new Set<TicketStatus>([status, 'กำลังดำเนินการ', 'รออะไหล่', 'รอผู้ใช้งาน', 'ส่งต่อ Outsource', 'เสร็จสิ้น', 'ยกเลิก'])];
+}
+
+export const ticketWorkAction: Partial<Record<TicketStatus, string>> = {
+  รับเรื่องแล้ว: 'รับเรื่อง',
+  กำลังดำเนินการ: 'เริ่ม / ดำเนินการต่อ',
+  รออะไหล่: 'รออะไหล่',
+  รอผู้ใช้งาน: 'รอข้อมูลจากผู้แจ้ง',
+  'ส่งต่อ Outsource': 'ส่งต่อ Vendor',
+  เสร็จสิ้น: 'ส่งตรวจรับ',
+  ยกเลิก: 'ยกเลิกเรื่อง',
+};
+
+export function ticketNextAction(status: TicketStatus): string {
+  switch (status) {
+    case 'ใหม่': return 'รอเจ้าหน้าที่รับเรื่องและมอบหมายผู้รับผิดชอบ';
+    case 'รับเรื่องแล้ว': return 'รอผู้รับผิดชอบเริ่มตรวจสอบและแก้ไขปัญหา';
+    case 'กำลังดำเนินการ': return 'ผู้รับผิดชอบบันทึกผลการแก้ไข แล้วส่งให้ผู้แจ้งตรวจรับ';
+    case 'รออะไหล่': return 'รอผู้ติดตามประสานอะไหล่และอัปเดตตามวันนัดหมาย';
+    case 'รอผู้ใช้งาน': return 'รอผู้แจ้งให้ข้อมูลหรือทดสอบเพิ่มเติมตามที่นัดหมาย';
+    case 'ส่งต่อ Outsource': return 'รอ Vendor ส่งผลการแก้ไขให้เจ้าหน้าที่ตรวจสอบ';
+    case 'เสร็จสิ้น': return 'รอผู้แจ้งทดสอบ ประเมิน และลงลายเซ็นตรวจรับ';
+    case 'ปิดงาน': return 'ตรวจรับเรียบร้อยแล้ว สามารถเปิดรายงานการแจ้งซ่อมได้';
+    case 'ยกเลิก': return 'ยกเลิกเรื่องแล้ว ดูเหตุผลได้ในประวัติการดำเนินงาน';
+    case 'ยกระดับเป็น Incident': return 'ติดตามการดำเนินงานต่อใน Incident ที่เชื่อมโยง';
+  }
+}

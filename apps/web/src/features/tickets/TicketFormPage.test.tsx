@@ -179,6 +179,19 @@ describe('TicketFormPage', () => {
     ));
   });
 
+  it('requires confirmation before replacing a customized document with current Ticket data', async () => {
+    apiFetchMock.mockResolvedValue(formDocument({ isCustomized: true }));
+    renderPage();
+    await screen.findByTestId('ticket-form-page');
+    fireEvent.click(screen.getByRole('button', { name: 'ใช้ข้อมูล Ticket ล่าสุด' }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'ยกเลิก' }));
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-content', { method: 'DELETE' });
+    fireEvent.click(screen.getByRole('button', { name: 'ใช้ข้อมูล Ticket ล่าสุด' }));
+    fireEvent.click(screen.getByRole('button', { name: 'แทนที่เอกสาร' }));
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-content', { method: 'DELETE' }));
+  });
+
   it('ออกจากโหมดแก้ไขได้โดยไม่บันทึกอะไรเลย', async () => {
     apiFetchMock.mockResolvedValue(formDocument());
     renderPage();

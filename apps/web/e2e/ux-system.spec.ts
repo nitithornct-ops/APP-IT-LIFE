@@ -24,7 +24,7 @@ for (const width of [390, 768, 1440]) {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`list-${width}-${theme}-120.png`), fullPage: true });
 
-      await page.getByRole('button', { name: 'เปิด Ticket', exact: true }).click();
+      await page.getByRole('button', { name: 'แจ้งซ่อมใหม่', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'เปิด Ticket แจ้งซ่อม' });
       await expect(dialog.getByRole('button', { name: 'เปิด Ticket', exact: true })).toBeInViewport();
       const field = dialog.getByLabel(/หัวข้อปัญหา/);
@@ -65,7 +65,7 @@ test('recoverable save failure preserves the ticket draft', async ({ page }) => 
     await route.fulfill({ status: 503, json: { success: false, error: { code: 'TEMPORARILY_UNAVAILABLE', message: 'บันทึกไม่สำเร็จ กรุณาลองใหม่' } } });
   });
   await page.goto('/tickets');
-  await page.getByRole('button', { name: 'เปิด Ticket', exact: true }).click();
+  await page.getByRole('button', { name: 'แจ้งซ่อมใหม่', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel(/หัวข้อปัญหา/).fill('เครื่องพิมพ์ไม่ตอบสนอง');
   await dialog.getByLabel(/รายละเอียดปัญหา/).fill('ลองเชื่อมต่อใหม่แล้วยังพิมพ์ไม่ได้');

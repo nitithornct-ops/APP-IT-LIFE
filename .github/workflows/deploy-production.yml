@@ -96,6 +96,10 @@ jobs:
         run: |
           npm run predeploy
           npm run migration:gate
+      - name: Verify Cloudflare access and the production Pages project before changing production
+        run: |
+          npx wrangler whoami
+          node scripts/verify-cloudflare-project.mjs
       - name: Verify release candidate
         run: |
           npm run typecheck

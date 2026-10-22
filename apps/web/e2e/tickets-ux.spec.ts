@@ -11,6 +11,16 @@ test.beforeEach(async ({ page }) => {
   await installTicketUxFixture(page);
 });
 
+test('global queue cards clear personal scope and unrelated list filters', async ({ page }) => {
+  await page.goto('/tickets?scope=assigned&assigneeId=staff-1&priority=สูง&categoryId=old-category&search=printer');
+  await page.getByLabel('เลือกคิวงาน').getByRole('button', { name: /^รอรับเรื่อง:/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('scope')).toBe('all');
+  const params = new URL(page.url()).searchParams;
+  expect(params.get('status')).toBe('ใหม่');
+  for (const key of ['assigneeId', 'mine', 'priority', 'categoryId', 'search']) expect(params.has(key)).toBe(false);
+  await expect(page.getByRole('button', { name: 'รายการทั้งหมด', exact: true })).toHaveAttribute('class', /bg-primary/);
+});
+
 for (const width of [390, 768, 1440]) {
   test.describe(`ticket UX at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
@@ -18,7 +28,8 @@ for (const width of [390, 768, 1440]) {
     test('keeps list data readable and returns to the same filters and page', async ({ page }, testInfo) => {
       await page.goto('/tickets?status=ใหม่&page=2&sort=due_at&order=asc');
       await expect(page.getByRole('link', { name: ticket.title, exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Ticket ทั้งหมด: 12', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'รายการที่ฉันแจ้ง', exact: true })).toBeVisible();
+      await expect(page.getByLabel('เลือกคิวงาน').getByRole('button')).toHaveCount(4);
       await expectPageFits(page);
       // Clicking ordinary data must not open an unexpected preview.
       await page.locator('td[data-label="ผู้แจ้ง"]').first().click();
@@ -41,7 +52,7 @@ for (const width of [390, 768, 1440]) {
       expect(url.searchParams.get('page')).toBe('2');
       expect(url.searchParams.get('sort')).toBe('due_at');
       await expect(page.getByLabel('กรองตามสถานะ')).toHaveValue('ใหม่');
-      await page.getByRole('link', { name: `รายละเอียด ${ticket.ticket_no}`, exact: true }).click();
+      await page.getByRole('link', { name: 'เปิดรายละเอียด', exact: true }).first().click();
       await expect(page.getByRole('heading', { name: ticket.title, exact: true })).toBeInViewport();
       await page.getByRole('link', { name: 'กลับไปรายการ', exact: true }).click();
       expect(new URL(page.url()).searchParams.get('page')).toBe('2');
@@ -49,7 +60,7 @@ for (const width of [390, 768, 1440]) {
 
     test('keeps submit reachable, focuses the problem and validates without losing input', async ({ page }, testInfo) => {
       await page.goto('/tickets');
-      const open = page.getByRole('button', { name: 'เปิด Ticket', exact: true });
+      const open = page.getByRole('button', { name: 'แจ้งซ่อมใหม่', exact: true });
       await open.click();
       const dialog = page.getByRole('dialog', { name: 'เปิด Ticket แจ้งซ่อม' });
       const title = dialog.getByLabel(/หัวข้อปัญหา/);

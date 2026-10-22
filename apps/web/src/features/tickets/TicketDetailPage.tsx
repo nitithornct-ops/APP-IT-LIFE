@@ -33,19 +33,8 @@ import { TicketSignaturePanel } from './TicketSignaturePanel';
 import { canSubmitTicketFeedback } from './ticketFeedback';
 import { LOCKED_TICKET_STATUSES, ticketPriorityTone, ticketSlaBadge, ticketStatusLabel, ticketStatusTone } from './ticketDisplay';
 import { getTicketReturnTo } from './ticketNavigation';
+import { getTicketFlowIndex, isTicketFlowInterrupted, TICKET_FLOW_STEPS, ticketNextAction, ticketWorkAction, ticketWorkStatuses } from './ticketFlow';
 import './tickets.css';
-
-const TICKET_STATUSES: TicketStatus[] = [
-  'ใหม่',
-  'รับเรื่องแล้ว',
-  'กำลังดำเนินการ',
-  'รออะไหล่',
-  'รอผู้ใช้งาน',
-  'ส่งต่อ Outsource',
-  'เสร็จสิ้น',
-  'ปิดงาน',
-  'ยกเลิก',
-];
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -59,9 +48,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 const updateSchema = z.object({
   status: z.string().min(1),
   assigneeId: z.string().optional(),
-  note: z.string().trim().optional(),
+  note: z.string().trim().max(2000).optional(),
   minutesSpent: z.string().optional(),
-  resolution: z.string().trim().optional(),
+  resolution: z.string().trim().max(2000).optional(),
+  rootCause: z.string().trim().max(500).optional(),
   outsourceName: z.string().trim().optional(),
   outsourceVendorId: z.string().optional(),
   outsourceIssueNo: z.string().trim().optional(),
@@ -79,13 +69,14 @@ function localDateTime(value: string | null | undefined): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-function ticketWorkDefaults(ticket: Pick<TicketDetail, 'status' | 'assignee_id' | 'resolution' | 'outsource_vendor_id' | 'outsource_name' | 'outsource_issue_no' | 'waiting_reason' | 'waiting_owner_id' | 'waiting_follow_up_at'>): TicketWorkUpdate {
+function ticketWorkDefaults(ticket: Pick<TicketDetail, 'status' | 'assignee_id' | 'resolution' | 'root_cause' | 'outsource_vendor_id' | 'outsource_name' | 'outsource_issue_no' | 'waiting_reason' | 'waiting_owner_id' | 'waiting_follow_up_at'>): TicketWorkUpdate {
   return {
     status: ticket.status,
     assigneeId: ticket.assignee_id ?? '',
     note: '',
     minutesSpent: '',
     resolution: ticket.resolution ?? '',
+    rootCause: ticket.root_cause ?? '',
     outsourceVendorId: ticket.outsource_vendor_id ?? '',
     outsourceName: ticket.outsource_name ?? '',
     outsourceIssueNo: ticket.outsource_issue_no ?? '',
@@ -187,6 +178,10 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
               setServerError(requirementError);
               return;
             }
+            if (!ticketWorkStatuses(ticket.status).includes(values.status as TicketStatus)) {
+              setServerError('สถานะงานเปลี่ยนแล้ว กรุณาเลือกการดำเนินการอีกครั้ง');
+              return;
+            }
             mutation.mutate(values);
           })}
           className="grid grid-cols-1 gap-3"
@@ -201,12 +196,15 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
               className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
               {...register('status')}
             >
-              {TICKET_STATUSES.filter((status) => status !== 'ปิดงาน').map((s) => (
+              {ticketWorkStatuses(ticket.status).map((s) => (
                 <option key={s} value={s}>
                   {ticketStatusLabel[s]}
                 </option>
               ))}
             </select>
+            <div className="mt-2 flex flex-wrap gap-2" aria-label="ขั้นตอนที่ทำได้">
+              {ticketWorkStatuses(ticket.status).filter((status) => status !== ticket.status && status !== 'ยกเลิก').map((status) => <Button key={status} type="button" size="sm" variant={selectedStatus === status ? 'primary' : 'outline'} disabled={mutation.isPending} onClick={() => setValue('status', status, { shouldDirty: true })}>{ticketWorkAction[status]}</Button>)}
+            </div>
             {selectedStatus === 'เสร็จสิ้น' && (
               <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">ซ่อมเสร็จแล้ว — ระบบจะแจ้งให้ผู้แจ้งประเมิน ตรวจรับ และลงลายเซ็นเพื่อปิดงาน</p>
             )}
@@ -264,6 +262,9 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
             />
           </div>
 
+          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">สาเหตุของปัญหา
+            <textarea rows={2} maxLength={500} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" {...register('rootCause')} />
+          </label>
           {selectedStatus === 'เสร็จสิ้น' && (
             <div className="col-span-full">
               <label htmlFor="upd-resolution" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -337,7 +338,7 @@ export function UpdateWorkPanel({ ticket, staff, vendors, focusOnLoad = false, c
           {serverError && <p className="col-span-full text-xs text-red-600">{serverError}</p>}
 
           <div className="col-span-full">
-            <Button type="submit" size="sm" isLoading={isSubmitting}>
+            <Button type="submit" size="sm" isLoading={isSubmitting || mutation.isPending}>
               บันทึก
             </Button>
           </div>
@@ -462,6 +463,7 @@ export function TicketDetailPage() {
     enabled: !!id,
   });
   const [pmToLink, setPmToLink] = useState('');
+  const [detailTab, setDetailTab] = useState<'conversation' | 'history' | 'documents'>('conversation');
   const pmLinkMutation = useMutation({
     mutationFn: async ({ ticketId, planId, method }: { ticketId: string; planId: string; method: 'POST' | 'DELETE' }) => apiFetch(
       method === 'POST' ? `/api/v1/tickets/${ticketId}/pm-links` : `/api/v1/tickets/${ticketId}/pm-links/${planId}`,
@@ -494,7 +496,7 @@ export function TicketDetailPage() {
 
   const ticket = ticketQuery.data;
   const canManage = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
-  const canUpdateWork = canManage && !LOCKED_TICKET_STATUSES.includes(ticket.status);
+  const canUpdateWork = canManage && ticket.status !== 'เสร็จสิ้น' && !LOCKED_TICKET_STATUSES.includes(ticket.status);
   const canRecommendTechnician = hasPermission('ticket.assign')
     && hasPermission('ticket.view_all')
     && hasPermission('technician_skill.view');
@@ -542,6 +544,14 @@ export function TicketDetailPage() {
         primaryAction={canReopen ? <ReopenButton ticketId={ticket.id} /> : undefined}
       />
 
+      <section aria-label="ความคืบหน้าการแจ้งซ่อม" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+        <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {TICKET_FLOW_STEPS.map((step, index) => <li key={step.label} aria-current={!isTicketFlowInterrupted(ticket.status) && index === getTicketFlowIndex(ticket.status, ticket.worklogs) ? 'step' : undefined} className={`rounded-lg px-3 py-2 text-sm ${index <= getTicketFlowIndex(ticket.status, ticket.worklogs) ? 'bg-primary-50 text-primary-800 dark:bg-primary-950 dark:text-primary-200' : 'bg-slate-50 text-slate-500 dark:bg-slate-900'}`}><span className="font-semibold">{index + 1}. {step.label}</span></li>)}
+        </ol>
+        <p className="mt-3 font-semibold text-slate-800 dark:text-slate-100">{ticketNextAction(ticket.status)}</p>
+        <p className="mt-1 text-sm text-slate-500">ผู้รับผิดชอบ: {ticket.assignee?.full_name ?? ticket.assignee_name_snapshot ?? 'รอมอบหมาย'} · กำหนดแก้ไข: {ticket.due_at ? formatThaiDate(ticket.due_at, 'd MMM yyyy HH:mm') : 'ยังไม่กำหนด'}</p>
+        {ticket.waiting_reason && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">{ticket.waiting_reason}{ticket.waiting_follow_up_at ? ` · ติดตาม ${formatThaiDate(ticket.waiting_follow_up_at, 'd MMM yyyy HH:mm')}` : ''}</p>}
+      </section>
       <Card>
         <CardHeader>รายละเอียด</CardHeader>
         <CardBody>
@@ -553,6 +563,34 @@ export function TicketDetailPage() {
           )}
         </CardBody>
       </Card>
+
+           {(isRequester || ticket.requester_signature_url) && (
+            <RequesterSignoffCard
+              status={ticket.status}
+              signatureUrl={ticket.requester_signature_url}
+              signedAt={ticket.requester_signature_uploaded_at}
+              requesterName={ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name}
+              criteria={ratingCriteriaQuery.data ?? []}
+              rating={ticket.rating}
+              onSign={async (file, ratings, feedback) => {
+                const body = new FormData();
+                body.set('file', file);
+                body.set('ratings', JSON.stringify(ratings));
+                if (feedback) body.set('feedback', feedback);
+                await apiFetch(`/api/v1/tickets/${ticket.id}/requester-signoff`, { method: 'POST', body });
+                await ticketQuery.refetch();
+               }}
+             />
+           )}
+           {isRequester && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') && (
+             <RequesterReopenCard
+               onSubmit={async (reason) => {
+                 await apiFetch(`/api/v1/tickets/${ticket.id}/requester-reopen`, { method: 'POST', body: JSON.stringify({ reason }) });
+                 await ticketQuery.refetch();
+                 void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+               }}
+             />
+           )}
 
       <DetailLayout
         asideFirstOnMobile={canUpdateWork}
@@ -592,13 +630,16 @@ export function TicketDetailPage() {
           </Card>
         </>}
         timeline={<>
-          <TicketConversationPanel
+          <div className="flex flex-wrap gap-2" aria-label="เลือกข้อมูล Ticket">
+            {([['conversation', 'การสื่อสาร'], ['history', 'ประวัติการดำเนินงาน'], ['documents', 'เอกสารและลายเซ็น']] as const).map(([value, label]) => <Button key={value} variant={detailTab === value ? 'primary' : 'outline'} aria-pressed={detailTab === value} onClick={() => setDetailTab(value)}>{label}</Button>)}
+          </div>
+          {detailTab === 'conversation' && <TicketConversationPanel
             ticket={ticket}
             viewerId={me?.profile.id}
             canComment={canComment}
             canInternalNote={canInternalNote}
-          />
-          <Card>
+          />}
+          {detailTab === 'history' && <Card>
             <CardHeader><span className="flex items-center gap-2"><History className="h-4 w-4" aria-hidden="true" />ประวัติการดำเนินงาน</span></CardHeader>
             <CardBody>
               {timelineLogs.length === 0 ? (
@@ -627,7 +668,9 @@ export function TicketDetailPage() {
                 </ol>
               )}
             </CardBody>
-          </Card>
+          </Card>}
+          {detailTab === 'documents' && <>
+          <Link to={`/tickets/${ticket.id}/form`} state={{ ticketReturnTo: returnTo }} className="inline-flex min-h-11 items-center gap-2 font-semibold text-primary-700 hover:underline dark:text-primary-300"><FileText className="h-4 w-4" />เปิดรายงานการแจ้งซ่อม</Link>
           <TicketSignaturePanel
             ticketId={ticket.id}
             signatureUrl={ticket.signature_url}
@@ -635,33 +678,7 @@ export function TicketDetailPage() {
             canManage={canManageSignature}
           />
           {ticket.outsource_vendor_id && <OutsourceSubmissionCard ticketId={ticket.id} canReview={canUpdateWork} />}
-           {(isRequester || ticket.requester_signature_url) && (
-            <RequesterSignoffCard
-              status={ticket.status}
-              signatureUrl={ticket.requester_signature_url}
-              signedAt={ticket.requester_signature_uploaded_at}
-              requesterName={ticket.requester?.full_name ?? ticket.requester_name_snapshot ?? ticket.guest_name}
-              criteria={ratingCriteriaQuery.data ?? []}
-              rating={ticket.rating}
-              onSign={async (file, ratings, feedback) => {
-                const body = new FormData();
-                body.set('file', file);
-                body.set('ratings', JSON.stringify(ratings));
-                if (feedback) body.set('feedback', feedback);
-                await apiFetch(`/api/v1/tickets/${ticket.id}/requester-signoff`, { method: 'POST', body });
-                await ticketQuery.refetch();
-               }}
-             />
-           )}
-           {isRequester && (ticket.status === 'เสร็จสิ้น' || ticket.status === 'ปิดงาน') && (
-             <RequesterReopenCard
-               onSubmit={async (reason) => {
-                 await apiFetch(`/api/v1/tickets/${ticket.id}/requester-reopen`, { method: 'POST', body: JSON.stringify({ reason }) });
-                 await ticketQuery.refetch();
-                 void queryClient.invalidateQueries({ queryKey: ['tickets'] });
-               }}
-             />
-           )}
+          </>}
         </>}
       >
 

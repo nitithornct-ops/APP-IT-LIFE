@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, typ
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { ConfirmModal } from '../../components/ui/Modal';
 import { useAuth } from '../../stores/authContext';
 import { WordLikeEditor } from '../forms/WordLikeEditor';
 import { ApiError, apiFetch, showToast } from '../../services/apiClient';
@@ -120,6 +121,7 @@ export function TicketFormPage() {
    */
   const [edits, setEdits] = useState<{ key: string; indices: number[]; textValues: Record<string, string> } | null>(null);
   const [saveError, setSaveError] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [mode, setMode] = useState<FormMode>('view');
   const [draftHtml, setDraftHtml] = useState('');
   const [pages, setPages] = useState<string[]>([]);
@@ -180,6 +182,7 @@ export function TicketFormPage() {
   const resetContent = useMutation({
     mutationFn: () => apiFetch<{ isCustomized: boolean }>(`/api/v1/tickets/${id}/form-content`, { method: 'DELETE' }),
     onSuccess: async () => {
+      setShowResetConfirm(false);
       await queryClient.invalidateQueries({ queryKey: ['tickets', id, 'form-document'] });
       setMode('view');
       showToast('success', 'คืนแบบฟอร์มกลับไปใช้แม่แบบแล้ว');
@@ -190,6 +193,17 @@ export function TicketFormPage() {
     () => renderTicketFormFields(safeContentHtml, checkedItems, textValues, Boolean(formDocument?.canEditCheckmarks)),
     [checkedItems, formDocument?.canEditCheckmarks, safeContentHtml, textValues],
   );
+
+  const exportDocument = useMutation({
+    mutationFn: async (format: 'word' | 'print') => {
+      if (formDocument?.canEditCheckmarks) await saveFormState.mutateAsync({ indices: checkedItems, textValues });
+      if (format === 'word') exportHtmlAsWord(interactiveFormHtml, `${formDocument!.ticketNo}-form`);
+      else {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        window.print();
+      }
+    },
+  });
 
   const geometry = useMemo(() => {
     const settings = formDocument?.pageSettings ?? {};
@@ -316,7 +330,7 @@ export function TicketFormPage() {
         {formDocument.isCustomized && <Badge variant="warning">แก้ไขเฉพาะใบนี้</Badge>}
         {mode === 'view' ? <>
           {formDocument.canEditContent && <Button variant="outline" onClick={startEditing}><PenLine className="h-4 w-4" />แก้ไขและจัดรูป</Button>}
-          <Button variant="outline" disabled={saveFormState.isPending} onClick={() => exportHtmlAsWord(interactiveFormHtml, `${formDocument.ticketNo}-form`)}><Download className="h-4 w-4" />ดาวน์โหลด Word</Button><Button onClick={() => window.print()}><Printer className="h-4 w-4" />พิมพ์ / บันทึก PDF</Button>
+          <Button variant="outline" disabled={saveFormState.isPending || exportDocument.isPending} onClick={() => exportDocument.mutate('word')}><Download className="h-4 w-4" />ดาวน์โหลด Word</Button><Button disabled={saveFormState.isPending || exportDocument.isPending} onClick={() => exportDocument.mutate('print')}><Printer className="h-4 w-4" />พิมพ์ / บันทึก PDF</Button>
         </> : <>
           <Button variant="ghost" onClick={() => setMode('view')} disabled={isBusy}><X className="h-4 w-4" />ยกเลิก</Button>
           {formDocument.isCustomized && <Button variant="outline" onClick={() => resetContent.mutate()} isLoading={resetContent.isPending} disabled={isBusy}><RotateCcw className="h-4 w-4" />คืนค่าจากแม่แบบ</Button>}
@@ -324,6 +338,20 @@ export function TicketFormPage() {
         </>}
       </div>
     </div>
+
+    <div className={`ticket-form-actions rounded-lg border p-3 text-sm ${formDocument.isCustomized ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200' : 'border-primary-200 bg-primary-50 text-primary-900 dark:border-primary-800 dark:bg-primary-950 dark:text-primary-200'}`}>
+      <p className="font-semibold">{formDocument.isCustomized ? 'เอกสารเฉพาะใบ — ไม่อัปเดตตาม Ticket' : 'รายงานเชื่อมกับข้อมูล Ticket อัตโนมัติ'}</p>
+      <p className="mt-1 text-xs">{formDocument.isCustomized ? 'ข้อมูล Ticket ที่เปลี่ยนภายหลังจะไม่ปรากฏในเอกสารนี้ คืนค่าจากแม่แบบเพื่อใช้ข้อมูลล่าสุด โดยเนื้อหาที่จัดรูปเองจะถูกแทนที่' : 'แก้ข้อมูลผู้แจ้ง ปัญหา และผลการซ่อมที่ Ticket เพื่อใช้ข้อมูลเดียวกันในรายงาน'}</p>
+      {mode === 'view' && formDocument.isCustomized && formDocument.canEditContent && <Button className="mt-2" size="sm" variant="outline" disabled={isBusy} onClick={() => setShowResetConfirm(true)}>ใช้ข้อมูล Ticket ล่าสุด</Button>}
+    </div>
+    {showResetConfirm && <ConfirmModal
+      title="ใช้ข้อมูล Ticket ล่าสุด"
+      description="แทนที่เอกสารที่จัดรูปเองด้วยข้อมูล Ticket ล่าสุด? เนื้อหาที่จัดรูปเองจะถูกแทนที่"
+      confirmLabel="แทนที่เอกสาร"
+      isPending={resetContent.isPending}
+      onClose={() => setShowResetConfirm(false)}
+      onConfirm={() => resetContent.mutate()}
+    >{resetContent.isError && <p role="alert" className="text-sm text-rose-600">คืนค่าเอกสารไม่สำเร็จ กรุณาลองอีกครั้ง</p>}</ConfirmModal>}
 
     <section className="ticket-form-actions rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800" aria-label="ขั้นตอนแบบฟอร์ม Ticket">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -360,6 +388,7 @@ export function TicketFormPage() {
       </p>}
       {saveFormState.isPending && <p className="mt-2 text-xs font-semibold text-primary-700" role="status">กำลังบันทึกแบบฟอร์ม...</p>}
       {saveError && <p className="mt-2 text-xs font-semibold text-rose-600" role="alert">{saveError}</p>}
+      {saveError && <Button size="sm" className="mt-2" variant="outline" isLoading={saveFormState.isPending} onClick={() => saveFormState.mutate({ indices: checkedItems, textValues })}>ลองบันทึกอีกครั้ง</Button>}
       {(saveContent.isError || resetContent.isError) && <p className="mt-2 text-xs font-semibold text-rose-600" role="alert">บันทึกเอกสารไม่สำเร็จ กรุณาลองอีกครั้ง</p>}
     </section>
 
