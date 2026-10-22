@@ -49,7 +49,7 @@ test.beforeAll(async () => {
       description: 'ข้อมูลทดสอบสำหรับเปิดแผงดำเนินการ Ticket',
       category_id: category.id,
       priority: 'ปานกลาง',
-      status: 'ใหม่',
+      status: 'กำลังดำเนินการ',
       source_channel: 'guest',
       guest_name: 'E2E Ticket Actions',
       public_tracking_token_hash: trackingHash,
@@ -86,7 +86,9 @@ test('opens the shared work panel from the Ticket list and explains final status
   await page.goto('/tickets');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
-  const workAction = page.getByRole('link', { name: `ดำเนินการ ${ticketNo}`, exact: true });
+  const row = page.locator('tr', { hasText: ticketNo });
+  await row.locator('summary').click();
+  const workAction = row.getByRole('link', { name: `ดำเนินการ ${ticketNo}`, exact: true });
   await expect(workAction).toBeVisible();
   await workAction.click();
 

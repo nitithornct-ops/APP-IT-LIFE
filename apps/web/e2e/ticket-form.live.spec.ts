@@ -113,12 +113,14 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
 
   await page.goto(`/tickets/${formTicketId}`);
+  await page.getByRole('button', { name: 'เอกสารและลายเซ็น', exact: true }).click();
   await expectImageLoaded(page.getByTestId('ticket-signature-panel').locator('img'));
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-per-ticket-signature.png'), fullPage: true });
 
   await page.goto('/tickets');
   const row = page.locator('tr', { hasText: formTicketNo });
   await expect(row).toBeVisible();
+  await row.locator('summary').click();
   await expect(row.getByRole('link', { name: /ดูแบบฟอร์ม/ })).toBeVisible();
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-list-action.png'), fullPage: true });
 
