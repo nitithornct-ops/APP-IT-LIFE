@@ -117,7 +117,7 @@ test('signs one Ticket and shows that signature on its automatic form', async ({
   await expectImageLoaded(page.getByTestId('ticket-signature-panel').locator('img'));
   await page.screenshot({ path: resolve(process.cwd(), '../../test-results/ticket-form-per-ticket-signature.png'), fullPage: true });
 
-  await page.goto('/tickets');
+  await page.goto('/tickets?scope=all');
   const row = page.locator('tr', { hasText: formTicketNo });
   await expect(row).toBeVisible();
   await row.locator('summary').click();

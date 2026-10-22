@@ -83,7 +83,7 @@ async function login(page: Page) {
 test('opens the shared work panel from the Ticket list and explains final statuses', async ({ page }) => {
   await login(page);
 
-  await page.goto('/tickets');
+  await page.goto('/tickets?scope=all');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const row = page.locator('tr', { hasText: ticketNo });
@@ -108,7 +108,7 @@ test('opens the shared work panel from the Ticket list and explains final status
 test('sorts the Ticket list by SLA due date and keeps the sort across pages', async ({ page }) => {
   await login(page);
 
-  await page.goto('/tickets');
+  await page.goto('/tickets?scope=all');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const slaHeader = page.getByRole('columnheader', { name: /สถานะ\/SLA/ });
@@ -143,7 +143,7 @@ test('sorts the Ticket list by SLA due date and keeps the sort across pages', as
 test('keeps the Ticket list filter and sort in the URL across reload and browser back', async ({ page }) => {
   await login(page);
 
-  await page.goto('/tickets');
+  await page.goto('/tickets?scope=all');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   // เรียงก่อนกรอง เพราะเมื่อกรองแคบลงแล้วอาจไม่เหลือแถวในสภาพแวดล้อมจริง และหัวตารางจะหายไปพร้อมกับปุ่มเรียง
@@ -181,7 +181,7 @@ test('keeps the Ticket list filter and sort in the URL across reload and browser
 test('selects tickets and reports bulk results per ticket', async ({ page }) => {
   await login(page);
 
-  await page.goto('/tickets');
+  await page.goto('/tickets?scope=all');
   await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const selectAll = page.getByRole('checkbox', { name: 'เลือกทุกรายการในหน้านี้', exact: true });

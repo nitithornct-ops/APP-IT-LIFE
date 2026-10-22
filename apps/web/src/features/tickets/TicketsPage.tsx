@@ -555,6 +555,10 @@ export function TicketsPage() {
     table.setFilters({ status: '', priority: '', categoryId: '', search: '', queue: '', mine: scope === 'reported' ? 'true' : '', assigneeId: scope === 'assigned' ? me?.profile.id ?? '' : '', scope });
   }
 
+  function selectGlobalQueue(filters: { status?: string; queue?: string }) {
+    table.setFilters({ status: '', priority: '', categoryId: '', search: '', queue: '', mine: '', assigneeId: '', scope: 'all', ...filters });
+  }
+
   return (
     <div className="ticket-workspace flex min-w-0 flex-col gap-5">
       <PageHeader
@@ -631,10 +635,10 @@ export function TicketsPage() {
         {[['reported', 'รายการที่ฉันแจ้ง'], ...(canManageTicket ? [['assigned', 'งานที่ฉันรับผิดชอบ']] : []), ['all', 'รายการทั้งหมด']].map(([key, label]) => <Button key={key} variant={(key === 'reported' ? mineOnly : key === 'assigned' ? Boolean(assignedId) : !mineOnly && !assignedId) ? 'primary' : 'outline'} onClick={() => selectWorkScope(key)}>{label}</Button>)}
       </div>
       <KpiStrip label="เลือกคิวงาน" items={[
-        { key: 'new', label: 'รอรับเรื่อง', value: kpiQuery.data?.newTickets ?? '—', note: 'รอทีม IT รับเรื่อง', icon: <TicketIcon className="h-5 w-5" />, active: status === 'ใหม่', onClick: () => table.setFilters({ status: status === 'ใหม่' ? '' : 'ใหม่', queue: '' }) },
-        { key: 'overdue', label: 'เกิน SLA', value: queueQuery.data?.overdue ?? '—', tone: 'danger', note: 'ไม่นับงานที่พัก SLA', icon: <AlertTriangle className="h-5 w-5" />, active: queue === 'overdue', onClick: () => table.setFilters({ queue: queue === 'overdue' ? '' : 'overdue', status: '' }) },
-        { key: 'follow-up', label: 'รอติดตาม', value: queueQuery.data?.waitingFollowUp ?? '—', tone: 'amber', note: 'ถึงวันนัดติดตามแล้ว', icon: <Clock3 className="h-5 w-5" />, active: queue === 'waiting_follow_up', onClick: () => table.setFilters({ queue: queue === 'waiting_follow_up' ? '' : 'waiting_follow_up', status: '' }) },
-        { key: 'acceptance', label: 'รอตรวจรับ', value: queueQuery.data?.awaitingAcceptance ?? '—', tone: 'teal', note: 'รอผู้แจ้งยืนยันผลซ่อม', icon: <Star className="h-5 w-5" />, active: queue === 'awaiting_acceptance', onClick: () => table.setFilters({ queue: queue === 'awaiting_acceptance' ? '' : 'awaiting_acceptance', status: '' }) },
+        { key: 'new', label: 'รอรับเรื่อง', value: kpiQuery.data?.newTickets ?? '—', note: 'รอทีม IT รับเรื่อง', icon: <TicketIcon className="h-5 w-5" />, active: status === 'ใหม่', onClick: () => selectGlobalQueue({ status: status === 'ใหม่' ? '' : 'ใหม่' }) },
+        { key: 'overdue', label: 'เกิน SLA', value: queueQuery.data?.overdue ?? '—', tone: 'danger', note: 'ไม่นับงานที่พัก SLA', icon: <AlertTriangle className="h-5 w-5" />, active: queue === 'overdue', onClick: () => selectGlobalQueue({ queue: queue === 'overdue' ? '' : 'overdue' }) },
+        { key: 'follow-up', label: 'รอติดตาม', value: queueQuery.data?.waitingFollowUp ?? '—', tone: 'amber', note: 'ถึงวันนัดติดตามแล้ว', icon: <Clock3 className="h-5 w-5" />, active: queue === 'waiting_follow_up', onClick: () => selectGlobalQueue({ queue: queue === 'waiting_follow_up' ? '' : 'waiting_follow_up' }) },
+        { key: 'acceptance', label: 'รอตรวจรับ', value: queueQuery.data?.awaitingAcceptance ?? '—', tone: 'teal', note: 'รอผู้แจ้งยืนยันผลซ่อม', icon: <Star className="h-5 w-5" />, active: queue === 'awaiting_acceptance', onClick: () => selectGlobalQueue({ queue: queue === 'awaiting_acceptance' ? '' : 'awaiting_acceptance' }) },
       ]} />
       <p className="-mt-3 text-xs text-slate-500">ยอดสรุปตามสิทธิ์ที่เข้าถึงได้ · ขอบเขตและตัวกรองด้านล่างใช้กับรายการงาน</p>
 

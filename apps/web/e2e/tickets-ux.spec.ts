@@ -11,6 +11,16 @@ test.beforeEach(async ({ page }) => {
   await installTicketUxFixture(page);
 });
 
+test('global queue cards clear personal scope and unrelated list filters', async ({ page }) => {
+  await page.goto('/tickets?scope=assigned&assigneeId=staff-1&priority=สูง&categoryId=old-category&search=printer');
+  await page.getByLabel('เลือกคิวงาน').getByRole('button', { name: /^รอรับเรื่อง:/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('scope')).toBe('all');
+  const params = new URL(page.url()).searchParams;
+  expect(params.get('status')).toBe('ใหม่');
+  for (const key of ['assigneeId', 'mine', 'priority', 'categoryId', 'search']) expect(params.has(key)).toBe(false);
+  await expect(page.getByRole('button', { name: 'รายการทั้งหมด', exact: true })).toHaveAttribute('class', /bg-primary/);
+});
+
 for (const width of [390, 768, 1440]) {
   test.describe(`ticket UX at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
