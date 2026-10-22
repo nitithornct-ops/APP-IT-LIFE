@@ -185,10 +185,10 @@ describe('TicketFormPage', () => {
     await screen.findByTestId('ticket-form-page');
     fireEvent.click(screen.getByRole('button', { name: 'ใช้ข้อมูล Ticket ล่าสุด' }));
     expect(screen.getByRole('dialog')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'ยกเลิก', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'ยกเลิก' }));
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-content', { method: 'DELETE' });
     fireEvent.click(screen.getByRole('button', { name: 'ใช้ข้อมูล Ticket ล่าสุด' }));
-    fireEvent.click(screen.getByRole('button', { name: 'แทนที่เอกสาร', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'แทนที่เอกสาร' }));
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/form-content', { method: 'DELETE' }));
   });
 
