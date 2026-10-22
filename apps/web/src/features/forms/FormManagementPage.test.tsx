@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FormManagementPage } from './FormManagementPage';
@@ -47,6 +47,48 @@ function renderPage(initialPath = '/forms') {
 afterEach(() => { cleanup(); apiFetchMock.mockReset(); });
 
 describe('Form Studio เป็นแบบฟอร์มหลักที่ผูกกับ Ticket', () => {
+  it('บันทึกข้อมูลล่าสุดสำเร็จก่อนออกเอกสาร และยังดาวน์โหลดซ้ำได้เมื่อ PDF ล้มเหลว', async () => {
+    renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'บันทึก' })).toBeDisabled());
+    const order: string[] = [];
+    let finishSave!: () => void;
+    apiFetchMock.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/v1/forms/issues/issue-1' && options?.method === 'PATCH') {
+        order.push('save');
+        expect(JSON.parse(options.body as string).title).toBe('แก้ไขล่าสุด');
+        return new Promise((resolve) => { finishSave = () => resolve({ ...issue, title: 'แก้ไขล่าสุด' }); });
+      }
+      if (url.endsWith('/issue')) { order.push('issue'); return Promise.resolve({ issued_at: '2026-10-22T03:00:00Z' }); }
+      if (url.endsWith('/exports/pdf')) { order.push('pdf'); return Promise.reject(new Error('PDF unavailable')); }
+      if (url === '/api/v1/forms/issues') return Promise.resolve([issue]);
+      return Promise.resolve([]);
+    });
+    fireEvent.change(title, { target: { value: 'แก้ไขล่าสุด' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ออกเอกสารและ Export PDF' }));
+    await waitFor(() => expect(order).toEqual(['save']));
+    expect(title).toBeDisabled();
+    finishSave();
+    await waitFor(() => expect(order).toEqual(['save', 'issue', 'pdf']));
+    expect(await screen.findByText('PDF unavailable')).toBeVisible();
+    expect(screen.getByText('ออกเอกสารแล้ว')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled();
+  });
+
+  it('ไม่ออกเอกสารหากบันทึกไม่สำเร็จ', async () => {
+    renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'บันทึก' })).toBeDisabled());
+    apiFetchMock.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'PATCH') return Promise.reject(new Error('Save failed'));
+      return Promise.resolve(url === '/api/v1/forms/issues' ? [issue] : []);
+    });
+    fireEvent.change(title, { target: { value: 'ข้อมูลที่ยังไม่บันทึก' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ออกเอกสารและ Export PDF' }));
+    expect(await screen.findByText('Save failed')).toBeVisible();
+    expect(apiFetchMock.mock.calls.some(([url]) => url.endsWith('/issue'))).toBe(false);
+    expect(screen.getByText('ยังไม่บันทึก')).toBeVisible();
+  });
   it('เริ่มที่แม่แบบหลักของ Ticket พร้อมปุ่ม Word และไม่มีคำสั่งลบแม่แบบหลัก', async () => {
     renderPage();
     expect(await screen.findByText('แบบฟอร์มหลัก · งานแจ้งซ่อม / Ticket ทั้งหมด')).toBeVisible();
@@ -59,8 +101,8 @@ describe('Form Studio เป็นแบบฟอร์มหลักที่�
     fireEvent.click(screen.getByRole('button', { name: 'สร้างแบบฟอร์มหลัก' }));
 
     expect(screen.getByLabelText('ใช้เป็นแบบฟอร์มของโมดูล')).toBeVisible();
-    expect(screen.getByRole('option', { name: 'Ticket / งานแจ้งซ่อม' })).toBeVisible();
-    expect(screen.getByRole('option', { name: 'ยืม / คืน Asset' })).toBeVisible();
+    expect(within(screen.getByRole('dialog')).getByRole('option', { name: 'Ticket / งานแจ้งซ่อม' })).toBeVisible();
+    expect(within(screen.getByRole('dialog')).getByRole('option', { name: 'ยืม / คืน Asset' })).toBeVisible();
   });
   /**
    * เดิมเลข Ticket ในตารางเป็นข้อความเฉย ๆ ผู้ใช้ต้องคัดลอกไปค้นเองทุกครั้งที่อยากดูงานต้นเรื่อง

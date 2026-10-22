@@ -7,7 +7,6 @@ import {
   Clock3,
   FileText,
   Plus,
-  ShieldAlert,
   Star,
   Tags,
   Ticket as TicketIcon,
@@ -189,11 +188,7 @@ function sourceLabel(source: string): string {
 }
 
 interface TicketKpiCounts {
-  all: number;
   newTickets: number;
-  inProgress: number;
-  critical: number;
-  mine: number;
 }
 
 async function ticketFilterCount(query: string): Promise<number> {
@@ -202,19 +197,19 @@ async function ticketFilterCount(query: string): Promise<number> {
 }
 
 const ticketSchema = z.object({
-  title: z.string().trim().min(1, 'กรุณากรอกหัวข้อปัญหา'),
+  title: z.string().trim().min(1, 'กรุณากรอกหัวข้อปัญหา').max(200, 'หัวข้อต้องไม่เกิน 200 ตัวอักษร'),
   categoryId: z.string().min(1, 'กรุณาเลือกหมวดหมู่'),
   priority: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']).optional(),
   ),
-  location: z.string().trim().optional(),
-  requesterPhone: z.string().trim().optional(),
-  incidentAt: z.string().min(1, 'กรุณาระบุวันที่และเวลาที่พบปัญหา'),
+  location: z.string().trim().max(160, 'สถานที่ต้องไม่เกิน 160 ตัวอักษร').optional(),
+  requesterPhone: z.string().trim().max(40, 'เบอร์ติดต่อต้องไม่เกิน 40 ตัวอักษร').optional(),
+  incidentAt: z.string().min(1, 'กรุณาระบุวันที่และเวลาที่พบปัญหา').refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันเวลาไม่ถูกต้อง'),
   erpModule: z.string().trim().max(120, 'ERP Module ต้องไม่เกิน 120 ตัวอักษร').optional(),
   assetId: z.string().optional(),
   isSecurity: z.boolean().optional(),
-  description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด'),
+  description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000, 'รายละเอียดต้องไม่เกิน 3,000 ตัวอักษร'),
 });
 
 type TicketForm = z.infer<typeof ticketSchema>;
@@ -232,6 +227,7 @@ export function CreateTicketForm({
   initialAssetId,
   requester,
   onClose,
+  onCreated,
 }: {
   categories: TicketCategory[];
   assets: AssetOption[];
@@ -240,19 +236,30 @@ export function CreateTicketForm({
   initialAssetId?: string;
   requester: { fullName: string; position: string; department: string; phone: string };
   onClose: () => void;
+  onCreated?: (ticket: { id: string; ticket_no?: string }) => void;
 }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [assetSearch, setAssetSearch] = useState('');
+  useEffect(() => {
+    if (!attachment?.type.startsWith('image/')) { setPreviewUrl(''); return; }
+    const url = URL.createObjectURL(attachment);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachment]);
   const [createdTicket, setCreatedTicket] = useState<{ id: string } | null>(null);
   const formId = useId();
   const titleRef = useRef<HTMLInputElement | null>(null);
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isDirty },
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
+    mode: 'onTouched',
     defaultValues: {
       title: '',
       description: '',
@@ -272,7 +279,7 @@ export function CreateTicketForm({
       if (attachment && attachment.size > 10 * 1024 * 1024) {
         throw new ApiError('FILE_TOO_LARGE', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
       }
-      const ticket = createdTicket ?? await apiFetch<{ id: string }>('/api/v1/tickets', {
+      const ticket = createdTicket ?? await apiFetch<{ id: string; ticket_no?: string }>('/api/v1/tickets', {
         method: 'POST',
         body: JSON.stringify({
           ...values,
@@ -295,10 +302,11 @@ export function CreateTicketForm({
       }
       return ticket;
     },
-    onSuccess: () => {
+    onSuccess: (ticket) => {
       void queryClient.invalidateQueries({ queryKey: ['tickets'] });
       showToast('success', 'ส่งใบแจ้งซ่อมเรียบร้อยแล้ว สามารถติดตามได้จากรายการแจ้งซ่อม');
       onClose();
+      onCreated?.(ticket);
     },
     onError: (error) => setServerError(error instanceof ApiError ? error.message : 'แจ้งซ่อมไม่สำเร็จ'),
   });
@@ -327,10 +335,6 @@ export function CreateTicketForm({
     >
       <form id={formId} onSubmit={handleSubmit((values) => { setServerError(null); mutation.mutate(values); })} noValidate>
         <div className="space-y-5 p-4 sm:p-6">
-          <section aria-label="ข้อมูลผู้แจ้ง" className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-900/50">
-            <p className="font-semibold text-slate-800 dark:text-slate-100">ผู้แจ้ง: <span>{requester.fullName || '—'}</span></p>
-            <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400"><span>{requester.position || '—'}</span> · <span>{requester.department || '—'}</span></p>
-          </section>
           <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             <legend className="mb-3 text-sm font-bold text-primary-800 dark:text-primary-200">1. ปัญหาที่ต้องการแจ้ง</legend>
             <div className="sm:col-span-2">
@@ -359,13 +363,19 @@ export function CreateTicketForm({
           </fieldset>
           <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
             <legend className="text-sm font-bold text-primary-800 dark:text-primary-200">2. สถานที่และข้อมูลติดต่อ</legend>
+            <section aria-label="ข้อมูลผู้แจ้ง" className="rounded-xl bg-slate-50 p-3 text-sm sm:col-span-2 dark:bg-slate-900/50">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">ผู้แจ้ง: <span>{requester.fullName || '—'}</span></p>
+              <p className="mt-1 text-xs text-slate-500"><span>{requester.position || '—'}</span> · <span>{requester.department || '—'}</span></p>
+            </section>
             <div>
               <label htmlFor="tk-location" className={labelClass}>สถานที่ตั้งเครื่อง</label>
-              <input id="tk-location" className={fieldClass} placeholder="เช่น อาคาร A ชั้น 2 ห้องบัญชี" {...register('location')} />
+              <input id="tk-location" maxLength={160} className={fieldClass} placeholder="เช่น อาคาร A ชั้น 2 ห้องบัญชี" {...register('location')} />
+              {errors.location && <p className="mt-1 text-xs text-red-600">{errors.location.message}</p>}
             </div>
             <div>
               <label htmlFor="tk-phone" className={labelClass}>เบอร์โทรศัพท์</label>
-              <input id="tk-phone" type="tel" inputMode="tel" className={fieldClass} {...register('requesterPhone')} />
+              <input id="tk-phone" type="tel" inputMode="tel" maxLength={40} className={fieldClass} {...register('requesterPhone')} />
+              {errors.requesterPhone && <p className="mt-1 text-xs text-red-600">{errors.requesterPhone.message}</p>}
             </div>
           </fieldset>
           <fieldset data-ui="form-grid" disabled={mutation.isPending || Boolean(createdTicket)} className="grid min-w-0 grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-700">
@@ -374,21 +384,22 @@ export function CreateTicketForm({
               <label htmlFor="tk-priority" className={labelClass}>ระดับความรุนแรง</label>
               <select id="tk-priority" className={fieldClass} {...register('priority', { setValueAs: (value: string) => value || undefined })}>
                 <option value="">ให้ระบบกำหนดตามประเภทงาน</option>
-                {TICKET_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}
+                {TICKET_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority} — {({ ต่ำ: 'ยังทำงานต่อได้', ปานกลาง: 'ทำงานได้บางส่วน', สูง: 'งานหลักหยุดชะงัก', วิกฤต: 'ทั้งแผนกหรือระบบหลักใช้งานไม่ได้' })[priority]}</option>)}
               </select>
             </div>
             <div>
               <label htmlFor="tk-asset" className={labelClass}>ผูกกับ Asset (ถ้ามี)</label>
+              <input aria-label="ค้นหาอุปกรณ์" type="search" value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} className={`${fieldClass} mb-2`} placeholder="ค้นหารหัสหรือชื่ออุปกรณ์" />
               <select id="tk-asset" className={fieldClass} disabled={assetsLoading} {...register('assetId')}>
                 <option value="">{assetsLoading ? 'กำลังโหลด...' : '-- ไม่ระบุอุปกรณ์ --'}</option>
-                {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.asset_code} — {asset.name}</option>)}
+                {assets.filter((asset) => asset.id === watch('assetId') || `${asset.asset_code} ${asset.name}`.toLowerCase().includes(assetSearch.toLowerCase())).map((asset) => <option key={asset.id} value={asset.id}>{asset.asset_code} — {asset.name}</option>)}
               </select>
             </div>
-            <div>
+            {/ERP/i.test(categories.find((category) => category.id === watch('categoryId'))?.name ?? '') && <div>
               <label htmlFor="tk-erp-module" className={labelClass}>ERP Module (ถ้ามี)</label>
               <input id="tk-erp-module" className={fieldClass} placeholder="เช่น Finance, Inventory" {...register('erpModule')} />
               {errors.erpModule && <p className="mt-1 text-xs text-red-600">{errors.erpModule.message}</p>}
-            </div>
+            </div>}
             <label className="flex min-h-11 cursor-pointer items-center gap-2 self-end text-sm text-slate-700 dark:text-slate-200">
               <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" {...register('isSecurity')} />สงสัยภัยคุกคาม
             </label>
@@ -397,6 +408,8 @@ export function CreateTicketForm({
             <label htmlFor="tk-attachment" className={labelClass}>แนบหลักฐาน/ภาพหน้าจอ</label>
             <input id="tk-attachment" type="file" disabled={mutation.isPending} accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} className="block min-h-11 w-full min-w-0 cursor-pointer rounded-xl border border-slate-300 bg-white text-sm text-slate-600 file:mr-3 file:min-h-11 file:border-0 file:border-r file:border-slate-300 file:bg-slate-50 file:px-3 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:file:border-slate-600 dark:file:bg-slate-800 dark:file:text-slate-200" />
             <p className="mt-1 text-xs text-slate-500">รองรับรูปภาพ เอกสาร และ PDF ขนาดไม่เกิน 10 MB</p>
+            {previewUrl && <img src={previewUrl} alt="ตัวอย่างหลักฐานก่อนส่ง" className="mt-3 max-h-48 max-w-full rounded-lg object-contain" />}
+            {attachment && <p className="mt-1 break-words text-xs text-slate-500">{attachment.name} · {(attachment.size / 1024 / 1024).toFixed(2)} MB</p>}
           </div>
           {serverError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{createdTicket ? 'สร้างใบแจ้งซ่อมแล้ว แต่แนบไฟล์ไม่สำเร็จ กดลองแนบไฟล์อีกครั้งโดยไม่สร้างใบงานซ้ำ หรือยกเลิกเพื่อกลับไปรายการ' : serverError}</div>}
         </div>
@@ -410,6 +423,7 @@ export function TicketsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [createdResult, setCreatedResult] = useState<{ id: string; ticket_no?: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   /**
    * ลิงก์จากจอสแกนหน้างาน (/field/scan) เปิดฟอร์มแจ้งซ่อมพร้อมผูกเครื่องที่สแกนไว้แล้ว
@@ -434,17 +448,25 @@ export function TicketsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkResult, setBulkResult] = useState<TicketBulkResult | null>(null);
   // สถานะของตารางอยู่ใน URL ทั้งหมด — refresh แล้วไม่หาย ส่งลิงก์ให้คนอื่นได้หน้าเดียวกัน
-  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine' | 'queue'>({
-    filters: ['status', 'categoryId', 'priority', 'search', 'mine', 'queue'],
+  const table = useTableParams<'status' | 'categoryId' | 'priority' | 'search' | 'mine' | 'queue' | 'assigneeId' | 'scope'>({
+    filters: ['status', 'categoryId', 'priority', 'search', 'mine', 'queue', 'assigneeId', 'scope'],
   });
   const { page, pageSize, sort } = table;
   // ค่าเริ่มต้นคือใบงานล่าสุดขึ้นก่อน เหมือนตารางทุกโมดูล — เรียงตามกำหนด SLA ได้จากหัวคอลัมน์
   const effectiveSort = sort ?? { key: 'created_at', order: 'desc' as const };
   const { status, categoryId, priority, search: searchInput, queue } = table.filters;
-  const mineOnly = table.filters.mine === 'true';
+  const mineOnly = table.filters.mine === 'true' || (!table.filters.scope && !searchParams.size && !hasPermission('ticket.view_all'));
+  const assignedId = table.filters.assigneeId || (!table.filters.scope && !searchParams.size && hasPermission('ticket.view_all') ? me?.profile.id ?? '' : '');
   const search = useDebouncedValue(searchInput.trim(), 350);
   const canManageTicket = hasPermission('ticket.update') || hasPermission('ticket.assign') || hasPermission('ticket.close') || hasPermission('ticket.triage');
   const canCloseTicket = hasPermission('ticket.close');
+  const setTicketFilters = table.setFilters;
+  useEffect(() => {
+    if (searchParams.size || !me?.profile.id) return;
+    setTicketFilters(canManageTicket
+      ? { scope: 'assigned', assigneeId: me.profile.id }
+      : { scope: 'reported', mine: 'true' }, { replace: true });
+  }, [searchParams.size, me?.profile.id, canManageTicket, setTicketFilters]);
 
   /**
    * แก้ไขและยกเลิกจากหน้ารายการ ใช้ปลายทางเดียวกับหน้ารายละเอียด จึงผ่านกฎการเปลี่ยนสถานะ
@@ -492,6 +514,7 @@ export function TicketsPage() {
     if (priority) params.set('priority', priority);
     if (search) params.set('search', search);
     if (mineOnly) params.set('mine', 'true');
+    if (assignedId) params.set('assigneeId', assignedId);
     if (queue) params.set('queue', queue);
     return params.toString();
   })();
@@ -504,14 +527,7 @@ export function TicketsPage() {
   const kpiQuery = useQuery({
     queryKey: ['tickets', 'filter-counts', me?.profile.id],
     queryFn: async (): Promise<TicketKpiCounts> => {
-      const [all, newTickets, inProgress, critical, mine] = await Promise.all([
-        ticketFilterCount(''),
-        ticketFilterCount(`status=${encodeURIComponent('ใหม่')}`),
-        ticketFilterCount(`status=${encodeURIComponent('กำลังดำเนินการ')}`),
-        ticketFilterCount(`priority=${encodeURIComponent('วิกฤต')}`),
-        ticketFilterCount('mine=true'),
-      ]);
-      return { all, newTickets, inProgress, critical, mine };
+      return { newTickets: await ticketFilterCount('status=' + encodeURIComponent('ใหม่')) };
     },
     staleTime: 60_000,
   });
@@ -529,22 +545,14 @@ export function TicketsPage() {
   });
 
   function resetFilters() {
-    table.reset();
+    table.setFilters({ status: '', categoryId: '', priority: '', search: '', mine: '', queue: '', assigneeId: '', scope: 'all' });
   }
 
   const totalItems = ticketsQuery.data?.pagination.totalItems ?? 0;
-  const overdueOnPage = (ticketsQuery.data?.items ?? []).filter((ticket) => ticket.sla_state === 'overdue' || (!ticket.sla_state && ticket.due_at && new Date(ticket.due_at).getTime() < Date.now() && !LOCKED_TICKET_STATUSES.includes(ticket.status) && !ticket.is_sla_paused)).length;
-  const activeFilterCount = [status, categoryId, priority, searchInput, mineOnly ? 'true' : '', queue].filter(Boolean).length;
+  const activeFilterCount = [status, categoryId, priority, searchInput, mineOnly ? 'true' : '', assignedId, queue].filter(Boolean).length;
 
-  function applyKpiFilter(values: { status?: TicketStatus; priority?: TicketPriority; mine?: boolean }) {
-    table.setFilters({
-      status: values.status ?? '',
-      priority: values.priority ?? '',
-      mine: values.mine ? 'true' : '',
-      queue: '',
-      categoryId: '',
-      search: '',
-    });
+  function selectWorkScope(scope: string) {
+    table.setFilters({ status: '', priority: '', categoryId: '', search: '', queue: '', mine: scope === 'reported' ? 'true' : '', assigneeId: scope === 'assigned' ? me?.profile.id ?? '' : '', scope });
   }
 
   return (
@@ -569,7 +577,7 @@ export function TicketsPage() {
         primaryAction={
           <RequirePermission permission="ticket.create">
             <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" /> เปิด Ticket
+              <Plus className="h-4 w-4" aria-hidden="true" /> แจ้งซ่อมใหม่
             </Button>
           </RequirePermission>
         }
@@ -613,101 +621,22 @@ export function TicketsPage() {
             position: positionsQuery.data?.find((item) => item.id === me?.profile.position_id)?.name_th ?? '',
           }}
           onClose={closeCreate}
+          onCreated={(ticket) => setCreatedResult(ticket)}
         />
       )}
 
-      <KpiStrip
-        label="สรุป Ticket ที่กดเพื่อกรองรายการได้"
-        items={[
-          {
-            key: 'all',
-            tone: 'gray',
-            label: 'Ticket ทั้งหมด',
-            value: kpiQuery.data?.all ?? '—',
-            note: 'ตามสิทธิ์ที่เข้าถึงได้',
-            icon: <FileText className="h-4 w-4" />,
-            active: activeFilterCount === 0,
-            onClick: resetFilters,
-          },
-          {
-            key: 'new',
-            tone: 'teal',
-            label: 'Ticket ใหม่',
-            value: kpiQuery.data?.newTickets ?? '—',
-            note: 'ยังไม่ได้รับเรื่อง',
-            icon: <TicketIcon className="h-5 w-5" />,
-            active: status === 'ใหม่' && !priority && !mineOnly,
-            onClick: () => applyKpiFilter(status === 'ใหม่' && !priority && !mineOnly ? {} : { status: 'ใหม่' }),
-          },
-          {
-            key: 'in-progress',
-            label: 'กำลังดำเนินการ',
-            value: kpiQuery.data?.inProgress ?? '—',
-            note: 'งานที่ทีมกำลังรับผิดชอบ',
-            icon: <Clock3 className="h-5 w-5" />,
-            active: status === 'กำลังดำเนินการ' && !priority && !mineOnly,
-            onClick: () => applyKpiFilter(status === 'กำลังดำเนินการ' && !priority && !mineOnly ? {} : { status: 'กำลังดำเนินการ' }),
-          },
-          {
-            key: 'critical',
-            tone: 'danger',
-            label: 'ความเร่งด่วนวิกฤต',
-            value: kpiQuery.data?.critical ?? '—',
-            note: 'ต้องจัดลำดับก่อนงานทั่วไป',
-            icon: <ShieldAlert className="h-5 w-5" />,
-            active: priority === 'วิกฤต' && !status && !mineOnly,
-            onClick: () => applyKpiFilter(priority === 'วิกฤต' && !status && !mineOnly ? {} : { priority: 'วิกฤต' }),
-          },
-          {
-            key: 'mine',
-            tone: 'gray',
-            label: 'Ticket ของฉัน',
-            value: kpiQuery.data?.mine ?? '—',
-            note: 'รายการที่ฉันเป็นผู้แจ้ง',
-            icon: <Star className="h-5 w-5" />,
-            active: mineOnly && !status && !priority,
-            onClick: () => applyKpiFilter(mineOnly && !status && !priority ? {} : { mine: true }),
-          },
-          {
-            key: 'overdue',
-            tone: 'danger',
-            label: 'เกิน SLA ในหน้านี้',
-            value: overdueOnPage,
-            note: 'จัดการก่อนคิวทั่วไป',
-            icon: <AlertTriangle className="h-4 w-4" />,
-          },
-        ]}
-      />
+      {createdResult && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"><p>แจ้งซ่อมสำเร็จ {createdResult.ticket_no ?? ''}</p><Link className="inline-flex min-h-11 items-center font-semibold underline" to={`/tickets/${createdResult.id}`} state={ticketNavigationState}>ติดตามรายการนี้</Link></div>}
 
-      <section aria-label="คิวงานเจ้าหน้าที่" className="rounded-card border border-hairline bg-white p-3 shadow-card dark:border-white/[.08] dark:bg-white/[.035]">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-extrabold text-ink-heading dark:text-[#e8eef9]">คิวงานเจ้าหน้าที่</p>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-white/45">พัก SLA จะไม่ถูกนับเป็นงานเกิน SLA</p>
-          </div>
-          {queue && <Button size="sm" variant="ghost" onClick={() => table.setFilter('queue', '')}>ล้างคิว</Button>}
-        </div>
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
-          {([
-            ['unassigned', 'ยังไม่มีผู้รับผิดชอบ', queueQuery.data?.unassigned ?? '—', 'secondary'],
-            ['near_sla', 'ใกล้เกิน SLA', queueQuery.data?.nearSla ?? '—', 'warning'],
-            ['overdue', 'เกิน SLA', queueQuery.data?.overdue ?? '—', 'danger'],
-            ['waiting_follow_up', 'รอติดตาม', queueQuery.data?.waitingFollowUp ?? '—', 'warning'],
-            ['awaiting_acceptance', 'รอตรวจรับ', queueQuery.data?.awaitingAcceptance ?? '—', 'warning'],
-            ['paused', 'พัก SLA', queueQuery.data?.paused ?? '—', 'warning'],
-          ] as const).map(([key, label, value, tone]) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={queue === key}
-              onClick={() => table.setFilters({ queue: queue === key ? '' : key, status: '', categoryId: '', priority: '', search: '', mine: '' })}
-              className={cn('min-h-11 rounded-lg border px-3 py-2 text-left transition hover:border-primary-300 hover:bg-primary-50 dark:border-white/[.08] dark:hover:bg-white/[.05]', queue === key && 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20')}
-            >
-              <span className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300"><span>{label}</span><Badge variant={tone}>{value}</Badge></span>
-            </button>
-          ))}
-        </div>
-      </section>
+      <div className="flex flex-wrap gap-2" aria-label="เลือกขอบเขตงาน">
+        {[['reported', 'รายการที่ฉันแจ้ง'], ...(canManageTicket ? [['assigned', 'งานที่ฉันรับผิดชอบ']] : []), ['all', 'รายการทั้งหมด']].map(([key, label]) => <Button key={key} variant={(key === 'reported' ? mineOnly : key === 'assigned' ? Boolean(assignedId) : !mineOnly && !assignedId) ? 'primary' : 'outline'} onClick={() => selectWorkScope(key)}>{label}</Button>)}
+      </div>
+      <KpiStrip label="เลือกคิวงาน" items={[
+        { key: 'new', label: 'รอรับเรื่อง', value: kpiQuery.data?.newTickets ?? '—', note: 'รอทีม IT รับเรื่อง', icon: <TicketIcon className="h-5 w-5" />, active: status === 'ใหม่', onClick: () => table.setFilters({ status: status === 'ใหม่' ? '' : 'ใหม่', queue: '' }) },
+        { key: 'overdue', label: 'เกิน SLA', value: queueQuery.data?.overdue ?? '—', tone: 'danger', note: 'ไม่นับงานที่พัก SLA', icon: <AlertTriangle className="h-5 w-5" />, active: queue === 'overdue', onClick: () => table.setFilters({ queue: queue === 'overdue' ? '' : 'overdue', status: '' }) },
+        { key: 'follow-up', label: 'รอติดตาม', value: queueQuery.data?.waitingFollowUp ?? '—', tone: 'amber', note: 'ถึงวันนัดติดตามแล้ว', icon: <Clock3 className="h-5 w-5" />, active: queue === 'waiting_follow_up', onClick: () => table.setFilters({ queue: queue === 'waiting_follow_up' ? '' : 'waiting_follow_up', status: '' }) },
+        { key: 'acceptance', label: 'รอตรวจรับ', value: queueQuery.data?.awaitingAcceptance ?? '—', tone: 'teal', note: 'รอผู้แจ้งยืนยันผลซ่อม', icon: <Star className="h-5 w-5" />, active: queue === 'awaiting_acceptance', onClick: () => table.setFilters({ queue: queue === 'awaiting_acceptance' ? '' : 'awaiting_acceptance', status: '' }) },
+      ]} />
+      <p className="-mt-3 text-xs text-slate-500">ยอดสรุปตามสิทธิ์ที่เข้าถึงได้ · ขอบเขตและตัวกรองด้านล่างใช้กับรายการงาน</p>
 
       <section className="space-y-3" aria-label="รายการ Ticket">
         <FilterBar
@@ -716,6 +645,9 @@ export function TicketsPage() {
           onSubmit={() => table.setPage(1)}
           searchPlaceholder="ค้นหาเลขที่ เรื่อง ผู้แจ้ง..."
           filters={<>
+            <select aria-label="กรองตามคิวงาน" value={queue} onChange={(event) => table.setFilters({ queue: event.target.value, status: '' })} className={filterControlClass}>
+              <option value="">คิว: ทั้งหมด</option><option value="unassigned">ยังไม่มีผู้รับผิดชอบ</option><option value="near_sla">ใกล้เกิน SLA</option><option value="overdue">เกิน SLA</option><option value="waiting_follow_up">รอติดตาม</option><option value="awaiting_acceptance">รอตรวจรับ</option><option value="paused">พัก SLA</option>
+            </select>
             <select
               aria-label="กรองตามสถานะ"
               value={status}
@@ -744,11 +676,6 @@ export function TicketsPage() {
               {TICKET_PRIORITIES.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </>}
-          quickFilters={[
-            { key: 'mine', label: 'ของฉันเท่านั้น', active: mineOnly, onClick: () => table.setFilter('mine', mineOnly ? '' : 'true') },
-            { key: 'new', label: 'Ticket ใหม่', active: status === 'ใหม่', onClick: () => table.setFilter('status', status === 'ใหม่' ? '' : 'ใหม่') },
-            { key: 'critical', label: 'วิกฤต', active: priority === 'วิกฤต', onClick: () => table.setFilter('priority', priority === 'วิกฤต' ? '' : 'วิกฤต') },
-          ]}
           onClear={resetFilters}
           activeFilterCount={activeFilterCount}
           resultCount={totalItems}
@@ -849,6 +776,7 @@ export function TicketsPage() {
                         <p className="mt-1 text-xs text-slate-400">{ticket.outsource_name ? `Outsource: ${ticket.outsource_name}` : 'ทีมภายใน'}</p>
                       </td>
                       <td className="px-3 py-3 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-2"><Link to={`/tickets/${ticket.id}`} state={ticketNavigationState} className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-primary-700">เปิดรายละเอียด</Link><details className="relative"><summary className="min-h-11 cursor-pointer px-3 py-3 text-sm">เพิ่มเติม</summary><div className="rounded-lg border border-slate-200 bg-white p-2 dark:bg-slate-800">
                         <RowActions
                           recordLabel={ticket.ticket_no}
                           iconOnly
@@ -864,7 +792,7 @@ export function TicketsPage() {
                             },
                             {
                               kind: 'cancel',
-                              hidden: !canCloseTicket || LOCKED_TICKET_STATUSES.includes(ticket.status),
+                              hidden: !canCloseTicket || ticket.status === 'เสร็จสิ้น' || LOCKED_TICKET_STATUSES.includes(ticket.status),
                               isPending: updateTicket.isPending,
                               reasonLabel: 'เหตุผลที่ยกเลิก',
                               reasonPlaceholder: 'เช่น ผู้แจ้งแก้ไขเองได้แล้ว / แจ้งซ้ำกับใบอื่น',
@@ -879,6 +807,7 @@ export function TicketsPage() {
                             },
                           ]}
                         />
+                        </div></details></div>
                       </td>
                     </tr>
                   ))}

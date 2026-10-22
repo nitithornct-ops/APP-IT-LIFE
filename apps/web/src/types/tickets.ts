@@ -108,6 +108,7 @@ export interface TicketDetail extends TicketListItem {
   acknowledged_at: string | null;
   resolved_at: string | null;
   resolution: string | null;
+  root_cause?: string | null;
   closed_at: string | null;
   rating: number | null;
   rating_details: TicketRatingDetails | null;

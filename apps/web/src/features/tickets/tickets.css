@@ -32,13 +32,13 @@
 
 @media (min-width: 1024px) {
   .ticket-workspace > [data-ui='kpi-strip'] {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1536px) {
   .ticket-workspace > [data-ui='kpi-strip'] {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

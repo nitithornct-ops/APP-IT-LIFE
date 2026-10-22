@@ -37,6 +37,8 @@ test('master forms show their purpose and download a blank Word form', async ({ 
   });
   await page.goto('/forms');
   await expect(page.getByText('แบบฟอร์มหลัก · งานแจ้งซ่อม / Ticket ทั้งหมด')).toBeVisible();
+  await expect(page.getByText('แบบฟอร์มหลัก · การขอยืมทรัพย์สิน')).toHaveCount(0);
+  await page.getByLabel('ขอบเขตแบบฟอร์ม').selectOption('all');
   await expect(page.getByText('แบบฟอร์มหลัก · การขอยืมทรัพย์สิน')).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'ดาวน์โหลดแม่แบบ Word' }).first().click();

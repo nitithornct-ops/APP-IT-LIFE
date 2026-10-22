@@ -1,20 +1,11 @@
 import { useMemo } from 'react';
 import { type FormFieldDefinition } from '../../types/forms';
+import { isFormFieldVisible } from './formFields';
 
 const fieldClass = 'mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white';
 
-function visible(field: FormFieldDefinition, values: Record<string, unknown>): boolean {
-  if (!field.condition) return true;
-  const actual = values[field.condition.fieldKey] == null ? '' : String(values[field.condition.fieldKey]);
-  const expected = field.condition.value ?? '';
-  if (field.condition.operator === 'equals') return actual === expected;
-  if (field.condition.operator === 'not_equals') return actual !== expected;
-  if (field.condition.operator === 'contains') return actual.toLowerCase().includes(expected.toLowerCase());
-  return actual.trim().length > 0;
-}
-
 export function StructuredFieldPanel({ schema, values, onChange, readOnly = false }: { schema: FormFieldDefinition[]; values: Record<string, unknown>; onChange: (values: Record<string, unknown>) => void; readOnly?: boolean }) {
-  const visibleFields = useMemo(() => schema.filter((field) => visible(field, values)), [schema, values]);
+  const visibleFields = useMemo(() => schema.filter((field) => isFormFieldVisible(field, values)), [schema, values]);
   if (!schema.length) return null;
   const setValue = (key: string, value: unknown) => onChange({ ...values, [key]: value });
   return <section className="rounded-xl border border-primary-200 bg-primary-50/60 p-4 dark:border-primary-900 dark:bg-primary-950/20" data-testid="structured-field-panel">
