@@ -11,7 +11,7 @@ import type { TaskStatus } from '../../types/tasks';
 import { cn } from '../../utils/cn';
 import { TASK_CATEGORIES, TASK_PRIORITIES, TASK_RECURRENCES, TASK_TYPES } from './taskDisplay';
 
-const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number().min(0).max(999999.99).optional());
+const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number<number>().min(0).max(999999.99).optional());
 
 const createTaskSchema = z
   .object({
@@ -30,7 +30,7 @@ const createTaskSchema = z
     recurrence: z.enum(['ไม่ทำซ้ำ', 'รายวัน', 'วันทำงาน', 'รายสัปดาห์', 'ทุก 2 สัปดาห์', 'รายเดือน', 'รายไตรมาส', 'ทุก 6 เดือน', 'รายปี', 'กำหนดเอง']),
     recurrenceRule: z.object({
       frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
-      interval: z.coerce.number().int().min(1).max(99),
+      interval: z.coerce.number<number>().int().min(1).max(99),
     }).optional(),
     recurrenceEndDate: z.string().optional(),
     reminderPreset: z.enum(['none', 'at_time', 'before_15m', 'before_30m', 'before_1h', 'before_1d']),
@@ -85,7 +85,7 @@ export function CreateTaskModal({ initialDueDate, onClose, onCreated }: { initia
     setValue,
     watch,
     formState: { errors },
-  } = useForm<CreateTaskForm>({
+  } = useForm<z.input<typeof createTaskSchema>, unknown, CreateTaskForm>({
     resolver: zodResolver(createTaskSchema),
     defaultValues: {
       title: '',

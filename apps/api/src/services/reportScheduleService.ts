@@ -36,39 +36,77 @@ export async function dispatchScheduledReports(env: Bindings, now = new Date()):
   let failed = 0;
   for (const schedule of (data ?? []) as unknown as DueSchedule[]) {
     const scheduledFor = schedule.next_run_at;
+    const nextRunAt = nextScheduleAt({ frequency: schedule.frequency, dayOfWeek: schedule.day_of_week ?? undefined, dayOfMonth: schedule.day_of_month ?? undefined, runHour: schedule.run_hour, timezone: schedule.timezone }, now);
+    const advanceSchedule = async () => admin.from('report_schedules')
+      .update({ last_run_at: now.toISOString(), next_run_at: nextRunAt })
+      .eq('id', schedule.id).eq('next_run_at', scheduledFor);
+    const token = crypto.randomUUID();
+    const leaseUntil = new Date(now.getTime() + 30 * 60_000).toISOString();
     const claim = await admin.from('report_schedule_runs').insert({
       schedule_id: schedule.id,
       scheduled_for: scheduledFor,
       status: 'running',
       started_at: now.toISOString(),
+      claim_token: token,
+      lease_until: leaseUntil,
+      recovery_phase: 'preparing',
     }).select('id').maybeSingle();
+    let runId = String(claim.data?.id ?? '');
     if (claim.error) {
-      // 23505 means another Worker invocation claimed this exact slot.
-      if (claim.error.code === '23505') continue;
-      failed += 1;
-      continue;
+      if (claim.error.code === '23505') {
+        // A completed run may have been recorded before the schedule update failed.
+        // Do not regenerate it: just retry the compare-and-set schedule update.
+        const existing = await admin.from('report_schedule_runs').select('id,status,started_at,claim_token,lease_until,recovery_phase')
+          .eq('schedule_id', schedule.id).eq('scheduled_for', scheduledFor).maybeSingle();
+        if (existing.error || !existing.data) { failed += 1; continue; }
+        if (existing.data?.status === 'succeeded' || existing.data?.status === 'failed') {
+          const advanced = await advanceSchedule();
+          if (advanced.error || existing.data.status === 'failed') failed += 1;
+          else succeeded += 1;
+          continue;
+        } else if (existing.data.status === 'running') {
+          const staleLease = existing.data.lease_until && new Date(existing.data.lease_until).getTime() <= now.getTime();
+          if (staleLease && existing.data.claim_token && ['preparing', 'snapshot_ready'].includes(existing.data.recovery_phase)) {
+            const reclaimed = await admin.from('report_schedule_runs')
+              .update({ claim_token: token, lease_until: leaseUntil, started_at: now.toISOString() })
+              .eq('id', existing.data.id).eq('status', 'running').eq('claim_token', existing.data.claim_token)
+              .eq('recovery_phase', existing.data.recovery_phase).lte('lease_until', now.toISOString()).select('id').maybeSingle();
+            if (reclaimed.error) { failed += 1; continue; }
+            if (!reclaimed.data) continue; // Another worker won the lease.
+            runId = String(reclaimed.data.id);
+          } else {
+            const legacyStale = !existing.data.lease_until && existing.data.started_at
+              && new Date(existing.data.started_at).getTime() < now.getTime() - 30 * 60_000;
+            if (staleLease || legacyStale) {
+              console.error(JSON.stringify({ msg: 'report_schedule_run_stale', runId: existing.data.id, scheduleId: schedule.id, scheduledFor, phase: existing.data.recovery_phase ?? 'legacy_unknown' }));
+              failed += 1;
+            }
+            continue;
+          }
+        } else {
+          failed += 1;
+          continue;
+        }
+      } else { failed += 1; continue; }
     }
-    const runId = String(claim.data?.id ?? '');
+    if (!runId) { failed += 1; continue; }
+    let runUpdate: Record<string, unknown>;
+    let runSucceeded = false;
     try {
-      const nextRunAt = nextScheduleAt({ frequency: schedule.frequency, dayOfWeek: schedule.day_of_week ?? undefined, dayOfMonth: schedule.day_of_month ?? undefined, runHour: schedule.run_hour, timezone: schedule.timezone }, now);
-      const snapshot = await generateScheduledSnapshot(env, schedule, now);
+      const snapshot = await generateScheduledSnapshot(env, schedule, now, { runId, token });
       const artifact = snapshot.artifact;
-      if (artifact.error) {
-        await admin.from('report_schedule_runs').update({ status: 'failed', snapshot_id: snapshot.id, artifact_name: artifact.name, artifact_drive_id: artifact.driveId, artifact_drive_url: artifact.driveUrl, artifact_error: artifact.error, error_message: artifact.error, finished_at: now.toISOString() }).eq('id', runId);
-        await admin.from('report_schedules').update({ last_run_at: now.toISOString(), next_run_at: nextRunAt }).eq('id', schedule.id).eq('next_run_at', scheduledFor);
-        failed += 1;
-        continue;
-      }
-      await admin.from('report_schedule_runs').update({ status: 'succeeded', snapshot_id: snapshot.id, artifact_name: artifact.name, artifact_drive_id: artifact.driveId, artifact_drive_url: artifact.driveUrl, finished_at: now.toISOString() }).eq('id', runId);
-      await admin.from('report_schedules').update({ last_run_at: now.toISOString(), next_run_at: nextRunAt }).eq('id', schedule.id).eq('next_run_at', scheduledFor);
-      succeeded += 1;
+      runSucceeded = !artifact.error;
+      runUpdate = { status: runSucceeded ? 'succeeded' : 'failed', snapshot_id: snapshot.id, artifact_name: artifact.name, artifact_drive_id: artifact.driveId, artifact_drive_url: artifact.driveUrl, artifact_error: artifact.error, error_message: artifact.error, finished_at: now.toISOString() };
     } catch (error) {
+      if (error instanceof Error && error.name === 'ScheduledReportClaimUncertainError') { failed += 1; continue; }
       const message = error instanceof Error ? error.message : String(error);
-      await admin.from('report_schedule_runs').update({ status: 'failed', error_message: message.slice(0, 1000), finished_at: now.toISOString() }).eq('id', runId);
-      const nextRunAt = nextScheduleAt({ frequency: schedule.frequency, dayOfWeek: schedule.day_of_week ?? undefined, dayOfMonth: schedule.day_of_month ?? undefined, runHour: schedule.run_hour, timezone: schedule.timezone }, now);
-      await admin.from('report_schedules').update({ last_run_at: now.toISOString(), next_run_at: nextRunAt }).eq('id', schedule.id).eq('next_run_at', scheduledFor);
-      failed += 1;
+      runUpdate = { status: 'failed', error_message: message.slice(0, 1000), finished_at: now.toISOString() };
     }
+    const finalized = await admin.from('report_schedule_runs').update(runUpdate).eq('id', runId).eq('status', 'running').eq('claim_token', token).select('id').maybeSingle();
+    if (finalized.error || !finalized.data) { failed += 1; continue; }
+    const advanced = await advanceSchedule();
+    if (advanced.error || !runSucceeded) failed += 1;
+    else succeeded += 1;
   }
   return { processed: succeeded + failed, succeeded, failed };
 }

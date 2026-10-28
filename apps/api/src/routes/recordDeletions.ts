@@ -89,7 +89,7 @@ export function getDeletionResource(name: string): DeletionResource | undefined 
 
 export const deletionResourceNames = Object.freeze(Object.keys(DELETION_RESOURCES));
 
-const idSchema = z.string().uuid();
+const idSchema = z.string().guid();
 export const deletionReasonSchema = z.object({
   reason: z.string().trim().min(3).max(1000),
 }).strict();

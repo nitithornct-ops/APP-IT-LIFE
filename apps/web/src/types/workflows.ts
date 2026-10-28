@@ -74,6 +74,8 @@ export interface WorkflowOverview {
   delegations: WorkflowDelegation[];
 }
 
+export interface WorkflowInstancePage { instances: WorkflowInstance[]; page: number; pageSize: number; total: number }
+
 export interface WorkflowOptions {
   users: WorkflowProfileRef[];
   roles: WorkflowRoleRef[];

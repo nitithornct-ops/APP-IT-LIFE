@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { IntegrationCenterResponse } from '../../types/integrations';
 import { IntegrationCenterPanel } from './IntegrationCenterPage';
 
@@ -31,5 +32,17 @@ describe('IntegrationCenterPanel', () => {
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
     expect(screen.getByText(/เก็บ 90 วัน/)).toBeInTheDocument();
     expect(screen.getByText(/ยังไม่มีตาราง Notification Rule/)).toBeInTheDocument();
+  });
+
+  it('labels database rules as inactive configuration and disables unsupported channels', () => {
+    const configured: IntegrationCenterResponse = {
+      ...data, templates: [], rules: [{ id: 'rule-1', event: 'ticket.updated', channel: 'In-app Notification', recipients: 'operator', status: 'active', managedBy: 'database' }],
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><IntegrationCenterPanel data={configured} /></QueryClientProvider>);
+    expect(screen.getByText('ตั้งค่าไว้ · ยังไม่ทำงาน')).toBeInTheDocument();
+    expect(screen.getAllByText(/ยังไม่เชื่อมกับการส่งจริง/).length).toBeGreaterThan(0);
+    for (const option of screen.getAllByRole('option', { name: /ยังไม่รองรับ/ })) expect(option).toBeDisabled();
+    expect(screen.getAllByRole('option', { name: 'In-app Notification' }).some((option) => !option.hasAttribute('disabled'))).toBe(true);
   });
 });

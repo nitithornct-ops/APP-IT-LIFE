@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -23,15 +24,15 @@ const checklistResultSchema = z.object({
 });
 
 export const createMaintenancePlanSchema = z.object({
-  assetId: z.string().uuid('กรุณาเลือกทรัพย์สิน'),
+  assetId: z.string().guid('กรุณาเลือกทรัพย์สิน'),
   planDate: isoDateString,
   workType: z.enum(PM_WORK_TYPES).optional(),
   recurrence: z.enum(PM_RECURRENCES).optional(),
   recurrenceBasis: z.enum(PM_RECURRENCE_BASES).optional(),
-  technicianId: z.string().uuid().optional(),
-  vendorId: z.string().uuid().optional(),
-  contractId: z.string().uuid().optional(),
-  templateId: z.string().uuid().optional(),
+  technicianId: z.string().guid().optional(),
+  vendorId: z.string().guid().optional(),
+  contractId: z.string().guid().optional(),
+  templateId: z.string().guid().optional(),
   checklistItems: z.array(checklistItemSchema).max(50).optional(),
   notes: z.string().trim().max(1500).optional(),
 });
@@ -41,7 +42,7 @@ export const listMaintenancePlansQuerySchema = paginationQuerySchema.extend({
   status: z.enum(PM_STATUSES).optional(),
   recurrence: z.enum(PM_RECURRENCES).optional(),
   workType: z.enum(PM_WORK_TYPES).optional(),
-  assetId: z.string().uuid().optional(),
+  assetId: z.string().guid().optional(),
   search: z.string().trim().max(200).optional(),
   planDateFrom: isoDateString.optional(),
   planDateTo: isoDateString.optional(),
@@ -55,7 +56,7 @@ export type ListMaintenancePlansQuery = z.infer<typeof listMaintenancePlansQuery
 export const pmRosterQuerySchema = z.object({ weekStart: isoDateString });
 
 export const startMaintenanceSchema = z.object({
-  technicianId: z.string().uuid().optional(),
+  technicianId: z.string().guid().optional(),
 });
 export type StartMaintenanceInput = z.infer<typeof startMaintenanceSchema>;
 
@@ -88,7 +89,7 @@ export const createPmTemplateSchema = z.object({
 });
 export type CreatePmTemplateInput = z.infer<typeof createPmTemplateSchema>;
 
-export const updatePmTemplateSchema = createPmTemplateSchema.partial();
+export const updatePmTemplateSchema = partialObject(createPmTemplateSchema);
 export type UpdatePmTemplateInput = z.infer<typeof updatePmTemplateSchema>;
 
 export const setPmTemplateStatusSchema = z.object({

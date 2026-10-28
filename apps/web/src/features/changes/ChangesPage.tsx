@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { useTableParams } from '../../hooks/useTableParams';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
@@ -5,7 +6,7 @@ import { FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GitPullRequestArrow, Loader2, Plus, X } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';

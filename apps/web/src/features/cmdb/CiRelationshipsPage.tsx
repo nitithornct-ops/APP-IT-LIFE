@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TablePagination } from '../../components/table/DataTable';
-import { FormModal } from '../../components/ui/Modal';
+import { FormModal, Modal } from '../../components/ui/Modal';
 import { AlertTriangle, CheckCircle2, GitBranch, Loader2, Network, Plus, Waypoints, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -259,9 +259,9 @@ export function CiRelationshipsPage() {
                   </div>
                 </div>
                 {expandedId === r.id && (
-                  <div className="mt-2">
+                  <Modal title={r.relationship_type} description={`${r.sourceName ?? r.source_id} ? ${r.targetName ?? r.target_id}`} size="lg" closeOnBackdrop={false} onClose={() => setExpandedId(null)}>
                     <RelationshipActions rel={r} onDone={() => setExpandedId(null)} />
-                  </div>
+                  </Modal>
                 )}
               </div>
             ))}

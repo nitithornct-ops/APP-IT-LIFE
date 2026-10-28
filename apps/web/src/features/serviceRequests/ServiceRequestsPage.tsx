@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -182,8 +183,8 @@ const catalogSchema = z.object({
   description: z.string().trim().optional(),
   audience: z.string().trim().max(200).optional(),
   eligibilityText: z.string().trim().optional(),
-  eligibilityDepartmentIds: z.array(z.string().uuid()).optional(),
-  slaHours: z.coerce.number().positive('SLA ต้องมากกว่า 0').max(720),
+  eligibilityDepartmentIds: z.array(z.string().guid()).optional(),
+  slaHours: z.coerce.number<number>().positive('SLA ต้องมากกว่า 0').max(720),
   attachmentRequired: z.boolean(),
   approvalMode: z.enum(['none', 'group']),
   approvalGroupId: z.string().optional(),
@@ -191,7 +192,7 @@ const catalogSchema = z.object({
   ownerId: z.string().optional(),
   autoAssign: z.boolean(),
   autoCreateTask: z.boolean(),
-  estimatedCost: z.coerce.number().min(0).optional(),
+  estimatedCost: z.coerce.number<number>().min(0).optional(),
   documentationUrl: z.string().trim().optional().refine((value) => !value || /^https?:\/\/\S+$/i.test(value), 'กรุณาระบุ Documentation URL ที่ถูกต้อง'),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'กรุณาระบุ Effective Date'),
   reviewDate: z.string().optional().refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), 'กรุณาระบุ Review Date เป็น YYYY-MM-DD'),

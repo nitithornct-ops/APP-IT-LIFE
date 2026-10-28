@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportAllButton } from '../../components/table/ExportAllButton';
@@ -8,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, GitPullRequestArrow, Grid3X3, Lightbulb, Loader2, Network, Plus, ShieldAlert, Siren, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
@@ -31,11 +32,11 @@ const createSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อ').max(200),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   category: z.enum(INCIDENT_CATEGORIES),
-  affectedCiId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  affectedCiId: z.union([z.string().guid(), z.literal('')]).optional(),
   detectionSource: z.string().trim().max(150).optional(),
   containsPersonalData: z.boolean().optional(),
   majorIncident: z.boolean().optional(),
-  incidentCommanderId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  incidentCommanderId: z.union([z.string().guid(), z.literal('')]).optional(),
   evidenceUrl: z.union([z.string().trim().url('URL ไม่ถูกต้อง'), z.literal('')]).optional(),
 });
 type CreateForm = z.infer<typeof createSchema>;

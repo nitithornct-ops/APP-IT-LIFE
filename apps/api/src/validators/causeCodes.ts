@@ -17,7 +17,7 @@ const descriptionField = z.string().trim().max(500).nullish();
 const effectiveDateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'วันที่มีผลต้องเป็นรูปแบบ YYYY-MM-DD');
 
 export const listCauseCodesQuerySchema = z.object({
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.string().guid().optional(),
   includeInactive: z.enum(['true', 'false']).optional(),
 });
 
@@ -25,7 +25,7 @@ export const createCauseCodeSchema = z.object({
   code: codeField,
   name: nameField,
   description: descriptionField,
-  categoryId: z.string().uuid().nullish(),
+  categoryId: z.string().guid().nullish(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
   effectiveDate: effectiveDateField.optional(),
 });
@@ -34,7 +34,7 @@ export const updateCauseCodeSchema = z
   .object({
     name: nameField.optional(),
     description: descriptionField,
-    categoryId: z.string().uuid().nullish(),
+    categoryId: z.string().guid().nullish(),
     sortOrder: z.number().int().min(0).max(9999).optional(),
     effectiveDate: effectiveDateField.optional(),
     isActive: z.boolean().optional(),

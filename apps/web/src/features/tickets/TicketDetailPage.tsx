@@ -1,10 +1,11 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TICKET_RATING_CRITERIA, type TicketRatingCriterion } from '@itlife/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, FileText, History, Paperclip, RotateCcw, Star, Ticket as TicketIcon, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
 import { LoadingState } from '../../components/ui/AsyncState';
@@ -448,8 +449,8 @@ export function TicketDetailPage() {
   const hasTicket = Boolean(ticketQuery.data);
   const focusOnWork = searchParams.get('action') === 'edit';
   useEffect(() => {
-    if (hasTicket && !focusOnWork) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [id, hasTicket, focusOnWork]);
+    if (hasTicket && !focusOnWork && !(location.state as { backgroundLocation?: unknown } | null)?.backgroundLocation) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [id, hasTicket, focusOnWork, location.state]);
 
   const staffQuery = useQuery({
     queryKey: ['tickets', 'assignable-staff'],

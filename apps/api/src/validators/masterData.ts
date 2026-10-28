@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { z } from 'zod';
 
 const masterCode = z
@@ -14,14 +15,14 @@ export const createDepartmentSchema = z.object({
   code: z.string().trim().min(1).max(50),
   nameTh: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional(),
-  parentDepartmentId: z.string().uuid().optional(),
+  parentDepartmentId: z.string().guid().optional(),
   effectiveDate: effectiveDate.optional(),
   sortOrder: sortOrder.optional(),
 });
 
 export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;
 
-export const updateDepartmentSchema = createDepartmentSchema.partial().extend({
+export const updateDepartmentSchema = partialObject(createDepartmentSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
@@ -37,7 +38,7 @@ export const createPositionSchema = z.object({
 
 export type CreatePositionInput = z.infer<typeof createPositionSchema>;
 
-export const updatePositionSchema = createPositionSchema.partial().extend({
+export const updatePositionSchema = partialObject(createPositionSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
@@ -60,7 +61,7 @@ export const createTicketCategorySchema = z.object({
 
 export type CreateTicketCategoryInput = z.infer<typeof createTicketCategorySchema>;
 
-export const updateTicketCategorySchema = createTicketCategorySchema.partial().extend({
+export const updateTicketCategorySchema = partialObject(createTicketCategorySchema).extend({
   responseSlaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
   resolutionSlaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
   slaHours: z.union([z.coerce.number().positive(), z.null()]).optional(),
@@ -80,7 +81,7 @@ export const createAssetCategorySchema = z.object({
 
 export type CreateAssetCategoryInput = z.infer<typeof createAssetCategorySchema>;
 
-export const updateAssetCategorySchema = createAssetCategorySchema.partial().extend({
+export const updateAssetCategorySchema = partialObject(createAssetCategorySchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
@@ -96,7 +97,7 @@ export const createAccessSystemSchema = z.object({
 
 export type CreateAccessSystemInput = z.infer<typeof createAccessSystemSchema>;
 
-export const updateAccessSystemSchema = createAccessSystemSchema.partial().extend({
+export const updateAccessSystemSchema = partialObject(createAccessSystemSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 

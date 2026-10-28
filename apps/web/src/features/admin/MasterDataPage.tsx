@@ -50,10 +50,10 @@ const ticketCategorySchema = z.object({
   code: z.string().trim().min(2, 'กรุณาระบุ Code อย่างน้อย 2 ตัวอักษร').regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'ใช้ A-Z, ตัวเลข, - หรือ _ เท่านั้น'),
   name: z.string().trim().min(1, 'กรุณากรอกชื่อหมวดหมู่'),
   defaultPriority: z.enum(TICKET_PRIORITIES).optional(),
-  responseSlaHours: z.coerce.number().positive().optional().or(z.literal('').transform(() => undefined)),
-  resolutionSlaHours: z.coerce.number().positive().optional().or(z.literal('').transform(() => undefined)),
+  responseSlaHours: z.coerce.number<number>().positive().optional().or(z.literal('').transform(() => undefined)),
+  resolutionSlaHours: z.coerce.number<number>().positive().optional().or(z.literal('').transform(() => undefined)),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ใช้รูปแบบ YYYY-MM-DD').or(z.literal('')),
-  sortOrder: z.coerce.number().int().min(0).max(9999),
+  sortOrder: z.coerce.number<number>().int().min(0).max(9999),
 });
 
 type TicketCategoryForm = z.infer<typeof ticketCategorySchema>;
@@ -65,7 +65,7 @@ function CreateTicketCategoryForm({ category, onClose }: { category?: TicketCate
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<TicketCategoryForm>({
+  } = useForm<z.input<typeof ticketCategorySchema>, unknown, TicketCategoryForm>({
     resolver: zodResolver(ticketCategorySchema),
     defaultValues: {
       name: category?.name ?? '',
@@ -297,7 +297,7 @@ const assetCategorySchema = z.object({
     .max(20)
     .regex(/^[A-Za-z0-9-]+$/, 'ใช้ตัวอักษร A-Z, ตัวเลข, - เท่านั้น'),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ใช้รูปแบบ YYYY-MM-DD').or(z.literal('')),
-  sortOrder: z.coerce.number().int().min(0).max(9999),
+  sortOrder: z.coerce.number<number>().int().min(0).max(9999),
 });
 
 type AssetCategoryForm = z.infer<typeof assetCategorySchema>;
@@ -487,7 +487,7 @@ const accessSystemSchema = z.object({
   code: z.string().trim().min(2, 'กรุณาระบุ Code อย่างน้อย 2 ตัวอักษร').regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'ใช้ A-Z, ตัวเลข, - หรือ _ เท่านั้น'),
   name: z.string().trim().min(1, 'กรุณากรอกชื่อระบบงาน'),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ใช้รูปแบบ YYYY-MM-DD').or(z.literal('')),
-  sortOrder: z.coerce.number().int().min(0).max(9999),
+  sortOrder: z.coerce.number<number>().int().min(0).max(9999),
 });
 
 type AccessSystemForm = z.infer<typeof accessSystemSchema>;

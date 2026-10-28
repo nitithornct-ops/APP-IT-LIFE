@@ -8,19 +8,19 @@ export const listChangesQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.enum(CHANGE_STATUSES).optional(),
   riskLevel: z.enum(CHANGE_RISK_LEVELS).optional(),
-  requesterId: z.string().uuid().optional(),
+  requesterId: z.string().guid().optional(),
 });
 
 export const createChangeSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อ').max(200),
   systemAffected: z.string().trim().min(1, 'กรุณาระบุระบบที่ได้รับผลกระทบ').max(150),
-  configurationItemId: z.string().uuid().nullable().optional(),
+  configurationItemId: z.string().guid().nullable().optional(),
   changeType: z.string().trim().max(60).optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   impactAssessment: z.string().trim().max(2000).optional(),
   riskLevel: z.enum(CHANGE_RISK_LEVELS).default('ต่ำ'),
   rollbackPlan: z.string().trim().max(2000).optional(),
-  sourceServiceRequestId: z.string().uuid().nullable().optional(),
+  sourceServiceRequestId: z.string().guid().nullable().optional(),
   notes: z.string().trim().max(1500).optional(),
 });
 

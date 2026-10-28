@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -41,17 +42,17 @@ const configurationItemFields = {
   environment: z.enum(CI_ENVIRONMENTS),
   businessService: z.string().trim().max(200).optional(),
   applicationService: z.string().trim().max(200).optional(),
-  ownerEmployeeId: z.string().uuid('กรุณาเลือกเจ้าของ CI'),
-  administratorEmployeeId: z.string().uuid('กรุณาเลือกผู้ดูแล CI'),
+  ownerEmployeeId: z.string().guid('กรุณาเลือกเจ้าของ CI'),
+  administratorEmployeeId: z.string().guid('กรุณาเลือกผู้ดูแล CI'),
   criticality: z.enum(CI_CRITICALITIES).optional(),
   ipAddress: z.union([z.string().trim().max(500).regex(ipListPattern, 'รูปแบบ IP ไม่ถูกต้อง'), z.literal('')]).optional(),
   url: z.union([z.string().trim().max(500).regex(/^https?:\/\//, 'URL ต้องขึ้นต้นด้วย http:// หรือ https://'), z.literal('')]).optional(),
   version: z.string().trim().max(100).optional(),
   vendorName: z.string().trim().max(160).optional(),
   contractRef: z.string().trim().max(150).optional(),
-  vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  assetId: z.string().uuid().optional(),
+  vendorId: z.union([z.string().guid(), z.literal('')]).optional(),
+  contractId: z.union([z.string().guid(), z.literal('')]).optional(),
+  assetId: z.string().guid().optional(),
   cloudRef: z.string().trim().max(100).optional(),
   sourceOfTruth: z.string().trim().max(500).optional(),
   discoverySource: z.string().trim().max(120).optional(),
@@ -75,7 +76,7 @@ export const createConfigurationItemSchema = z.object(configurationItemFields).r
 });
 export type CreateConfigurationItemInput = z.infer<typeof createConfigurationItemSchema>;
 
-export const updateConfigurationItemSchema = z.object(configurationItemFields).partial();
+export const updateConfigurationItemSchema = partialObject(z.object(configurationItemFields));
 export type UpdateConfigurationItemInput = z.infer<typeof updateConfigurationItemSchema>;
 
 export const listConfigurationItemsQuerySchema = paginationQuerySchema.extend({
@@ -113,9 +114,9 @@ export type ReviewConfigurationItemInput = z.infer<typeof reviewConfigurationIte
 
 const ciRelationshipFields = {
   sourceType: z.enum(CI_NODE_TYPES),
-  sourceId: z.string().uuid('กรุณาเลือกต้นทาง'),
+  sourceId: z.string().guid('กรุณาเลือกต้นทาง'),
   targetType: z.enum(CI_NODE_TYPES),
-  targetId: z.string().uuid('กรุณาเลือกปลายทาง'),
+  targetId: z.string().guid('กรุณาเลือกปลายทาง'),
   relationshipType: z.enum(RELATIONSHIP_TYPES),
   direction: z.enum(RELATIONSHIP_DIRECTIONS).optional(),
   impactLevel: z.enum(RELATIONSHIP_IMPACT_LEVELS).optional(),

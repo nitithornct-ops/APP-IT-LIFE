@@ -38,10 +38,10 @@ describe('RowActions', () => {
     );
 
     fireEvent.click(screen.getByRole('link', { name: 'ดู AST-001' }));
-    expect(screen.getByTestId('location-state')).toHaveTextContent(JSON.stringify({ listReturnTo: '/assets?page=3&status=InUse' }));
+    expect(JSON.parse(screen.getByTestId('location-state').textContent ?? '{}')).toMatchObject({ listReturnTo: '/assets?page=3&status=InUse', backgroundLocation: { pathname: '/assets', search: '?page=3&status=InUse' } });
   });
 
-  it('retains explicit navigation state and avoids treating a detail page as a list', () => {
+  it('retains explicit state and the original background through related records', () => {
     function CurrentLocation() {
       const location = useLocation();
       return <output data-testid="location-state">{JSON.stringify(location.state)}</output>;
@@ -57,9 +57,9 @@ describe('RowActions', () => {
     );
 
     fireEvent.click(screen.getByRole('link', { name: 'เปิดพร้อมบริบท TCK-1' }));
-    expect(screen.getByTestId('location-state')).toHaveTextContent(JSON.stringify({ from: '/tickets?page=4' }));
+    expect(JSON.parse(screen.getByTestId('location-state').textContent ?? '{}')).toMatchObject({ from: '/tickets?page=4', backgroundLocation: { pathname: '/tickets/1' } });
     fireEvent.click(screen.getByRole('link', { name: 'เปิดใบถัดไป TCK-1' }));
-    expect(screen.getByTestId('location-state')).toHaveTextContent('null');
+    expect(JSON.parse(screen.getByTestId('location-state').textContent ?? '{}')).toMatchObject({ backgroundLocation: { pathname: '/tickets/1' } });
   });
 
   it('renders standalone action buttons and links without requiring a router', () => {

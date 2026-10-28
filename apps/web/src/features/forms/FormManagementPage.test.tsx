@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FormManagementPage } from './FormManagementPage';
 import type { FormTemplate, IssueForm } from '../../types/forms';
@@ -37,16 +37,76 @@ function renderPage(initialPath = '/forms') {
     return Promise.resolve({ logoUrl: '' });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const router = createMemoryRouter([{ path: '/forms', element: <FormManagementPage /> }, { path: '/other', element: <div>Other page</div> }], { initialEntries: [initialPath] });
+  return { router, ...render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[initialPath]}><FormManagementPage /></MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
-  );
+  ) };
 }
 
 afterEach(() => { cleanup(); apiFetchMock.mockReset(); });
 
 describe('Form Studio เป็นแบบฟอร์มหลักที่ผูกกับ Ticket', () => {
+  it('asks before closing a dirty editor and keeps edits when staying', async () => {
+    renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    fireEvent.change(title, { target: { value: 'งานที่ยังไม่บันทึก' } });
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'กลับไปหน้ารายการ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'มีการแก้ไขที่ยังไม่บันทึก' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'อยู่ต่อ' }));
+    expect(title).toHaveValue('งานที่ยังไม่บันทึก');
+    fireEvent.click(screen.getByRole('button', { name: 'กลับไปหน้ารายการ' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'ทิ้งการแก้ไข' }));
+    expect(screen.queryByTestId('form-studio-editor')).not.toBeInTheDocument();
+  });
+
+  it('blocks navigation until the user chooses to leave', async () => {
+    const { router } = renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    fireEvent.change(title, { target: { value: 'ร่างที่ต้องเก็บ' } });
+    await act(async () => { await router.navigate('/other'); });
+    const dialog = await screen.findByRole('dialog', { name: 'มีการแก้ไขที่ยังไม่บันทึก' });
+    expect(screen.queryByText('Other page')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'ทิ้งการแก้ไข' }));
+    expect(await screen.findByText('Other page')).toBeVisible();
+  });
+
+  it('keeps the editor open if saving before exit fails', async () => {
+    renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    apiFetchMock.mockImplementation((_url: string, options?: RequestInit) => options?.method === 'PATCH' ? Promise.reject(new Error('Save failed')) : Promise.resolve([]));
+    fireEvent.change(title, { target: { value: 'ยังไม่บันทึก' } });
+    fireEvent.click(screen.getByRole('button', { name: 'กลับไปหน้ารายการ' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'บันทึกและออก' }));
+    expect(await screen.findByText('Save failed')).toBeVisible();
+    expect(title).toHaveValue('ยังไม่บันทึก');
+  });
+
+  it('saves successfully before leaving the editor', async () => {
+    renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    fireEvent.change(title, { target: { value: 'บันทึกก่อนออก' } });
+    fireEvent.click(screen.getByRole('button', { name: 'กลับไปหน้ารายการ' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'บันทึกและออก' }));
+    await waitFor(() => expect(screen.queryByTestId('form-studio-editor')).not.toBeInTheDocument());
+    expect(apiFetchMock.mock.calls.some(([url, options]) => url === '/api/v1/forms/issues/issue-1' && options?.method === 'PATCH')).toBe(true);
+  });
+
+  it('saves successfully before continuing a blocked navigation', async () => {
+    const { router } = renderPage('/forms?issue=issue-1');
+    const title = await screen.findByLabelText('ชื่อเอกสาร');
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    fireEvent.change(title, { target: { value: 'บันทึกก่อนเปลี่ยนหน้า' } });
+    await act(async () => { await router.navigate('/other'); });
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'บันทึกและออก' }));
+    expect(await screen.findByText('Other page')).toBeVisible();
+    expect(apiFetchMock.mock.calls.some(([url, options]) => url === '/api/v1/forms/issues/issue-1' && options?.method === 'PATCH')).toBe(true);
+  });
   it('บันทึกข้อมูลล่าสุดสำเร็จก่อนออกเอกสาร และยังดาวน์โหลดซ้ำได้เมื่อ PDF ล้มเหลว', async () => {
     renderPage('/forms?issue=issue-1');
     const title = await screen.findByLabelText('ชื่อเอกสาร');

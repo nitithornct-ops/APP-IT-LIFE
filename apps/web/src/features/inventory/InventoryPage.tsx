@@ -91,6 +91,7 @@ function ItemActions({ item }: { item: InventoryItem }) {
       <button type="button" data-testid={`inv-action-ledger-${item.id}`} onClick={() => toggle('ledger')} className="rounded-full border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">Ledger</button>
       <RowActions recordLabel={item.item_name} actions={[{ kind: 'delete', permission: 'inventory.manage', deleteEndpoint: `/api/v1/record-deletions/inventory-items/${item.id}` }]} />
     </div>
+    {mode && <FormModal key={mode} title={{ in: 'รับเข้า', out: 'เบิกออก', adjust: 'ขอปรับยอด', reserve: 'จองของ', request: 'ขอเบิก', ledger: 'Ledger' }[mode]} description={item.item_name} size="lg" onClose={() => setMode(null)}>
     {(mode === 'in' || mode === 'out' || mode === 'reserve' || mode === 'request') && <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-5">
       <input type="number" min="0" step="0.01" value={qty} onChange={(event) => setQty(event.target.value)} placeholder="จำนวน" className={fieldClass} />
       <input value={ticketId} onChange={(event) => setTicketId(event.target.value)} placeholder="Ticket ID (ถ้ามี)" className={fieldClass} />
@@ -100,6 +101,7 @@ function ItemActions({ item }: { item: InventoryItem }) {
     </div>}
     {mode === 'adjust' && <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto]"><input type="number" min="0" value={counted} onChange={(event) => setCounted(event.target.value)} className={fieldClass} /><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="เหตุผลการปรับยอด" className={fieldClass} /><Button size="sm" isLoading={adjustMutation.isPending} data-testid={`inv-adjust-submit-${item.id}`} onClick={() => adjustMutation.mutate()}>ส่งอนุมัติ</Button></div>}
     {mode === 'ledger' && <div className="mt-2 max-h-48 overflow-y-auto text-xs"><p className="mb-1 text-slate-500">ยอดคงเหลือหลังรายการ และ reference Ticket/Task</p>{ledgerQuery.isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}{(ledgerQuery.data ?? []).map((tx) => <div key={tx.id} className="grid gap-1 break-words sm:grid-cols-[150px_90px_minmax(0,1fr)] border-b border-slate-100 py-1 dark:border-slate-700"><span>{formatThaiDate(tx.created_at, 'd MMM yyyy HH:mm')}</span><span>{tx.transaction_type} {tx.qty}</span><span className="text-slate-400">คงเหลือ {tx.balance_after}{tx.ticket_id ? ` · Ticket ${tx.ticket_id}` : ''}{tx.task_id ? ` · Task ${tx.task_id}` : ''}</span></div>)}</div>}
+    </FormModal>}
   </div>;
 }
 

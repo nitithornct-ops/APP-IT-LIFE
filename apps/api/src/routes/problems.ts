@@ -250,27 +250,15 @@ problemsRoute.post('/:id/verify-after-change', requirePermission('problem.manage
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
   const admin = createAdminClient(c.env);
-  const { data: problem } = await admin.from('problems').select('id, status').eq('id', id).maybeSingle();
-  if (!problem) return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
-  const { data: deployedChanges, error: changeError } = await admin
-    .from('problem_changes')
-    .select('change:change_requests!problem_changes_change_id_fkey(id, change_number, status)')
-    .eq('problem_id', id);
-  if (changeError) return dbFailJson(c, 'PROBLEM_CHANGE_VERIFY_FAILED', changeError);
-  const hasDeployedChange = (deployedChanges ?? []).some((row) => {
-    const change = Array.isArray(row.change) ? row.change[0] : row.change;
-    return change && (change as { status?: string }).status === 'ติดตั้งใช้งานแล้ว';
+  const { error } = await admin.rpc('verify_problem_change_atomic', {
+    problem_id_input: id, actor_id_input: actorId, actor_email_input: c.get('userEmail'),
+    notes_input: body.notes, request_id_input: reqId,
   });
-  if (!hasDeployedChange) return c.json(fail(reqId, 'PROBLEM_DEPLOYED_CHANGE_REQUIRED', 'ต้องมี Change ที่ติดตั้งใช้งานแล้วก่อน Verify'), 409);
-  const auditBefore = await loadAuditSnapshot(admin, 'problems', id);
-  const { data, error } = await admin.from('problems').update({
-    change_verified_at: new Date().toISOString(),
-    change_verified_by: actorId,
-    change_verification_notes: body.notes,
-    updated_by: actorId,
-  }).eq('id', id).select(PROBLEM_SELECT).single();
+  if (error?.code === 'P0002') return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
+  if (error?.message?.includes('PROBLEM_DEPLOYED_CHANGE_REQUIRED')) return c.json(fail(reqId, 'PROBLEM_DEPLOYED_CHANGE_REQUIRED', 'ต้องมี Change ที่ติดตั้งใช้งานแล้วก่อน Verify'), 409);
   if (error) return dbFailJson(c, 'PROBLEM_CHANGE_VERIFY_FAILED', error);
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'VERIFY_AFTER_CHANGE', module: 'problem', targetTable: 'problems', targetId: id, detail: { notes: body.notes }, requestId: reqId, before: auditBefore, after: data });
+  const { data, error: readError } = await admin.from('problems').select(PROBLEM_SELECT).eq('id', id).single();
+  if (readError) return dbFailJson(c, 'PROBLEM_LOAD_FAILED', readError);
   return c.json(ok(reqId, data));
 });
 
@@ -398,14 +386,7 @@ problemsRoute.patch('/:id', requirePermission('problem.manage'), zValidator('jso
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
   const admin = createAdminClient(c.env);
-  const { data: current } = await admin.from('problems').select('*, problem_changes(change_id)').eq('id', id).maybeSingle();
-  if (!current) return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
-  if (body.status === 'ปิด' && !current.change_verified_at) return c.json(fail(reqId, 'PROBLEM_VERIFY_BEFORE_CLOSE', 'ต้อง Verify หลัง Change สำเร็จก่อนปิด Problem'), 409);
-  if (body.configurationItemIds !== undefined || body.changeIds !== undefined) {
-    const linkError = await replaceLinks(c.env, id, actorId, undefined, undefined, body.configurationItemIds, body.changeIds);
-    if (linkError) return c.json(fail(reqId, 'PROBLEM_LINK_FAILED', linkError), 400);
-  }
-  const patch: Record<string, unknown> = { updated_by: actorId };
+  const patch: Record<string, unknown> = {};
   const fields = {
     title: 'title', category: 'category', affectedSystem: 'affected_system', impact: 'impact', rootCause: 'root_cause',
     workaround: 'workaround', permanentFix: 'permanent_fix', ownerId: 'owner_id', priority: 'priority',
@@ -417,26 +398,19 @@ problemsRoute.patch('/:id', requirePermission('problem.manage'), zValidator('jso
     const value = body[input as keyof typeof body];
     if (value !== undefined) patch[column] = value === '' ? null : value;
   }
-  if (body.status !== undefined) {
-    patch.status = body.status;
-    patch.closed_at = body.status === 'ปิด' ? new Date().toISOString() : null;
-  }
-  if (body.changeIds !== undefined) {
-    const oldChangeIds = (current.problem_changes ?? []).map((row: { change_id: string }) => row.change_id).sort();
-    const nextChangeIds = [...new Set(body.changeIds)].sort();
-    if (oldChangeIds.join(',') !== nextChangeIds.join(',')) {
-      patch.change_verified_at = null;
-      patch.change_verified_by = null;
-      patch.change_verification_notes = null;
-    }
-  }
-  const auditBefore = await loadAuditSnapshot(admin, 'problems', id);
-  const { data, error } = await admin.from('problems').update(patch).eq('id', id).select().maybeSingle();
+  if (body.status !== undefined) patch.status = body.status;
+  const { error } = await admin.rpc('update_problem_atomic', {
+    problem_id_input: id, patch_input: patch,
+    incident_ids_input: body.incidentIds ?? null, ticket_ids_input: body.ticketIds ?? null,
+    ci_ids_input: body.configurationItemIds ?? null, change_ids_input: body.changeIds ?? null,
+    actor_id_input: actorId, actor_email_input: c.get('userEmail'), request_id_input: reqId,
+  });
+  if (error?.code === 'P0002') return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
+  if (error?.message?.includes('PROBLEM_CHANGE_VERIFICATION_REQUIRED')) return c.json(fail(reqId, 'PROBLEM_VERIFY_BEFORE_CLOSE', 'ต้อง Verify หลัง Change สำเร็จก่อนปิด Problem'), 409);
+  if (error?.message?.includes('PROBLEM_DEPLOYED_CHANGE_REQUIRED')) return c.json(fail(reqId, 'PROBLEM_DEPLOYED_CHANGE_REQUIRED', 'ต้องมี Change ที่ติดตั้งใช้งานแล้วก่อนปิด Problem'), 409);
+  if (error?.message?.includes('PROBLEM_PERMANENT_FIX_REQUIRED')) return c.json(fail(reqId, 'PROBLEM_PERMANENT_FIX_REQUIRED', 'ต้องระบุ Permanent Fix ก่อนปิด Problem'), 409);
   if (error) return dbFailJson(c, 'PROBLEM_UPDATE_FAILED', error);
-  if (!data) return c.json(fail(reqId, 'PROBLEM_NOT_FOUND', 'ไม่พบ Problem'), 404);
-  const linkError = await replaceLinks(c.env, id, actorId, body.incidentIds, body.ticketIds, undefined, undefined);
-  if (linkError) return c.json(fail(reqId, 'PROBLEM_LINK_FAILED', linkError), 400);
-  const { data: result } = await admin.from('problems').select(PROBLEM_SELECT).eq('id', id).single();
-  await writeAuditLog(c.env, { actorId, actorEmail: c.get('userEmail'), action: 'UPDATE', module: 'problem', targetTable: 'problems', targetId: id, detail: body, requestId: reqId , before: auditBefore, after: data });
+  const { data: result, error: readError } = await admin.from('problems').select(PROBLEM_SELECT).eq('id', id).single();
+  if (readError) return dbFailJson(c, 'PROBLEM_LOAD_FAILED', readError);
   return c.json(ok(reqId, result));
 });

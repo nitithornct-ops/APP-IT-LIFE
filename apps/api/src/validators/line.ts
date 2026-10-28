@@ -20,7 +20,7 @@ const optionalRequesterPhoneSchema = z.preprocess(
 
 export const lineSubmitTicketSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อปัญหา').max(200),
-  categoryId: z.string().uuid('กรุณาเลือกหมวดหมู่ Ticket'),
+  categoryId: z.string().guid('กรุณาเลือกหมวดหมู่ Ticket'),
   priority: ticketPriorityEnum.optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   requesterPhone: optionalRequesterPhoneSchema,
@@ -30,7 +30,7 @@ export const lineSubmitTicketSchema = z.object({
   erpModule: z.string().trim().max(120).optional(),
   location: z.string().trim().max(160).optional(),
   assetCode: z.string().trim().max(80).optional(),
-  privacyConsent: z.literal(true, { errorMap: () => ({ message: 'กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket' }) }),
+  privacyConsent: z.literal(true, { error: 'กรุณายอมรับประกาศการใช้ข้อมูลส่วนบุคคลก่อนส่ง Ticket' }),
   isSecurity: z.boolean().optional(),
 });
 
@@ -44,7 +44,7 @@ export const lineTicketReopenSchema = z.object({
 });
 
 export const lineLinkConsentSchema = z.object({
-  acknowledged: z.literal(true, { errorMap: () => ({ message: 'กรุณายืนยันการยอมรับการเชื่อมบัญชี LINE ก่อนดำเนินการ' }) }),
+  acknowledged: z.literal(true, { error: 'กรุณายืนยันการยอมรับการเชื่อมบัญชี LINE ก่อนดำเนินการ' }),
 });
 
 export const lineNotificationPreferencesSchema = z.object({
@@ -66,6 +66,6 @@ export const lineAdminUpdateStatusSchema = z.object({
 });
 
 export const lineAdminUpdateLinkSchema = z.object({
-  userId: z.string().uuid('ผู้ใช้ที่เลือกไม่ถูกต้อง').nullable(),
-  consentAcknowledged: z.literal(true, { errorMap: () => ({ message: 'กรุณายืนยันการรับทราบการเชื่อมบัญชี LINE ก่อนบันทึก' }) }),
+  userId: z.string().guid('ผู้ใช้ที่เลือกไม่ถูกต้อง').nullable(),
+  consentAcknowledged: z.literal(true, { error: 'กรุณายืนยันการรับทราบการเชื่อมบัญชี LINE ก่อนบันทึก' }),
 });

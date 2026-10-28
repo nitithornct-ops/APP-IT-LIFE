@@ -30,7 +30,8 @@ import {
 import type { AppEnv } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { BulkItemError, runBulk } from '../utils/bulk';
-import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
+import { checkExportSize, exportFileName, listCsv, type ExportColumn } from '../utils/listExport';
+import { loadReportPages } from '../utils/completeRows';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
 import { sanitizeFormHtml } from '../utils/formHtml';
@@ -643,6 +644,65 @@ ticketsRoute.delete('/:id/pm-links/:maintenancePlanId', requirePermission('ticke
   return c.json(ok(reqId, { deleted: true }));
 });
 
+/**
+ * ส่งออกรายการ Ticket ทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ *
+ * ใช้ตัวกรองตัวเดียวกับรายการบนหน้าจอ ไฟล์ที่ได้จึงตรงกับสิ่งที่ผู้ใช้เห็นเสมอ
+ * และ RLS ยังกรองสิทธิ์การมองเห็นให้อีกชั้นเหมือนกับตอนแสดงรายการ
+ *
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const actorId = c.get('userId');
+  const { sort, order, status, categoryId, priority, search, assigneeId, mine, queue } = c.req.valid('query');
+  const filters = { status, categoryId, priority, search, assigneeId, mine, queue };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const countQuery = applyTicketListFilters(
+    supabase.from('tickets').select('id', { count: 'exact', head: true }),
+    filters,
+    actorId,
+  );
+  const { count, error: countError } = await countQuery;
+  if (countError || count === null) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let rows: TicketExportRow[];
+  try {
+    const data = await loadReportPages('Ticket', (start, end) => {
+      let query = supabase.from('tickets').select(
+        'id, ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, sla_paused_at, created_at, ticket_categories(name)',
+        { count: 'exact' },
+      ).range(start, end);
+      query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false }).order('id');
+      return applyTicketListFilters(query, filters, actorId);
+    });
+    rows = data as unknown as TicketExportRow[];
+  } catch (error) {
+    return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', error instanceof Error ? error.message : 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+  }
+  // การดึงข้อมูลทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
+  await writeAuditLog(c.env, {
+    actorId,
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'ticket',
+    targetTable: 'tickets',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('tickets'),
+    csv: listCsv(TICKET_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
+});
+
 ticketsRoute.get('/:id', async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
@@ -1007,63 +1067,7 @@ const TICKET_EXPORT_COLUMNS: ExportColumn<TicketExportRow>[] = [
   { label: 'วันที่แจ้ง', value: (row) => exportDateTime(row.created_at) },
 ];
 
-/**
- * ส่งออกรายการ Ticket ทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
- *
- * ใช้ตัวกรองตัวเดียวกับรายการบนหน้าจอ ไฟล์ที่ได้จึงตรงกับสิ่งที่ผู้ใช้เห็นเสมอ
- * และ RLS ยังกรองสิทธิ์การมองเห็นให้อีกชั้นเหมือนกับตอนแสดงรายการ
- *
- * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
- */
-ticketsRoute.get('/export', zValidator('query', listTicketsQuerySchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
-  const reqId = c.get('requestId');
-  const actorId = c.get('userId');
-  const { sort, order, status, categoryId, priority, search, assigneeId, mine, queue } = c.req.valid('query');
-  const filters = { status, categoryId, priority, search, assigneeId, mine, queue };
 
-  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
-  const countQuery = applyTicketListFilters(
-    supabase.from('tickets').select('id', { count: 'exact', head: true }),
-    filters,
-    actorId,
-  );
-  const { count, error: countError } = await countQuery;
-  if (countError) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
-
-  const tooLarge = checkExportSize(count);
-  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
-
-  let query = supabase
-    .from('tickets')
-    .select(
-      'ticket_no, title, requester_name_snapshot, department_name_snapshot, priority, status, assignee_name_snapshot, outsource_name, due_at, sla_paused_at, created_at, ticket_categories(name)',
-    )
-    .range(0, LIST_EXPORT_MAX_ROWS - 1);
-  query = applySort(query, { sort, order }, TICKET_SORT_COLUMNS, { column: 'created_at', ascending: false });
-  query = applyTicketListFilters(query, filters, actorId);
-
-  const { data, error } = await query;
-  if (error) return c.json(fail(reqId, 'TICKETS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
-
-  const rows = (data ?? []) as unknown as TicketExportRow[];
-  // การดึงข้อมูลทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
-  await writeAuditLog(c.env, {
-    actorId,
-    actorEmail: c.get('userEmail'),
-    action: 'EXPORT',
-    module: 'ticket',
-    targetTable: 'tickets',
-    detail: { filters, rowCount: rows.length },
-    requestId: reqId,
-  });
-
-  return c.json(ok(reqId, {
-    filename: exportFileName('tickets'),
-    csv: listCsv(TICKET_EXPORT_COLUMNS, rows),
-    rowCount: rows.length,
-  }));
-});
 
 /**
  * แก้ไข Ticket หลายใบพร้อมกัน — มอบหมายผู้รับผิดชอบ หรือเปลี่ยนสถานะระหว่างการทำงาน

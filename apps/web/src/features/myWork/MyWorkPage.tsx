@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { Badge } from '../../components/ui/Badge';

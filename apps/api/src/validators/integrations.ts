@@ -25,7 +25,7 @@ const ruleFields = {
   severity,
   channel,
   recipient: z.string().trim().min(1).max(500),
-  templateId: z.string().uuid().nullable().optional(),
+  templateId: z.string().guid().nullable().optional(),
   enabled: z.boolean().optional(),
   quietHours: quietHoursSchema.optional(),
   retryPolicy: retryPolicySchema.optional(),

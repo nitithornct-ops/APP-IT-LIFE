@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Laptop2, Loader2, PackageCheck, Wrench } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { RequirePermission } from '../../components/RequirePermission';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';

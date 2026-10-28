@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { listQuerySchema, paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 import { ASSET_LIFECYCLE_STATUSES } from '../services/assetLifecycle';
@@ -20,13 +21,13 @@ export const createAssetSchema = z.object({
   assetCode: z.string().trim().max(60).optional(),
   assetType: z.enum(ASSET_TYPES).optional(),
   lifecycleStatus: z.enum(ASSET_LIFECYCLE_STATUSES).optional(),
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.string().guid().optional(),
   brand: z.string().trim().max(100).optional(),
   model: z.string().trim().max(100).optional(),
   serialNumber: z.string().trim().max(100).optional(),
   vendorName: z.string().trim().max(100).optional(),
-  vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  vendorId: z.union([z.string().guid(), z.literal('')]).optional(),
+  contractId: z.union([z.string().guid(), z.literal('')]).optional(),
   purchaseOrder: z.string().trim().max(120).optional(),
   invoiceNumber: z.string().trim().max(120).optional(),
   purchaseDate: dateOrEmpty,
@@ -37,13 +38,13 @@ export const createAssetSchema = z.object({
   depreciationRate: z.coerce.number().nonnegative().max(100).optional(),
   costCenter: z.string().trim().max(100).optional(),
   barcode: z.string().trim().max(120).optional(),
-  assetModelCatalogId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  parentAssetId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  assetModelCatalogId: z.union([z.string().guid(), z.literal('')]).optional(),
+  parentAssetId: z.union([z.string().guid(), z.literal('')]).optional(),
   licenseNo: z.string().trim().max(100).optional(),
   licenseExpiry: dateOrEmpty,
   location: z.string().trim().max(120).optional(),
-  departmentId: z.string().uuid().optional(),
-  ownerEmployeeId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
+  ownerEmployeeId: z.string().guid().optional(),
   patchStatus: z.string().trim().max(60).optional(),
   patchDate: dateOrEmpty,
   criticality: z.enum(ASSET_CRITICALITIES).optional(),
@@ -53,29 +54,29 @@ export const createAssetSchema = z.object({
 });
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 
-export const updateAssetSchema = createAssetSchema.partial();
+export const updateAssetSchema = partialObject(createAssetSchema);
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 
 export const listAssetsQuerySchema = listQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.string().trim().max(60).optional(),
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.string().guid().optional(),
 });
 export type ListAssetsQuery = z.infer<typeof listAssetsQuerySchema>;
 
 export const assetBorrowOverviewQuerySchema = paginationQuerySchema.extend({
   view: z.enum(['active', 'history']).default('active'),
   search: z.string().trim().max(200).optional(),
-  departmentId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
 });
 export type AssetBorrowOverviewQuery = z.infer<typeof assetBorrowOverviewQuerySchema>;
 
 const assetLoanDate = isoDateString;
 
 export const assetLoanCreateSchema = z.object({
-  assetId: z.string().uuid('กรุณาเลือก Asset'),
-  borrowerEmployeeId: z.string().uuid('กรุณาเลือกผู้ยืม'),
-  approverEmployeeId: z.string().uuid('กรุณาเลือกผู้อนุมัติ'),
+  assetId: z.string().guid('กรุณาเลือก Asset'),
+  borrowerEmployeeId: z.string().guid('กรุณาเลือกผู้ยืม'),
+  approverEmployeeId: z.string().guid('กรุณาเลือกผู้อนุมัติ'),
   borrowedAt: assetLoanDate,
   dueAt: assetLoanDate,
   purpose: z.string().trim().min(1, 'กรุณาระบุวัตถุประสงค์').max(1000),
@@ -84,7 +85,7 @@ export const assetLoanCreateSchema = z.object({
   borrowerAcknowledged: z.boolean().refine((value) => value, 'กรุณายืนยัน acknowledgement ของผู้ยืม'),
   borrowerAcknowledgementName: z.string().trim().min(1, 'กรุณาระบุชื่อผู้ยืนยัน').max(200),
   reminderDaysBefore: z.coerce.number().int().min(0).max(30).default(3),
-  departmentId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
   location: z.string().trim().max(120).optional(),
 }).superRefine((value, ctx) => {
   if (value.dueAt < value.borrowedAt) {
@@ -134,8 +135,8 @@ const fieldScanSyncItemSchema = z.object({
   result: z.enum(FIELD_SCAN_RESULTS),
   expectedLocation: z.string().trim().max(120).optional(),
   actualLocation: z.string().trim().max(120).optional(),
-  expectedCustodianEmployeeId: z.union([z.string().uuid(), z.null()]).optional(),
-  actualCustodianEmployeeId: z.union([z.string().uuid(), z.null()]).optional(),
+  expectedCustodianEmployeeId: z.union([z.string().guid(), z.null()]).optional(),
+  actualCustodianEmployeeId: z.union([z.string().guid(), z.null()]).optional(),
   note: z.string().trim().max(500).optional(),
   scannedAt: z.string().datetime().optional(),
 });
@@ -148,7 +149,7 @@ export type FieldScanSyncInput = z.infer<typeof fieldScanSyncSchema>;
 export const transitionAssetLifecycleSchema = z.object({
   toStatus: z.enum(ASSET_LIFECYCLE_STATUSES),
   notes: z.string().trim().max(500).optional(),
-  relatedTicketId: z.string().uuid().optional(),
+  relatedTicketId: z.string().guid().optional(),
   eventDate: z.string().datetime().optional(),
 });
 export type TransitionAssetLifecycleInput = z.infer<typeof transitionAssetLifecycleSchema>;
@@ -172,8 +173,8 @@ export type CreateAssetModelInput = z.infer<typeof createAssetModelSchema>;
 // ไว้ใน comment ของ migration (Asset/Ticket ต้องการ owner ที่ถูกต้อง) =====
 
 export const assignAssetSchema = z.object({
-  toEmployeeId: z.string().uuid('กรุณาเลือกผู้รับ/ผู้ถือครอง'),
-  departmentId: z.string().uuid().optional(),
+  toEmployeeId: z.string().guid('กรุณาเลือกผู้รับ/ผู้ถือครอง'),
+  departmentId: z.string().guid().optional(),
   location: z.string().trim().max(120).optional(),
   dueDate: dateOrEmpty,
   notes: z.string().trim().max(500).optional(),
@@ -186,9 +187,9 @@ export const returnAssetSchema = z.object({
   notes: z.string().trim().max(500).optional(),
   // Optional rich-loan fields keep the existing /:id/return command compatible
   // with legacy movements while allowing the complete return document.
-  assetLoanId: z.string().uuid().optional(),
+  assetLoanId: z.string().guid().optional(),
   returnedAt: isoDateString.optional(),
-  returnReceiverEmployeeId: z.string().uuid().optional(),
+  returnReceiverEmployeeId: z.string().guid().optional(),
   conditionAfter: z.string().trim().max(1000).optional(),
   returnOutcome: z.enum(['good', 'damaged', 'lost']).optional(),
   damageNotes: z.string().trim().max(1000).optional(),
@@ -198,8 +199,8 @@ export type ReturnAssetInput = z.infer<typeof returnAssetSchema>;
 
 export const transferAssetSchema = z
   .object({
-    toEmployeeId: z.string().uuid().optional(),
-    departmentId: z.string().uuid().optional(),
+    toEmployeeId: z.string().guid().optional(),
+    departmentId: z.string().guid().optional(),
     location: z.string().trim().max(120).optional(),
     dueDate: dateOrEmpty,
     notes: z.string().trim().max(500).optional(),
@@ -212,7 +213,7 @@ export type TransferAssetInput = z.infer<typeof transferAssetSchema>;
 
 export const sendAssetToRepairSchema = z.object({
   vendorName: z.string().trim().max(160).optional(),
-  vendorId: z.string().uuid().optional(),
+  vendorId: z.string().guid().optional(),
   location: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(500).optional(),
 });
@@ -234,11 +235,11 @@ export const BULK_ASSET_STATUSES = ['พร้อมใช้งาน', 'ใช
 
 export const bulkUpdateAssetsSchema = z
   .object({
-    ids: z.array(z.string().uuid()).min(1, 'กรุณาเลือกทรัพย์สินอย่างน้อย 1 รายการ').max(50, 'เลือกได้สูงสุด 50 รายการต่อครั้ง'),
+    ids: z.array(z.string().guid()).min(1, 'กรุณาเลือกทรัพย์สินอย่างน้อย 1 รายการ').max(50, 'เลือกได้สูงสุด 50 รายการต่อครั้ง'),
     status: z.enum(BULK_ASSET_STATUSES).optional(),
     location: z.string().trim().min(1).max(120).optional(),
     /** null = คืนของ (ล้างผู้ถือครอง) — uuid = มอบหมายให้พนักงานคนนั้น */
-    ownerEmployeeId: z.string().uuid().nullable().optional(),
+    ownerEmployeeId: z.string().guid().nullable().optional(),
     notes: z.string().trim().max(500).optional(),
   })
   .refine((body) => body.status !== undefined || body.location !== undefined || body.ownerEmployeeId !== undefined, {

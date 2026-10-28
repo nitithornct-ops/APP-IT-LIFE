@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { z } from 'zod';
 
 export const BACKUP_TYPES = ['Full', 'Incremental', 'Differential', 'System Snapshot'] as const;
@@ -9,7 +10,7 @@ export const BCP_STATUSES = ['ใช้งาน', 'ระงับ', 'ยกเ
 export const LOG_FREQUENCIES = ['รายวัน', 'รายสัปดาห์', 'รายเดือน', 'รายไตรมาส'] as const;
 export const LOG_REVIEW_STATUSES = ['ปกติ', 'กำลังดำเนินการ', 'แก้ไขแล้ว', 'ยอมรับความเสี่ยง'] as const;
 
-const optionalUuid = z.union([z.string().uuid(), z.literal('')]).optional();
+const optionalUuid = z.union([z.string().guid(), z.literal('')]).optional();
 const optionalDate = z.union([z.string().date(), z.literal('')]).optional();
 const optionalHttps = z.union([
   z.string().trim().url('URL ไม่ถูกต้อง').max(500).refine((value) => value.startsWith('https://'), 'ต้องเป็น HTTPS'),
@@ -98,7 +99,7 @@ const loggingSystemBase = z.object({
 });
 
 const backupPolicyObjectBase = z.object({
-  configurationItemId: z.string().uuid(),
+  configurationItemId: z.string().guid(),
   expectedBackupPolicy: z.string().trim().min(1).max(500),
   rtoTargetHours: optionalNumber,
   rpoTargetHours: optionalNumber,
@@ -145,7 +146,7 @@ const backupImportItem = z.object({
 });
 
 export const createBackupPolicySchema = backupPolicyObjectBase.superRefine(refineBackupPolicy);
-export const updateBackupPolicySchema = nonEmptyPatch(backupPolicyObjectBase.partial().superRefine(refineBackupPolicy));
+export const updateBackupPolicySchema = nonEmptyPatch(partialObject(backupPolicyObjectBase).superRefine(refineBackupPolicy));
 export const createBackupImportSchema = z.object({
   sourceSystem: z.string().trim().min(1).max(150),
   idempotencyKey: z.string().trim().min(1).max(250),
@@ -153,7 +154,7 @@ export const createBackupImportSchema = z.object({
 });
 
 const logReviewObject = z.object({
-  loggingSystemId: z.string().uuid(),
+  loggingSystemId: z.string().guid(),
   reviewDate: z.string().date(),
   reviewerId: optionalUuid,
   period: z.string().trim().min(1).max(100),
@@ -172,13 +173,13 @@ const refineLogReview = (value: { anomalyFound?: boolean; anomalyDetail?: string
 const logReviewBase = logReviewObject.superRefine(refineLogReview);
 
 export const createBackupSchema = backupBase;
-export const updateBackupSchema = nonEmptyPatch(backupObject.partial().superRefine(refineBackupDates));
+export const updateBackupSchema = nonEmptyPatch(partialObject(backupObject).superRefine(refineBackupDates));
 export const createRecoverySchema = recoveryBase;
-export const updateRecoverySchema = nonEmptyPatch(recoveryObject.partial().superRefine(refineRecoveryDates));
+export const updateRecoverySchema = nonEmptyPatch(partialObject(recoveryObject).superRefine(refineRecoveryDates));
 export const createBcpSchema = bcpBase;
-export const updateBcpSchema = nonEmptyPatch(bcpObject.partial().superRefine(refineBcpDates));
+export const updateBcpSchema = nonEmptyPatch(partialObject(bcpObject).superRefine(refineBcpDates));
 export const invokeBcpSchema = z.object({ reason: z.string().trim().min(1).max(1000) });
 export const createLoggingSystemSchema = loggingSystemBase;
-export const updateLoggingSystemSchema = nonEmptyPatch(loggingSystemBase.partial());
+export const updateLoggingSystemSchema = nonEmptyPatch(partialObject(loggingSystemBase));
 export const createLogReviewSchema = logReviewBase;
-export const updateLogReviewSchema = nonEmptyPatch(logReviewObject.partial().superRefine(refineLogReview));
+export const updateLogReviewSchema = nonEmptyPatch(partialObject(logReviewObject).superRefine(refineLogReview));

@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
-import type { ZodError } from 'zod';
-import type { AppEnv } from '../types';
+import type { $ZodError } from 'zod/v4/core';
 import { fail } from './response';
 
 /**
@@ -8,7 +7,7 @@ import { fail } from './response';
  * VALIDATION_ERROR มาตรฐานเดียวกัน — เรียก zValidator ตรงๆ ที่แต่ละ route (ไม่ห่อเป็นฟังก์ชัน
  * generic ซ้อนอีกชั้น) เพราะการห่อจะทำให้ TypeScript อนุมานชนิดของ c.req.valid() ไม่ได้แม่นยำ
  */
-export function zodValidationHook(result: { success: boolean; error?: ZodError }, c: Context<AppEnv>) {
+export function zodValidationHook(result: { success: boolean; error?: $ZodError }, c: Context) {
   if (!result.success && result.error) {
     const details = result.error.issues.map((issue) => ({
       field: issue.path.join('.'),

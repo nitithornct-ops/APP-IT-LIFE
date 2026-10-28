@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -33,7 +34,7 @@ const vendorFields = {
   phone: z.string().trim().max(60).optional(),
   email: optionalEmail,
   contactInfo: z.string().trim().max(300).optional(),
-  ownerId: z.string().uuid().nullable().optional(),
+  ownerId: z.string().guid().nullable().optional(),
   criticalityTier: z.enum(VENDOR_CRITICALITY_TIERS).default('Medium'),
   vendorRiskAssessment: z.string().trim().max(4000).optional(),
   securityAssessment: z.string().trim().max(4000).optional(),
@@ -52,7 +53,7 @@ const vendorFields = {
 };
 
 export const createVendorSchema = z.object(vendorFields).extend({ initialContract: initialContractSchema.optional() });
-export const updateVendorSchema = z.object(vendorFields).partial().refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
+export const updateVendorSchema = partialObject(z.object(vendorFields)).refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
 export const setVendorStatusSchema = z.object({ status: z.enum(VENDOR_STATUSES) });
 export const assessVendorSchema = z.object({ result: z.string().trim().min(1, 'กรุณากรอกผลการประเมิน').max(2000) });
 export const listVendorsQuerySchema = paginationQuerySchema.extend({
@@ -64,7 +65,7 @@ export const listVendorsQuerySchema = paginationQuerySchema.extend({
 const contractFields = {
   contractNumber: z.string().trim().min(1, 'กรุณากรอกเลขที่สัญญา').max(100),
   name: z.string().trim().min(1, 'กรุณากรอกชื่อสัญญา').max(200),
-  vendorId: z.string().uuid('กรุณาเลือกผู้ให้บริการ'),
+  vendorId: z.string().guid('กรุณาเลือกผู้ให้บริการ'),
   contractType: z.enum(CONTRACT_TYPES).default('Other'),
   serviceScope: z.string().trim().max(1500).optional(),
   keyTerms: z.string().trim().max(2000).optional(),
@@ -72,17 +73,17 @@ const contractFields = {
   endDate: optionalDate,
   contractValue: z.coerce.number().min(0).optional(),
   currency: z.string().trim().regex(/^[A-Z]{3}$/, 'สกุลเงินต้องเป็นรหัส 3 ตัว เช่น THB').default('THB'),
-  ownerId: z.string().uuid().nullable().optional(),
+  ownerId: z.string().guid().nullable().optional(),
   budget: z.coerce.number().min(0).optional(),
   annualCost: z.coerce.number().min(0).optional(),
   autoRenewal: z.boolean().default(false),
   renewalNoticeDays: z.coerce.number().int().refine((value) => [30, 60, 90].includes(value), 'เลือกกำหนดแจ้งเตือน 30, 60 หรือ 90 วัน').default(30),
   slaOla: z.string().trim().max(3000).optional(),
-  dpaAttachmentId: z.string().uuid().nullable().optional(),
+  dpaAttachmentId: z.string().guid().nullable().optional(),
   securityClause: z.string().trim().max(3000).optional(),
-  linkedAssetIds: z.array(z.string().uuid()).max(500).default([]),
-  linkedLicenseIds: z.array(z.string().uuid()).max(500).default([]),
-  linkedConfigurationItemIds: z.array(z.string().uuid()).max(500).default([]),
+  linkedAssetIds: z.array(z.string().guid()).max(500).default([]),
+  linkedLicenseIds: z.array(z.string().guid()).max(500).default([]),
+  linkedConfigurationItemIds: z.array(z.string().guid()).max(500).default([]),
   renewalDecision: z.enum(RENEWAL_DECISIONS).default('Pending'),
   terminationChecklist: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
   status: z.enum(CONTRACT_STATUSES).default('Draft'),
@@ -96,9 +97,8 @@ export const createContractSchema = z.object(contractFields).refine(validDateRan
   message: 'วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น',
   path: ['endDate'],
 });
-export const updateContractSchema = z
-  .object(contractFields)
-  .partial()
+export const updateContractSchema = partialObject(z
+  .object(contractFields))
   .refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข')
   .refine(validDateRange, { message: 'วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น', path: ['endDate'] });
 export const setContractStatusSchema = z.object({ status: z.enum(CONTRACT_STATUSES) });
@@ -106,6 +106,6 @@ export const listContractsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.enum(CONTRACT_STATUSES).optional(),
   contractType: z.enum(CONTRACT_TYPES).optional(),
-  vendorId: z.string().uuid().optional(),
+  vendorId: z.string().guid().optional(),
   expiringWithinDays: z.coerce.number().int().min(0).max(3650).optional(),
 });

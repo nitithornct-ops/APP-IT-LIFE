@@ -1,5 +1,5 @@
 import { MessageSquareText, Star, TrendingUp, UserRound } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import type { ReportDataset } from '../../types/reports';
 import { formatThaiDateTime } from '../../utils/date';

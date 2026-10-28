@@ -15,11 +15,12 @@ for (const width of [390, 768, 1440]) {
 
       // Mobile exposes the same persistent scale through the account menu.
       if (width < 640) await page.getByRole('button', { name: 'บัญชีผู้ใช้', exact: true }).click();
+      const baseFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
       const increase = page.getByRole('button', { name: 'เพิ่มขนาดตัวอักษร', exact: true }).filter({ visible: true });
       await increase.click();
       await increase.click();
       await expect(increase).toBeDisabled();
-      await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('19.2px');
+      await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe(`${baseFontSize * 1.2}px`);
       if (width < 640) await page.getByRole('button', { name: 'บัญชีผู้ใช้', exact: true }).click();
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`list-${width}-${theme}-120.png`), fullPage: true });
@@ -29,7 +30,7 @@ for (const width of [390, 768, 1440]) {
       await expect(dialog.getByRole('button', { name: 'เปิด Ticket', exact: true })).toBeInViewport();
       const field = dialog.getByLabel(/หัวข้อปัญหา/);
       await expect(field).toBeFocused();
-      expect(await field.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(19);
+      expect(await field.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(Math.floor(baseFontSize * 1.2));
       expect(await field.evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
       await page.screenshot({ path: testInfo.outputPath(`create-${width}-${theme}-120.png`) });
       await page.keyboard.press('Escape');

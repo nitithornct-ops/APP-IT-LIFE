@@ -1,8 +1,9 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Circle, GitPullRequestArrow, Loader2, ShieldAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';

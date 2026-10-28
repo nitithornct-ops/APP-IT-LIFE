@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -23,10 +24,10 @@ const isoDateString = z
 const dateOrEmpty = z.union([isoDateString, z.literal('')]).optional();
 
 export const createEmployeeAssignmentSchema = z.object({
-  employeeId: z.string().uuid('กรุณาเลือกพนักงาน'),
+  employeeId: z.string().guid('กรุณาเลือกพนักงาน'),
   category: z.enum(EMPLOYEE_ASSET_CATEGORIES).optional(),
   itemName: z.string().trim().max(200).optional(),
-  assetId: z.string().uuid().optional(),
+  assetId: z.string().guid().optional(),
   ipAddress: z.string().trim().max(120).optional(),
   producer: z.string().trim().max(160).optional(),
   model: z.string().trim().max(160).optional(),
@@ -43,22 +44,22 @@ export const createEmployeeAssignmentSchema = z.object({
   status: z.enum(EMPLOYEE_ASSIGNMENT_STATUSES).optional(),
   assignedDate: dateOrEmpty,
   returnedDate: dateOrEmpty,
-  ownerEmployeeId: z.string().uuid().nullable().optional(),
-  custodianEmployeeId: z.string().uuid().nullable().optional(),
-  assignedUserEmployeeId: z.string().uuid().nullable().optional(),
+  ownerEmployeeId: z.string().guid().nullable().optional(),
+  custodianEmployeeId: z.string().guid().nullable().optional(),
+  assignedUserEmployeeId: z.string().guid().nullable().optional(),
   checkoutDate: dateOrEmpty,
   returnDate: dateOrEmpty,
   accessories: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
   managerApprovalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
-  managerApprovedBy: z.string().uuid().nullable().optional(),
+  managerApprovedBy: z.string().guid().nullable().optional(),
   managerApprovalNotes: z.string().trim().max(1000).optional(),
-  handoverDocumentId: z.string().uuid().nullable().optional(),
+  handoverDocumentId: z.string().guid().nullable().optional(),
   handoverDocumentName: z.string().trim().max(255).optional(),
   notes: z.string().trim().max(1500).optional(),
 });
 export type CreateEmployeeAssignmentInput = z.infer<typeof createEmployeeAssignmentSchema>;
 
-export const updateEmployeeAssignmentSchema = createEmployeeAssignmentSchema.omit({ employeeId: true }).partial();
+export const updateEmployeeAssignmentSchema = partialObject(createEmployeeAssignmentSchema.omit({ employeeId: true }));
 export type UpdateEmployeeAssignmentInput = z.infer<typeof updateEmployeeAssignmentSchema>;
 
 export const setEmployeeAssignmentStatusSchema = z.object({
@@ -67,20 +68,20 @@ export const setEmployeeAssignmentStatusSchema = z.object({
 export type SetEmployeeAssignmentStatusInput = z.infer<typeof setEmployeeAssignmentStatusSchema>;
 
 export const listEmployeeAssignmentsQuerySchema = paginationQuerySchema.extend({
-  employeeId: z.string().uuid().optional(),
+  employeeId: z.string().guid().optional(),
   status: z.enum(EMPLOYEE_ASSIGNMENT_STATUSES).optional(),
   search: z.string().trim().max(200).optional(),
 });
 export type ListEmployeeAssignmentsQuery = z.infer<typeof listEmployeeAssignmentsQuerySchema>;
 
 export const bulkAssignEmployeeAssetsSchema = z.object({
-  employeeId: z.string().uuid(),
-  assetIds: z.array(z.string().uuid()).min(1).max(100).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือก Asset ซ้ำกัน'),
+  employeeId: z.string().guid(),
+  assetIds: z.array(z.string().guid()).min(1).max(100).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือก Asset ซ้ำกัน'),
   checkoutDate: isoDateString,
-  ownerEmployeeId: z.string().uuid().nullable().optional(),
-  custodianEmployeeId: z.string().uuid().nullable().optional(),
-  assignedUserEmployeeId: z.string().uuid().nullable().optional(),
-  managerApprovedBy: z.string().uuid('กรุณาเลือกผู้อนุมัติระดับ Manager'),
+  ownerEmployeeId: z.string().guid().nullable().optional(),
+  custodianEmployeeId: z.string().guid().nullable().optional(),
+  assignedUserEmployeeId: z.string().guid().nullable().optional(),
+  managerApprovedBy: z.string().guid('กรุณาเลือกผู้อนุมัติระดับ Manager'),
   managerApprovalNotes: z.string().trim().max(1000).optional(),
   accessories: z.array(z.string().trim().min(1).max(160)).max(30).default([]),
   notes: z.string().trim().max(1500).optional(),
@@ -88,9 +89,9 @@ export const bulkAssignEmployeeAssetsSchema = z.object({
 export type BulkAssignEmployeeAssetsInput = z.infer<typeof bulkAssignEmployeeAssetsSchema>;
 
 export const bulkReturnEmployeeAssetsSchema = z.object({
-  employeeIds: z.array(z.string().uuid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือกพนักงานซ้ำกัน'),
+  employeeIds: z.array(z.string().guid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, 'ห้ามเลือกพนักงานซ้ำกัน'),
   returnDate: isoDateString,
-  returnReceiverEmployeeId: z.string().uuid().nullable().optional(),
+  returnReceiverEmployeeId: z.string().guid().nullable().optional(),
   reason: z.string().trim().max(1000).optional(),
 });
 export type BulkReturnEmployeeAssetsInput = z.infer<typeof bulkReturnEmployeeAssetsSchema>;

@@ -34,7 +34,7 @@ export const createVendorPortalAccountSchema = z.object({
 }).strict();
 
 export const completeVendorPortalInviteSchema = z.object({
-  mfaFactorId: z.string().uuid().optional(),
+  mfaFactorId: z.string().guid().optional(),
 });
 
 export const resetVendorPortalPasswordSchema = z.object({ password: passwordSchema });
@@ -77,7 +77,7 @@ export const submitOutsourceWorkSchema = z.object({
   notes: optionalLongText,
   assessorName: z.string().trim().min(1, 'กรุณาระบุชื่อผู้ลงนาม').max(160),
   assessorPosition: z.string().trim().max(160).optional(),
-  confirmed: z.literal(true, { errorMap: () => ({ message: 'กรุณายืนยันข้อมูลก่อนลงนาม' }) }),
+  confirmed: z.literal(true, { error: 'กรุณายืนยันข้อมูลก่อนลงนาม' }),
 });
 
 export const reviewOutsourceSubmissionSchema = z.object({

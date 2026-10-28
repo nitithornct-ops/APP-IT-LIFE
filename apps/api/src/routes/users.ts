@@ -434,7 +434,7 @@ usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', d
   const targetId = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  if (!z.string().uuid().safeParse(targetId).success) {
+  if (!z.string().guid().safeParse(targetId).success) {
     return c.json(fail(reqId, 'USER_ID_INVALID', 'รหัสผู้ใช้งานไม่ถูกต้อง'), 400);
   }
   if (targetId === actorId) {

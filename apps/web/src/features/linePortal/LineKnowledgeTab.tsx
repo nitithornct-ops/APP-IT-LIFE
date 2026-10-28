@@ -17,6 +17,7 @@ export function LineKnowledgeTab() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const params = new URLSearchParams();
     if (query.search) params.set('search', query.search);
     if (query.categoryId) params.set('categoryId', query.categoryId);
@@ -24,8 +25,9 @@ export function LineKnowledgeTab() {
     setError(null);
     setData(null);
     void publicApiFetch<LineKnowledgeData>(`/api/v1/public/knowledge${suffix}`)
-      .then(setData)
-      .catch((loadError) => setError(loadError instanceof ApiError ? loadError.message : 'โหลดวิธีแก้เบื้องต้นไม่สำเร็จ'));
+      .then((result) => { if (active) setData(result); })
+      .catch((loadError) => { if (active) setError(loadError instanceof ApiError ? loadError.message : 'โหลดวิธีแก้เบื้องต้นไม่สำเร็จ'); });
+    return () => { active = false; };
   }, [query]);
 
   return (
@@ -71,6 +73,7 @@ export function LineKnowledgeTab() {
       </form>
 
       <div className="px-4 pt-3">
+        {data?.hasMore && <p className="mb-3 rounded-card bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">แสดง 30 รายการแรก กรุณาระบุคำค้นหาหรือประเภทให้แคบลง</p>}
         {error && (
           <p className="rounded-card border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-700 dark:border-danger-800 dark:bg-danger-900/30 dark:text-danger-200" role="alert">
             {error}

@@ -4,10 +4,10 @@ import { z } from 'zod';
 const priorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สูง', 'วิกฤต']);
 
 export const submitServiceRequestSchema = z.object({
-  catalogId: z.string().uuid('กรุณาเลือกบริการ'),
+  catalogId: z.string().guid('กรุณาเลือกบริการ'),
   requestedFor: z.string().trim().max(200).optional(),
   summary: z.string().trim().max(300).optional(),
-  answers: z.record(z.unknown()).optional(),
+  answers: z.record(z.string(), z.unknown()).optional(),
   businessJustification: z.string().trim().max(2000).optional(),
   priority: priorityEnum.optional(),
   impact: priorityEnum.optional(),
@@ -18,7 +18,7 @@ export type SubmitServiceRequestInput = z.infer<typeof submitServiceRequestSchem
 
 export const listServiceRequestsQuerySchema = paginationQuerySchema.extend({
   status: z.string().trim().max(80).optional(),
-  assigneeId: z.string().uuid().optional(),
+  assigneeId: z.string().guid().optional(),
   mine: z.enum(['true', 'false']).optional(),
   pendingMyApproval: z.enum(['true', 'false']).optional(),
 });
@@ -32,8 +32,8 @@ export type ListServiceRequestsQuery = z.infer<typeof listServiceRequestsQuerySc
  */
 export const updateServiceRequestSchema = z.object({
   status: z.string().trim().max(80).optional(),
-  assigneeId: z.string().uuid().nullable().optional(),
-  assignedGroupId: z.string().uuid().nullable().optional(),
+  assigneeId: z.string().guid().nullable().optional(),
+  assignedGroupId: z.string().guid().nullable().optional(),
   priority: priorityEnum.optional(),
   note: z.string().trim().max(2000).optional(),
   fulfillmentNotes: z.string().trim().max(2000).optional(),
@@ -52,7 +52,7 @@ export type ApproveServiceRequestInput = z.infer<typeof approveServiceRequestSch
 
 export const updateServiceRequestTaskSchema = z.object({
   status: z.enum(['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น', 'ข้าม']),
-  assigneeId: z.string().uuid().nullable().optional(),
+  assigneeId: z.string().guid().nullable().optional(),
   evidenceLink: z.string().trim().max(1000).optional(),
   notes: z.string().trim().max(1000).optional(),
 });

@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { useTableParams } from '../../hooks/useTableParams';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
@@ -6,7 +7,7 @@ import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSel
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, Bug, Hourglass, Loader2, Plus, Send } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';

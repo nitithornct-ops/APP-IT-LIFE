@@ -10,6 +10,7 @@ import type { AppEnv, Bindings } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
+import { IncompleteRowsError, loadReportPages } from '../utils/completeRows';
 import { zodValidationHook } from '../utils/validation';
 import {
   cancelWorkflowSchema, createWorkflowDefinitionSchema, createWorkflowDelegationSchema,
@@ -36,6 +37,12 @@ interface WorkflowInstanceRow {
   id: string; instance_code: string; definition_id: string; definition_version: number;
   module_key: string; record_label: string; requester_id: string;
 }
+interface OverviewInstance extends WorkflowInstanceRow { status: string; started_at: string }
+interface OverviewApproval {
+  id: string; instance_id: string; approver_id: string; original_approver_id: string;
+  status: string; due_at: string | null;
+}
+interface OverviewHistory { id: string; instance_id: string; actor_id: string | null }
 interface HistoryValues {
   approval_id?: string; step_order?: number; status_from?: string; status_to?: string;
   comment?: string; detail?: Record<string, unknown>; is_public?: boolean;
@@ -131,36 +138,115 @@ async function activateStep(admin: AdminClient, env: Bindings, instance: Workflo
 workflowsRoute.get('/', requirePermission('workflow.view'), async (c) => {
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const admin = createAdminClient(c.env);
   const [canManage, canApprove, canDelegate, canViewAll] = await Promise.all(['workflow.manage', 'workflow.approve', 'workflow.delegate', 'workflow.view_all'].map((key) => hasPermission(c, key)));
-  const [definitions, steps, instances, approvals, histories, delegations, profiles] = await Promise.all([
+  const userClient = c.get('supabase');
+  const [definitions, steps, delegations, profiles, activeMineCount, activeVisibleCount] = await Promise.all([
     admin.from('workflow_definitions').select('*').is('archived_at', null).order('workflow_code'),
     admin.from('workflow_steps').select('*').eq('status', 'ใช้งาน').order('step_order'),
-    admin.from('workflow_instances').select('*').is('archived_at', null).order('started_at', { ascending: false }).limit(500),
-    admin.from('workflow_approvals').select('*').order('created_at').limit(2000),
-    admin.from('workflow_history').select('*').order('action_at').limit(3000),
     admin.from('workflow_delegations').select('*').order('start_at', { ascending: false }).limit(500),
     admin.from('profiles').select('id,full_name,email'),
+    userClient.from('workflow_instances').select('id', { count: 'exact', head: true }).is('archived_at', null).eq('status', 'กำลังดำเนินการ').eq('requester_id', actorId),
+    userClient.from('workflow_instances').select('id', { count: 'exact', head: true }).is('archived_at', null).eq('status', 'กำลังดำเนินการ'),
   ]);
-  const error = definitions.error ?? steps.error ?? instances.error ?? approvals.error ?? histories.error ?? delegations.error ?? profiles.error;
+  const error = definitions.error ?? steps.error ?? delegations.error ?? profiles.error ?? activeMineCount.error ?? activeVisibleCount.error;
   if (error) return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', error);
+  if (activeMineCount.count === null || activeVisibleCount.count === null) return c.json(fail(reqId, 'WORKFLOW_INCOMPLETE', 'ไม่สามารถยืนยันจำนวน Workflow ได้'), 400);
+  let instanceRows: OverviewInstance[];
+  let approvalRows: OverviewApproval[];
+  let historyRows: OverviewHistory[];
+  try {
+    // The overview only needs the instances referenced by the pending queue;
+    // the full instance list is loaded separately through the paginated endpoint.
+    const pending = await loadReportPages('งานอนุมัติของฉัน', (start, end) => admin.from('workflow_approvals')
+      .select('*', { count: 'exact' }).eq('approver_id', actorId).eq('status', 'รอพิจารณา')
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).range(start, end)) as unknown as OverviewApproval[];
+    instanceRows = [];
+    const missingIds = [...new Set(pending.map((approval) => approval.instance_id))];
+    for (let offset = 0; offset < missingIds.length; offset += 100) {
+      const ids = missingIds.slice(offset, offset + 100);
+      const missing = await loadReportPages('Workflow', (start, end) => admin.from('workflow_instances')
+        .select('*', { count: 'exact' }).in('id', ids).is('archived_at', null)
+        .order('id').range(start, end));
+      instanceRows.push(...missing as unknown as OverviewInstance[]);
+    }
+    approvalRows = [];
+    historyRows = [];
+    const instanceIds = instanceRows.map((instance) => instance.id);
+    for (let offset = 0; offset < instanceIds.length; offset += 100) {
+      const ids = instanceIds.slice(offset, offset + 100);
+      const [approvals, histories] = await Promise.all([
+        loadReportPages('รายการอนุมัติ', (start, end) => admin.from('workflow_approvals').select('*', { count: 'exact' })
+          .in('instance_id', ids).order('created_at').order('id').range(start, end)),
+        loadReportPages('ประวัติ Workflow', (start, end) => {
+          let query = admin.from('workflow_history').select('*', { count: 'exact' }).in('instance_id', ids);
+          if (!canManage) query = query.eq('is_public', true);
+          return query.order('action_at').order('id').range(start, end);
+        }),
+      ]);
+      approvalRows.push(...approvals as unknown as OverviewApproval[]);
+      historyRows.push(...histories as unknown as OverviewHistory[]);
+    }
+  } catch (reason) {
+    if (reason instanceof IncompleteRowsError) return c.json(fail(reqId, 'WORKFLOW_INCOMPLETE', reason.message), 400);
+    return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', reason instanceof Error ? reason : { message: String(reason) });
+  }
   const profileById = new Map((profiles.data ?? []).map((item) => [item.id, item]));
-  const approvalRows = approvals.data ?? [];
-  const visibleInstances = (instances.data ?? []).filter((instance) => canViewAll || canManage || instance.requester_id === actorId || approvalRows.some((approval) => approval.instance_id === instance.id && (approval.approver_id === actorId || approval.original_approver_id === actorId)));
+  const visibleInstances = instanceRows.filter((instance) => canViewAll || canManage || instance.requester_id === actorId || approvalRows.some((approval) => approval.instance_id === instance.id && (approval.approver_id === actorId || approval.original_approver_id === actorId)));
   const visibleIds = new Set(visibleInstances.map((item) => item.id));
   const definitionById = new Map((definitions.data ?? []).map((item) => [item.id, item]));
   const shapedInstances = visibleInstances.map((instance) => ({
     ...instance, requester: profileById.get(instance.requester_id) ?? null,
     definition: definitionById.has(instance.definition_id) ? (({ id, workflow_code, workflow_name }) => ({ id, workflow_code, workflow_name }))(definitionById.get(instance.definition_id)) : null,
     approvals: approvalRows.filter((approval) => approval.instance_id === instance.id).map((approval) => ({ ...approval, approver: profileById.get(approval.approver_id) ?? null, original_approver: profileById.get(approval.original_approver_id) ?? null, can_act: canApprove && approval.approver_id === actorId && approval.status === 'รอพิจารณา' })),
-    history: (histories.data ?? []).filter((item) => item.instance_id === instance.id).map((item) => ({ ...item, actor: item.actor_id ? profileById.get(item.actor_id) ?? null : null })),
+    history: historyRows.filter((item) => item.instance_id === instance.id).map((item) => ({ ...item, actor: item.actor_id ? profileById.get(item.actor_id) ?? null : null })),
   }));
   const myApprovals = approvalRows.filter((approval) => visibleIds.has(approval.instance_id) && approval.approver_id === actorId && approval.status === 'รอพิจารณา').map((approval) => ({ ...approval, approver: profileById.get(approval.approver_id) ?? null, original_approver: profileById.get(approval.original_approver_id) ?? null, can_act: canApprove })).reverse();
   const now = Date.now();
   const visibleDefinitions = (definitions.data ?? []).filter((item) => canManage || item.status === 'ใช้งาน').map((definition) => ({ ...definition, steps: (steps.data ?? []).filter((step) => step.definition_id === definition.id && step.definition_version === definition.version) }));
   const visibleDelegations = (delegations.data ?? []).filter((item) => canManage || item.delegator_id === actorId || item.delegate_id === actorId).map((item) => ({ ...item, status: item.status === 'Active' && new Date(item.end_at).getTime() < now ? 'Expired' : item.status, delegator: profileById.get(item.delegator_id) ?? null, delegate: profileById.get(item.delegate_id) ?? null, definition: item.definition_id && definitionById.has(item.definition_id) ? (({ id, workflow_code, workflow_name }) => ({ id, workflow_code, workflow_name }))(definitionById.get(item.definition_id)) : null }));
   return c.json(ok(reqId, {
-    summary: { pendingMine: myApprovals.length, overdueMine: myApprovals.filter((item) => item.due_at && new Date(item.due_at).getTime() < now).length, activeMine: visibleInstances.filter((item) => item.requester_id === actorId && item.status === 'กำลังดำเนินการ').length, activeVisible: visibleInstances.filter((item) => item.status === 'กำลังดำเนินการ').length },
+    summary: { pendingMine: myApprovals.length, overdueMine: myApprovals.filter((item) => item.due_at && new Date(item.due_at).getTime() < now).length, activeMine: activeMineCount.count, activeVisible: activeVisibleCount.count },
     capabilities: { canManage, canApprove, canDelegate, canViewAll }, myApprovals, instances: shapedInstances, definitions: visibleDefinitions, delegations: visibleDelegations,
   }));
+});
+
+// Use the caller's RLS policies for both the page and its count; fetching as
+// the service role and filtering after pagination would omit older visible work.
+workflowsRoute.get('/instances/page', requirePermission('workflow.view'), async (c) => {
+  const reqId = c.get('requestId');
+  const rawPage = c.req.query('page') ?? '1';
+  if (!/^[1-9]\d{0,5}$/.test(rawPage)) return c.json(fail(reqId, 'WORKFLOW_PAGE_INVALID', 'หมายเลขหน้าไม่ถูกต้อง'), 400);
+  const page = Number(rawPage); const pageSize = 25; const client = c.get('supabase');
+  const result = await client.from('workflow_instances').select('*', { count: 'exact' }).is('archived_at', null)
+    .order('started_at', { ascending: false }).order('id', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
+  if (result.error) return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', result.error);
+  if (result.count === null) return c.json(fail(reqId, 'WORKFLOW_INCOMPLETE', 'ไม่สามารถยืนยันจำนวน Workflow ได้'), 400);
+  const instances = (result.data ?? []) as OverviewInstance[];
+  const ids = instances.map((item) => item.id);
+  if (!ids.length) return c.json(ok(reqId, { instances: [], page, pageSize, total: result.count }));
+  try {
+    const [approvals, histories] = await Promise.all([
+      loadReportPages('รายการอนุมัติ', (start, end) => client.from('workflow_approvals').select('*', { count: 'exact' }).in('instance_id', ids).order('created_at').order('id').range(start, end)),
+      loadReportPages('ประวัติ Workflow', (start, end) => client.from('workflow_history').select('*', { count: 'exact' }).in('instance_id', ids).order('action_at').order('id').range(start, end)),
+    ]);
+    const admin = createAdminClient(c.env);
+    const profileIds = [...new Set([...instances.map((item) => item.requester_id), ...approvals.flatMap((item) => [String(item.approver_id), String(item.original_approver_id)]), ...histories.map((item) => String(item.actor_id ?? ''))].filter(Boolean))];
+    const definitionIds = [...new Set(instances.map((item) => item.definition_id))];
+    const [profiles, definitions] = await Promise.all([
+      admin.from('profiles').select('id,full_name,email').in('id', profileIds),
+      admin.from('workflow_definitions').select('id,workflow_code,workflow_name').in('id', definitionIds),
+    ]);
+    if (profiles.error || definitions.error) return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', profiles.error ?? definitions.error!);
+    const profileById = new Map((profiles.data ?? []).map((item) => [item.id, item]));
+    const definitionById = new Map((definitions.data ?? []).map((item) => [item.id, item]));
+    const shaped = instances.map((instance) => ({ ...instance, requester: profileById.get(instance.requester_id) ?? null, definition: definitionById.get(instance.definition_id) ?? null,
+      approvals: approvals.filter((item) => item.instance_id === instance.id).map((item) => ({ ...item, approver: profileById.get(String(item.approver_id)) ?? null, original_approver: profileById.get(String(item.original_approver_id)) ?? null })),
+      history: histories.filter((item) => item.instance_id === instance.id).map((item) => ({ ...item, actor: item.actor_id ? profileById.get(String(item.actor_id)) ?? null : null })),
+    }));
+    return c.json(ok(reqId, { instances: shaped, page, pageSize, total: result.count }));
+  } catch (reason) {
+    if (reason instanceof IncompleteRowsError) return c.json(fail(reqId, 'WORKFLOW_INCOMPLETE', reason.message), 400);
+    return dbFailJson(c, 'WORKFLOW_LOAD_FAILED', reason instanceof Error ? reason : { message: String(reason) });
+  }
 });
 
 workflowsRoute.get('/options', requirePermission('workflow.view'), async (c) => {

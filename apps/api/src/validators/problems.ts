@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -9,7 +10,7 @@ export const CORRECTIVE_ACTION_STATUSES = ['เปิด', 'กำลังด�
 
 const optionalDate = z.union([z.string().date(), z.literal('')]).optional();
 const optionalUrl = z.union([z.string().trim().url('URL ไม่ถูกต้อง').max(1000), z.literal('')]).optional();
-const idList = z.array(z.string().uuid()).max(100).default([]);
+const idList = z.array(z.string().guid()).max(100).default([]);
 const optionalDateTime = z.union([z.string().datetime({ offset: true }), z.literal('')]).optional();
 const fiveWhyStep = z.object({
   question: z.string().trim().max(100).default(''),
@@ -28,7 +29,7 @@ export const listProblemsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.enum(PROBLEM_STATUSES).optional(),
   priority: z.enum(PROBLEM_PRIORITIES).optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
 });
 
 const problemFieldsSchema = z.object({
@@ -41,13 +42,13 @@ const problemFieldsSchema = z.object({
   permanentFix: z.string().trim().max(1500).optional(),
   rcaMethod: z.enum(RCA_METHODS).default('5 Why'),
   fiveWhy: z.array(fiveWhyStep).max(5).default([]),
-  fishbone: fishbone.default({}),
-  ownerId: z.string().uuid().nullable().optional(),
+  fishbone: fishbone.prefault({}),
+  ownerId: z.string().guid().nullable().optional(),
   priority: z.enum(PROBLEM_PRIORITIES).default('ปานกลาง'),
   status: z.enum(PROBLEM_STATUSES).default('เปิด'),
   reviewDate: optionalDate,
   reviewMeetingAt: optionalDateTime,
-  reviewMeetingOwnerId: z.string().uuid().nullable().optional(),
+  reviewMeetingOwnerId: z.string().guid().nullable().optional(),
   reviewMeetingNotes: z.string().trim().max(1500).optional(),
   recurrenceCount: z.number().int().min(0).max(100000).default(0),
   evidenceUrl: optionalUrl,
@@ -67,7 +68,7 @@ export const createProblemSchema = problemFieldsSchema.superRefine((value, ctx) 
   }
 });
 
-export const updateProblemSchema = problemFieldsSchema.partial()
+export const updateProblemSchema = partialObject(problemFieldsSchema)
   .refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข')
   .superRefine((value, ctx) => {
     if (value.permanentFix?.trim() && !value.changeIds?.length) {
@@ -81,11 +82,11 @@ export const updateProblemSchema = problemFieldsSchema.partial()
 export const listKnownErrorsQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(200).optional(),
   status: z.enum(KNOWN_ERROR_STATUSES).optional(),
-  problemId: z.string().uuid().optional(),
+  problemId: z.string().guid().optional(),
 });
 
 export const createKnownErrorSchema = z.object({
-  problemId: z.string().uuid(),
+  problemId: z.string().guid(),
   title: z.string().trim().min(1, 'กรุณากรอกชื่อ Known Error').max(200),
   symptoms: z.string().trim().max(1500).optional(),
   rootCause: z.string().trim().max(1500).optional(),
@@ -98,12 +99,12 @@ export const createKnownErrorSchema = z.object({
   notes: z.string().trim().max(1000).optional(),
 });
 
-export const updateKnownErrorSchema = createKnownErrorSchema.partial().refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
+export const updateKnownErrorSchema = partialObject(createKnownErrorSchema).refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
 
 const correctiveActionFieldsSchema = z.object({
   title: z.string().trim().min(1, 'กรุณาระบุ Corrective Action').max(200),
   description: z.string().trim().max(1500).optional(),
-  ownerId: z.string().uuid().nullable().optional(),
+  ownerId: z.string().guid().nullable().optional(),
   dueDate: optionalDate,
   status: z.enum(CORRECTIVE_ACTION_STATUSES).default('เปิด'),
   verificationNotes: z.string().trim().max(1500).optional(),
@@ -115,7 +116,7 @@ export const createCorrectiveActionSchema = correctiveActionFieldsSchema.superRe
   }
 });
 
-export const updateCorrectiveActionSchema = correctiveActionFieldsSchema.partial()
+export const updateCorrectiveActionSchema = partialObject(correctiveActionFieldsSchema)
   .refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
 
 export const verifyProblemAfterChangeSchema = z.object({

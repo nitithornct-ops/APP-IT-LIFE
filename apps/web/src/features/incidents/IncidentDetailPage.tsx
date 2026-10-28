@@ -1,9 +1,10 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { getListReturnTo } from '../../components/shell/listNavigation';
 import { DataTable } from '../../components/table/DataTable';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, Clock3, ExternalLink, Loader2, Network, Plus, ShieldCheck, Siren } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
-import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';

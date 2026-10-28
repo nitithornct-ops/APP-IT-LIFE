@@ -3,7 +3,7 @@ import { RowActions } from '../../components/table/RowActions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock3, ListChecks, Loader2, ShieldOff } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '../../components/ui/Badge';
@@ -13,7 +13,6 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { PageTitle } from '../../components/ui/PageTitle';
 import { ApiError, apiFetch } from '../../services/apiClient';
 import { useAuth } from '../../stores/authContext';
-import type { PaginatedResult, UserListItem } from '../../types/admin';
 import type { AccessRegistryEntry } from '../../types/accessRequests';
 import { formatThaiDate } from '../../utils/date';
 import { AccessCertificationCampaigns } from './AccessCertificationCampaigns';
@@ -90,6 +89,8 @@ function RegistrySection() {
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-hidden="true" />
           </div>
         )}
+
+        {query.isError && <p className="py-4 text-sm text-red-600" role="alert">{query.error instanceof Error ? query.error.message : 'โหลดทะเบียนสิทธิ์ไม่สำเร็จ กรุณาลองใหม่'}</p>}
 
         {query.data && query.data.length === 0 && (
           <EmptyState icon={<ListChecks className="h-10 w-10" aria-hidden="true" />} title="ยังไม่มีรายการสิทธิ์ในทะเบียน" />
@@ -171,18 +172,26 @@ type DeactivateForm = z.infer<typeof deactivateSchema>;
 
 function DeactivateEmployeeSection() {
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [serverError, setServerError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<DeactivateForm>({ resolver: zodResolver(deactivateSchema) });
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
   const usersQuery = useQuery({
-    queryKey: ['admin', 'users', 'for-deactivate-picker'],
-    queryFn: () => apiFetch<PaginatedResult<UserListItem>>('/api/v1/users?page=1&pageSize=100'),
+    queryKey: ['admin', 'access-registry', 'deactivation-candidates', appliedSearch],
+    queryFn: () => apiFetch<Array<{ id: string; full_name: string; email: string }>>(`/api/v1/access-registry/deactivation-candidates?search=${encodeURIComponent(appliedSearch)}`),
+    enabled: appliedSearch.length >= 2 && appliedSearch === search.trim(),
   });
 
   const mutation = useMutation({
@@ -211,6 +220,9 @@ function DeactivateEmployeeSection() {
           noValidate
         >
           <div>
+            <label htmlFor="dea-search" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ค้นหาชื่อ อีเมล ชื่อบัญชี หรือรหัสพนักงาน</label>
+            <input id="dea-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setValue('userId', ''); }}
+              className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
             <label htmlFor="dea-user" className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               ผู้ใช้ที่พ้นสภาพ
             </label>
@@ -220,12 +232,16 @@ function DeactivateEmployeeSection() {
               {...register('userId')}
             >
               <option value="">— เลือกผู้ใช้ —</option>
-              {(usersQuery.data?.items ?? []).map((u) => (
+              {(appliedSearch === search.trim() ? usersQuery.data ?? [] : []).map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.full_name} ({u.email})
                 </option>
               ))}
             </select>
+            {search.trim().length < 2 && <p className="mt-1 text-xs text-slate-500">พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา</p>}
+            {(usersQuery.isFetching || (search.trim().length >= 2 && appliedSearch !== search.trim())) && <p className="mt-1 text-xs text-slate-500" role="status">กำลังค้นหา...</p>}
+            {appliedSearch === search.trim() && usersQuery.isError && <p className="mt-1 text-xs text-red-600" role="alert">{usersQuery.error instanceof Error ? usersQuery.error.message : 'ค้นหาผู้ใช้ไม่สำเร็จ'}</p>}
+            {appliedSearch === search.trim() && usersQuery.data?.length === 0 && <p className="mt-1 text-xs text-slate-500">ไม่พบผู้ใช้ที่ตรงกับคำค้น</p>}
             {errors.userId && <p className="mt-1 text-xs text-red-600">{errors.userId.message}</p>}
           </div>
 
@@ -267,15 +283,15 @@ export function AccessRegistryPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle eyebrow="บุคลากรและสิทธิ์ / ทะเบียนสิทธิ์ RBAC" title="ทะเบียนสิทธิ์ RBAC" description="ทบทวน/เพิกถอนสิทธิ์ที่ IT ให้ไว้ และระงับสิทธิ์เมื่อพนักงานพ้นสภาพ" />
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {registryQuery.data && <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard icon={<ListChecks className="h-5 w-5" />} label="สิทธิ์ในทะเบียน" value={registry.length} tone="primary" />
         <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="สิทธิ์ที่ใช้งาน" value={registry.filter((entry) => entry.status === 'active').length} tone="teal" />
         <StatCard icon={<Clock3 className="h-5 w-5" />} label="ถึงรอบทบทวน" value={registry.filter((entry) => entry.next_review_due && entry.next_review_due <= new Date().toISOString()).length} tone="amber" />
         <StatCard icon={<ShieldOff className="h-5 w-5" />} label="ระงับ/เพิกถอน" value={registry.filter((entry) => entry.status === 'revoked' || entry.status === 'suspended').length} tone="gray" />
-      </div>
+      </div>}
       <AccessCertificationCampaigns />
       <RegistrySection />
-      {canManage && registryQuery.data && <DeactivateEmployeeSection />}
+      {canManage && <DeactivateEmployeeSection />}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -8,7 +9,7 @@ export const RETEST_STATUSES = ['scheduled', 'passed', 'failed', 'blocked'] as c
 
 const optionalDate = z.union([z.string().date(), z.literal('')]).optional();
 const optionalDateTime = z.string().datetime({ offset: true }).optional();
-const optionalUuid = z.union([z.string().uuid(), z.literal('')]).optional();
+const optionalUuid = z.union([z.string().guid(), z.literal('')]).optional();
 const optionalHttpsUrl = z
   .union([z.string().trim().url('URL ไม่ถูกต้อง').max(500).refine((value) => value.startsWith('https://'), 'ต้องเป็น HTTPS'), z.literal('')])
   .optional();
@@ -36,7 +37,7 @@ const vulnerabilityBaseSchema = z.object({
   severity: z.enum(VULNERABILITY_SEVERITIES).default('ปานกลาง'),
   description: z.string().trim().max(1500).optional(),
   detectedAt: z.string().date().optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
   remediationPlan: z.string().trim().max(1500).optional(),
   patchReference: z.string().trim().max(300).optional(),
   dueDate: optionalDate,
@@ -68,8 +69,7 @@ function addLifecycleIssues(
 }
 
 export const createVulnerabilitySchema = vulnerabilityBaseSchema.superRefine(addLifecycleIssues);
-export const updateVulnerabilitySchema = vulnerabilityBaseSchema
-  .partial()
+export const updateVulnerabilitySchema = partialObject(vulnerabilityBaseSchema)
   .refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข')
   .superRefine(addLifecycleIssues);
 
@@ -79,8 +79,8 @@ export const listVulnerabilitiesQuerySchema = paginationQuerySchema.extend({
   severity: z.enum(VULNERABILITY_SEVERITIES).optional(),
   riskPriority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
   kevListed: z.enum(['true', 'false']).optional(),
-  ownerId: z.string().uuid().optional(),
-  assetId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
+  assetId: z.string().guid().optional(),
 });
 
 export const setVulnerabilityStatusSchema = z
@@ -117,21 +117,21 @@ const scannerImportRowSchema = z.object({
 
 export const importScannerSchema = z.object({
   scannerName: z.string().trim().min(1).max(100),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
   rows: z.array(scannerImportRowSchema).min(1).max(1000),
 });
 
 export const createPatchCampaignSchema = z.object({
   name: z.string().trim().min(1).max(200),
   objective: z.string().trim().max(1500).optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
   targetDate: optionalDate,
   status: z.enum(PATCH_CAMPAIGN_STATUSES).default('Draft'),
   notes: z.string().trim().max(1000).optional(),
 });
 
-export const updatePatchCampaignSchema = createPatchCampaignSchema.partial().refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
-export const assignCampaignSchema = z.object({ vulnerabilityIds: z.array(z.string().uuid()).max(1000) });
+export const updatePatchCampaignSchema = partialObject(createPatchCampaignSchema).refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
+export const assignCampaignSchema = z.object({ vulnerabilityIds: z.array(z.string().guid()).max(1000) });
 
 export const createVulnerabilityRetestSchema = z.object({
   status: z.enum(RETEST_STATUSES),
@@ -150,7 +150,7 @@ export const createVulnerabilityRetestSchema = z.object({
 export const requestExceptionSchema = z.object({
   reason: z.string().trim().min(3).max(2000),
   expiresOn: z.string().date(),
-  exceptionOwnerId: z.string().uuid(),
+  exceptionOwnerId: z.string().guid(),
   evidenceLink: optionalHttpsUrl,
 });
 

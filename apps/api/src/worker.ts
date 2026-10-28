@@ -17,61 +17,62 @@ export default {
   async scheduled(controller: ScheduledController, env: Bindings, _ctx: ExecutionContext): Promise<void> {
     const scheduledAt = new Date(controller.scheduledTime);
     const startedAt = Date.now();
-    let scheduledError: unknown = null;
-    let result: Record<string, unknown> = {};
-    try {
-      const [delivered, assetLoanReminders, ticketSla, serviceRequestSla, serviceRequestAutomation, privacyRetention, integrationRetention, accessExpiry, backupMonitoring, scheduledReports] = await Promise.all([
-        dispatchDueTaskReminders(env, scheduledAt),
-        dispatchDueAssetLoanReminders(env, scheduledAt),
-        dispatchTicketSlaEscalations(env, scheduledAt),
-        dispatchServiceRequestSlaEscalations(env, scheduledAt),
-        dispatchPendingServiceRequestAutomation(env, scheduledAt),
-        dispatchPrivacyRetention(env, scheduledAt),
-        dispatchIntegrationRetention(env, scheduledAt),
-        dispatchAccessExpiry(env, scheduledAt),
-        dispatchBackupMonitoring(env, scheduledAt),
-        dispatchScheduledReports(env, scheduledAt),
-      ]);
-      // Reminder/SLA RPCs insert notifications transactionally. Dispatch both outboxes only after
-      // those producers finish so their in-app and LINE jobs can be delivered in this cron run.
-      const [notifications, lineNotifications] = await Promise.all([
-        dispatchNotificationOutbox(env, scheduledAt),
-        dispatchLineNotificationOutbox(env, scheduledAt),
-      ]);
-      result = {
-        taskRemindersDelivered: delivered,
-        assetLoanRemindersDelivered: assetLoanReminders,
-        notifications,
-        lineNotifications,
-        ticketSla,
-        serviceRequestSla,
-        serviceRequestAutomation,
-        privacyRetention,
-        integrationRetention,
-        accessExpiry,
-        backupMonitoring,
-        scheduledReports,
-      };
-    } catch (error) {
-      scheduledError = error;
-      console.error(JSON.stringify({ msg: 'scheduled_dispatch_failed' }));
-    }
+    const result: Record<string, unknown> = {};
+    const failedJobs: string[] = [];
+    const runJobs = async (jobs: Array<[string, () => Promise<unknown>]>) => {
+      const settled = await Promise.allSettled(jobs.map(([, run]) => Promise.resolve().then(run)));
+      settled.forEach((job, index) => {
+        const name = jobs[index][0];
+        if (job.status === 'fulfilled') {
+          result[name] = job.value;
+          const reportedFailures = name === 'scheduledReports' && job.value !== null && typeof job.value === 'object'
+            && 'failed' in job.value && typeof job.value.failed === 'number' && job.value.failed > 0;
+          if (reportedFailures) {
+            failedJobs.push(name);
+            console.error(JSON.stringify({ msg: 'scheduled_job_failed', job: name, reason: 'reported_failures' }));
+          } else {
+            console.info(JSON.stringify({ msg: 'scheduled_job_complete', job: name }));
+          }
+        } else {
+          failedJobs.push(name);
+          console.error(JSON.stringify({ msg: 'scheduled_job_failed', job: name }));
+        }
+      });
+    };
+    await runJobs([
+      ['taskRemindersDelivered', () => dispatchDueTaskReminders(env, scheduledAt)],
+      ['assetLoanRemindersDelivered', () => dispatchDueAssetLoanReminders(env, scheduledAt)],
+      ['ticketSla', () => dispatchTicketSlaEscalations(env, scheduledAt)],
+      ['serviceRequestSla', () => dispatchServiceRequestSlaEscalations(env, scheduledAt)],
+      ['serviceRequestAutomation', () => dispatchPendingServiceRequestAutomation(env, scheduledAt)],
+      ['privacyRetention', () => dispatchPrivacyRetention(env, scheduledAt)],
+      ['integrationRetention', () => dispatchIntegrationRetention(env, scheduledAt)],
+      ['accessExpiry', () => dispatchAccessExpiry(env, scheduledAt)],
+      ['backupMonitoring', () => dispatchBackupMonitoring(env, scheduledAt)],
+      ['scheduledReports', () => dispatchScheduledReports(env, scheduledAt)],
+    ]);
+    // Wait for every producer, even when one fails, before draining each outbox independently.
+    await runJobs([
+      ['notifications', () => dispatchNotificationOutbox(env, scheduledAt)],
+      ['lineNotifications', () => dispatchLineNotificationOutbox(env, scheduledAt)],
+    ]);
 
     const statusChecks = await collectSystemStatusChecks(env, {
       now: scheduledAt,
       scheduledJobs: {
-        status: scheduledError ? 'down' : 'operational',
+        status: failedJobs.length ? 'down' : 'operational',
         responseTimeMs: Date.now() - startedAt,
-        failureReason: scheduledError ? 'job_failed' : null,
+        failureReason: failedJobs.length ? 'job_failed' : null,
       },
     });
     await recordSystemStatusChecks(env, statusChecks, 'scheduled');
     console.info(JSON.stringify({
       msg: 'scheduled_dispatch_complete',
       ...result,
+      failedJobs,
       statusChecksRecorded: statusChecks.length,
       scheduledTime: controller.scheduledTime,
     }));
-    if (scheduledError) throw scheduledError;
+    if (failedJobs.length) throw new Error(`Scheduled jobs failed: ${failedJobs.join(', ')}`);
   },
 } satisfies ExportedHandler<Bindings>;

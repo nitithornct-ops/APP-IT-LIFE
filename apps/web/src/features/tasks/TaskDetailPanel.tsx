@@ -19,7 +19,7 @@ const priorityEnum = z.enum(['ต่ำ', 'ปกติ', 'สูง', 'เร�
 const statusEnum = z.enum(['ต้องทำ', 'กำลังทำ', 'รอข้อมูล', 'รอผู้อื่นดำเนินการ', 'พักไว้ก่อน', 'เสร็จแล้ว', 'ยกเลิก']);
 const recurrenceEnum = z.enum(['ไม่ทำซ้ำ', 'รายวัน', 'วันทำงาน', 'รายสัปดาห์', 'ทุก 2 สัปดาห์', 'รายเดือน', 'รายไตรมาส', 'ทุก 6 เดือน', 'รายปี', 'กำหนดเอง']);
 const taskTypeEnum = z.enum(['general', 'meeting', 'follow_up', 'document', 'project', 'system_development', 'personal', 'other']);
-const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number().min(0).max(999999.99).optional());
+const hoursInput = z.preprocess((value) => value === '' || value === null ? undefined : value, z.coerce.number<number>().min(0).max(999999.99).optional());
 
 const editSchema = z
   .object({
@@ -33,7 +33,7 @@ const editSchema = z
     dueDate: z.string().optional(),
     startTime: z.string().optional(),
     dueTime: z.string().optional(),
-    progress: z.coerce.number().min(0).max(100).optional(),
+    progress: z.coerce.number<number>().min(0).max(100).optional(),
     estimateHours: hoursInput,
     actualHours: hoursInput,
     blockedReason: z.string().trim().max(1000).optional(),
@@ -42,7 +42,7 @@ const editSchema = z
     recurrence: recurrenceEnum,
     recurrenceRule: z.object({
       frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
-      interval: z.coerce.number().int().min(1).max(99),
+      interval: z.coerce.number<number>().int().min(1).max(99),
     }).optional(),
     recurrenceEndDate: z.string().optional(),
   })
@@ -101,7 +101,7 @@ function EditTaskForm({ task }: { task: Task }) {
     handleSubmit,
     watch,
     formState: { errors },
-  } = useForm<EditForm>({
+  } = useForm<z.input<typeof editSchema>, unknown, EditForm>({
     resolver: zodResolver(editSchema),
     defaultValues: {
       title: task.title,
