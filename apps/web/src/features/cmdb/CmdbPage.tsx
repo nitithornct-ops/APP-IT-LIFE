@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
@@ -7,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, GitBranch, Loader2, Network, Plus, ShieldAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { RowActions } from '../../components/table/RowActions';
 import { RequirePermission } from '../../components/RequirePermission';

@@ -34,6 +34,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { FilterBar, filterControlClass } from '../../components/ui/FilterBar';
 import { KpiStrip } from '../../components/ui/KpiStrip';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { Modal } from '../../components/ui/Modal';
 import { Toast, type ToastMessage } from '../../components/ui/Toast';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { apiFetch, ApiError } from '../../services/apiClient';
@@ -390,7 +391,7 @@ export function TasksPage() {
 
         {actionError && <div role="alert" className="flex items-center justify-between gap-3 border-x border-t border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"><span>{actionError}</span><button type="button" onClick={() => setActionError(null)} aria-label="ปิดข้อความผิดพลาด" className="font-bold">ปิด</button></div>}
 
-        <div className={cn('grid items-start gap-3', selectedTask && view !== 'calendar' && 'xl:grid-cols-[minmax(0,1fr)_minmax(330px,.55fr)]')}>
+        <div className="grid items-start gap-3">
           <div className="min-w-0">
             {tasksQuery.isLoading && <div className="grid min-h-[240px] place-items-center rounded-b-card border border-hairline bg-white dark:border-white/[.08] dark:bg-white/[.035]" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div>}
             {tasksQuery.isError && <div className="rounded-b-card border border-red-200 bg-red-50 p-5 text-sm text-red-700">โหลดรายการงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</div>}
@@ -432,7 +433,7 @@ export function TasksPage() {
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && (view === 'list' || view === 'table') && <TablePagination page={currentPage} pageSize={pageSize} totalItems={filteredTasks.length} totalPages={pageCount} itemLabel="งาน" onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />}
           </div>
 
-          {selectedTask && view !== 'calendar' && <TaskPreviewPane task={selectedTask} onClose={() => setSelectedTaskId(null)} onOpenDetail={() => setDetailTaskId(selectedTask.id)} />}
+          {selectedTask && <Modal title={selectedTask.task_no} size="lg" onClose={() => setSelectedTaskId(null)}><TaskPreviewPane task={selectedTask} onClose={() => setSelectedTaskId(null)} onOpenDetail={() => { setDetailTaskId(selectedTask.id); setSelectedTaskId(null); }} /></Modal>}
         </div>
       </section>
 

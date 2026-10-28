@@ -1,10 +1,11 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { useMutation } from '@tanstack/react-query';
 import {
   AlertTriangle, ArrowRight, ClipboardList, ExternalLink, History, PackageSearch,
   ScanLine, ShieldCheck, TriangleAlert,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';

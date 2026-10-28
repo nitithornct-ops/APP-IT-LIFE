@@ -114,6 +114,7 @@ export interface AssetDetail {
   movements: AssetMovement[];
   maintenance: { id: string; plan_date: string; actual_date: string | null; status: string; result: string | null; recurrence: string }[];
   licenses: { id: string; software_name: string; license_type: string | null; expire_date: string | null; status: string }[];
+  legacyLicenseCandidates?: { id: string; software_name: string; license_type: string | null; expire_date: string | null; status: string }[];
   lifecycleEvents: AssetLifecycleEvent[];
   children: AssetOption[];
   configurationItem: { id: string; ci_code: string; name: string; ci_type: string; environment: string; status: string } | null;

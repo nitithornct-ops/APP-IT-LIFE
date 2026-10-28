@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { OnboardingCard } from '../features/onboarding/OnboardingCard';
-import { Link } from 'react-router-dom';
+import { DetailLink as Link } from '../components/ui/DetailLink';
 import { DataTable } from '../components/table/DataTable';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';

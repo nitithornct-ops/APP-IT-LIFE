@@ -31,7 +31,7 @@ const roleFormSchema = z.object({
   nameEn: z.string().trim().max(200).optional(),
   description: z.string().trim().max(1000).optional(),
   scope: z.string().trim().max(1000).optional(),
-  ownerId: z.string().uuid('Role Owner ไม่ถูกต้อง').optional().or(z.literal('')),
+  ownerId: z.string().guid('Role Owner ไม่ถูกต้อง').optional().or(z.literal('')),
   reviewFrequency: z.enum(['monthly', 'quarterly', 'semiannual', 'annual']),
   sensitiveRole: z.boolean(),
   status: z.enum(['active', 'inactive']),

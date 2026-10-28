@@ -74,6 +74,7 @@ export interface KnowledgeArticle {
 
 export interface KnowledgeOverview {
   articles: KnowledgeArticle[];
+  hasMore?: boolean;
   categories: KnowledgeCategoryRef[];
   taxonomies: KnowledgeTaxonomyRef[];
   canManage: boolean;

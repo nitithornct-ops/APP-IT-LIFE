@@ -22,7 +22,7 @@ export type MasterDataKind = (typeof MASTER_DATA_KINDS)[number];
 
 const kindSchema = z.enum(MASTER_DATA_KINDS);
 const mergeSchema = z.object({
-  targetId: z.string().uuid(),
+  targetId: z.string().guid(),
   reason: z.string().trim().min(3).max(1000),
 });
 
@@ -266,7 +266,7 @@ masterDataRegistryRoute.post('/import', async (c) => {
 masterDataRegistryRoute.post('/:kind/:id/merge', async (c) => {
   const requestId = c.get('requestId');
   const kindResult = kindSchema.safeParse(c.req.param('kind'));
-  const sourceIdResult = z.string().uuid().safeParse(c.req.param('id'));
+  const sourceIdResult = z.string().guid().safeParse(c.req.param('id'));
   if (!kindResult.success || !sourceIdResult.success) return c.json(fail(requestId, 'MASTER_DATA_TARGET_INVALID', 'ไม่พบชนิดหรือรายการ Master Data ที่ระบุ'), 400);
 
   const parsed = mergeSchema.safeParse(await c.req.json().catch(() => null));
@@ -300,7 +300,7 @@ masterDataRegistryRoute.post('/:kind/:id/merge', async (c) => {
 masterDataRegistryRoute.get('/:kind/:id/audit-history', async (c) => {
   const requestId = c.get('requestId');
   const kindResult = kindSchema.safeParse(c.req.param('kind'));
-  const idResult = z.string().uuid().safeParse(c.req.param('id'));
+  const idResult = z.string().guid().safeParse(c.req.param('id'));
   if (!kindResult.success || !idResult.success) return c.json(fail(requestId, 'MASTER_DATA_TARGET_INVALID', 'ไม่พบรายการ Master Data ที่ระบุ'), 400);
   if (!(await hasPermission(c, 'audit.view'))) return c.json(fail(requestId, 'PERMISSION_DENIED', 'ท่านไม่มีสิทธิ์ดู Audit History'), 403);
 

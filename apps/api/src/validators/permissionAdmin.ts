@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { z } from 'zod';
 
 /** ยอมรับทั้ง yyyy-MM-dd และ ISO datetime เต็มรูปแบบ ตามแนวทางเดิมของ apParseOptionalDate_ */
@@ -9,8 +10,8 @@ const optionalDateString = z
   .nullable();
 
 export const createPermissionOverrideSchema = z.object({
-  userId: z.string().uuid(),
-  permissionId: z.string().uuid(),
+  userId: z.string().guid(),
+  permissionId: z.string().guid(),
   effect: z.enum(['allow', 'deny']),
   startAt: optionalDateString,
   endAt: optionalDateString,
@@ -46,22 +47,22 @@ const groupCodeSchema = z
 export const createApprovalGroupSchema = z.object({
   code: groupCodeSchema,
   name: z.string().trim().min(1).max(200),
-  departmentId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
   description: z.string().trim().max(1500).optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
   notes: z.string().trim().max(1000).optional(),
 });
 
 export type CreateApprovalGroupInput = z.infer<typeof createApprovalGroupSchema>;
 
-export const updateApprovalGroupSchema = createApprovalGroupSchema.partial().extend({
+export const updateApprovalGroupSchema = partialObject(createApprovalGroupSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
 export type UpdateApprovalGroupInput = z.infer<typeof updateApprovalGroupSchema>;
 
 export const createApprovalGroupMemberSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.string().guid(),
   memberRole: z.enum(['primary', 'member', 'backup']).optional(),
   priority: z.coerce.number().int().min(1).max(999).optional(),
   validFrom: optionalDateString,
@@ -71,7 +72,7 @@ export const createApprovalGroupMemberSchema = z.object({
 
 export type CreateApprovalGroupMemberInput = z.infer<typeof createApprovalGroupMemberSchema>;
 
-export const updateApprovalGroupMemberSchema = createApprovalGroupMemberSchema.partial().extend({
+export const updateApprovalGroupMemberSchema = partialObject(createApprovalGroupMemberSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
@@ -89,24 +90,24 @@ export const createAccessGroupSchema = z.object({
   description: z.string().trim().max(1500).optional(),
 });
 
-export const updateAccessGroupSchema = createAccessGroupSchema.partial().extend({
+export const updateAccessGroupSchema = partialObject(createAccessGroupSchema).extend({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
 export const accessGroupPermissionSchema = z.object({
-  permissionId: z.string().uuid(),
+  permissionId: z.string().guid(),
   effect: z.enum(['allow', 'deny']).default('allow'),
   notes: z.string().trim().max(1000).optional(),
 });
 
 export const accessGroupMemberSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.string().guid(),
   validFrom: optionalDateString,
   validUntil: optionalDateString,
 });
 
 export const userAccessGroupMembershipSchema = z.object({
-  groupId: z.string().uuid(),
+  groupId: z.string().guid(),
   validFrom: optionalDateString,
   validUntil: optionalDateString,
 });
@@ -123,7 +124,7 @@ export const privilegedOverrideDecisionSchema = z.object({
 });
 
 export const userAccessReviewCreateSchema = z.object({
-  reviewerId: z.string().uuid().nullable().optional(),
+  reviewerId: z.string().guid().nullable().optional(),
   dueAt: optionalDateString,
 });
 

@@ -1,8 +1,9 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Clock3, DollarSign, ExternalLink, Loader2, Paperclip, PauseCircle, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useParams, useLocation } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';

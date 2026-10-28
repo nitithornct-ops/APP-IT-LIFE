@@ -1,7 +1,8 @@
+import { partialObject } from '@itlife/shared';
 import { z } from 'zod';
 
 const rangeDays = z.coerce.number().int().min(0).max(3650).default(30);
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const booleanParam = z.preprocess((value) => {
   if (value === 'true') return true;
@@ -28,7 +29,7 @@ export const reportSavedFilterQuerySchema = z.object({
 export const reportSavedFilterSchema = z.object({
   reportKey: z.string().min(1).max(80),
   name: z.string().trim().min(1).max(100),
-  filters: reportFiltersSchema.partial().default({}),
+  filters: partialObject(reportFiltersSchema).default({}),
   isShared: z.boolean().default(false),
 }).strict();
 
@@ -47,7 +48,7 @@ export const reportExecutivePackExportSchema = reportExecutivePackQuerySchema.ex
   saveToDrive: z.boolean().default(false),
 }).strict();
 
-const scheduleFilters = reportFiltersSchema.partial().default({});
+const scheduleFilters = partialObject(reportFiltersSchema).default({});
 const reportScheduleShape = z.object({
   reportKey: z.string().min(1).max(80),
   name: z.string().trim().min(1).max(100),
@@ -67,7 +68,7 @@ export const reportScheduleSchema = reportScheduleShape.superRefine((value, cont
   if (value.frequency === 'monthly' && value.dayOfMonth === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['dayOfMonth'], message: 'dayOfMonth is required for monthly schedules' });
 });
 
-export const reportSchedulePatchSchema = reportScheduleShape.partial().strict();
+export const reportSchedulePatchSchema = partialObject(reportScheduleShape).strict();
 
 /**
  * PDF ส่งออกได้สองแบบในคำขอเดียว: ดาวน์โหลดเสมอ และ "เก็บสำเนาไว้ใน Google Drive" เมื่อผู้ใช้สั่ง

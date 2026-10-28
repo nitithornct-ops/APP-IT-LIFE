@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useBlocker, useSearchParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader, StatCard } from '../../components/ui/Card';
@@ -286,12 +286,27 @@ export function FormManagementPage() {
     onSuccess: (result) => downloadPdfBase64(result.pdfBase64, result.filename),
   });
   const isDirty = editor ? editor.html !== editor.originalHtml || editor.title !== editor.originalTitle || editor.description !== editor.originalDescription || editor.category !== editor.originalCategory || editor.moduleKey !== editor.originalModuleKey || JSON.stringify(editor.fieldSchema ?? []) !== JSON.stringify(editor.originalFieldSchema ?? []) || JSON.stringify(editor.acknowledgementConfig) !== JSON.stringify(editor.originalAcknowledgementConfig) || JSON.stringify(editor.approvalSignatureConfig) !== JSON.stringify(editor.originalApprovalSignatureConfig) || JSON.stringify(editor.documentNumberRule) !== JSON.stringify(editor.originalDocumentNumberRule) || JSON.stringify(editor.formData ?? {}) !== JSON.stringify(editor.originalFormData ?? {}) || editor.sourceModule !== editor.originalSourceModule || editor.sourceRecordId !== editor.originalSourceRecordId : false;
+  const [confirmClose, setConfirmClose] = useState(false);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => isDirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search || currentLocation.hash !== nextLocation.hash));
+  useEffect(() => {
+    if (!isDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [isDirty]);
+  const cancelExit = () => { setConfirmClose(false); if (blocker.state === 'blocked') blocker.reset(); };
+  const completeExit = () => { setConfirmClose(false); if (blocker.state === 'blocked') blocker.proceed(); else setEditor(undefined); };
+  const saveAndExit = async () => {
+    try { await saveEditor.mutateAsync(); completeExit(); }
+    catch { /* Keep the editor and show the save error in the dialog. */ }
+  };
   const loading = templatesQuery.isLoading || issuesQuery.isLoading || referencesQuery.isLoading;
   const vendorReplyCount = (issuesQuery.data ?? []).filter((item) => item.status === 'Vendor Replied').length;
   const waitingVendorCount = (issuesQuery.data ?? []).filter((item) => item.status === 'Sent to Vendor').length;
 
   if (editor) {
     return <div className="space-y-3" data-testid="form-studio-editor">
+      {(confirmClose || blocker.state === 'blocked') && <Modal title="มีการแก้ไขที่ยังไม่บันทึก" onClose={cancelExit} closeDisabled={saveEditor.isPending} size="sm" footer={<><Button variant="ghost" disabled={saveEditor.isPending} onClick={cancelExit}>อยู่ต่อ</Button><Button variant="outline" disabled={saveEditor.isPending} onClick={completeExit}>ทิ้งการแก้ไข</Button><Button isLoading={saveEditor.isPending} disabled={!canManage || !editor.title.trim()} onClick={() => void saveAndExit()}>บันทึกและออก</Button></>}><div className="px-5 py-4 text-sm">ต้องการบันทึกการเปลี่ยนแปลงก่อนออกหรือไม่{saveEditor.isError && <p role="alert" className="mt-2 text-red-600">{saveEditor.error.message}</p>}</div></Modal>}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Badge variant={isDirty ? 'warning' : editor.issued_at ? 'success' : 'secondary'}>{isDirty ? 'ยังไม่บันทึก' : editor.issued_at ? 'ออกเอกสารแล้ว' : 'ฉบับร่าง'}</Badge>
         {editor.kind === 'template' && templateTab === 'history' && <Button size="sm" variant="outline" isLoading={compareTemplate.isPending} onClick={() => compareTemplate.mutate()}><GitCompareArrows className="h-4 w-4" />Compare Version</Button>}
@@ -303,7 +318,7 @@ export function FormManagementPage() {
       {compareResult && <VersionCompareModal result={compareResult} onClose={() => setCompareResult(undefined)} />}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" aria-label="กลับไปหน้ารายการ" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" disabled={issueAndExport.isPending || saveEditor.isPending} onClick={() => setEditor(undefined)}><X className="h-5 w-5" /></button>
+          <button type="button" aria-label="กลับไปหน้ารายการ" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" disabled={issueAndExport.isPending || saveEditor.isPending} onClick={() => isDirty ? setConfirmClose(true) : setEditor(undefined)}><X className="h-5 w-5" /></button>
           <div className="min-w-0">
             <input aria-label="ชื่อเอกสาร" value={editor.title} disabled={!canManage || Boolean(editor.issued_at) || issueAndExport.isPending || saveEditor.isPending} onChange={(event) => setEditor({ ...editor, title: event.target.value })} className="w-full min-w-0 border-0 bg-transparent text-lg font-extrabold text-slate-900 outline-none disabled:opacity-100 dark:text-white" />
             <p className="text-xs text-slate-500">{editor.code}{editor.kind === 'issue' && editor.status ? ` · ${statusLabel[editor.status]}` : ''}</p>

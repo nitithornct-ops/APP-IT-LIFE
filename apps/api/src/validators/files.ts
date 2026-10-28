@@ -18,16 +18,16 @@ export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — ตรงก�
 
 /** คู่ module/table ที่ API รู้วิธีตรวจ ownership/permission เท่านั้น */
 export const uploadFileMetaSchema = z.discriminatedUnion('module', [
-  z.object({ module: z.literal('ticket'), targetTable: z.literal('tickets'), targetId: z.string().uuid() }),
-  z.object({ module: z.literal('service_request'), targetTable: z.literal('service_requests'), targetId: z.string().uuid() }),
-  z.object({ module: z.literal('asset'), targetTable: z.literal('assets'), targetId: z.string().uuid() }),
-  z.object({ module: z.literal('asset_verification'), targetTable: z.literal('asset_verifications'), targetId: z.string().uuid() }),
-  z.object({ module: z.literal('contract'), targetTable: z.literal('contracts'), targetId: z.string().uuid() }),
-  z.object({ module: z.literal('employee_assignment'), targetTable: z.literal('employee_assignments'), targetId: z.string().uuid() }),
+  z.object({ module: z.literal('ticket'), targetTable: z.literal('tickets'), targetId: z.string().guid() }),
+  z.object({ module: z.literal('service_request'), targetTable: z.literal('service_requests'), targetId: z.string().guid() }),
+  z.object({ module: z.literal('asset'), targetTable: z.literal('assets'), targetId: z.string().guid() }),
+  z.object({ module: z.literal('asset_verification'), targetTable: z.literal('asset_verifications'), targetId: z.string().guid() }),
+  z.object({ module: z.literal('contract'), targetTable: z.literal('contracts'), targetId: z.string().guid() }),
+  z.object({ module: z.literal('employee_assignment'), targetTable: z.literal('employee_assignments'), targetId: z.string().guid() }),
   z.object({
     module: z.literal('asset_loan'),
     targetTable: z.literal('asset_loans'),
-    targetId: z.string().uuid(),
+    targetId: z.string().guid(),
     stage: z.enum(['before', 'after']),
   }),
 ]);

@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -34,8 +35,8 @@ const licenseBaseSchema = z.object({
   startDate: dateOrEmpty,
   expireDate: dateOrEmpty,
   vendorName: z.string().trim().max(150).optional(),
-  vendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  contractId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  vendorId: z.union([z.string().guid(), z.literal('')]).optional(),
+  contractId: z.union([z.string().guid(), z.literal('')]).optional(),
   assignedTo: z.string().trim().max(200).optional(),
   unitPrice: unitPriceOrEmpty,
   expiryNoticeDays: z.coerce.number().int().min(0).max(3650).default(30),
@@ -52,8 +53,7 @@ export const createLicenseSchema = licenseBaseSchema.superRefine((data, ctx) => 
 });
 export type CreateLicenseInput = z.infer<typeof licenseBaseSchema>;
 
-export const updateLicenseSchema = licenseBaseSchema
-  .partial()
+export const updateLicenseSchema = partialObject(licenseBaseSchema)
   .extend({ status: z.enum(LICENSE_STATUSES).optional() })
   .superRefine((data, ctx) => {
     if (data.usedQty !== undefined && data.totalQty !== undefined && data.usedQty > data.totalQty) {
@@ -72,8 +72,8 @@ export type SetLicenseStatusInput = z.infer<typeof setLicenseStatusSchema>;
 
 export const createLicenseAllocationSchema = z.object({
   assigneeType: z.enum(LICENSE_ALLOCATION_TYPES),
-  employeeId: z.union([z.string().uuid(), z.literal('')]).optional(),
-  assetId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  employeeId: z.union([z.string().guid(), z.literal('')]).optional(),
+  assetId: z.union([z.string().guid(), z.literal('')]).optional(),
   notes: z.string().trim().max(500).optional(),
 }).superRefine((data, ctx) => {
   const hasEmployee = Boolean(data.employeeId);

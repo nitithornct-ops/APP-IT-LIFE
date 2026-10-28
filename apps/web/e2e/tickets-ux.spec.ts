@@ -21,9 +21,9 @@ test('global queue cards clear personal scope and unrelated list filters', async
   await expect(page.getByRole('button', { name: 'รายการทั้งหมด', exact: true })).toHaveAttribute('class', /bg-primary/);
 });
 
-for (const width of [390, 768, 1440]) {
+for (const width of [390, 768, 1440, 1920]) {
   test.describe(`ticket UX at ${width}px`, () => {
-    test.use({ viewport: { width, height: 900 } });
+    test.use({ viewport: { width, height: width === 1920 ? 1080 : 900 } });
 
     test('keeps list data readable and returns to the same filters and page', async ({ page }, testInfo) => {
       await page.goto('/tickets?status=ใหม่&page=2&sort=due_at&order=asc');
@@ -40,8 +40,8 @@ for (const width of [390, 768, 1440]) {
       await page.getByRole('link', { name: ticket.title, exact: true }).click();
       await expect(page.getByRole('heading', { name: ticket.title, exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: ticket.title, exact: true })).toBeInViewport();
-      await expect(page.getByRole('dialog')).toHaveCount(0);
-      await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'แจ้งซ่อม / Help Desk', exact: true })).toBeAttached();
       await expect(page.getByTestId('ticket-work-panel')).toBeVisible();
       await expectPageFits(page);
       await page.screenshot({ path: testInfo.outputPath(`ticket-detail-${width}.png`), fullPage: true });

@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { z } from 'zod';
 import { FORM_MODULE_KEYS } from '../services/formModuleService';
 
@@ -85,7 +86,7 @@ export const importGoogleDocSchema = z.object({
   moduleKey: z.enum(FORM_MODULE_KEYS).nullable().optional(),
 });
 
-export const updateFormTemplateSchema = createFormTemplateSchema.partial().refine(
+export const updateFormTemplateSchema = partialObject(createFormTemplateSchema).refine(
   (value) => Object.keys(value).length > 0,
   'ไม่มีข้อมูลที่ต้องแก้ไข',
 );
@@ -96,8 +97,8 @@ export const publishFormTemplateSchema = z.object({
 
 export const createIssueFormSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกชื่อเรื่อง').max(240),
-  templateId: z.string().uuid('กรุณาเลือก Template'),
-  ticketId: z.string().uuid().nullable().optional(),
+  templateId: z.string().guid('กรุณาเลือก Template'),
+  ticketId: z.string().guid().nullable().optional(),
   sourceModule: z.enum(FORM_SOURCE_MODULES).optional(),
   sourceRecordId: z.string().trim().min(1).max(120).nullable().optional(),
 });
@@ -113,7 +114,7 @@ export const updateIssueFormSchema = z.object({
 }).refine((value) => Object.keys(value).length > 0, 'ไม่มีข้อมูลที่ต้องแก้ไข');
 
 export const sendIssueFormToVendorSchema = z.object({
-  vendorId: z.string().uuid('กรุณาเลือก Vendor'),
+  vendorId: z.string().guid('กรุณาเลือก Vendor'),
   expiresInDays: z.coerce.number().int().min(1).max(60).default(14),
   dueDate: z.union([z.string().date(), z.literal('')]).optional(),
 });

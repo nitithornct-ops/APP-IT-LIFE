@@ -1,9 +1,9 @@
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
-import { FormModal } from '../../components/ui/Modal';
+import { DetailModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, CheckCircle2, ChevronUp, Loader2, PauseCircle, Plus, Users2, UsersRound, X } from 'lucide-react';
+import { Building2, CheckCircle2, Loader2, PauseCircle, Plus, Users2, UsersRound, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -139,7 +139,7 @@ function CreateGroupForm({ departments, onClose }: { departments: Department[]; 
 const memberSchema = z.object({
   userId: z.string().min(1, 'กรุณาเลือกผู้ใช้'),
   memberRole: z.enum(['primary', 'member', 'backup']),
-  priority: z.coerce.number().int().min(1).max(999).optional(),
+  priority: z.coerce.number<number>().int().min(1).max(999).optional(),
 });
 
 type MemberForm = z.infer<typeof memberSchema>;
@@ -385,22 +385,16 @@ export function ApprovalGroupsPage() {
                             actions={[
                               {
                                 kind: 'custom',
-                                icon: expandedGroupId === g.id ? ChevronUp : UsersRound,
-                                label: expandedGroupId === g.id ? 'ปิด' : 'จัดการสมาชิก',
+                                icon: UsersRound,
+                                label: 'จัดการสมาชิก',
                                 onClick: () => setExpandedGroupId(expandedGroupId === g.id ? null : g.id),
                               },
                               { kind: 'delete', permission: 'approval_group.manage', deleteEndpoint: `/api/v1/record-deletions/approval-groups/${g.id}` },
                             ]}
                           />
+                          {expandedGroupId === g.id && <DetailModal title={g.name} description={g.code} closeOnBackdrop={false} onClose={() => setExpandedGroupId(null)}><GroupMembersPanel groupId={g.id} allUsers={usersQuery.data?.items ?? []} /></DetailModal>}
                         </td>
                       </tr>
-                      {expandedGroupId === g.id && (
-                        <tr>
-                          <td colSpan={4} className="p-0">
-                            <GroupMembersPanel groupId={g.id} allUsers={usersQuery.data?.items ?? []} />
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   ))}
                 </tbody>

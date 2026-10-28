@@ -48,10 +48,10 @@ const editSchema = z.object({
   location: z.string().trim().optional(),
   purchaseDate: z.string().optional(),
   warrantyExpire: z.string().optional(),
-  price: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  usefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
+  price: z.coerce.number<number>().nonnegative().optional().or(z.literal('')),
+  usefulLifeYears: z.coerce.number<number>().int().positive().optional().or(z.literal('')),
   depreciationMethod: z.enum(['straight_line', 'declining_balance', 'none']).optional(),
-  depreciationRate: z.coerce.number().nonnegative().max(100).optional().or(z.literal('')),
+  depreciationRate: z.coerce.number<number>().nonnegative().max(100).optional().or(z.literal('')),
   costCenter: z.string().optional(),
   barcode: z.string().optional(),
   assetModelCatalogId: z.string().optional(),
@@ -910,6 +910,7 @@ export function AssetDetailPage() {
                 <span className="text-slate-500 dark:text-slate-400">{l.expire_date ? formatThaiDate(l.expire_date, 'd MMM yyyy') : '—'}</span>
               </div>
             ))}
+            {(detailQuery.data.legacyLicenseCandidates?.length ?? 0) > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"><p className="font-semibold">ข้อมูล License เดิมที่ต้องตรวจสอบ</p><p className="mt-1">รายการต่อไปนี้อ้างอิงจากข้อความเดิม ยังไม่ยืนยันว่าได้รับการจัดสรรกับเครื่องนี้</p><ul className="mt-2 list-disc pl-5">{detailQuery.data.legacyLicenseCandidates?.map((license) => <li key={license.id}>{license.software_name}</li>)}</ul></div>}
           </CardBody>
         </Card>
       </div>

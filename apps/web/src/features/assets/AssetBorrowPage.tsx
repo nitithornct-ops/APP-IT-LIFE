@@ -4,7 +4,7 @@ import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeftRight, CalendarClock, CheckCircle2, ClipboardCheck, Eye, History, ImagePlus, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { RequirePermission } from '../../components/RequirePermission';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';

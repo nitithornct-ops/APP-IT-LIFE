@@ -7,7 +7,7 @@ const roleMetadataFields = {
   nameEn: z.string().trim().max(200).nullable().optional(),
   description: z.string().trim().max(1000).nullable().optional(),
   scope: z.string().trim().max(1000).nullable().optional(),
-  ownerId: z.string().uuid('Role Owner ไม่ถูกต้อง').nullable().optional(),
+  ownerId: z.string().guid('Role Owner ไม่ถูกต้อง').nullable().optional(),
   reviewFrequency: roleReviewFrequencySchema.optional(),
   sensitiveRole: z.boolean().optional(),
 };
@@ -56,7 +56,7 @@ export type CloneRoleInput = z.infer<typeof cloneRoleSchema>;
 export const setRolePermissionsSchema = z.object({
   permissions: z.array(
     z.object({
-      permissionId: z.string().uuid(),
+      permissionId: z.string().guid(),
       effect: z.enum(['allow', 'deny']),
     }),
   ).superRefine((items, ctx) => {
@@ -73,7 +73,7 @@ export const setRolePermissionsSchema = z.object({
 export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 
 const rolePermissionChangeSchema = z.object({
-  permissionId: z.string().uuid(),
+  permissionId: z.string().guid(),
   permissionKey: z.string().trim().min(1).max(200),
   from: z.enum(['allow', 'deny', 'none']),
   to: z.enum(['allow', 'deny', 'none']),
@@ -83,7 +83,7 @@ const rolePermissionChangeSchema = z.object({
 export const createRolePermissionChangeRequestSchema = z.object({
   permissions: setRolePermissionsSchema.shape.permissions,
   changes: z.array(rolePermissionChangeSchema).min(1).max(500),
-  approverId: z.string().uuid(),
+  approverId: z.string().guid(),
   reason: z.string().trim().min(1, 'กรุณาระบุเหตุผลของการเปลี่ยนแปลงสิทธิ์').max(1500),
 });
 

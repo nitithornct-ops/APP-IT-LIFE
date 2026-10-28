@@ -1,7 +1,8 @@
 import { Archive, Ban, Eye, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { useContext, useState, type ReactNode } from 'react';
-import { Link, useInRouterContext, useLocation, type LinkProps } from 'react-router-dom';
+import { useInRouterContext, useLocation, type LinkProps } from 'react-router-dom';
+import { DetailLink } from '../ui/DetailLink';
 import { RequirePermission } from '../RequirePermission';
 import { ConfirmModal } from '../ui/Modal';
 import { apiFetch } from '../../services/apiClient';
@@ -96,7 +97,7 @@ function ContextualActionLink(props: LinkProps) {
   const listState = DETAIL_LIST_PATHS.has(location.pathname)
     ? { listReturnTo: `${location.pathname}${location.search}` }
     : undefined;
-  return <Link {...props} state={props.state === undefined ? listState : props.state} />;
+  return <DetailLink {...props} state={props.state === undefined ? listState : props.state} />;
 }
 
 export function RowActions({ recordLabel, actions, className, iconOnly = false }: RowActionsProps) {

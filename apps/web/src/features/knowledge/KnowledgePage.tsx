@@ -17,7 +17,7 @@ import {
   KNOWLEDGE_STATUSES, type KnowledgeArticle, type KnowledgeOverview, type KnowledgeReferenceData, type KnowledgeStatus,
 } from '../../types/knowledge';
 import { formatThaiDate } from '../../utils/date';
-import { helpfulRate, knowledgeMatches, normalizeKnowledgeSynonyms, normalizeKnowledgeTags } from './knowledgeDisplay';
+import { helpfulRate, normalizeKnowledgeSynonyms, normalizeKnowledgeTags } from './knowledgeDisplay';
 
 const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
 const notHelpfulReasons = ['เนื้อหาไม่ตรงกับปัญหา', 'ทำตามขั้นตอนไม่สำเร็จ', 'ข้อมูลล้าสมัย', 'อ่านหรือทำความเข้าใจยาก', 'อื่น ๆ'] as const;
@@ -165,12 +165,31 @@ export function KnowledgePage() {
   const canManage = hasPermission('knowledge.manage'); const canFeedback = hasPermission('knowledge.feedback');
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(''); const [taxonomyId, setTaxonomyId] = useState(''); const [status, setStatus] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [showForm, setShowForm] = useState(false); const [editing, setEditing] = useState<KnowledgeArticle>(); const [selected, setSelected] = useState<KnowledgeArticle>(); const [openError, setOpenError] = useState<string | null>(null);
   const query = useQuery({ queryKey: ['knowledge'], queryFn: () => apiFetch<KnowledgeOverview>('/api/v1/knowledge') });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  const hasFilters = Boolean(appliedSearch || taxonomyId || status);
+  const searchQuery = useQuery({
+    queryKey: ['knowledge', 'search', appliedSearch, taxonomyId, status],
+    enabled: hasFilters,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (appliedSearch) params.set('search', appliedSearch);
+      if (taxonomyId) params.set('taxonomyId', taxonomyId);
+      if (status) params.set('status', status);
+      return apiFetch<KnowledgeOverview>(`/api/v1/knowledge?${params}`);
+    },
+  });
   const referencesQuery = useQuery({ queryKey: ['knowledge', 'references'], enabled: canManage && showForm, queryFn: () => apiFetch<KnowledgeReferenceData>('/api/v1/knowledge/references') });
   const articles = useMemo(() => query.data?.articles ?? [], [query.data?.articles]);
   const taxonomies = query.data?.taxonomies ?? query.data?.categories ?? [];
-  const filtered = articles.filter((article) => knowledgeMatches(article, search, taxonomyId) && (!status || article.status === status));
+  const resultData = hasFilters ? searchQuery.data : query.data;
+  const searchPending = search.trim() !== appliedSearch;
+  const filtered = searchPending ? [] : resultData?.articles ?? [];
   const published = articles.filter((article) => article.status === 'เผยแพร่' && !article.is_deprecated).length; const drafts = articles.filter((article) => article.status === 'ร่าง').length;
   const views = articles.reduce((sum, article) => sum + article.views_count, 0); const helpful = articles.reduce((sum, article) => sum + article.helpful_count, 0);
   const openArticle = useCallback(async (article: KnowledgeArticle) => { try { setOpenError(null); const data = await apiFetch<KnowledgeArticle>(`/api/v1/knowledge/articles/${article.id}/view`, { method: 'POST' }, { silent: true }); setSelected(data); void queryClient.invalidateQueries({ queryKey: ['knowledge'] }); } catch (reason) { setOpenError(errorText(reason, 'เปิดบทความไม่สำเร็จ')); } }, [queryClient]);
@@ -185,10 +204,11 @@ export function KnowledgePage() {
   return <div className="space-y-5" data-testid="knowledge-page">
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / ฐานความรู้" title="ฐานความรู้ (Knowledge Base)" description="ค้นหาวิธีแก้ปัญหา คู่มือ และคำตอบมาตรฐานก่อนเปิด Service Request" />{canManage && <Button data-testid="knowledge-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มบทความ</Button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="บทความเผยแพร่" value={published} tone="teal" /><StatCard icon={<FilePenLine className="h-5 w-5" />} label="ฉบับร่าง" value={drafts} tone={drafts ? 'amber' : 'gray'} /><StatCard icon={<Eye className="h-5 w-5" />} label="การเข้าอ่านรวม" value={views} tone="primary" /><StatCard icon={<ThumbsUp className="h-5 w-5" />} label="มีประโยชน์" value={helpful} tone="primary" /></div>
+    {query.data.hasMore && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">ตัวเลขสรุปคำนวณจาก 500 บทความแรก ผลรวมอาจไม่ครบ</p>}
     {showForm && <FormModal title={editing ? 'แก้ไขบทความ' : 'เพิ่มบทความ'} description="จัดการเนื้อหาฐานความรู้และ governance metadata" size="xl" onClose={() => { setShowForm(false); setEditing(undefined); }}>{referencesQuery.isLoading ? <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div> : referencesQuery.isError || !referencesQuery.data ? <p className="p-6 text-sm text-red-600">โหลดรายการอ้างอิงไม่สำเร็จ กรุณาปิดแล้วลองใหม่</p> : <ArticleForm article={editing} overview={query.data} references={referencesQuery.data} onClose={() => { setShowForm(false); setEditing(undefined); }} />}</FormModal>}
     {selected && <DetailModal title={selected.title} description="รายละเอียดบทความฐานความรู้" onClose={() => setSelected(undefined)}><ArticleDetail key={selected.id} article={selected} canManage={canManage} canFeedback={canFeedback} onClose={() => setSelected(undefined)} /></DetailModal>}
     {openError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{openError}</p>}
-    <Card><CardBody className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_240px_180px_auto] md:items-end"><label className="text-xs font-semibold">ค้นหา<div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาอาการ วิธีแก้ แท็ก หรือ synonym..." className={`${fieldClass} pl-9`} /></div></label><label className="text-xs font-semibold">Knowledge Taxonomy<select value={taxonomyId} onChange={(event) => setTaxonomyId(event.target.value)} className={fieldClass}><option value="">ทุก Taxonomy</option>{taxonomies.map((taxonomy) => <option key={taxonomy.id} value={taxonomy.id}>{taxonomy.name}</option>)}</select></label>{canManage ? <label className="text-xs font-semibold">สถานะ<select value={status} onChange={(event) => setStatus(event.target.value)} className={fieldClass}><option value="">ทุกสถานะ</option>{KNOWLEDGE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label> : <div />}<p className="pb-2 text-right text-xs text-slate-400"><Tags className="mr-1 inline h-4 w-4" />{filtered.length} บทความ</p></CardBody></Card>
-    {filtered.length ? <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map((article) => <ArticleCard key={article.id} article={article} canManage={canManage} onOpen={() => void openArticle(article)} onEdit={() => { setEditing(article); setShowForm(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}</div> : <EmptyState icon={<Search className="h-10 w-10" />} title="ไม่พบบทความ" message="ลองเปลี่ยนคำค้นหา Knowledge Taxonomy หรือสถานะ" />}
+    <Card><CardBody className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_240px_180px_auto] md:items-end"><label className="text-xs font-semibold">ค้นหา<div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาอาการ วิธีแก้ แท็ก หรือ synonym..." className={`${fieldClass} pl-9`} /></div></label><label className="text-xs font-semibold">Knowledge Taxonomy<select value={taxonomyId} onChange={(event) => setTaxonomyId(event.target.value)} className={fieldClass}><option value="">ทุก Taxonomy</option>{taxonomies.map((taxonomy) => <option key={taxonomy.id} value={taxonomy.id}>{taxonomy.name}</option>)}</select></label>{canManage ? <label className="text-xs font-semibold">สถานะ<select value={status} onChange={(event) => setStatus(event.target.value)} className={fieldClass}><option value="">ทุกสถานะ</option>{KNOWLEDGE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label> : <div />}<p className="pb-2 text-right text-xs text-slate-400"><Tags className="mr-1 inline h-4 w-4" />{filtered.length} บทความ</p></CardBody></Card>
+    {searchPending || (hasFilters && searchQuery.isLoading) ? <div className="flex justify-center py-8" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div> : hasFilters && searchQuery.isError ? <p role="alert" className="text-sm text-red-600">{errorText(searchQuery.error, 'ค้นหาบทความไม่สำเร็จ')}</p> : <>{resultData?.hasMore && <p className="text-xs text-amber-700 dark:text-amber-300">แสดง 500 รายการแรก กรุณาระบุคำค้นหาหรือตัวกรองให้แคบลง</p>}{filtered.length ? <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map((article) => <ArticleCard key={article.id} article={article} canManage={canManage} onOpen={() => void openArticle(article)} onEdit={() => { setEditing(article); setShowForm(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}</div> : <EmptyState icon={<Search className="h-10 w-10" />} title="ไม่พบบทความ" message="ลองเปลี่ยนคำค้นหา Knowledge Taxonomy หรือสถานะ" />}</>}
   </div>;
 }

@@ -4,7 +4,7 @@ const text = (max: number) => z.string().trim().max(max).default('');
 const required = (max: number) => z.string().trim().min(1).max(max);
 const optionalDate = z.union([z.string().date(), z.literal('')]).default('');
 const optionalUrl = z.union([z.string().trim().url().max(1000).refine((value) => value.startsWith('https://'), 'ต้องเป็น HTTPS'), z.literal('')]).default('');
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const optionalUuid = z.union([uuid, z.literal('')]).default('');
 const notes = text(2000);
 

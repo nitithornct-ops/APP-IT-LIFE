@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +15,7 @@ import {
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTableParams } from '../../hooks/useTableParams';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
 import { ExportAllButton } from '../../components/table/ExportAllButton';
@@ -257,7 +258,7 @@ export function CreateTicketForm({
     handleSubmit,
     watch,
     formState: { errors, isDirty },
-  } = useForm<TicketForm>({
+  } = useForm<z.input<typeof ticketSchema>, unknown, TicketForm>({
     resolver: zodResolver(ticketSchema),
     mode: 'onTouched',
     defaultValues: {

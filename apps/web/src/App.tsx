@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react';
-import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { Link, Route, Routes, useLocation, useNavigate, type Location } from 'react-router-dom';
+import { Modal } from './components/ui/Modal';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppShell } from './layouts/AppShell';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -134,9 +135,22 @@ function LazyPageFallback() {
   );
 }
 
+function DetailRouteModal({ title, children }: { title: string; children: ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const state = location.state as Record<string, unknown> | null;
+  const fullPageState = state ? { ...state, backgroundLocation: undefined } : undefined;
+  return <Modal closeOnBackdrop={false} title={title} size="xl" className="detail-route-modal" onClose={() => navigate(-1)} footer={<Link to={`${location.pathname}${location.search}`} replace state={fullPageState} className="detail-full-page-link">เปิดเต็มหน้า</Link>}><div className="life-app detail-route-content"><Suspense fallback={<LazyPageFallback />}>{children}</Suspense></div></Modal>;
+}
+
 export function App() {
+  const location = useLocation();
+  const state = location.state as { backgroundLocation?: Location } | null;
+  const backgroundLocation = state?.backgroundLocation;
+
   return (
-    <Routes>
+    <>
+    <Routes location={backgroundLocation || location}>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/mfa" element={<MfaChallengePage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -678,5 +692,18 @@ export function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+    {backgroundLocation && (
+      <Routes>
+        <Route path="/tickets/:id" element={<ProtectedRoute permission="ticket.view"><DetailRouteModal title="รายละเอียดแจ้งซ่อม"><TicketDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/assets/:id" element={<ProtectedRoute permission="asset.view"><DetailRouteModal title="รายละเอียดทรัพย์สิน"><AssetDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/incidents/:id" element={<ProtectedRoute permission="incident.view"><DetailRouteModal title="รายละเอียด Incident"><IncidentDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/problems/:id" element={<ProtectedRoute permission="problem.view"><DetailRouteModal title="รายละเอียด Problem"><ProblemDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/changes/:id" element={<ProtectedRoute permission="change.view"><DetailRouteModal title="รายละเอียด Change"><ChangeDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/cmdb/:id" element={<ProtectedRoute permission="cmdb.view"><DetailRouteModal title="รายละเอียด CI"><ConfigurationItemDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/service-requests/:id" element={<ProtectedRoute permission="service_request.view"><DetailRouteModal title="รายละเอียดคำขอบริการ"><ServiceRequestDetailPage /></DetailRouteModal></ProtectedRoute>} />
+        <Route path="/access-requests/:id" element={<ProtectedRoute permission="access_request.view"><DetailRouteModal title="รายละเอียดคำขอสิทธิ์"><AccessRequestDetailPage /></DetailRouteModal></ProtectedRoute>} />
+      </Routes>
+    )}
+    </>
   );
 }

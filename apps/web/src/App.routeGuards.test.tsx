@@ -64,9 +64,8 @@ describe('App route guards', () => {
    * เพื่อไม่ให้ใครเผลอเพิ่ม route ใหม่ต่อท้ายมันแล้วเข้าไม่ถึงตลอดไป
    */
   it('ends with a catch-all route so an unknown URL never renders a blank screen', () => {
-    const paths = routes.map((route) => route.path);
-    expect(paths).toContain('*');
-    expect(paths.at(-1)).toBe('*');
+    const mainRoutes = parseRoutes(appSource.slice(0, appSource.indexOf('</Routes>')));
+    expect(mainRoutes.at(-1)?.path).toBe('*');
   });
 
   it.each(routes.filter((route) => !PUBLIC_ROUTES.has(route.path)).map((route) => [route.path, route.guard]))(

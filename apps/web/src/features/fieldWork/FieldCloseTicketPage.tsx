@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Camera, CheckCircle2, Package, Trash2, Wrench, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -29,6 +29,7 @@ import { cn } from '../../utils/cn';
 export function FieldCloseTicketPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
 
@@ -185,7 +186,7 @@ export function FieldCloseTicketPage() {
               ใบงานนี้อยู่ในสถานะ “{ticket.status}” ซึ่งบันทึกผลหน้างานต่อไม่ได้แล้ว
               {' '}เปิดหน้ารายละเอียดใบงานเพื่อดูขั้นตอนที่ทำได้
             </p>
-            <Button className="mt-3" variant="outline" onClick={() => navigate(`/tickets/${id}`)}>เปิดรายละเอียดใบงาน</Button>
+            <Button className="mt-3" variant="outline" onClick={() => navigate(`/tickets/${id}`, { state: { backgroundLocation: location } })}>เปิดรายละเอียดใบงาน</Button>
           </CardBody>
         </Card>
       ) : (

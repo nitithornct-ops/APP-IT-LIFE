@@ -2,12 +2,12 @@ import { z } from 'zod';
 
 const emptyToUndefined = (value: unknown) => value === '' || value === null ? undefined : value;
 const optionalText = (max: number) => z.preprocess(emptyToUndefined, z.string().trim().max(max).optional());
-const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
+const optionalUuid = z.preprocess(emptyToUndefined, z.string().guid().optional());
 const tagsSchema = z.array(z.string().trim().min(1).max(50)).max(20).default([])
   .transform((tags) => [...new Set(tags.map((tag) => tag.toLocaleLowerCase('th')))]);
 const synonymsSchema = z.array(z.string().trim().min(1).max(80)).max(30).default([])
   .transform((items) => [...new Set(items.map((item) => item.toLocaleLowerCase('th')))]);
-const relationIdsSchema = z.array(z.string().uuid()).max(100).default([])
+const relationIdsSchema = z.array(z.string().guid()).max(100).default([])
   .transform((items) => [...new Set(items)]);
 const optionalDate = z.preprocess(emptyToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional());
 
@@ -65,7 +65,7 @@ export const updateKnowledgeArticleSchema = articleFields;
  * สร้างบทความจากใบงานที่ปิดไปแล้ว — รับแค่ ticketId เพราะเนื้อหาทั้งหมดคัดมาจากใบงานฝั่งเซิร์ฟเวอร์
  * ไม่ให้ผู้เรียกส่งเนื้อหามาเอง มิฉะนั้นจะอ้างว่า "มาจากใบงานนี้" โดยเขียนอะไรก็ได้ลงไป
  */
-export const createArticleFromTicketSchema = z.object({ ticketId: z.string().uuid() });
+export const createArticleFromTicketSchema = z.object({ ticketId: z.string().guid() });
 
 export const setKnowledgeStatusSchema = z.object({ status: z.enum(['เผยแพร่', 'ร่าง']) });
 export const notHelpfulSchema = z.object({ reason: z.string().trim().min(3).max(500) });

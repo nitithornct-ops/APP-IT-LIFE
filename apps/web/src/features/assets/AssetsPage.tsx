@@ -1,3 +1,4 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportAllButton } from '../../components/table/ExportAllButton';
@@ -6,7 +7,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Boxes, CalendarClock, ClipboardCheck, Loader2, Plus, Repeat2, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { BulkActionModal, BulkResultSummary, bulkFieldClass, bulkTextareaClass, type BulkResult } from '../../components/table/BulkAction';
 import { RowActions } from '../../components/table/RowActions';
@@ -36,10 +37,10 @@ const createAssetSchema = z.object({
   vendorId: z.string().optional(),
   contractId: z.string().optional(),
   location: z.string().trim().optional(),
-  price: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  usefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
+  price: z.coerce.number<number>().nonnegative().optional().or(z.literal('')),
+  usefulLifeYears: z.coerce.number<number>().int().positive().optional().or(z.literal('')),
   depreciationMethod: z.enum(['straight_line', 'declining_balance', 'none']).optional(),
-  depreciationRate: z.coerce.number().nonnegative().max(100).optional().or(z.literal('')),
+  depreciationRate: z.coerce.number<number>().nonnegative().max(100).optional().or(z.literal('')),
   purchaseDate: z.string().optional(),
   warrantyExpire: z.string().optional(),
   purchaseOrder: z.string().optional(),
@@ -61,8 +62,8 @@ const modelCatalogSchema = z.object({
   assetType: z.enum(ASSET_TYPES),
   brand: z.string().trim().optional(),
   model: z.string().trim().optional(),
-  defaultUsefulLifeYears: z.coerce.number().int().positive().optional().or(z.literal('')),
-  defaultWarrantyMonths: z.coerce.number().int().nonnegative().optional().or(z.literal('')),
+  defaultUsefulLifeYears: z.coerce.number<number>().int().positive().optional().or(z.literal('')),
+  defaultWarrantyMonths: z.coerce.number<number>().int().nonnegative().optional().or(z.literal('')),
   defaultCostCenter: z.string().trim().optional(),
 });
 type ModelCatalogForm = z.infer<typeof modelCatalogSchema>;

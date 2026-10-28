@@ -1,8 +1,9 @@
+import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { getListReturnTo } from '../../components/shell/listNavigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams, useLocation } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSelect';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';

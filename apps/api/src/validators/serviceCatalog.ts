@@ -1,3 +1,4 @@
+import { partialObject } from '@itlife/shared';
 import { paginationQuerySchema } from '@itlife/shared';
 import { z } from 'zod';
 
@@ -13,7 +14,7 @@ const checklistItemSchema = z.object({
   name: z.string().trim().min(1).max(200),
   taskType: z.string().trim().max(80).optional(),
   isRequired: z.boolean().optional(),
-  ownerGroupId: z.string().uuid().optional(),
+  ownerGroupId: z.string().guid().optional(),
 });
 
 const dependencySchema = z.object({
@@ -34,7 +35,7 @@ const catalogDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'วันท�
 const eligibilitySchema = z
   .object({
     roles: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
-    departmentIds: z.array(z.string().uuid()).max(200).optional(),
+    departmentIds: z.array(z.string().guid()).max(200).optional(),
   })
   .refine((v) => (v.roles?.length ?? 0) + (v.departmentIds?.length ?? 0) > 0, 'ต้องระบุอย่างน้อย 1 เงื่อนไข')
   .nullable()
@@ -51,8 +52,8 @@ const serviceCatalogBaseFields = {
   attachmentRequired: z.boolean().optional(),
   slaHours: z.coerce.number().positive().max(720).optional(),
   approvalMode: z.enum(['none', 'group']).optional(),
-  approvalGroupId: z.string().uuid().optional(),
-  fulfillmentGroupId: z.string().uuid().optional(),
+  approvalGroupId: z.string().guid().optional(),
+  fulfillmentGroupId: z.string().guid().optional(),
   checklist: z.array(checklistItemSchema).max(50).optional(),
   autoAssign: z.boolean().optional(),
   autoCreateTask: z.boolean().optional(),
@@ -61,7 +62,7 @@ const serviceCatalogBaseFields = {
   suggestedKnowledge: z.array(suggestedKnowledgeSchema).max(20).optional(),
   closeMode: z.enum(['requester_confirms', 'it_closes']).optional(),
   closeCondition: z.string().trim().max(1000).optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().guid().optional(),
   documentationUrl: z.string().trim().url().max(1000).nullable().optional(),
   effectiveDate: catalogDateSchema.optional(),
   reviewDate: catalogDateSchema.nullable().optional(),
@@ -85,7 +86,7 @@ export type CreateServiceCatalogInput = z.infer<typeof createServiceCatalogSchem
  * ไม่ใส่ .refine ข้าม approvalMode/approvalGroupId ที่นี่ เพราะ patch อาจส่งมาแค่บางฟิลด์ — route
  * จะรวมกับค่าปัจจุบันในฐานข้อมูลก่อนตรวจเงื่อนไข "group ต้องมี approvalGroupId" อีกครั้ง
  */
-export const updateServiceCatalogSchema = z.object(serviceCatalogBaseFields).partial().extend({
+export const updateServiceCatalogSchema = partialObject(z.object(serviceCatalogBaseFields)).extend({
   status: z.enum(['draft', 'active', 'suspended', 'retired']).optional(),
 });
 

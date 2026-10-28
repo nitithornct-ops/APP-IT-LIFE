@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('WarRoomPage', () => {
-  it('แสดง KPI คิวเร่งด่วน สุขภาพบริการ และสรุปที่ทำต่อได้จากข้อมูลจริง', async () => {
+  it('แสดง KPI และปริมาณงานโดยไม่แอบอ้างว่าเป็นสุขภาพบริการ', async () => {
     mocks.apiFetch.mockResolvedValue(summary);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -45,8 +45,19 @@ describe('WarRoomPage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'War Room' })).toBeVisible();
     expect((await screen.findAllByText('Wi-Fi ชั้น 5 หลุดบ่อย'))[0]).toBeVisible();
-    expect(screen.getByText('สุขภาพบริการ')).toBeVisible();
+    expect(screen.getByText('ปริมาณงานตามโมดูล')).toBeVisible();
+    expect(screen.getByText('รายการใกล้ครบกำหนด')).toBeVisible();
+    expect(screen.queryByText('ฟีดความเคลื่อนไหว')).not.toBeInTheDocument();
+    expect(screen.getByText('ข้อมูลอาจไม่เป็นปัจจุบัน')).toBeVisible();
     expect(screen.getByText(/มี 2 จุดที่ต้องติดตาม/)).toBeVisible();
     expect(mocks.apiFetch).toHaveBeenCalledWith('/api/v1/dashboard/summary?leadDays=7');
+  });
+
+  it('แสดงข้อมูลบางส่วนเมื่อการสแกนรายการถูกจำกัด', async () => {
+    mocks.apiFetch.mockResolvedValue({ ...summary, generatedAt: new Date().toISOString(), cards: [{ ...summary.cards[0], truncated: true }] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><ThemeProvider><MemoryRouter><WarRoomPage /></MemoryRouter></ThemeProvider></QueryClientProvider>);
+    expect(await screen.findByText('Ticket · ข้อมูลบางส่วน')).toBeVisible();
+    expect(screen.getByText('ข้อมูลอัปเดตล่าสุด')).toBeVisible();
   });
 });

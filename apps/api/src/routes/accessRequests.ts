@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, requirePermission } from '../middleware/permission';
@@ -10,6 +11,7 @@ import type { AppEnv, Bindings } from '../types';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
+import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
 import {
   approveAccessRequestSchema,
@@ -612,7 +614,17 @@ accessControlItemsRoute.patch(
   },
 );
 
-accessRegistryRoute.get('/', requireAnyPermission(['access_request.view', 'access_registry.manage']), async (c) => {
+accessRegistryRoute.get('/deactivation-candidates', requirePermission('access_registry.manage'), zValidator('query', z.object({ search: z.string().trim().min(2).max(100) }), zodValidationHook), async (c) => {
+  const search = cleanSearch(c.req.valid('query').search);
+  if (search.length < 2) return c.json(ok(c.get('requestId'), []));
+  const { data, error } = await createAdminClient(c.env).from('profiles').select('id,full_name,email')
+    .or(`full_name.ilike.%${search}%,email.ilike.%${search}%,username.ilike.%${search}%,employee_code.ilike.%${search}%`)
+    .order('full_name').order('id').limit(50);
+  if (error) return dbFailJson(c, 'DEACTIVATION_CANDIDATES_FAILED', error, 'ค้นหาผู้ใช้ไม่สำเร็จ');
+  return c.json(ok(c.get('requestId'), data ?? []));
+});
+
+accessRegistryRoute.get('/', requireAnyPermission(['access_request.view', 'access_registry.manage', 'access_registry.review', 'audit.view']), async (c) => {
   const supabase = c.get('supabase');
   const reqId = c.get('requestId');
 
@@ -624,7 +636,16 @@ accessRegistryRoute.get('/', requireAnyPermission(['access_request.view', 'acces
   if (error) {
     return c.json(fail(reqId, 'ACCESS_REGISTRY_LIST_FAILED', 'ดึงทะเบียนสิทธิ์ไม่สำเร็จ'), 400);
   }
-  return c.json(ok(reqId, data));
+  // Reviewers and auditors can read the registry without broad catalog access.
+  // Resolve only the display fields for items already present in their result.
+  const missingItemIds = [...new Set((data ?? []).filter((row) => row.access_item_id && !row.access_control_item).map((row) => String(row.access_item_id)))];
+  const items = new Map<string, { kind: string; code: string; name: string }>();
+  for (let offset = 0; offset < missingItemIds.length; offset += 100) {
+    const result = await createAdminClient(c.env).from('access_control_items').select('id,kind,code,name').in('id', missingItemIds.slice(offset, offset + 100));
+    if (result.error) return dbFailJson(c, 'ACCESS_REGISTRY_ITEMS_FAILED', result.error, 'โหลดรายการสิทธิ์ในทะเบียนไม่สำเร็จ');
+    for (const item of result.data ?? []) items.set(String(item.id), { kind: item.kind, code: item.code, name: item.name });
+  }
+  return c.json(ok(reqId, (data ?? []).map((row) => ({ ...row, access_control_item: row.access_control_item ?? items.get(String(row.access_item_id)) ?? null }))));
 });
 
 accessRegistryRoute.post('/:id/review', requirePermission('access_registry.manage'), async (c) => {

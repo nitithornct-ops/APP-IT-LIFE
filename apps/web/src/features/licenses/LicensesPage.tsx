@@ -1,14 +1,12 @@
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
-import { FormModal } from '../../components/ui/Modal';
+import { DetailModal, FormModal } from '../../components/ui/Modal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
   Building2,
   CalendarClock,
-  ChevronDown,
-  ChevronUp,
   CircleGauge,
   KeyRound,
   Laptop,
@@ -654,20 +652,15 @@ export function LicensesPage() {
                             <RowActions
                               recordLabel={license.software_name}
                               actions={[
-                                 { kind: 'view', icon: expanded ? ChevronUp : ChevronDown, label: expanded ? 'ย่อ' : 'รายละเอียด', onClick: () => setExpandedId(expanded ? null : license.id) },
+                                 { kind: 'view', label: 'รายละเอียด', onClick: () => { setAllocationLicenseId(null); setExpandedId(license.id); } },
                                  { kind: 'custom', icon: KeyRound, label: 'สิทธิ์', permission: 'license.manage', onClick: () => setEditingUsageId(editingUsageId === license.id ? null : license.id) },
                                  { kind: 'custom', icon: Users, label: 'Allocation', permission: 'license.manage', onClick: () => { setExpandedId(license.id); setAllocationLicenseId(allocationLicenseId === license.id ? null : license.id); } },
                                  { kind: 'edit', permission: 'license.manage', onClick: () => { setEditing(license); setShowForm(true); } },
                                 { kind: 'delete', permission: 'license.manage', deleteEndpoint: `/api/v1/record-deletions/software-licenses/${license.id}` },
                               ]}
                             />
-                            {editingUsageId === license.id && <div className="mt-2"><UsageEditor license={license} onClose={() => setEditingUsageId(null)} /></div>}
-                          </td>
-                        </tr>
-                        {expanded && (
-                          <tr className="border-t border-slate-100 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/40">
-                            <td colSpan={7} className="p-4">
-                              <div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-5">
+                            {editingUsageId === license.id && <FormModal title={license.software_name} description={license.license_code} size="lg" onClose={() => setEditingUsageId(null)}><UsageEditor license={license} onClose={() => setEditingUsageId(null)} /></FormModal>}
+                            {expanded && <DetailModal title={license.software_name} description={license.license_code} closeOnBackdrop={false} onClose={() => { setExpandedId(null); setAllocationLicenseId(null); }}><div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-5">
                                 <div><p className="font-semibold text-slate-500">วันที่เริ่มต้น</p><p className="mt-1">{license.start_date ? formatThaiDate(license.start_date) : '—'}</p></div>
                                 <div><p className="font-semibold text-slate-500">วันหมดอายุ</p><p className="mt-1">{license.expire_date ? formatThaiDate(license.expire_date) : 'ไม่กำหนด'}</p></div>
                                 <div><p className="font-semibold text-slate-500">สัญญา</p><p className="mt-1">{license.contract?.name ?? '—'}</p></div>
@@ -689,9 +682,9 @@ export function LicensesPage() {
                                  </div>
                                )}
                                {allocationLicenseId === license.id && <AllocationPanel license={license} options={allocationOptionsQuery.data} onClose={() => setAllocationLicenseId(null)} />}
-                             </td>
-                          </tr>
-                        )}
+                             </DetailModal>}
+                          </td>
+                        </tr>
                       </Fragment>
                     );
                   })}

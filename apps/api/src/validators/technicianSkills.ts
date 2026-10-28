@@ -29,7 +29,7 @@ const certificationExpirySchema = z.string().trim()
  * ต้องแยกจากการไม่ส่ง category นั้นมาเลย (ซึ่งแปลว่า "ไม่แตะต้องของเดิม")
  */
 const skillAssessmentSchema = z.object({
-  categoryId: z.string().uuid('หมวดหมู่ไม่ถูกต้อง'),
+  categoryId: z.string().guid('หมวดหมู่ไม่ถูกต้อง'),
   level: skillLevelSchema.nullable(),
   skill: optionalText(160, 'ชื่อทักษะยาวเกิน 160 ตัวอักษร'),
   certification: optionalText(200, 'ใบรับรองยาวเกิน 200 ตัวอักษร'),
@@ -54,7 +54,7 @@ export const saveTechnicianSkillsSchema = z.object({
 export type SaveTechnicianSkillsInput = z.infer<typeof saveTechnicianSkillsSchema>;
 
 export const technicianSkillRecommendationQuerySchema = z.object({
-  categoryId: z.string().uuid('หมวดหมู่ Ticket ไม่ถูกต้อง'),
+  categoryId: z.string().guid('หมวดหมู่ Ticket ไม่ถูกต้อง'),
   location: z.string().trim().max(200, 'สถานที่ยาวเกิน 200 ตัวอักษร').optional(),
   productTechnology: z.string().trim().max(200, 'ผลิตภัณฑ์/เทคโนโลยียาวเกิน 200 ตัวอักษร').optional(),
   minLevel: z.coerce.number().int().min(1).max(5).default(2),

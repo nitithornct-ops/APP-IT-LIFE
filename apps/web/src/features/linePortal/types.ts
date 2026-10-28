@@ -108,6 +108,7 @@ export interface LineNotification {
 }
 
 export interface LineKnowledgeData {
+  hasMore?: boolean;
   articles: Array<{
     id: string;
     article_code: string;

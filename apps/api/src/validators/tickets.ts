@@ -5,23 +5,23 @@ const ticketPriorityEnum = z.enum(['ต่ำ', 'ปานกลาง', 'สู
 
 export const createTicketSchema = z.object({
   title: z.string().trim().min(1, 'กรุณากรอกหัวข้อปัญหา').max(200),
-  categoryId: z.string().uuid('กรุณาเลือกหมวดหมู่ Ticket'),
+  categoryId: z.string().guid('กรุณาเลือกหมวดหมู่ Ticket'),
   priority: ticketPriorityEnum.optional(),
   description: z.string().trim().min(1, 'กรุณากรอกรายละเอียด').max(3000),
   location: z.string().trim().max(160).optional(),
   requesterPhone: z.string().trim().max(40).optional(),
   incidentAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันที่และเวลาที่พบปัญหาไม่ถูกต้อง').optional(),
   erpModule: z.string().trim().max(120).optional(),
-  assetId: z.string().uuid().optional(),
+  assetId: z.string().guid().optional(),
   isSecurity: z.boolean().optional(),
 });
 
 export const ticketFormCheckmarksSchema = z.object({
-  templateId: z.string().uuid(),
+  templateId: z.string().guid(),
   templateVersion: z.number().int().positive(),
   indices: z.array(z.number().int().min(0).max(199)).max(200)
     .transform((indices) => [...new Set(indices)].sort((left, right) => left - right)),
-  textValues: z.record(z.string().trim().max(1000)).refine(
+  textValues: z.record(z.string(), z.string().trim().max(1000)).refine(
     (values) => Object.keys(values).length <= 200 && Object.keys(values).every((key) => /^(?:0|[1-9]\d{0,2})$/.test(key) && Number(key) < 200),
     'ข้อมูลช่องกรอกในแบบฟอร์มไม่ถูกต้อง',
   ),
@@ -39,10 +39,10 @@ export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 
 export const listTicketsQuerySchema = listQuerySchema.extend({
   status: z.string().trim().max(80).optional(),
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.string().guid().optional(),
   priority: ticketPriorityEnum.optional(),
   search: z.string().trim().max(120).optional(),
-  assigneeId: z.string().uuid().optional(),
+  assigneeId: z.string().guid().optional(),
   mine: z.enum(['true', 'false']).optional(),
   queue: z.enum(['unassigned', 'near_sla', 'overdue', 'waiting_follow_up', 'awaiting_acceptance', 'paused']).optional(),
 });
@@ -58,9 +58,9 @@ export const BULK_TICKET_STATUSES = ['รับเรื่องแล้ว', 
 
 export const bulkUpdateTicketsSchema = z
   .object({
-    ids: z.array(z.string().uuid()).min(1, 'กรุณาเลือกอย่างน้อย 1 รายการ').max(50, 'ทำได้ครั้งละไม่เกิน 50 รายการ'),
+    ids: z.array(z.string().guid()).min(1, 'กรุณาเลือกอย่างน้อย 1 รายการ').max(50, 'ทำได้ครั้งละไม่เกิน 50 รายการ'),
     status: z.enum(BULK_TICKET_STATUSES).optional(),
-    assigneeId: z.string().uuid().nullable().optional(),
+    assigneeId: z.string().guid().nullable().optional(),
     note: z.string().trim().max(1000).optional(),
   })
   .refine((body) => body.status !== undefined || body.assigneeId !== undefined, {
@@ -79,9 +79,9 @@ export type BulkUpdateTicketsInput = z.infer<typeof bulkUpdateTicketsSchema>;
  */
 export const updateTicketSchema = z.object({
   status: z.string().trim().max(80).optional(),
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.string().guid().optional(),
   priority: ticketPriorityEnum.optional(),
-  assigneeId: z.string().uuid().nullable().optional(),
+  assigneeId: z.string().guid().nullable().optional(),
   isSecurity: z.boolean().optional(),
   location: z.string().trim().max(160).optional(),
   note: z.string().trim().max(2000).optional(),
@@ -90,12 +90,12 @@ export const updateTicketSchema = z.object({
   /** สาเหตุที่แท้จริงของปัญหา — คนละอย่างกับ resolution ซึ่งเป็นสิ่งที่ทำไปเพื่อแก้ */
   rootCause: z.string().trim().max(500).optional(),
   /** รหัสสาเหตุจากทะเบียนกลาง ใช้จัดกลุ่มสถิติ ส่วนรายละเอียดยังอยู่ใน rootCause เหมือนเดิม */
-  causeCodeId: z.string().uuid().nullable().optional(),
+  causeCodeId: z.string().guid().nullable().optional(),
   outsourceName: z.string().trim().max(200).optional(),
-  outsourceVendorId: z.union([z.string().uuid(), z.literal('')]).optional(),
+  outsourceVendorId: z.union([z.string().guid(), z.literal('')]).optional(),
   outsourceIssueNo: z.string().trim().max(120).optional(),
   waitingReason: z.string().trim().max(1000).optional(),
-  waitingOwnerId: z.string().uuid().optional(),
+  waitingOwnerId: z.string().guid().optional(),
   waitingFollowUpAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'วันติดตามไม่ถูกต้อง').optional(),
 });
 
@@ -104,7 +104,7 @@ export const requesterReopenTicketSchema = z.object({
 });
 
 export const linkTicketMaintenancePlanSchema = z.object({
-  maintenancePlanId: z.string().uuid(),
+  maintenancePlanId: z.string().guid(),
   relationship: z.enum(['root_cause', 'related', 'follow_up']).default('root_cause'),
   notes: z.string().trim().max(1000).optional(),
 });

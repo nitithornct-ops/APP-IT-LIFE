@@ -17,14 +17,14 @@ const campaignCode = z
 export const createAccessCertificationCampaignSchema = z.object({
   code: campaignCode,
   name: z.string().trim().min(1, 'กรุณาระบุชื่อ Campaign').max(200),
-  systemId: z.string().uuid().nullable().optional(),
-  reviewerId: z.string().uuid('กรุณาเลือก Reviewer'),
+  systemId: z.string().guid().nullable().optional(),
+  reviewerId: z.string().guid('กรุณาเลือก Reviewer'),
   dueDate: isoDate,
 });
 
 export const accessCertificationDecisionsSchema = z.object({
   decisions: z.array(z.object({
-    itemId: z.string().uuid(),
+    itemId: z.string().guid(),
     status: z.enum(['approved', 'revoked']),
     note: z.string().trim().max(1500).optional(),
   })).min(1, 'กรุณาเลือกรายการอย่างน้อย 1 รายการ').max(1000, 'ทำรายการได้ครั้งละไม่เกิน 1,000 รายการ'),

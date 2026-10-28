@@ -23,7 +23,8 @@ import {
 import { loadAuditSnapshot, writeAuditLog } from '../services/auditService';
 import type { AppEnv } from '../types';
 import { BulkItemError, runBulk } from '../utils/bulk';
-import { checkExportSize, exportFileName, listCsv, LIST_EXPORT_MAX_ROWS, type ExportColumn } from '../utils/listExport';
+import { checkExportSize, exportFileName, listCsv, type ExportColumn } from '../utils/listExport';
+import { loadReportPages } from '../utils/completeRows';
 import { paginationRange, toPaginatedData } from '../utils/pagination';
 import { applySort } from '../utils/sort';
 import { dbFailJson } from '../utils/dbError';
@@ -933,6 +934,59 @@ assetsRoute.post('/:id/lifecycle', requirePermission('asset.update'), zValidator
   return c.json(ok(reqId, { ...enriched, configurationItem }));
 });
 
+/**
+ * ส่งออกทะเบียนทรัพย์สินทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
+ * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
+ */
+assetsRoute.get('/export', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
+  const supabase = c.get('supabase');
+  const reqId = c.get('requestId');
+  const { sort, order, search, status, categoryId } = c.req.valid('query');
+  const filters = { status, categoryId, search };
+
+  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
+  const { count, error: countError } = await applyAssetListFilters(
+    supabase.from('assets').select('id', { count: 'exact', head: true }),
+    filters,
+  );
+  if (countError || count === null) return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
+
+  const tooLarge = checkExportSize(count);
+  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
+
+  let rows: AssetExportRow[];
+  try {
+    const data = await loadReportPages('Asset', (start, end) => {
+      let query = supabase.from('assets').select(
+        'id, asset_code, name, asset_type, brand, model, serial_number, location, status, criticality, purchase_date, warranty_expire, price, ' +
+        'category:asset_categories(name), department:departments(name_th), owner:employees(first_name_th, last_name_th)',
+        { count: 'exact' },
+      ).range(start, end);
+      query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'created_at', ascending: false }).order('id');
+      return applyAssetListFilters(query, filters);
+    });
+    rows = data as unknown as AssetExportRow[];
+  } catch (error) {
+    return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', error instanceof Error ? error.message : 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
+  }
+  // การดึงทะเบียนทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
+  await writeAuditLog(c.env, {
+    actorId: c.get('userId'),
+    actorEmail: c.get('userEmail'),
+    action: 'EXPORT',
+    module: 'asset',
+    targetTable: 'assets',
+    detail: { filters, rowCount: rows.length },
+    requestId: reqId,
+  });
+
+  return c.json(ok(reqId, {
+    filename: exportFileName('assets'),
+    csv: listCsv(ASSET_EXPORT_COLUMNS, rows),
+    rowCount: rows.length,
+  }));
+});
+
 assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
   const supabase = c.get('supabase');
   const admin = createAdminClient(c.env);
@@ -943,7 +997,7 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
   if (error) return c.json(fail(reqId, 'ASSET_LOAD_FAILED', 'ดึงข้อมูลทรัพย์สินไม่สำเร็จ'), 400);
   if (!asset) return c.json(fail(reqId, 'ASSET_NOT_FOUND', 'ไม่พบทรัพย์สินนี้'), 404);
 
-  const [{ data: movements }, { data: pm }, { data: licenses }, { data: lifecycleEvents }, { data: children }, { data: configurationItem }, { data: attachments }] = await Promise.all([
+  const [{ data: movements }, { data: pm }, { data: allocations, error: licenseError }, { data: legacyLicenses, error: legacyLicenseError }, { data: lifecycleEvents }, { data: children }, { data: configurationItem }, { data: attachments }] = await Promise.all([
     supabase
       .from('asset_movements')
       .select(
@@ -960,6 +1014,7 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
       .eq('asset_id', id)
       .order('plan_date', { ascending: false })
       .limit(50),
+    supabase.from('software_license_allocations').select('license:software_licenses!software_license_allocations_license_id_fkey(id, software_name, license_type, expire_date, status)').eq('asset_id', id).eq('status', 'assigned'),
     supabase.from('software_licenses').select('id, software_name, license_type, expire_date, status').ilike('assigned_to', `%${id}%`),
     supabase.from('asset_lifecycle_events').select('id, from_status, to_status, event_date, notes, related_ticket_id, performed_by').eq('asset_id', id).order('event_date', { ascending: false }).limit(100),
     supabase.from('assets').select('id, asset_code, name, status').eq('parent_asset_id', id).order('asset_code', { ascending: true }).limit(100),
@@ -967,7 +1022,14 @@ assetsRoute.get('/:id', requirePermission('asset.view'), async (c) => {
     admin.from('file_attachments').select('id, original_filename, mime_type, size_bytes, created_at').eq('module', 'asset').eq('target_table', 'assets').eq('target_id', id).order('created_at', { ascending: false }).limit(100),
   ]);
 
-  return c.json(ok(reqId, { asset: enrichAsset(asset as never), movements: movements ?? [], maintenance: pm ?? [], licenses: licenses ?? [], lifecycleEvents: lifecycleEvents ?? [], children: children ?? [], configurationItem: configurationItem ?? null, attachments: attachments ?? [] }));
+  if (licenseError || legacyLicenseError) return dbFailJson(c, 'ASSET_LICENSES_LOAD_FAILED', licenseError ?? legacyLicenseError, 'โหลด License ของทรัพย์สินไม่สำเร็จ');
+  const licenses = (allocations ?? []).flatMap((allocation) => {
+    const license = Array.isArray(allocation.license) ? allocation.license[0] : allocation.license;
+    return license ? [license] : [];
+  });
+  const activeLicenseIds = new Set(licenses.map((license) => license.id));
+  const legacyLicenseCandidates = (legacyLicenses ?? []).filter((license) => !activeLicenseIds.has(license.id));
+  return c.json(ok(reqId, { asset: enrichAsset(asset as never), movements: movements ?? [], maintenance: pm ?? [], licenses, legacyLicenseCandidates, lifecycleEvents: lifecycleEvents ?? [], children: children ?? [], configurationItem: configurationItem ?? null, attachments: attachments ?? [] }));
 });
 
 assetsRoute.post('/', requirePermission('asset.create'), zValidator('json', createAssetSchema, zodValidationHook), async (c) => {
@@ -1133,57 +1195,7 @@ const ASSET_EXPORT_COLUMNS: ExportColumn<AssetExportRow>[] = [
   { label: 'ราคา', value: (row) => row.price },
 ];
 
-/**
- * ส่งออกทะเบียนทรัพย์สินทั้งชุดตามตัวกรองที่ตั้งไว้ — ไม่ใช่แค่หน้าที่เปิดอยู่
- * ต้องมาก่อน route '/:id' ไม่งั้น Hono จะจับ 'export' เป็น id
- */
-assetsRoute.get('/export', requirePermission('asset.view'), zValidator('query', listAssetsQuerySchema, zodValidationHook), async (c) => {
-  const supabase = c.get('supabase');
-  const reqId = c.get('requestId');
-  const { sort, order, search, status, categoryId } = c.req.valid('query');
-  const filters = { status, categoryId, search };
 
-  // นับก่อน เพื่อไม่ต้องดึงของที่รู้อยู่แล้วว่าส่งออกไม่ได้
-  const { count, error: countError } = await applyAssetListFilters(
-    supabase.from('assets').select('id', { count: 'exact', head: true }),
-    filters,
-  );
-  if (countError) return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', 'นับรายการเพื่อส่งออกไม่สำเร็จ'), 400);
-
-  const tooLarge = checkExportSize(count);
-  if (tooLarge) return c.json(fail(reqId, 'EXPORT_TOO_LARGE', tooLarge.message), 400);
-
-  let query = supabase
-    .from('assets')
-    .select(
-      'asset_code, name, asset_type, brand, model, serial_number, location, status, criticality, purchase_date, warranty_expire, price, ' +
-      'category:asset_categories(name), department:departments(name_th), owner:employees(first_name_th, last_name_th)',
-    )
-    .range(0, LIST_EXPORT_MAX_ROWS - 1);
-  query = applySort(query, { sort, order }, ASSET_SORT_COLUMNS, { column: 'created_at', ascending: false });
-  query = applyAssetListFilters(query, filters);
-
-  const { data, error } = await query;
-  if (error) return c.json(fail(reqId, 'ASSETS_EXPORT_FAILED', 'ดึงข้อมูลเพื่อส่งออกไม่สำเร็จ'), 400);
-
-  const rows = (data ?? []) as unknown as AssetExportRow[];
-  // การดึงทะเบียนทั้งชุดออกจากระบบเป็นเหตุการณ์ที่งาน ISMS ต้องตรวจย้อนได้ ไม่ใช่แค่การอ่านหน้าจอ
-  await writeAuditLog(c.env, {
-    actorId: c.get('userId'),
-    actorEmail: c.get('userEmail'),
-    action: 'EXPORT',
-    module: 'asset',
-    targetTable: 'assets',
-    detail: { filters, rowCount: rows.length },
-    requestId: reqId,
-  });
-
-  return c.json(ok(reqId, {
-    filename: exportFileName('assets'),
-    csv: listCsv(ASSET_EXPORT_COLUMNS, rows),
-    rowCount: rows.length,
-  }));
-});
 
 /**
  * แก้ไขทรัพย์สินหลายชิ้นพร้อมกัน — เปลี่ยนสถานะ ย้ายสถานที่ หรือมอบหมาย/คืนผู้ถือครอง

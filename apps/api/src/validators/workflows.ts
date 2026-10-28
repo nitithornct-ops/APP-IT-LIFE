@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const emptyToUndefined = (value: unknown) => value === '' || value === null ? undefined : value;
 const optionalText = (max: number) => z.preprocess(emptyToUndefined, z.string().trim().max(max).optional());
-const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
+const optionalUuid = z.preprocess(emptyToUndefined, z.string().guid().optional());
 const optionalDateTime = z.preprocess(emptyToUndefined, z.string().datetime({ offset: true }).optional());
 
 export const workflowStepSchema = z.object({
@@ -41,7 +41,7 @@ export const createWorkflowDefinitionSchema = definitionBase.superRefine(validat
 export const updateWorkflowDefinitionSchema = definitionBase.omit({ workflowCode: true }).superRefine(validateDefinition);
 
 export const startWorkflowSchema = z.object({
-  definitionId: z.string().uuid(),
+  definitionId: z.string().guid(),
   recordId: z.string().trim().min(1).max(120),
   recordLabel: z.string().trim().min(1).max(250),
   context: z.record(z.string(), z.unknown()).default({}),
@@ -57,7 +57,7 @@ export const workflowDecisionSchema = z.object({
 });
 
 export const createWorkflowDelegationSchema = z.object({
-  delegateId: z.string().uuid(),
+  delegateId: z.string().guid(),
   moduleKey: optionalText(80),
   definitionId: optionalUuid,
   startAt: z.string().datetime({ offset: true }),

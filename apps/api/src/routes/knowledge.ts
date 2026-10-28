@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
@@ -40,20 +41,42 @@ async function activeTaxonomyError(c: Context<AppEnv>, taxonomyId?: string): Pro
   return data ? null : 'ไม่พบ Knowledge Taxonomy ที่ใช้งานอยู่';
 }
 
-function matchesSearch(article: Record<string, unknown>, search?: string): boolean {
-  if (!search) return true;
-  const tags = Array.isArray(article.tags) ? article.tags.join(' ') : '';
-  const synonyms = Array.isArray(article.synonyms) ? article.synonyms.join(' ') : '';
-  const categoryRelation = Array.isArray(article.category) ? article.category[0] : article.category;
-  const category = categoryRelation && typeof categoryRelation === 'object' && 'name' in categoryRelation ? String(categoryRelation.name ?? '') : '';
-  const taxonomyRelation = Array.isArray(article.taxonomy) ? article.taxonomy[0] : article.taxonomy;
-  const taxonomy = taxonomyRelation && typeof taxonomyRelation === 'object' && 'name' in taxonomyRelation ? String(taxonomyRelation.name ?? '') : '';
-  return [article.title, article.symptom, article.solution, tags, synonyms, category, taxonomy].join(' ').toLocaleLowerCase('th').includes(search.toLocaleLowerCase('th'));
-}
-
 function firstRelation<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+type KnowledgeSearchRow = Record<string, unknown> & { id: string; taxonomy?: { name: string } | Array<{ name: string }> | null };
+
+async function searchArticles(client: SupabaseClient, options: {
+  search?: string; taxonomyId?: string; categoryId?: string; status?: string; publicOnly: boolean; limit: number; today: string;
+}): Promise<{ rows: KnowledgeSearchRow[]; hasMore: boolean; error: { message: string } | null }> {
+  const found = await client.rpc('search_knowledge_article_ids', {
+    search_input: options.search ?? null, taxonomy_id_input: options.taxonomyId ?? null,
+    category_id_input: options.categoryId ?? null, status_input: options.status ?? null,
+    public_only_input: options.publicOnly, today_input: options.today, limit_input: options.limit + 1,
+  });
+  if (found.error) return { rows: [], hasMore: false, error: found.error };
+  const allIds: string[] = (found.data ?? []).map((row: { id: string }) => row.id);
+  const hasMore = allIds.length > options.limit;
+  const ids = allIds.slice(0, options.limit);
+  const rows: KnowledgeSearchRow[] = [];
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const selection: string = options.publicOnly
+      ? 'id,article_code,title,symptom,solution,tags,synonyms,views_count,helpful_count,not_helpful_count,search_rank,is_deprecated,expiry_date,taxonomy_id,taxonomy:knowledge_taxonomies!knowledge_articles_taxonomy_id_fkey(id,name)'
+      : ARTICLE_SELECT;
+    let request = client.from('knowledge_articles').select(selection).in('id', batch);
+    if (options.publicOnly) request = request.eq('status', 'เผยแพร่').eq('is_deprecated', false).or(`expiry_date.is.null,expiry_date.gte.${options.today}`);
+    const result = await request;
+    if (result.error) return { rows: [], hasMore: false, error: result.error };
+    const batchRows = (result.data ?? []) as unknown as KnowledgeSearchRow[];
+    if (batchRows.length !== batch.length) return { rows: [], hasMore: false, error: { message: 'Knowledge results changed while loading' } };
+    rows.push(...batchRows);
+  }
+  const rank = new Map<string, number>(ids.map((id, index) => [id, index]));
+  rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  return { rows, hasMore, error: null };
 }
 
 async function hashClientId(clientId: string): Promise<string> {
@@ -80,20 +103,16 @@ async function replaceArticleLinks(
 knowledgeRoute.get('/', requirePermission('knowledge.view'), zValidator('query', listKnowledgeQuerySchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId'); const actorId = c.get('userId'); const query = c.req.valid('query'); const client = c.get('supabase');
   const canManage = await hasPermission(c, 'knowledge.manage');
-  let articleQuery = client.from('knowledge_articles').select(ARTICLE_SELECT).order('search_rank', { ascending: false }).order('views_count', { ascending: false }).limit(500);
-  if (query.taxonomyId) articleQuery = articleQuery.eq('taxonomy_id', query.taxonomyId);
-  else if (query.categoryId) articleQuery = articleQuery.eq('category_id', query.categoryId);
-  if (query.status) articleQuery = articleQuery.eq('status', query.status);
   const [articles, taxonomies, feedback] = await Promise.all([
-    articleQuery,
+    searchArticles(client, { ...query, publicOnly: false, limit: 500, today: new Date().toISOString().slice(0, 10) }),
     client.from('knowledge_taxonomies').select('id,code,name,parent_id').eq('status', 'active').order('sort_order').order('name'),
     client.from('knowledge_article_feedback').select('article_id').eq('user_id', actorId),
   ]);
   const error = articles.error ?? taxonomies.error ?? feedback.error;
   if (error) return dbFailJson(c, 'KNOWLEDGE_LOAD_FAILED', error);
   const voted = new Set((feedback.data ?? []).map((item) => item.article_id));
-  const filtered = (articles.data ?? []).filter((article) => matchesSearch(article, query.search)).map((article) => ({ ...article, has_voted: voted.has(article.id) }));
-  return c.json(ok(reqId, { articles: filtered, categories: taxonomies.data ?? [], taxonomies: taxonomies.data ?? [], canManage }));
+  const filtered = articles.rows.map((article) => ({ ...article, has_voted: voted.has(article.id) }));
+  return c.json(ok(reqId, { articles: filtered, categories: taxonomies.data ?? [], taxonomies: taxonomies.data ?? [], canManage, hasMore: articles.hasMore }));
 });
 
 knowledgeRoute.get('/references', requirePermission('knowledge.manage'), async (c) => {
@@ -289,14 +308,11 @@ publicKnowledgeRoute.get(
   zValidator('query', publicKnowledgeQuerySchema, zodValidationHook),
   async (c) => {
   const reqId = c.get('requestId'); const query = c.req.valid('query'); const admin = createAdminClient(c.env);
-  let request = admin.from('knowledge_articles').select('id,article_code,title,symptom,solution,tags,synonyms,views_count,helpful_count,not_helpful_count,search_rank,is_deprecated,expiry_date,taxonomy_id,taxonomy:knowledge_taxonomies!knowledge_articles_taxonomy_id_fkey(id,name)').eq('status', 'เผยแพร่').order('search_rank', { ascending: false }).order('views_count', { ascending: false }).limit(100);
-  if (query.taxonomyId) request = request.eq('taxonomy_id', query.taxonomyId);
-  else if (query.categoryId) request = request.eq('category_id', query.categoryId);
-  const [articles, taxonomies] = await Promise.all([request, admin.from('knowledge_taxonomies').select('id,code,name,parent_id').eq('status', 'active').order('sort_order').order('name')]);
-  const error = articles.error ?? taxonomies.error; if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_LOAD_FAILED', error);
   const today = new Date().toISOString().slice(0, 10);
-  const filtered = (articles.data ?? []).filter((article) => !article.is_deprecated && (!article.expiry_date || article.expiry_date >= today)).filter((article) => matchesSearch(article, query.search)).slice(0, 30).map((article) => ({ id: article.id, article_code: article.article_code, title: article.title, category: firstRelation(article.taxonomy)?.name ?? null, symptom: article.symptom, solution: article.solution, tags: article.tags, synonyms: article.synonyms, views: article.views_count, helpful: article.helpful_count, notHelpful: article.not_helpful_count, searchRank: article.search_rank }));
-  return c.json(ok(reqId, { articles: filtered, categories: taxonomies.data ?? [], taxonomies: taxonomies.data ?? [] }));
+  const [articles, taxonomies] = await Promise.all([searchArticles(admin, { ...query, publicOnly: true, limit: 30, today }), admin.from('knowledge_taxonomies').select('id,code,name,parent_id').eq('status', 'active').order('sort_order').order('name')]);
+  const error = articles.error ?? taxonomies.error; if (error) return dbFailJson(c, 'PUBLIC_KNOWLEDGE_LOAD_FAILED', error);
+  const filtered = articles.rows.map((article) => ({ id: article.id, article_code: article.article_code, title: article.title, category: firstRelation(article.taxonomy)?.name ?? null, symptom: article.symptom, solution: article.solution, tags: article.tags, synonyms: article.synonyms, views: article.views_count, helpful: article.helpful_count, notHelpful: article.not_helpful_count, searchRank: article.search_rank }));
+  return c.json(ok(reqId, { articles: filtered, categories: taxonomies.data ?? [], taxonomies: taxonomies.data ?? [], hasMore: articles.hasMore }));
   },
 );
 

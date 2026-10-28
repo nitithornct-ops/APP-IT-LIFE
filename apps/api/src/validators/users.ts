@@ -25,8 +25,8 @@ export const inviteUserSchema = z.object({
   email: z.string().trim().email(),
   fullName: z.string().trim().min(1).max(200),
   employeeCode: z.string().trim().max(50).optional(),
-  departmentId: z.string().uuid().optional(),
-  positionId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
+  positionId: z.string().guid().optional(),
 });
 
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
@@ -40,8 +40,8 @@ export const createLocalUserSchema = z.object({
   password: passwordSchema,
   fullName: z.string().trim().min(1).max(200),
   employeeCode: z.string().trim().max(50).optional(),
-  departmentId: z.string().uuid().optional(),
-  positionId: z.string().uuid().optional(),
+  departmentId: z.string().guid().optional(),
+  positionId: z.string().guid().optional(),
 });
 
 export type CreateLocalUserInput = z.infer<typeof createLocalUserSchema>;
@@ -59,9 +59,9 @@ export const updateUserSchema = z.object({
   // บัญชีที่เชิญด้วยอีเมลก็ตั้งชื่อผู้ใช้ไว้ login แบบสั้นได้ ไม่ต้องพิมพ์อีเมลเต็มทุกครั้ง
   username: usernameSchema.nullable().optional(),
   employeeCode: z.string().trim().max(50).nullable().optional(),
-  departmentId: z.string().uuid().nullable().optional(),
-  positionId: z.string().uuid().nullable().optional(),
-  supervisorId: z.string().uuid().nullable().optional(),
+  departmentId: z.string().guid().nullable().optional(),
+  positionId: z.string().guid().nullable().optional(),
+  supervisorId: z.string().guid().nullable().optional(),
   status: z.enum(['active', 'inactive']).optional(),
   employmentStatus: z.enum(['active', 'on_leave', 'terminated', 'contractor', 'retired']).optional(),
 });
@@ -81,7 +81,7 @@ export const updateMfaSchema = z.object({
 export type UpdateMfaInput = z.infer<typeof updateMfaSchema>;
 
 export const assignRoleSchema = z.object({
-  roleId: z.string().uuid(),
+  roleId: z.string().guid(),
 });
 
 export type AssignRoleInput = z.infer<typeof assignRoleSchema>;

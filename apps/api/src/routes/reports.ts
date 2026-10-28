@@ -13,6 +13,7 @@ import { ticketSlaState } from '../services/ticketSlaStatus';
 import { buddhistYearFolder, googleDriveConfig, safeDriveName, uploadCsvAsGoogleSheet, uploadToDrive } from '../services/googleDriveService';
 import type { AppEnv } from '../types';
 import { fail, ok } from '../utils/response';
+import { loadReportPages } from '../utils/completeRows';
 import { randomCodeSuffix } from '../utils/recordCode';
 import { zodValidationHook } from '../utils/validation';
 import {
@@ -189,7 +190,8 @@ function standardEntry(args: {
   const terminal = args.terminal ?? TERMINAL.test(args.status);
   const createdAt = args.created ? String(args.created) : new Date(0).toISOString();
   const inferredOwnerId = args.ownerId ?? args.row.assignee_id ?? args.row.it_handler_id ?? args.row.technician_id
-    ?? args.row.owner_id ?? args.row.operator_id ?? args.row.tester_id ?? args.row.owner_employee_id ?? args.row.employee_id;
+    ?? args.row.owner_id ?? args.row.operator_id ?? args.row.tester_id ?? args.row.owner_employee_id ?? args.row.employee_id
+    ?? args.row.requester_id ?? args.row.actual_custodian_employee_id;
   const inferredDepartmentId = args.departmentId ?? args.row.department_id;
   return {
     row: {
@@ -387,9 +389,6 @@ function allowedSources(permissions: Set<string>, config: ReportConfig): SourceC
   return config.sources.filter((source) => (Array.isArray(source.permission) ? source.permission : [source.permission]).some((key) => permissions.has(key)));
 }
 
-/** ทะเบียนพนักงานเต็มองค์กรมีไม่กี่พันแถว ดึงทีเดียวถูกกว่าไล่ .in() ทีละชุดจนความยาว URL แตก */
-const DIRECTORY_MAX_ROWS = 5000;
-
 /**
  * ทะเบียนชื่อพนักงานสำหรับคอลัมน์ "ผู้รับผิดชอบ" และ "ผู้ถือครอง"
  *
@@ -401,15 +400,26 @@ const DIRECTORY_MAX_ROWS = 5000;
  * ไม่กรอง status active ต่างจาก /options เพราะทะเบียนคุมต้องยังชี้ชื่อคนที่ลาออกไปแล้ว
  * แต่ยังไม่ได้คืนของได้
  */
-async function loadDirectory(client: SupabaseClient): Promise<{ directory: Directory; error?: string }> {
-  const [employeesResult, profilesResult] = await Promise.all([
-    client.from('employees').select('id,employee_code,prefix_th,first_name_th,last_name_th,department_id,department:departments(name_th)').limit(DIRECTORY_MAX_ROWS),
-    client.from('profiles').select('id,employee_code,full_name,department_id,department:departments(name_th)').limit(DIRECTORY_MAX_ROWS),
-  ]);
-  if (employeesResult.error) return { directory: new Map(), error: employeesResult.error.message };
-  if (profilesResult.error) return { directory: new Map(), error: profilesResult.error.message };
+async function loadDirectory(client: SupabaseClient, scope: { ownerId?: string; departmentId?: string; ids?: string[] } = {}): Promise<{ directory: Directory; error?: string }> {
+  let employees: Row[];
+  let profiles: Row[];
+  try {
+    const fetchRows = (table: 'employees' | 'profiles', columns: string) => loadReportPages(table, (start, end) => {
+      let query = client.from(table).select(columns, { count: 'exact' });
+      if (scope.ids) query = query.in('id', scope.ids);
+      else if (scope.ownerId) query = query.eq('id', scope.ownerId);
+      else if (scope.departmentId) query = query.eq('department_id', scope.departmentId);
+      return query.order('id').range(start, end);
+    });
+    [employees, profiles] = await Promise.all([
+      fetchRows('employees', 'id,employee_code,prefix_th,first_name_th,last_name_th,department_id,department:departments(name_th)'),
+      fetchRows('profiles', 'id,employee_code,full_name,department_id,department:departments(name_th)'),
+    ]);
+  } catch (error) {
+    return { directory: new Map(), error: error instanceof Error ? error.message : 'Could not load directory' };
+  }
   const directory: Directory = new Map();
-  for (const row of (employeesResult.data ?? []) as unknown as Row[]) {
+  for (const row of employees) {
     directory.set(value(row, 'id'), {
       name: `${value(row, 'prefix_th')}${value(row, 'first_name_th')} ${value(row, 'last_name_th')}`.trim(),
       code: value(row, 'employee_code'),
@@ -417,7 +427,7 @@ async function loadDirectory(client: SupabaseClient): Promise<{ directory: Direc
       departmentId: value(row, 'department_id'),
     });
   }
-  for (const row of (profilesResult.data ?? []) as unknown as Row[]) {
+  for (const row of profiles) {
     directory.set(value(row, 'id'), {
       name: value(row, 'full_name'),
       code: value(row, 'employee_code'),
@@ -441,7 +451,7 @@ async function availableDefinitions(client: SupabaseClient, permissions: Set<str
   };
 }
 
-async function loadEntries(
+export async function loadEntries(
   client: SupabaseClient,
   permissions: Set<string>,
   config: ReportConfig,
@@ -451,19 +461,53 @@ async function loadEntries(
   const sources = allowedSources(permissions, config);
   if (!sources.length) return { entries: [], freshness: [], error: 'ไม่มีสิทธิ์เข้าถึงแหล่งข้อมูลของรายงานนี้' };
   const since = new Date(Date.now() - filters.rangeDays * 86_400_000).toISOString();
-  const directoryPromise: Promise<{ directory: Directory; error?: string }> = loadDirectory(directoryClient);
-  const results = await Promise.all(sources.map(async (source) => {
-    let query = client.from(source.table).select(source.select).order(source.dateColumn, { ascending: false }).limit(2000);
-    if (filters.from && !source.currentState) query = query.gte(source.dateColumn, `${filters.from}T00:00:00.000Z`);
-    else if (filters.rangeDays > 0 && !source.currentState) query = query.gte(source.dateColumn, since);
-    if (filters.to && !source.currentState) query = query.lt(source.dateColumn, `${filters.to}T00:00:00.000Z`);
-    const { data, error } = await query;
-    return { source, data: (data ?? []) as unknown as Row[], error };
-  }));
-  const error = results.find((result) => result.error)?.error;
-  if (error) return { entries: [], freshness: [], error: error.message };
-  const { directory, error: directoryError } = await directoryPromise;
-  if (directoryError) return { entries: [], freshness: [], error: directoryError };
+  const scopedDirectory = filters.ownerId || filters.departmentId
+    ? await loadDirectory(directoryClient, { ownerId: filters.ownerId, departmentId: filters.departmentId })
+    : { directory: new Map<string, DirectoryEntry>() };
+  if (scopedDirectory.error) return { entries: [], freshness: [], error: scopedDirectory.error };
+  const directory = scopedDirectory.directory;
+  let results: Array<{ source: SourceConfig; data: Row[] }>;
+  try {
+    results = await Promise.all(sources.map(async (source) => {
+      const selected = new Set(source.select.split(',').map((column) => column.trim()));
+      const ownerColumn = ['assignee_id', 'it_handler_id', 'technician_id', 'owner_id', 'operator_id', 'tester_id', 'owner_employee_id', 'employee_id', 'requester_id', 'actual_custodian_employee_id'].find((column) => selected.has(column));
+      const hasOwnerFilter = Boolean(filters.ownerId || filters.departmentId);
+      if (hasOwnerFilter && !ownerColumn) return { source, data: [] };
+      let ownerIds: string[] | null = null;
+      if (filters.ownerId) {
+        ownerIds = !filters.departmentId || directory.get(filters.ownerId)?.departmentId === filters.departmentId ? [filters.ownerId] : [];
+      } else if (filters.departmentId) {
+        ownerIds = [...directory.entries()].filter(([, person]) => person.departmentId === filters.departmentId).map(([id]) => id);
+      }
+      const groups = ownerIds === null ? [null] : Array.from({ length: Math.ceil(ownerIds.length / 100) }, (_, index) => ownerIds!.slice(index * 100, index * 100 + 100));
+      const data: Row[] = [];
+      for (const group of groups) {
+        const pageRows = await loadReportPages(source.sourceLabel, (start, end) => {
+          let query = client.from(source.table).select(source.select, { count: 'exact' }).order(source.dateColumn, { ascending: false }).order('id', { ascending: false }).range(start, end);
+          if (group && ownerColumn) query = query.in(ownerColumn, group);
+          if (filters.from && !source.currentState) query = query.gte(source.dateColumn, `${filters.from}T00:00:00.000Z`);
+          else if (filters.rangeDays > 0 && !source.currentState) query = query.gte(source.dateColumn, since);
+          if (filters.to && !source.currentState) query = query.lt(source.dateColumn, `${filters.to}T00:00:00.000Z`);
+          return query;
+        });
+        data.push(...pageRows);
+        if (data.length > 5000) throw new Error(`ข้อมูล ${source.sourceLabel} เกินเพดาน 5000 รายการ กรุณาปรับตัวกรอง`);
+      }
+      if (groups.length > 1) data.sort((a, b) => String(b[source.dateColumn] ?? '').localeCompare(String(a[source.dateColumn] ?? '')) || String(b.id).localeCompare(String(a.id)));
+      return { source, data };
+    }));
+  } catch (error) {
+    return { entries: [], freshness: [], error: error instanceof Error ? error.message : 'Could not load report data' };
+  }
+  // Resolve names only for people referenced by the selected records. In
+  // particular, the expected custodian can belong to another department.
+  const personColumns = ['assignee_id', 'it_handler_id', 'technician_id', 'owner_id', 'operator_id', 'tester_id', 'owner_employee_id', 'employee_id', 'requester_id', 'actual_custodian_employee_id', 'expected_custodian_employee_id'];
+  const personIds = [...new Set(results.flatMap(({ data }) => data.flatMap((row) => personColumns.map((key) => value(row, key)).filter(Boolean))))].filter((id) => !directory.has(id));
+  for (let offset = 0; offset < personIds.length; offset += 100) {
+    const extra = await loadDirectory(directoryClient, { ids: personIds.slice(offset, offset + 100) });
+    if (extra.error) return { entries: [], freshness: [], error: extra.error };
+    for (const [id, entry] of extra.directory) directory.set(id, entry);
+  }
   const freshnessResults = await Promise.all(sources.map(async (source) => {
     const latest = await client.from(source.table).select('updated_at').order('updated_at', { ascending: false }).limit(1);
     return { source: source.sourceLabel, lastUpdatedAt: latest.error ? null : (latest.data?.[0] as { updated_at?: string } | undefined)?.updated_at ?? null };
@@ -765,10 +809,9 @@ async function datasetFor(c: Context<AppEnv>, key: string, filters: ReportFilter
   if (filters.comparePrevious !== false && (filters.rangeDays > 0 || Boolean(filters.from && filters.to))) {
     const previousFilters = previousPeriodFilters(filters);
     const previousLoaded = await loadEntries(c.get('supabase'), permissionResult.permissions, config, previousFilters, createAdminClient(c.env));
-    if (!previousLoaded.error) {
-      const previous = buildDataset(config, definition, previousLoaded.entries, previousFilters.rangeDays);
-      dataset.comparison = compareDatasets(dataset, previous);
-    }
+    if (previousLoaded.error) return { status: 400 as const, error: previousLoaded.error };
+    const previous = buildDataset(config, definition, previousLoaded.entries, previousFilters.rangeDays);
+    dataset.comparison = compareDatasets(dataset, previous);
   }
   return { status: 200 as const, dataset };
 }
@@ -810,8 +853,9 @@ export async function buildExecutivePack(
   for (const definition of definitions.definitions) {
     const config = REPORTS[definition.key];
     const current = await loadEntries(client, permissions, config, { rangeDays: bounds.days, from: bounds.start, to: bounds.end, comparePrevious: false }, directoryClient);
-    if (current.error) continue;
+    if (current.error) throw new Error(current.error);
     const previous = await loadEntries(client, permissions, config, { rangeDays: bounds.days, from: bounds.previousStart, to: bounds.previousEnd, comparePrevious: false }, directoryClient);
+    if (previous.error) throw new Error(previous.error);
     const dataset = buildDataset(config, definition, current.entries, bounds.days, { filters: { rangeDays: bounds.days, from: bounds.start, to: bounds.end, comparePrevious: false }, freshness: current.freshness });
     for (const item of current.freshness) freshnessMap.set(item.source, item);
     sections.push({ key: definition.key, label: definition.label, totalRows: dataset.totalRows, metrics: dataset.metrics, alerts: dataset.alerts });
@@ -862,8 +906,22 @@ export async function generateScheduledSnapshot(
   env: AppEnv['Bindings'],
   schedule: { report_key: string; filters?: unknown; created_by?: string | null; format?: 'CSV' | 'PDF' | 'PRINT'; save_to_drive?: boolean },
   now = new Date(),
+  claim?: { runId: string; token: string },
 ): Promise<{ id: string; title: string; artifact: ScheduledArtifact }> {
   const admin = createAdminClient(env);
+  if (!claim) throw new Error('Scheduled report requires a durable claim');
+  const run = await admin.from('report_schedule_runs').select('snapshot_id').eq('id', claim.runId).eq('claim_token', claim.token).eq('status', 'running').maybeSingle();
+  if (run.error || !run.data) { const reason = new Error('Scheduled report claim is no longer available'); reason.name = 'ScheduledReportClaimUncertainError'; throw reason; }
+  if (run.data.snapshot_id) {
+    const existing = await admin.from('report_snapshots').select('id,title,dataset').eq('id', run.data.snapshot_id).single();
+    if (existing.error || !existing.data) { const reason = new Error('Scheduled report snapshot is unavailable'); reason.name = 'ScheduledReportClaimUncertainError'; throw reason; }
+    if (schedule.save_to_drive && schedule.format !== 'PRINT') {
+      const gate = await admin.rpc('begin_scheduled_report_upload', { run_id_input: claim.runId, claim_token_input: claim.token });
+      if (gate.error || gate.data !== true) { const reason = new Error('Scheduled report upload claim could not be confirmed'); reason.name = 'ScheduledReportClaimUncertainError'; throw reason; }
+    }
+    const artifact = await createScheduledArtifact(env, schedule.report_key, existing.data.dataset, schedule.format ?? 'PDF', schedule.save_to_drive ?? false, now);
+    return { id: String(existing.data.id), title: String(existing.data.title), artifact };
+  }
   const permissions = new Set(Object.values(REPORTS).flatMap((config) => config.sourcePermissions));
   const stored = schedule.filters && typeof schedule.filters === 'object' ? schedule.filters as Partial<ReportFilters> : {};
   const filters: ReportFilters = {
@@ -898,10 +956,14 @@ export async function generateScheduledSnapshot(
     dataset = buildDataset(config, definition, loaded.entries, filters.rangeDays, { filters, freshness: loaded.freshness });
     title = `${definition.label} Snapshot`;
   }
-  const { data, error } = await admin.from('report_snapshots').insert({ report_key: schedule.report_key, snapshot_kind: snapshotKind, title, period_start: periodStart, period_end: periodEnd, filters, dataset, generated_at: now.toISOString(), created_by: schedule.created_by ?? null }).select('id').single();
-  if (error) throw new Error(error.message);
+  const { data, error } = await admin.rpc('persist_scheduled_report_snapshot', { run_id_input: claim.runId, claim_token_input: claim.token, snapshot_input: { report_key: schedule.report_key, snapshot_kind: snapshotKind, title, period_start: periodStart, period_end: periodEnd, filters, dataset, generated_at: now.toISOString(), created_by: schedule.created_by ?? null } });
+  if (error || !data) { const reason = new Error(error?.message ?? 'Scheduled report snapshot could not be saved'); reason.name = 'ScheduledReportClaimUncertainError'; throw reason; }
+  if (schedule.save_to_drive && schedule.format !== 'PRINT') {
+    const gate = await admin.rpc('begin_scheduled_report_upload', { run_id_input: claim.runId, claim_token_input: claim.token });
+    if (gate.error || gate.data !== true) { const reason = new Error('Scheduled report upload claim could not be confirmed'); reason.name = 'ScheduledReportClaimUncertainError'; throw reason; }
+  }
   const artifact = await createScheduledArtifact(env, schedule.report_key, dataset, schedule.format ?? 'PDF', schedule.save_to_drive ?? false, now);
-  return { id: String(data.id), title, artifact };
+  return { id: String(data), title, artifact };
 }
 
 reportsRoute.get('/', zValidator('query', reportRangeQuerySchema, zodValidationHook), async (c) => {

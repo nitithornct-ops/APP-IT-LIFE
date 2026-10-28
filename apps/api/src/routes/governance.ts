@@ -10,6 +10,7 @@ import type { AppEnv } from '../types';
 import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { randomCodeSuffix } from '../utils/recordCode';
+import { IncompleteRowsError, loadReportPages } from '../utils/completeRows';
 import { governanceActionSchema, governanceCreateSchemas } from '../validators/governance';
 
 type Row = Record<string, unknown>;
@@ -213,16 +214,27 @@ function normalize(entity: EntityConfig, row: Row, domain: string, canManage: bo
 
 async function loadDomain(client: SupabaseClient, domain: string, config: DomainConfig, canManage: boolean, canAct: boolean, actorEmail: string) {
   const results = await Promise.all(config.entities.map(async (entity) => {
-    const response = await client.from(entity.table).select('*').order('created_at', { ascending: false }).limit(300);
-    return { entity, ...response };
+    const data = await loadReportPages(entity.entity, (start, end) => client.from(entity.table)
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).range(start, end));
+    return { entity, data };
   }));
-  const error = results.find((result) => result.error)?.error;
-  if (error) throw error;
-  const rows = results.flatMap((result) => (result.data ?? []).map((row) => normalize(result.entity, row as Row, domain, canManage, canAct, actorEmail)));
+  const rows = results.flatMap((result) => result.data.map((row) => normalize(result.entity, row, domain, canManage, canAct, actorEmail)));
   const today = Date.now();
   const terminal = /ปิด|เสร็จสิ้น|ยกเลิก|ปฏิเสธ|ทำลายแล้ว|ใช้งาน|compliant|completed|cancelled/i;
+  const reviewTerminal = /ปิด|เสร็จสิ้น|ยกเลิก|ปฏิเสธ|ทำลายแล้ว|compliant|completed|cancelled/i;
+  const reviewEntities = new Set(config.entities.filter((entity) => ['review_date', 'next_review_date', 'next_review_due'].includes(entity.due ?? '')).map((entity) => entity.entity));
+  const dateParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(today));
+  const datePart = (type: Intl.DateTimeFormatPartTypes) => dateParts.find((part) => part.type === type)?.value ?? '';
+  const bangkokDate = `${datePart('year')}-${datePart('month')}-${datePart('day')}`;
   const open = rows.filter((row) => !terminal.test(String(row.status))).length;
-  const overdue = rows.filter((row) => row.due_date && new Date(String(row.due_date)).getTime() < today && !terminal.test(String(row.status))).length;
+  const overdue = rows.filter((row) => {
+    if (!row.due_date) return false;
+    const review = reviewEntities.has(String(row.entity));
+    const due = String(row.due_date);
+    const passed = review && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due < bangkokDate : new Date(due).getTime() < today;
+    return passed && !(review ? reviewTerminal : terminal).test(String(row.status));
+  }).length;
   const highRisk = rows.filter((row) => Number(row.score ?? 0) >= 16).length;
   return {
     records: rows,
@@ -292,6 +304,7 @@ governanceRoute.get('/:domain', async (c) => {
     const result = await loadDomain(c.get('supabase'), domain, config, canManage, canAct, c.get('userEmail'));
     return c.json(ok(requestId, { domain, ...result, canManage, canAct, generatedAt: new Date().toISOString() }));
   } catch (error) {
+    if (error instanceof IncompleteRowsError) return c.json(fail(requestId, 'GOVERNANCE_INCOMPLETE', error.message), 400);
     return dbFailJson(c, 'GOVERNANCE_LOAD_FAILED', error instanceof Error ? error : { message: String(error) }, 'โหลดข้อมูลโมดูลนี้ไม่สำเร็จ');
   }
 });
@@ -307,6 +320,7 @@ governanceRoute.post('/:domain/exports/csv', async (c) => {
     await writeAuditLog(c.env, { actorId: c.get('userId'), actorEmail: c.get('userEmail'), action: 'EXPORT_CSV', module: 'governance', detail: { domain, rows: result.records.length }, requestId });
     return c.json(ok(requestId, { filename: `governance-${domain}-${new Date().toISOString().slice(0, 10)}.csv`, csv: lines.join('\r\n') }));
   } catch (error) {
+    if (error instanceof IncompleteRowsError) return c.json(fail(requestId, 'GOVERNANCE_INCOMPLETE', error.message), 400);
     return dbFailJson(c, 'GOVERNANCE_EXPORT_FAILED', error instanceof Error ? error : { message: String(error) }, 'Export ข้อมูลไม่สำเร็จ');
   }
 });

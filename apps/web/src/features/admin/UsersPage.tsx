@@ -2,10 +2,10 @@ import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
-import { ConfirmModal, DeleteConfirmModal, FormModal } from '../../components/ui/Modal';
+import { ConfirmModal, DeleteConfirmModal, DetailModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, CheckCircle2, ChevronUp, Eye, EyeOff, KeyRound, Layers3, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck, UserCog, UserMinus, UserPlus, UsersRound, X, XCircle } from 'lucide-react';
+import { Ban, Check, CheckCircle2, Eye, EyeOff, KeyRound, Layers3, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck, UserCog, UserMinus, UserPlus, UsersRound, X, XCircle } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -538,7 +538,7 @@ function InviteUserForm({
       apiFetch('/api/v1/users/invite', {
         method: 'POST',
         // <select> ที่ไม่ได้เลือก ("— ไม่ระบุ —") จะส่งค่าเป็น "" เสมอ — ต้องแปลงเป็น undefined
-        // ก่อนส่ง มิฉะนั้น backend (z.string().uuid().optional()) จะปฏิเสธด้วย "Invalid uuid"
+        // ก่อนส่ง มิฉะนั้น backend (z.string().guid().optional()) จะปฏิเสธด้วย "Invalid uuid"
         body: JSON.stringify({
           ...values,
           departmentId: values.departmentId || undefined,
@@ -1296,8 +1296,8 @@ export function UsersPage() {
                         actions={[
                           {
                             kind: 'custom',
-                            icon: expandedUserId === user.id ? ChevronUp : ShieldCheck,
-                            label: expandedUserId === user.id ? 'ปิด' : 'จัดการบทบาท',
+                            icon: ShieldCheck,
+                            label: 'จัดการบทบาท',
                             onClick: () => setExpandedUserId(expandedUserId === user.id ? null : user.id),
                           },
                           {
@@ -1326,20 +1326,15 @@ export function UsersPage() {
                           },
                         ]}
                       />
-                    </td>
-                  </tr>
-                  {expandedUserId === user.id && (
-                    <tr>
-                      <td colSpan={11} className="p-0">
-                        <UserRolesPanel userId={user.id} allRoles={rolesQuery.data ?? []} />
+                      {expandedUserId === user.id && <DetailModal title={loginIdentityOf(user)} closeOnBackdrop={false} onClose={() => setExpandedUserId(null)}><UserRolesPanel userId={user.id} allRoles={rolesQuery.data ?? []} />
                         <SupervisorPanel user={user} allUsers={allUsersQuery.data?.items ?? []} />
                         <RequirePermission permission="role.manage">
                           <UserPermissionOverridesPanel userId={user.id} allPermissions={permissionsQuery.data ?? []} />
                         </RequirePermission>
                         <UserAccessGovernancePanel userId={user.id} allGroups={groupsQuery.data ?? []} />
-                      </td>
-                    </tr>
-                  )}
+                      </DetailModal>}
+                    </td>
+                  </tr>
                 </Fragment>
               ))}
             </tbody>

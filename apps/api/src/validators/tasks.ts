@@ -156,14 +156,14 @@ export const snoozeTaskReminderSchema = z.object({
 export type SnoozeTaskReminderInput = z.infer<typeof snoozeTaskReminderSchema>;
 
 export const addTaskDependencySchema = z.object({
-  dependsOnTaskId: z.string().uuid(),
+  dependsOnTaskId: z.string().guid(),
   note: z.string().trim().max(500).optional(),
 });
 export type AddTaskDependencyInput = z.infer<typeof addTaskDependencySchema>;
 
 export const addTaskRecordLinkSchema = z.object({
   recordType: z.enum(TASK_RECORD_TYPES),
-  recordId: z.string().uuid(),
+  recordId: z.string().guid(),
 });
 export type AddTaskRecordLinkInput = z.infer<typeof addTaskRecordLinkSchema>;
 
