@@ -61,7 +61,7 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
   }, [accountOpen]);
 
   return (
-    <header className="app-topbar sticky top-0 z-header flex min-h-[var(--app-header-height,64px)] items-center gap-1 border-b border-hairline bg-white px-2 dark:border-white/[.07] dark:bg-[#0a1224] sm:gap-2 sm:px-[18px]">
+    <header className="app-topbar sticky top-0 z-header flex min-h-[var(--app-header-height,64px)] items-center gap-1 border-b border-hairline bg-white px-2 dark:border-white/[.07] dark:bg-[#0a1224] sm:gap-2 sm:px-[18px] lg:px-[var(--ui-page-gutter)]">
       <button
         type="button"
         onClick={onOpenMobileMenu}
