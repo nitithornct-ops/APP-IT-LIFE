@@ -88,11 +88,13 @@ for (const width of [390, 1440]) {
 test('vendor login inherits the public dark theme without exposing internal navigation', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => localStorage.setItem('itlife-theme', 'dark'));
+  await page.route('**/api/v1/vendor-portal/**', route => route.fulfill({ status: 503, json: { success: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'บริการไม่พร้อมใช้งาน กรุณาลองใหม่' } } }));
   await page.route('https://challenges.cloudflare.com/turnstile/**', route => route.fulfill({ contentType: 'application/javascript', body: 'window.turnstile = { render: () => "test", reset: () => {}, remove: () => {} };' }));
   await page.goto('/vendor/portal');
   await expect(page.getByRole('heading', { name: 'Outsource Portal' })).toBeVisible();
   await expect(page.locator('main')).toHaveClass(/life-public/);
   await expect(page.locator('#app-sidebar')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(accessibility.violations, JSON.stringify(accessibility.violations, null, 2)).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);

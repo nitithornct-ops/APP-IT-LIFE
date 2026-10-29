@@ -42,6 +42,11 @@ for (const [width, height] of viewports) {
             controlHeights: controls.map(r => r.height),
             controlsOutside: controls.filter(r => r.left < f.left - 1 || r.right > f.right + 1).length,
             kpiOverlaps: kpis.flatMap((a, i) => kpis.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1)).length,
+            cellContentOverflow: [...document.querySelectorAll<HTMLElement>('.data-table-cell-content')].filter(el => {
+              const r = el.getBoundingClientRect();
+              const cell = el.closest('td')!.getBoundingClientRect();
+              return r.width > 0 && r.height > 0 && (r.bottom > cell.bottom + 1 || r.top < cell.top - 1);
+            }).length,
           };
         });
         expect(geometry.overflow).toBeLessThanOrEqual(1);
@@ -50,6 +55,7 @@ for (const [width, height] of viewports) {
         expect(geometry.headerFilterOverlap).toBeLessThanOrEqual(0);
         expect(geometry.controlsOutside).toBe(0);
         expect(geometry.kpiOverlaps).toBe(0);
+        expect(geometry.cellContentOverflow).toBe(0);
         expect(geometry.filterPadding).toBe(width >= 640 ? 24 : 16);
         expect(geometry.controlHeights.every(value => value >= 44)).toBe(true);
 

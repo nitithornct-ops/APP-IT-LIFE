@@ -185,7 +185,7 @@ export function VendorPortalPage() {
       <p className="mt-2 text-sm text-slate-500">กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าใช้งาน Vendor Portal</p>
       <form data-ui="form-stack" className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void verifyLoginMfa(); }}>
         <label className="block text-sm font-semibold">รหัส MFA<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className={`${fieldClass} text-center font-mono text-xl tracking-[0.3em]`} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />ยืนยันและเข้าใช้งาน</Button>
       </form>
       <button type="button" onClick={() => { void supabase.auth.signOut(); setLoginStep('password'); setMfaFactorId(null); setMfaCode(''); }} className="mt-4 w-full text-sm font-semibold text-slate-500">ยกเลิก</button>
@@ -201,7 +201,7 @@ export function VendorPortalPage() {
         <label className="block text-sm font-semibold">รหัสบริษัท<input required autoComplete="organization" value={login.vendorCode} onChange={(e) => setLogin((current) => ({ ...current, vendorCode: e.target.value.toUpperCase() }))} className={fieldClass} placeholder="VND-..." /></label>
         <label className="block text-sm font-semibold">Username<input required autoComplete="username" maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" value={login.username} onChange={(e) => setLogin((current) => ({ ...current, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่าน<input required type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin((current) => ({ ...current, password: e.target.value }))} className={fieldClass} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <TurnstileWidget ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
         <Button type="submit" className="w-full" isLoading={loggingIn} disabled={!captchaToken}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>
       </form>
@@ -217,7 +217,7 @@ export function VendorPortalPage() {
         <label className="block text-sm font-semibold">รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={passwordChange.currentPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, currentPassword: e.target.value }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.newPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, newPassword: e.target.value }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">ยืนยันรหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.confirmPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, confirmPassword: e.target.value }))} className={fieldClass} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <Button type="submit" className="w-full" isLoading={changingPassword}>บันทึกรหัสผ่านใหม่</Button>
       </form>
       <button type="button" onClick={() => void logout()} className="mt-4 w-full text-sm font-semibold text-slate-500">ออกจากระบบ</button>

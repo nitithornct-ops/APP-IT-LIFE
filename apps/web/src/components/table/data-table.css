@@ -18,6 +18,12 @@
 }
 
 @media (max-width: 639px) {
+  /* Grid cards need natural height: desktop table row heights would let Thai
+     multiline content paint over the following field. */
+  [data-ui='data-table'] table.data-table-cards > tbody > tr > td {
+    height: auto;
+  }
+
   /* Sticky desktop tables must become part of the page scroll in card layout. */
   [data-ui='table-viewport'].data-table-card-viewport {
     max-height: none !important;
@@ -129,6 +135,10 @@
 
 /* Tickets switch to cards earlier so tablet users can read the full work summary. */
 @media (max-width: 1279px) {
+  [data-ui='data-table'] .ticket-list-table.data-table-cards > tbody > tr > td {
+    height: auto;
+  }
+
   [data-ui='table-viewport'].data-table-card-viewport:has(> .ticket-list-table) {
     max-height: none !important;
     overflow: visible;
