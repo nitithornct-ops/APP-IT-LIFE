@@ -17,7 +17,7 @@ const sizeClasses: Record<ModalSize, string> = {
 const contentPaddingClasses: Record<ModalContentPadding, string> = {
   none: '',
   compact: 'px-4 py-4 sm:px-5',
-  default: 'px-5 py-5 sm:px-6 sm:py-6',
+  default: 'p-[var(--ui-card-padding)]',
 };
 
 interface ModalStackEntry { id: number; depth: number }
@@ -193,7 +193,7 @@ export function Modal({
           className,
         )}
       >
-        <header className="flex min-h-16 shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-slate-700">
+        <header className="flex min-h-16 shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-[var(--ui-card-padding)] py-4 dark:border-slate-700">
           <div className="flex min-w-0 items-start gap-3">
             {icon && <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-200" aria-hidden="true">{icon}</span>}
             <div className="min-w-0">
@@ -223,7 +223,7 @@ export function Modal({
         >
           {children}
         </div>
-        {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/50">{footer}</footer>}
+        {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/70 px-[var(--ui-card-padding)] py-4 dark:border-slate-700 dark:bg-slate-900/50">{footer}</footer>}
       </section>
 
       {showDiscardConfirm && (
