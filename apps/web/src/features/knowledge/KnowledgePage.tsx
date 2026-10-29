@@ -1,3 +1,4 @@
+import { QueryError } from '../../components/ui/QueryError';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DeleteConfirmModal, DetailModal, FormModal } from '../../components/ui/Modal';
 import {
@@ -200,7 +201,7 @@ export function KnowledgePage() {
     if (article) void openArticle(article);
   }, [articles, openArticle, query.data, searchParams, selected]);
   if (query.isLoading) return <div className="flex justify-center py-24"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>;
-  if (query.isError || !query.data) return <EmptyState icon={<BookOpenCheck className="h-10 w-10" />} title="โหลดฐานความรู้ไม่สำเร็จ" message={errorText(query.error, 'กรุณาลองใหม่')} />;
+  if (query.isError || !query.data) return <QueryError title="โหลดฐานความรู้ไม่สำเร็จ" error={query.error} onRetry={() => void query.refetch()} isRetrying={query.isFetching} />;
   return <div className="space-y-5" data-testid="knowledge-page">
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / ฐานความรู้" title="ฐานความรู้ (Knowledge Base)" description="ค้นหาวิธีแก้ปัญหา คู่มือ และคำตอบมาตรฐานก่อนเปิด Service Request" />{canManage && <Button data-testid="knowledge-create-toggle" onClick={() => { setEditing(undefined); setShowForm(true); }}><Plus className="h-4 w-4" />เพิ่มบทความ</Button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="บทความเผยแพร่" value={published} tone="teal" /><StatCard icon={<FilePenLine className="h-5 w-5" />} label="ฉบับร่าง" value={drafts} tone={drafts ? 'amber' : 'gray'} /><StatCard icon={<Eye className="h-5 w-5" />} label="การเข้าอ่านรวม" value={views} tone="primary" /><StatCard icon={<ThumbsUp className="h-5 w-5" />} label="มีประโยชน์" value={helpful} tone="primary" /></div>

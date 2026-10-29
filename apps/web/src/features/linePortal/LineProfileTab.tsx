@@ -68,7 +68,7 @@ export function LineProfileTab({ profile, onProfileSaved, onLogout }: {
         </div>
       </header>
 
-      <section className="mx-4 overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-slate-700 dark:bg-slate-900">
+      <section data-ui="card" className="mx-4 overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-slate-700 dark:bg-slate-900">
         {editing ? (
           <div className="p-4">
             <label htmlFor="line-portal-full-name" className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">

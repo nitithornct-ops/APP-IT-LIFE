@@ -30,7 +30,7 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
 }
 
 export function CardBody({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('p-[var(--ui-card-padding)]', className)} {...rest} />;
+  return <div data-ui="card-body" className={cn('p-[var(--ui-card-padding)]', className)} {...rest} />;
 }
 
 export function CardFooter({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {

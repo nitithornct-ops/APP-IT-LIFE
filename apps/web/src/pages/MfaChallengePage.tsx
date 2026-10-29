@@ -118,7 +118,7 @@ export function MfaChallengePage() {
         </p>
 
         {enrollment && (
-          <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-center">
+          <div data-ui="card" className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-center">
             <img src={enrollment.qrCode} alt="QR code สำหรับตั้งค่า MFA" className="mx-auto h-44 w-44" />
             <p className="mt-3 text-xs text-slate-500">หากสแกนไม่ได้ ให้กรอกรหัสนี้ในแอปด้วยตนเอง</p>
             <code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">{enrollment.secret}</code>

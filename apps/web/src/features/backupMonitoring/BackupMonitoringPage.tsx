@@ -1,3 +1,4 @@
+import { QueryError } from '../../components/ui/QueryError';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { FormModal } from '../../components/ui/Modal';
@@ -209,7 +210,7 @@ export function BackupMonitoringPage() {
   const closeForm = () => { setEditing(undefined); setShowForm(false); };
 
   if (overviewQuery.isLoading) return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin text-slate-400" /></div>;
-  if (overviewQuery.isError || !data) return <Card><CardBody className="text-red-700">{errorText(overviewQuery.error, 'โหลดข้อมูล Backup / Monitoring ไม่สำเร็จ')}</CardBody></Card>;
+  if (overviewQuery.isError || !data) return <QueryError title="โหลดข้อมูล Backup / Monitoring ไม่สำเร็จ" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} isRetrying={overviewQuery.isFetching} />;
 
   // ทุกแท็บของหน้านี้ใช้ตัวช่วยเดียวกัน ปุ่มจึงอยู่ตำแหน่งเดียวกับตารางอื่นทั้งระบบโดยอัตโนมัติ
   const deleteResourceByTab: Partial<Record<Tab, string>> = {

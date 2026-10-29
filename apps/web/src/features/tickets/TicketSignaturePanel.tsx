@@ -72,7 +72,7 @@ export function TicketSignaturePanel({
     <Card data-testid="ticket-signature-panel">
       <CardHeader className="flex items-center gap-2"><FileSignature className="h-5 w-5 text-primary-600" />ลายเซ็นรับรอง Ticket</CardHeader>
       <CardBody>
-        <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-slate-600 dark:bg-slate-900">
+        <div data-ui="card" className="flex min-h-32 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-slate-600 dark:bg-slate-900">
           {previewUrl
             ? <img src={previewUrl} alt="ลายเซ็นรับรอง Ticket" className="max-h-28 max-w-full object-contain" />
             : <div className="text-center text-slate-400"><ImageIcon className="mx-auto h-9 w-9" /><p className="mt-2 text-xs">ยังไม่มีลายเซ็น</p></div>}

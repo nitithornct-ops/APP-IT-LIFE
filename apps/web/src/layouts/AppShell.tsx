@@ -63,8 +63,8 @@ export function AppShell() {
     };
   }, [mobileMenuOpen]);
 
-  // Dashboard owns a purpose-built hero. Other authenticated routes receive
-  // the shared module treatment from the shell.
+  // Dashboard supplies its own compact overview. Other authenticated routes
+  // receive the shared module header treatment from the shell.
   const hasNativeHero = location.pathname === '/';
 
   return (
@@ -81,7 +81,7 @@ export function AppShell() {
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className={cn('flex min-h-screen min-w-0 flex-col transition-[margin] duration-200 motion-reduce:transition-none', collapsed ? 'lg:ml-16' : 'lg:ml-60')}>
+      <div className={cn('flex min-h-screen min-w-0 flex-col transition-[margin] duration-200 motion-reduce:transition-none', collapsed ? 'lg:ml-[68px]' : 'lg:ml-[244px]')}>
         <Topbar
           mobileMenuOpen={mobileMenuOpen}
           onOpenMobileMenu={() => setMobileMenuOpen((open) => !open)}

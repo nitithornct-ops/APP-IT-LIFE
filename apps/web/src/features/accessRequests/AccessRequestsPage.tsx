@@ -196,7 +196,7 @@ function SubmitAccessRequestForm({
 
       <div>
         <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">ขอบเขตการทำรายการ</span>
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+        <div data-ui="card" className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
           {ACCESS_ACTIONS.map((action) => (
             <label key={action} className={`flex items-center gap-2 text-xs ${selectedItem?.permission_actions.includes(action) ? 'text-slate-700 dark:text-slate-200' : 'text-slate-300 dark:text-slate-600'}`}>
               <input type="checkbox" value={action} disabled={!selectedItem?.permission_actions.includes(action)} {...register('requestedActions')} />
@@ -208,7 +208,7 @@ function SubmitAccessRequestForm({
       </div>
 
       {selectedItem && (
-        <div className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-3">
+        <div data-ui="card" className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-3">
           <div><span className="text-slate-500">Data Classification</span><div className="font-semibold">{selectedItem.data_classification}</div></div>
           <div><span className="text-slate-500">System Owner</span><div className="font-semibold">{selectedItem.system_owner?.full_name ?? 'กำหนดใน master data'}</div></div>
           <div><span className="text-slate-500">Approver</span><div className="font-semibold">{selectedItem.default_approver?.full_name ?? 'หัวหน้างานของผู้รับสิทธิ์'}</div></div>

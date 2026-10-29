@@ -14,7 +14,7 @@ export function FieldSchemaBuilder({ value, onChange, readOnly = false }: { valu
   const update = (index: number, patch: Partial<FormFieldDefinition>) => onChange(value.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field));
   const remove = (index: number) => onChange(value.filter((_, fieldIndex) => fieldIndex !== index));
 
-  return <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800" data-testid="field-schema-builder">
+  return <section data-ui="card" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800" data-testid="field-schema-builder">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div><h3 className="font-bold text-slate-900 dark:text-white">Structured Field Schema</h3><p className="text-xs text-slate-500">กำหนดชนิดข้อมูล, Required และเงื่อนไขการแสดงผลแยกจาก HTML</p></div>
       {!readOnly && <button type="button" onClick={addField} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-primary-300 px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-200"><Plus className="h-4 w-4" />เพิ่ม Field</button>}

@@ -85,7 +85,7 @@ export function TaskKanbanBoard({ tasks, onSelect }: { tasks: Task[]; onSelect: 
                 const checklist = task.subtasks.filter((item) => item.status !== 'ยกเลิก');
                 const checklistDone = checklist.filter((item) => item.status === 'เสร็จแล้ว').length;
                 return (
-                  <article
+                  <article data-ui="card"
                     key={task.id}
                     draggable={!moveMutation.isPending}
                     tabIndex={0}

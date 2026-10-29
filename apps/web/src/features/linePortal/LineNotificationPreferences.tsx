@@ -64,7 +64,7 @@ export function LineNotificationPreferences() {
   }
 
   return (
-    <section className="mx-4 overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-slate-700 dark:bg-slate-900">
+    <section data-ui="card" className="mx-4 overflow-hidden rounded-card border border-hairline bg-white shadow-card dark:border-slate-700 dark:bg-slate-900">
       <div className="border-b border-hairline px-4 py-3 dark:border-slate-700">
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">การแจ้งเตือนผ่าน LINE</p>
         <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">ปิดเฉพาะประเภทที่ไม่ต้องการได้ โดยการแจ้งเตือนในระบบจะยังคงอยู่</p>

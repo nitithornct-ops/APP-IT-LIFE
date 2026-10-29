@@ -265,7 +265,7 @@ export function ProfilePage() {
 
           <Card><CardHeader>ข้อมูลจาก Employee Master</CardHeader><CardBody className="space-y-3 text-sm"><div><p className="text-xs text-slate-500">Department</p><p className="mt-1 font-medium text-slate-800 dark:text-slate-100">{department}</p></div><div><p className="text-xs text-slate-500">Position</p><p className="mt-1 font-medium text-slate-800 dark:text-slate-100">{position}</p></div><p className="border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800">ข้อมูลส่วนนี้แก้ไขเองไม่ได้ กรุณาติดต่อผู้ดูแล Employee Master</p></CardBody></Card>
 
-          {hasPermission('technician_skill.view') && <div className="rounded-[10px] border border-hairline bg-slate-50 p-4 dark:border-white/[.08] dark:bg-white/[.03]"><p className="text-xs font-bold text-ink-heading dark:text-slate-100">ตารางทักษะทั้งทีม</p><p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">เทียบระดับทักษะของเจ้าหน้าที่ทุกคน</p><Link to="/admin/technician-skills" className="mt-3 inline-block text-xs font-bold text-primary-700 hover:underline dark:text-primary-300">เปิดตารางทักษะช่าง</Link></div>}
+          {hasPermission('technician_skill.view') && <div data-ui="card" className="rounded-[10px] border border-hairline bg-slate-50 p-4 dark:border-white/[.08] dark:bg-white/[.03]"><p className="text-xs font-bold text-ink-heading dark:text-slate-100">ตารางทักษะทั้งทีม</p><p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">เทียบระดับทักษะของเจ้าหน้าที่ทุกคน</p><Link to="/admin/technician-skills" className="mt-3 inline-block text-xs font-bold text-primary-700 hover:underline dark:text-primary-300">เปิดตารางทักษะช่าง</Link></div>}
         </aside>
 
         <div className="space-y-4">

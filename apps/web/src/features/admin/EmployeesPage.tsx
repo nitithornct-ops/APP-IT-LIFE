@@ -467,7 +467,7 @@ export function EmployeesPage() {
         <StatCard icon={<Box className="h-5 w-5" />} label="รายการที่ครอบครอง" value={overview?.assignmentTotal ?? 0} tone="gray" />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><span className="inline-flex items-center gap-2"><GitBranch className="h-4 w-4 text-primary-600" aria-hidden="true" />ข้อมูลจากโมดูลนี้จะรวมรายการใน Employee Assignments, เจ้าของใน Asset Register และผู้ใช้ใน Software Licenses ไว้ในหน้ารายคน</span></div>
+      <div data-ui="card" className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><span className="inline-flex items-center gap-2"><GitBranch className="h-4 w-4 text-primary-600" aria-hidden="true" />ข้อมูลจากโมดูลนี้จะรวมรายการใน Employee Assignments, เจ้าของใน Asset Register และผู้ใช้ใน Software Licenses ไว้ในหน้ารายคน</span></div>
 
       <div className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 shadow-sm dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-100">
         <p className="font-semibold">Employee directory is the personnel source of truth.</p>

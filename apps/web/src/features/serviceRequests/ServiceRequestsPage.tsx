@@ -1,3 +1,4 @@
+import { QueryError } from '../../components/ui/QueryError';
 import { DetailLink as Link } from '../../components/ui/DetailLink';
 import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
@@ -6,7 +7,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlarmClock,
   BookOpen,
-  CircleSlash2,
   ClipboardCheck,
   ClipboardList,
   CircleDollarSign,
@@ -505,7 +505,7 @@ function CatalogCards({ items, canRequest, onRequest }: { items: ServiceCatalogI
           </h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {categoryItems.map((item) => (
-              <article key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+              <article data-ui="card" key={item.id} className="flex min-h-[205px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Package className="h-4 w-4" />{item.service_code}</div>
                 <h3 className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">{item.service_name}</h3>
                 <p className="mt-2 line-clamp-2 flex-1 text-sm text-slate-500 dark:text-slate-400">{item.description || 'ไม่มีคำอธิบายเพิ่มเติม'}</p>
@@ -554,7 +554,7 @@ function CatalogManagement({ items, onCreate, onEdit, onPreview }: { items: Serv
     downloadCsv(rows, 'service-catalog.csv');
   }
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+    <div data-ui="card" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
         <label className="relative min-w-[240px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาในรายการ..." className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-primary-500 dark:border-slate-600 dark:bg-slate-900" /></label>
         <select aria-label="กรองสถานะ" value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-600 dark:bg-slate-900"><option value="">สถานะ: ทั้งหมด</option>{(Object.keys(catalogStatusLabel) as ServiceCatalogStatus[]).map((value) => <option key={value} value={value}>{catalogStatusLabel[value]}</option>)}</select>
@@ -643,7 +643,7 @@ export function ServiceRequestsPage({ initialTab = 'catalog' }: { initialTab?: W
   }
 
   if (loading) return <div className="flex justify-center py-24" role="status"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>;
-  if (failed) return <EmptyState icon={<CircleSlash2 className="h-9 w-9" />} title="โหลด Service Catalog ไม่สำเร็จ" description="กรุณาลองใหม่อีกครั้ง" />;
+  if (failed) return <QueryError title="โหลด Service Catalog ไม่สำเร็จ" error={catalogQuery.error ?? mineQuery.error ?? visibleQuery.error ?? approvalsQuery.error} onRetry={() => { void catalogQuery.refetch(); void mineQuery.refetch(); void visibleQuery.refetch(); void approvalsQuery.refetch(); }} isRetrying={catalogQuery.isFetching || mineQuery.isFetching || visibleQuery.isFetching || approvalsQuery.isFetching} />;
 
   return <div className="space-y-6" data-testid="service-catalog-workspace">
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / คำขอบริการ" title={<><Grid3X3 className="h-6 w-6 text-primary-600" />Service Catalog / คำขอบริการ</>} description="เลือกบริการ ยื่นคำขอ ติดตามการอนุมัติ Checklist และ SLA ในกระบวนการเดียว" />{canManage && <Button data-testid="catalog-header-create" onClick={() => { setEditingItem(null); setPreviewItem(null); setPublishError(null); setShowEditor(true); }}><Plus className="h-4 w-4" />เพิ่มบริการ</Button>}</div>

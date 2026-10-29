@@ -344,7 +344,7 @@ export function TasksPage() {
       />
 
       <section className="space-y-0" aria-label="รายการงานของฉัน">
-        <div className="flex flex-col gap-2 rounded-t-card border border-b-0 border-hairline bg-white px-3 py-2 shadow-card dark:border-white/[.08] dark:bg-white/[.035] xl:flex-row xl:items-center xl:justify-between">
+        <div data-ui="card" className="flex flex-col gap-2 rounded-t-card border border-b-0 border-hairline bg-white px-3 py-2 shadow-card dark:border-white/[.08] dark:bg-white/[.035] xl:flex-row xl:items-center xl:justify-between">
           <nav className="flex min-w-0 gap-1 overflow-x-auto" aria-label="กลุ่มงาน">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -355,7 +355,7 @@ export function TasksPage() {
               );
             })}
           </nav>
-          <div className="flex w-fit shrink-0 items-center rounded-[7px] border border-hairline-control bg-surface-header p-1 dark:border-white/[.1] dark:bg-white/[.035]" aria-label="มุมมองงาน">
+          <div data-ui="card" className="flex w-fit shrink-0 items-center rounded-[7px] border border-hairline-control bg-surface-header p-1 dark:border-white/[.1] dark:bg-white/[.035]" aria-label="มุมมองงาน">
             {viewItems.map((item) => {
               const Icon = item.icon;
               return <button key={item.value} type="button" onClick={() => { setView(item.value); if (scope === 'today') setScope('all'); }} aria-pressed={view === item.value && scope !== 'today'} className={cn('flex h-8 items-center gap-1.5 rounded-[5px] px-2.5 text-xs font-semibold', view === item.value && scope !== 'today' ? 'bg-primary-700 text-white shadow-sm' : 'text-slate-500 hover:bg-white dark:text-slate-300 dark:hover:bg-white/[.07]')}><Icon className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">{item.label}</span></button>;
@@ -395,14 +395,14 @@ export function TasksPage() {
           <div className="min-w-0">
             {tasksQuery.isLoading && <div className="grid min-h-[240px] place-items-center rounded-b-card border border-hairline bg-white dark:border-white/[.08] dark:bg-white/[.035]" role="status"><Loader2 className="h-6 w-6 animate-spin text-primary-600" /></div>}
             {tasksQuery.isError && <div className="rounded-b-card border border-red-200 bg-red-50 p-5 text-sm text-red-700">โหลดรายการงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</div>}
-            {tasksQuery.data && filteredTasks.length === 0 && scope !== 'today' && view !== 'calendar' && <div className="rounded-b-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]"><EmptyState icon={<ListTodo className="h-9 w-9" />} title="ไม่มีงานที่ต้องแสดง" message="ลองเปลี่ยนตัวกรอง หรือสร้างงานใหม่จากช่องด้านบน" /></div>}
+            {tasksQuery.data && filteredTasks.length === 0 && scope !== 'today' && view !== 'calendar' && <div data-ui="card" className="rounded-b-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]"><EmptyState icon={<ListTodo className="h-9 w-9" />} title="ไม่มีงานที่ต้องแสดง" message="ลองเปลี่ยนตัวกรอง หรือสร้างงานใหม่จากช่องด้านบน" /></div>}
 
             {tasksQuery.data && scope === 'today' && <TaskTodayView tasks={todayPlanTasks} onSelect={setSelectedTaskId} />}
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'kanban' && <TaskKanbanBoard tasks={filteredTasks} onSelect={setSelectedTaskId} />}
             {tasksQuery.data && scope !== 'today' && view === 'calendar' && <div className="overflow-x-auto"><TaskCalendarView tasks={filteredTasks} onSelect={setSelectedTaskId} onCreate={(dueDate) => setCreateModal({ dueDate })} /></div>}
 
             {tasksQuery.data && scope !== 'today' && filteredTasks.length > 0 && view === 'list' && (
-              <div className="overflow-hidden rounded-b-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]">
+              <div data-ui="card" className="overflow-hidden rounded-b-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]">
                 <div className="hidden grid-cols-[minmax(0,1fr)_130px_125px_210px] gap-3 bg-surface-header px-4 py-2 font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-slate-400 sm:grid"><span>งาน</span><span>ความคืบหน้า</span><span>สถานะ / กำหนด</span><span className="text-right">จัดการ</span></div>
                 <div className="divide-y divide-hairline-row dark:divide-white/[.07]">
                   {pagedTasks.map((task) => (

@@ -1,8 +1,9 @@
-﻿import { DataTable } from '../../components/table/DataTable';
+import { QueryError } from '../../components/ui/QueryError';
+import { DataTable } from '../../components/table/DataTable';
 import { RowActions } from '../../components/table/RowActions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlarmClock, CheckCircle2, CircleSlash2, GitBranch,
+  AlarmClock, CheckCircle2, GitBranch,
   Loader2, Play, Plus, Save, Send, ShieldCheck, UserRoundCog, UsersRound, X,
 } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
@@ -177,7 +178,7 @@ export function WorkflowsPage() {
     { key: 'delegations', label: 'มอบหมายแทน', count: data?.delegations.length ?? 0 },
   ];
   if (query.isLoading) return <div className="flex justify-center py-24"><Loader2 className="h-7 w-7 animate-spin text-primary-600" /></div>;
-  if (query.isError || !data) return <EmptyState icon={<CircleSlash2 className="h-8 w-8" />} title="โหลด Workflow ไม่สำเร็จ" description={errorText(query.error, 'กรุณาลองใหม่')} />;
+  if (query.isError || !data) return <QueryError title="โหลด Workflow ไม่สำเร็จ" error={query.error} onRetry={() => void query.refetch()} isRetrying={query.isFetching} />;
   return <div className="space-y-5" data-testid="workflows-page">
     <div className="flex flex-wrap items-start justify-between gap-3"><PageTitle eyebrow="บริการและกระบวนการ IT / งานอนุมัติ Workflow" title="Workflow / งานอนุมัติ" description="Engine กลางสำหรับอนุมัติหลายขั้น มอบหมายแทน และตรวจสอบย้อนหลัง" /><div className="flex flex-wrap gap-2">{canDelegate && <Button variant="outline" onClick={() => setShowDelegation(true)}><UserRoundCog className="h-4 w-4" />ตั้งผู้อนุมัติแทน</Button>}{canManage && <><Button variant="outline" onClick={() => setShowStart(true)}><Play className="h-4 w-4" />เริ่ม Workflow</Button><Button data-testid="workflow-definition-toggle" onClick={() => { setEditingDefinition(undefined); setShowDefinition(true); }}><Plus className="h-4 w-4" />สร้างแบบ</Button></>}</div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard icon={<ShieldCheck className="h-5 w-5" />} label="รอฉันอนุมัติ" value={data.summary.pendingMine} tone={data.summary.pendingMine ? 'amber' : 'gray'} /><StatCard icon={<AlarmClock className="h-5 w-5" />} label="เกินกำหนด" value={data.summary.overdueMine} tone={data.summary.overdueMine ? 'danger' : 'gray'} /><StatCard icon={<GitBranch className="h-5 w-5" />} label="คำขอของฉันที่เปิดอยู่" value={data.summary.activeMine} tone="primary" /><StatCard icon={<UsersRound className="h-5 w-5" />} label="กำลังดำเนินการทั้งหมด" value={data.summary.activeVisible} tone="teal" /></div>

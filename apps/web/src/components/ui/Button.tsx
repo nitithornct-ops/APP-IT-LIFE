@@ -6,7 +6,7 @@ type Variant = 'primary' | 'secondary' | 'outline' | 'success' | 'danger' | 'gho
 type Size = 'sm' | 'md';
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'border border-primary-700 bg-primary-700 text-white shadow-action hover:border-primary-900 hover:bg-primary-900',
+  primary: 'border border-primary-600 bg-primary-600 text-white shadow-action hover:border-primary-700 hover:bg-primary-700',
   secondary: 'border border-primary-950 bg-primary-950 text-white hover:bg-primary-900',
   outline:
     'bg-white text-slate-700 border border-slate-300 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700',
@@ -17,8 +17,8 @@ const variantClasses: Record<Variant, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'min-h-[44px] rounded-[7px] px-3 py-2 text-sm',
-  md: 'min-h-[44px] rounded-[7px] px-4 py-2 text-base',
+  sm: 'min-h-[var(--ui-control-height)] rounded-life px-3 py-2 text-sm',
+  md: 'min-h-[var(--ui-control-height)] rounded-life px-4 py-2 text-base',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

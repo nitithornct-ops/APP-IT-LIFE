@@ -41,19 +41,19 @@
 
   /* LIFE IT logo foundation: navy, royal blue, gold, and white. The
      life-green names remain as compatibility aliases for existing components. */
-  --life-green-950: #091a3a;
-  --life-green-900: #102a5c;
-  --life-green-800: #17356f;
-  --life-green-700: #1d4388;
-  --life-green-600: #2454a6;
-  --life-green-500: #3567b3;
-  --life-green-400: #5f8fd1;
-  --life-green-300: #91b8eb;
-  --life-green-200: #bfd7f7;
-  --life-green-100: #dbeafe;
-  --life-green-50: #eef5ff;
-  --life-lime: #e7b928;
-  --life-gold: #d9a514;
+  --life-green-950: #102d4f;
+  --life-green-900: #173e65;
+  --life-green-800: #1b507a;
+  --life-green-700: #206994;
+  --life-green-600: #287db3;
+  --life-green-500: #3585b5;
+  --life-green-400: #78c6ea;
+  --life-green-300: #bde8fa;
+  --life-green-200: #ccecfb;
+  --life-green-100: #dff3ff;
+  --life-green-50: #f0f9ff;
+  --life-lime: #dab854;
+  --life-gold: #dab854;
   --life-gold-dark: #8a6400;
   --life-gold-soft: #fff4c2;
 
@@ -64,19 +64,24 @@
   --line-brand: #047a36;
   --line-brand-hover: #03642d;
 
-  --color-bg: #f5f8fc;
+  --color-bg: #f0f9ff;
   --color-surface: #ffffff;
-  --color-surface-secondary: #eef4fb;
-  --color-surface-green: #eef5ff;
-  --color-border: #d7e1ef;
-  --color-border-strong: #bccce0;
-  --color-text: #10234b;
-  --color-text-secondary: #334a70;
-  --color-text-muted: #60708c;
-  --color-heading: #102a5c;
-  --color-action: #2454a6;
-  --color-action-hover: #1d4388;
-  --color-action-soft: #eef5ff;
+  --color-glass: rgb(255 255 255 / 0.72);
+  --color-glass-border: rgb(255 255 255 / 0.75);
+  --color-sidebar: #e8f5ff;
+  --color-sidebar-active: #cce9fa;
+  --color-aurora-glow: rgb(120 198 234 / 0.22);
+  --color-surface-secondary: #e8f5ff;
+  --color-surface-green: #f0f9ff;
+  --color-border: #cce3f0;
+  --color-border-strong: #a7cde3;
+  --color-text: #173e65;
+  --color-text-secondary: #365976;
+  --color-text-muted: #526d85;
+  --color-heading: #173e65;
+  --color-action: #287db3;
+  --color-action-hover: #206994;
+  --color-action-soft: #f0f9ff;
   --color-success: #166534;
   --color-success-soft: #e7f5ec;
   --color-warning: #b45309;
@@ -87,16 +92,15 @@
   --color-info-soft: #e6fffb;
 
   --radius-sm: 6px;
-  --radius-default: 7px;
-  --radius-card: 10px;
-  --radius-large: 13px;
-  --radius-modal: 13px;
+  --radius-default: 10px;
+  --radius-card: 14px;
+  --radius-large: 16px;
+  --radius-modal: 16px;
   --shadow-card: 0 1px 2px rgb(16 42 92 / 0.04), 0 8px 26px rgb(16 42 92 / 0.07);
   --shadow-hover: 0 14px 34px rgb(16 42 92 / 0.11);
   --shadow-elevated: 0 24px 64px rgb(16 42 92 / 0.2);
-  /* Local Sukhumvit Set is used when installed. Webfont files must be supplied
-     with permission to embed; do not silently substitute another named font. */
-  --font-app: 'Sukhumvit Set', Tahoma, Arial, sans-serif;
+  /* Self-hosted OFL UI fonts. Document metrics use their own family below. */
+  --font-app: 'Inter', 'Noto Sans Thai', system-ui, sans-serif;
   --font-document: 'TH Sarabun New', Tahoma, Arial, sans-serif;
   --font-mono: var(--font-app);
   --font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -126,6 +130,11 @@
   color-scheme: dark;
   --color-bg: #071429;
   --color-surface: #0d1e38;
+  --color-glass: rgb(13 30 56 / 0.86);
+  --color-glass-border: rgb(189 232 250 / 0.12);
+  --color-sidebar: #0c2038;
+  --color-sidebar-active: #173e65;
+  --color-aurora-glow: rgb(40 125 179 / 0.12);
   --color-surface-secondary: #12294a;
   --color-surface-green: #153764;
   --color-border: rgb(255 255 255 / 0.08);
@@ -134,8 +143,8 @@
   --color-text-secondary: #c1cde0;
   --color-text-muted: #a9b9d2;
   --color-heading: #eaf2ff;
-  --color-action: #5f8fd1;
-  --color-action-hover: #91b8eb;
+  --color-action: #78c6ea;
+  --color-action-hover: #bde8fa;
   --color-action-soft: #153764;
   --color-success: #4ade80;
   --color-success-soft: rgb(74 222 128 / 0.12);
@@ -166,7 +175,7 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-app);
-  font-size: 1rem;
+  font-size: var(--ui-body-size, 0.9375rem);
   line-height: 1.6;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -233,7 +242,8 @@ textarea:focus-visible,
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 92% 2%, rgb(75 123 224 / 0.08), transparent 23rem),
+    radial-gradient(ellipse at 90% 0%, var(--color-aurora-glow), transparent 42rem),
+    radial-gradient(ellipse at 5% 90%, var(--color-aurora-glow), transparent 34rem),
     var(--color-bg);
 }
 
@@ -250,7 +260,7 @@ textarea:focus-visible,
 
 .app-topbar {
   border-color: var(--color-border) !important;
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent) !important;
+  background: var(--color-glass);
   box-shadow: 0 1px 0 rgb(11 27 54 / 0.035);
   backdrop-filter: blur(14px);
 }
@@ -345,15 +355,13 @@ textarea:focus-visible,
 
 /* Shared cards, controls and interaction -------------------------------- */
 .life-app [data-ui='card'],
-.life-app [data-ui='data-table'],
 .life-public [data-ui='card'],
-.life-public [data-ui='data-table'],
 .public-sheet,
 .public-auth-panel {
-  border-color: var(--color-border) !important;
-  border-radius: var(--radius-card) !important;
-  background: var(--color-surface) !important;
-  box-shadow: var(--shadow-card) !important;
+  border-color: var(--color-glass-border);
+  border-radius: var(--radius-card);
+  background: var(--color-glass);
+  box-shadow: var(--shadow-card);
 }
 
 .life-app [data-ui='card'],
@@ -362,11 +370,11 @@ textarea:focus-visible,
   transition: border-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
 }
 
-.life-app [data-ui='card']:hover,
-.life-public [data-ui='card']:hover,
-.public-sheet:hover {
-  border-color: var(--life-green-300) !important;
-  box-shadow: var(--shadow-hover) !important;
+.life-app a [data-ui='card']:hover,
+.life-public a [data-ui='card']:hover,
+[data-ui='card'][role='button']:hover {
+  border-color: var(--life-green-300);
+  box-shadow: var(--shadow-hover);
 }
 
 .life-app :where(button, [role='button'], a[href]),
@@ -420,7 +428,7 @@ textarea:focus-visible,
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  min-height: 154px;
+  min-height: 112px;
   border-color: transparent;
   background: linear-gradient(120deg, var(--life-green-900) 0%, var(--life-green-600) 58%, var(--life-green-400) 100%);
   color: #fff;
@@ -476,7 +484,7 @@ textarea:focus-visible,
   border-color: var(--color-border) !important;
   color: var(--color-text-secondary) !important;
   font-family: var(--font-mono);
-  font-size: max(16px, 1rem);
+  font-size: var(--ui-note-size);
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
@@ -887,14 +895,6 @@ textarea:focus-visible,
   .form-page-stack { display: block !important; gap: 0 !important; }
   #report-print-area > *,
   #report-print-area .rounded-2xl { break-inside: avoid; box-shadow: none !important; }
-}
-
-/* The desktop workspace uses a denser baseline while retaining the user's A-/A+ preference. */
-@media (min-width: 1280px) {
-  html { font-size: calc(93.75% * var(--font-scale)); }
-  .life-app { --ui-card-padding: 1.2rem; --ui-page-gutter: 1.5rem; --ui-section-gap: 1.4rem; }
-  .life-app.life-app #main-content { padding-block: 1.15rem; }
-  .life-app [data-ui='data-table'] tbody td { padding-block: 0.55rem; }
 }
 
 .detail-route-modal { max-width: min(94vw, 1600px); }

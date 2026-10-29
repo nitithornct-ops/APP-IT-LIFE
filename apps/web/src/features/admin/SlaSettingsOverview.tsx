@@ -92,7 +92,7 @@ export function SlaImpactPanel({ data }: { data: SlaImpactResponse }) {
           <ImpactMetric label="เสี่ยง ≥70%" current={metricProps(data.current, 'atRisk')} proposed={metricProps(data.proposed, 'atRisk')} tone="border-amber-200 bg-white text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" icon={<Clock3 className="h-4 w-4" />} />
           <ImpactMetric label="ปลอดภัย" current={metricProps(data.current, 'safe')} proposed={metricProps(data.proposed, 'safe')} tone="border-teal-200 bg-white text-teal-700 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-200" icon={<CheckCircle2 className="h-4 w-4" />} />
         </div>
-        <div className="mt-3 space-y-2 rounded-xl border border-primary-100 bg-white/80 p-3 text-xs dark:border-primary-900 dark:bg-slate-900/60">
+        <div data-ui="card" className="mt-3 space-y-2 rounded-xl border border-primary-100 bg-white/80 p-3 text-xs dark:border-primary-900 dark:bg-slate-900/60">
           <p className="flex items-center justify-between gap-3"><span className="text-slate-500">กำหนดเสร็จเปลี่ยน</span><strong className="font-mono text-slate-800 dark:text-white">{data.changes.deadlineChanged}</strong></p>
           <p className="flex items-center justify-between gap-3"><span className="text-slate-500">เกิน SLA เพิ่มทันที</span><strong className={`font-mono ${data.changes.newlyOverdue ? 'text-red-600' : 'text-teal-600'}`}>{data.changes.newlyOverdue}</strong></p>
           <p className="flex items-center justify-between gap-3"><span className="text-slate-500">เข้าสู่กลุ่มเสี่ยงใหม่</span><strong className={`font-mono ${data.changes.newlyAtRisk ? 'text-amber-600' : 'text-teal-600'}`}>{data.changes.newlyAtRisk}</strong></p>

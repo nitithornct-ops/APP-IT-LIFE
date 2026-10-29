@@ -4,9 +4,9 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import type { ExecutiveServiceAnalytics as Analytics } from '../../types/dashboard';
 import { formatThaiDateTime } from '../../utils/date';
 
-const HEAT_COLORS = ['#EEF1F7', '#DCE6F9', '#CFDDF7', '#8FB0EE', '#4B7BE0', '#173A8A'];
-const STATUS_COLORS = ['#1D4ED8', '#4B7BE0', '#D97706', '#F2CF9C', '#0F766E', '#94A3B8'];
-const AGE_COLORS = ['#1D4ED8', '#4B7BE0', '#D97706', '#DC2626'];
+const HEAT_COLORS = ['var(--color-surface-secondary)', 'var(--life-green-100)', 'var(--life-green-200)', 'var(--life-green-300)', 'var(--life-green-500)', 'var(--life-green-800)'];
+const STATUS_COLORS = ['var(--color-action)', 'var(--life-green-400)', 'var(--color-warning)', 'var(--life-gold)', 'var(--color-info)', 'var(--color-text-muted)'];
+const AGE_COLORS = ['var(--color-action)', 'var(--life-green-400)', 'var(--color-warning)', 'var(--color-danger)'];
 
 function valueOrDash(value: number | null, suffix = ''): string {
   return value === null ? '—' : `${value.toLocaleString('th-TH')}${suffix}`;

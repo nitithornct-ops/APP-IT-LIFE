@@ -715,7 +715,7 @@ export function DataTable({
             '[&_thead]:h-8 [&_thead]:bg-surface-header [&_thead]:text-xs [&_thead]:font-semibold [&_thead]:text-ink-muted dark:[&_thead]:bg-white/[.028] dark:[&_thead]:text-white/45',
             '[&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-hairline [&_th]:px-[13px] [&_th]:py-1.5 dark:[&_th]:border-white/[.07]',
             '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-primary-50/50 dark:[&_tbody_tr:hover]:bg-slate-700/40',
-            '[&_td]:min-h-11 [&_td]:border-b [&_td]:border-hairline-row [&_td]:px-4 [&_td]:py-3 [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-white/[.07]',
+            '[&_td]:h-[var(--ui-row-height)] [&_td]:border-b [&_td]:border-hairline-row [&_td]:px-4 [&_td]:py-[var(--ui-cell-padding)] [&_tbody_tr:last-child_td]:border-b-0 dark:[&_td]:border-white/[.07]',
             // thead โปร่งแสงอยู่ ถ้าตรึงไว้เฉย ๆ แถวจะเลื่อนทะลุขึ้นมาเห็นข้างหลัง จึงต้องทึบ
             stickyHeader && '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-card [&_thead_th]:bg-surface-header dark:[&_thead_th]:bg-[#0a1224]',
             // คอลัมน์ที่ตรึงไว้ต้องทึบและเปลี่ยนสีตามแถวด้วย ไม่งั้น hover จะดูเหมือนตารางแตกเป็นสองส่วน
