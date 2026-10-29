@@ -52,12 +52,12 @@ export function FilterBar({
   return (
     <form
       data-ui="filter-bar"
-      className={cn('rounded-card border border-hairline bg-white p-4 shadow-card dark:border-white/[.08] dark:bg-white/[.035]', className)}
+      className={cn('rounded-card border border-hairline bg-white p-[var(--ui-card-padding)] shadow-card dark:border-white/[.08] dark:bg-white/[.035]', className)}
       onSubmit={handleSubmit}
       role="search"
     >
       <div className="filter-bar-controls grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(200px,1fr)_minmax(0,2fr)]">
-        <label className="relative min-w-0 flex-1 xl:max-w-sm">
+        <label className="relative min-w-0 flex-1">
           <span className="sr-only">{searchLabel}</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input

@@ -9,10 +9,10 @@
   --ui-body-size: 1rem;
   --ui-note-size: 0.875rem;
   --ui-label-gap: 0.5rem;
-  --ui-field-gap: 1.25rem;
-  --ui-section-gap: 1.75rem;
-  --ui-card-padding: 1.5rem;
-  --ui-page-gutter: 2rem;
+  --ui-field-gap: 16px;
+  --ui-section-gap: 24px;
+  --ui-card-padding: 24px;
+  --ui-page-gutter: 24px;
   --ui-control-height: 2.75rem;
 }
 
@@ -105,6 +105,7 @@
 [data-ui='kpi-strip'] {
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-section-gap);
 }
 
 [data-ui='kpi-strip'] > * {
@@ -168,7 +169,17 @@
 
 [data-ui='filter-bar'] .filter-bar-fields > * {
   flex: 1 1 160px;
-  max-width: none;
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-ui='filter-bar'] .filter-bar-controls {
+  column-gap: var(--ui-field-gap);
+  row-gap: var(--ui-field-gap);
+}
+
+[data-ui='filter-bar'] .filter-bar-controls > * {
+  min-width: 0;
 }
 
 [data-ui='filter-bar'] :is(input, select) {
@@ -222,6 +233,8 @@
 }
 
 @media (max-width: 639px) {
+  [data-ui='kpi-strip'] { gap: 12px; }
+
   [data-ui='kpi-strip'][data-variant='default'] > * {
     min-height: 100px;
     gap: 8px;
@@ -244,7 +257,7 @@
 }
 
 /* Form grids opt in explicitly; document contents retain their print metrics. */
-.life-app #main-content { padding: 1.5rem var(--ui-page-gutter); }
+.life-app #main-content { padding: var(--ui-section-gap) var(--ui-page-gutter); }
 
 .life-page-header,
 .module-page-content[data-module-themed='true'] > :first-child > :first-child:not(.life-page-header):has(.life-page-title),
@@ -253,6 +266,8 @@
 }
 
 [data-ui='form-grid'] { gap: var(--ui-field-gap); min-width: 0; }
+[data-ui='form-grid'] > :not(legend) { min-width: 0; max-width: 100%; }
+[data-ui='form-grid'] :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { max-width: 100%; }
 [data-ui='form-stack'] > * + * { margin-top: var(--ui-section-gap); }
 
 :is(.life-app, .life-public, [data-ui='modal']) label:has(> input:not([type='checkbox']):not([type='radio']), > select, > textarea):not(:has(> .sr-only), .form-document *, .form-page-sheet *, [data-ui='filter-bar'] *) {
@@ -299,12 +314,13 @@
 
 @media (max-width: 639px) {
   :root {
-    --ui-card-padding: 1.25rem;
-    --ui-page-gutter: 1rem;
-    --ui-section-gap: 1.5rem;
+    --ui-card-padding: 16px;
+    --ui-page-gutter: 16px;
+    --ui-section-gap: 20px;
+    --ui-field-gap: 16px;
   }
   .life-app #main-content {
-    padding: 1rem var(--ui-page-gutter) calc(7rem + env(safe-area-inset-bottom)) !important;
+    padding: var(--ui-section-gap) var(--ui-page-gutter) calc(7rem + env(safe-area-inset-bottom)) !important;
   }
   [data-ui='form-grid'] { grid-template-columns: minmax(0, 1fr); }
   [data-ui='form-grid'] > * { grid-column: 1 / -1; }
