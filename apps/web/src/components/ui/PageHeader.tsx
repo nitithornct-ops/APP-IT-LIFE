@@ -28,10 +28,10 @@ export function PageHeader({
   variant = 'default',
 }: PageHeaderProps) {
   return (
-    <header className={cn('life-page-header flex flex-col justify-between gap-3 lg:flex-row lg:items-center', variant === 'hero' && 'life-page-header--hero')}>
+    <header className={cn('life-page-header flex flex-col justify-between gap-4 lg:flex-row lg:flex-wrap lg:items-center', variant === 'hero' && 'life-page-header--hero')}>
       <PageTitle eyebrow={eyebrow} title={title} description={description} meta={meta} leading={leading} variant={variant} />
       {(secondaryActions || primaryAction) && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 lg:ml-auto lg:justify-end">
           {secondaryActions}
           {primaryAction}
         </div>
