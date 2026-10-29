@@ -38,7 +38,7 @@ describe('Modal', () => {
     );
 
     const content = screen.getByRole('dialog', { name: 'Form' }).querySelector('[data-modal-content]');
-    expect(content).toHaveClass('px-5', 'py-5', 'sm:px-6', 'sm:py-6');
+    expect(content).toHaveClass('p-[var(--ui-modal-padding)]');
   });
 
   it('allows full-bleed form content when a module explicitly requests it', () => {

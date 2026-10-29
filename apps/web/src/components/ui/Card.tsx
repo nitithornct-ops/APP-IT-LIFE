@@ -21,7 +21,7 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
     <div
       data-ui="card-header"
       className={cn(
-        'border-b border-hairline-row px-[var(--ui-card-padding)] py-4 text-lg font-semibold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
+        'border-b border-hairline-row p-[var(--ui-card-padding)] text-lg font-semibold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
         className,
       )}
       {...rest}
@@ -37,7 +37,7 @@ export function CardFooter({ className, ...rest }: HTMLAttributes<HTMLDivElement
   return (
     <div
       className={cn(
-        'rounded-b-card border-t border-slate-100 bg-slate-50/70 px-[var(--ui-card-padding)] py-4 dark:border-slate-700 dark:bg-slate-900/40',
+        'rounded-b-card border-t border-slate-100 bg-slate-50/70 p-[var(--ui-card-padding)] dark:border-slate-700 dark:bg-slate-900/40',
         className,
       )}
       {...rest}

@@ -9,16 +9,20 @@
   --ui-body-size: 0.9375rem;
   --ui-table-size: 0.875rem;
   --ui-row-height: 44px;
-  --ui-row-action-height: 32px;
+  --ui-row-action-height: 44px;
   --ui-cell-padding: 10px;
   --ui-note-size: 0.8125rem;
-  --ui-label-gap: 0.375rem;
-  --ui-field-gap: 1rem;
-  --ui-section-gap: 0.75rem;
-  --ui-card-padding: 1rem;
-  --ui-page-gutter: 1.5rem;
-  --ui-control-height: 40px;
-  --ui-gap: 12px;
+  --ui-label-gap: 8px;
+  --ui-field-gap: 16px;
+  --ui-section-gap: 24px;
+  --ui-card-gap: 24px;
+  --ui-card-padding: 24px;
+  --ui-page-gutter: 32px;
+  --ui-control-height: 44px;
+  --ui-button-gap: 8px;
+  --ui-modal-padding: 24px;
+  --ui-cell-padding-inline: 12px;
+  --ui-gap: 16px;
 }
 
 .dark {
@@ -28,21 +32,18 @@
 /* Density changes spacing only; A−/A+ remains the sole font scale control. */
 :root[data-density='compact'] {
   --ui-row-height: 36px;
-  --ui-row-action-height: 24px;
   --ui-cell-padding: 6px;
   --ui-card-padding: 12px;
   --ui-section-gap: 8px;
   --ui-field-gap: 12px;
   --ui-gap: 8px;
-  --ui-control-height: 36px;
 }
 
 :root[data-density='comfortable'] {
   --ui-row-height: 52px;
-  --ui-row-action-height: 40px;
   --ui-cell-padding: 14px;
   --ui-card-padding: 24px;
-  --ui-section-gap: 20px;
+  --ui-section-gap: 24px;
   --ui-field-gap: 20px;
   --ui-gap: 20px;
   --ui-control-height: 44px;
@@ -160,11 +161,15 @@
 [data-ui='kpi-strip'] {
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-card-gap);
 }
 
 [data-ui='kpi-strip'] > * {
   min-width: 0;
+  padding: var(--ui-card-padding);
 }
+
+[data-ui='kpi-value'], [data-ui='kpi-label'], [data-ui='kpi-note'] { overflow-wrap: anywhere; }
 
 [data-ui='kpi-strip'][data-variant='default'] > *,
 [data-ui='stat'] {
@@ -205,6 +210,9 @@
   font-family: var(--font-app);
   line-height: 1.5;
   text-wrap: pretty;
+  max-width: 100%;
+  gap: var(--ui-button-gap);
+  overflow-wrap: anywhere;
 }
 
 [data-ui='button'] > svg {
@@ -223,8 +231,12 @@
 
 [data-ui='filter-bar'] .filter-bar-fields > * {
   flex: 1 1 160px;
-  max-width: none;
+  min-width: 0;
+  max-width: 100%;
 }
+
+[data-ui='filter-bar'] .filter-bar-controls { gap: var(--ui-field-gap); }
+[data-ui='filter-bar'] .filter-bar-controls > * { min-width: 0; }
 
 [data-ui='filter-bar'] :is(input, select) {
   font-size: var(--ui-body-size);
@@ -235,7 +247,7 @@
 }
 
 [data-ui='modal'] > footer {
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-bottom: max(var(--ui-modal-padding), env(safe-area-inset-bottom));
 }
 
 [role='combobox'] {
@@ -299,7 +311,15 @@
 }
 
 /* Form grids opt in explicitly; document contents retain their print metrics. */
-.life-app #main-content { padding: var(--ui-card-padding) var(--ui-page-gutter); }
+.life-app #main-content { padding: var(--ui-section-gap) var(--ui-page-gutter); }
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  :root { --ui-page-gutter: 24px; }
+}
+
+@media (min-width: 1024px) {
+  .life-app .app-topbar { padding-inline: var(--ui-page-gutter); }
+}
 
 .life-page-header,
 .module-page-content[data-module-themed='true'] > :first-child > :first-child:not(.life-page-header):has(.life-page-title),
@@ -308,6 +328,8 @@
 }
 
 [data-ui='form-grid'] { gap: var(--ui-field-gap); min-width: 0; }
+[data-ui='form-grid'] > :not(legend) { min-width: 0; max-width: 100%; }
+[data-ui='form-grid'] :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { max-width: 100%; }
 [data-ui='form-stack'] > * + * { margin-top: var(--ui-section-gap); }
 
 :is(.life-app, .life-public, [data-ui='modal']) label:has(> input:not([type='checkbox']):not([type='radio']), > select, > textarea):not(:has(> .sr-only), .form-document *, .form-page-sheet *, [data-ui='filter-bar'] *) {
@@ -354,12 +376,13 @@
 
 @media (max-width: 639px) {
   :root {
-    --ui-card-padding: 1rem;
-    --ui-page-gutter: 1rem;
-    --ui-section-gap: 1rem;
+    --ui-card-padding: 16px;
+    --ui-page-gutter: 16px;
+    --ui-section-gap: 20px;
+    --ui-card-gap: 12px;
   }
   .life-app #main-content {
-    padding: 1rem var(--ui-page-gutter) calc(7rem + env(safe-area-inset-bottom)) !important;
+    padding: var(--ui-section-gap) var(--ui-page-gutter) calc(7rem + env(safe-area-inset-bottom));
   }
   [data-ui='form-grid'] { grid-template-columns: minmax(0, 1fr); }
   [data-ui='form-grid'] > * { grid-column: 1 / -1; }
