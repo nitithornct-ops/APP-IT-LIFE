@@ -43,6 +43,9 @@ Follow-up source: `components/table/data-table.css` and `pages/VendorPortalPage.
 | All navigation module recovery surfaces | 43 passed: each at all 9 viewports × light/dark (774 geometry checks) |
 | Complete Chromium suite | 220 passed, 30 live-only skipped, 0 failed, 0 flaky |
 | WebKit login and Ticket interaction suite | 10 passed |
+| Final complete browser suite after visual fixes (`72f5a37`, all projects) | 233 passed, 30 live-only skipped, 0 failed, 0 flaky |
+| GitHub PR Checks and CodeQL after visual fixes (`72f5a37`) | Passed; PR Checks includes coverage, typecheck, lint, build, budgets, dependency audit, browser smoke and migration dry-run gate |
+| Staging Live E2E after visual fixes (`72f5a37`) | 263 passed, 0 failed, 0 skipped; all 30 live-only Chromium cases passed |
 
 Viewports: 1920×1080, 1600×900, 1440×900, 1366×768, 1280×800, 1024×768, 768×1024, 390×844, 375×812. Browser zoom is the default 100%; UI font scaling is tested separately. On mobile the sidebar preference is stored, while the drawer follows its existing responsive behavior.
 
@@ -52,8 +55,12 @@ Screenshots: [desktop before](fullhd-evidence/before-1920.png), [desktop after](
 
 ## Live UAT and release status
 
-The existing [30 live-only Chromium cases](fullhd-live-uat-cases.md) require the configured staging environment and real API/database. Local `.dev.vars` says `development`, which alone does not establish database isolation, so it was not used for live writes. [Draft PR #87](https://github.com/nitithornct-ops/APP-IT-LIFE/pull/87) triggered [Staging Live E2E](https://github.com/nitithornct-ops/APP-IT-LIFE/actions/runs/40813675957), bound to GitHub environment `staging`, for source commit `e946491`. Record the actual workflow result before sign-off.
+The [30 live-only Chromium cases](fullhd-live-uat-cases.md) passed against the configured staging API/database. Local `.dev.vars` says `development`, which alone does not establish database isolation, so it was not used for live writes. [Draft PR #87](https://github.com/nitithornct-ops/APP-IT-LIFE/pull/87) triggered the existing workflow bound to GitHub environment `staging`.
+
+Final source validation: [Staging Live E2E run 40815047128](https://github.com/nitithornct-ops/APP-IT-LIFE/actions/runs/40815047128) on `72f5a37d5b9d4bad8183cba71fd94497424a6e6f` passed 263 tests in 16.9 minutes. Its result verification gate confirmed 263 tests and zero skips. The completed job log contains a passing result for every one of the 30 live-only cases; [sanitized machine-readable results](fullhd-live-uat-result.json) retain only test names, source commit and aggregate outcomes. The full staging-e2e-evidence artifact is available from the workflow run. [PR Checks](https://github.com/nitithornct-ops/APP-IT-LIFE/actions/runs/40815047130) and [CodeQL](https://github.com/nitithornct-ops/APP-IT-LIFE/actions/runs/40815047151) also passed on that source.
+
+The earlier staging run on `e946491` also passed 263/263. The initial PR browser run exposed the Vendor contrast defect recorded above; the final source checks passed after the focused fix. Later documentation/evidence commits do not change application or test source; the results above explicitly identify the verified source commit.
 
 Recovery tests deliberately return API 503 and cover each navigation entry's shell/error rendering. They do not validate success workflows, every detail/create state, every permission combination, LINE delivery or vendor submissions. Ticket success/create/validation uses API fixtures, not live data. Route declarations and navigation coverage are inventoried in [the route inventory](aurora/route-inventory.md); dynamically identified routes require corresponding authorized records and separate UAT.
 
-**Workflow sign-off remains pending live UAT evidence. Production has not been deployed by this work.**
+**The listed 30 automated live UAT cases passed. This is not a claim that every possible business workflow or external delivery channel was tested. The PR remains available for review; no merge or production deployment was performed.**

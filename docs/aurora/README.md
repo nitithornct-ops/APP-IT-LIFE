@@ -1,5 +1,7 @@
 # Aurora Sky Glass — implementation and verification
 
+> เอกสารนี้เป็นบันทึกงาน Aurora ก่อนรอบ Full HD ค่า spacing/density และสถานะ UAT ด้านล่างเป็นผล ณ รอบนั้น มาตรฐานและผลตรวจล่าสุดอยู่ใน [Full HD verification](../fullhd-standardization-2026-10-29.md) และ [ผล live UAT รายกรณี](../fullhd-live-uat-cases.md)
+
 วันที่: 29 ตุลาคม 2026 · Branch: `feat/aurora-sky-glass-20261029`
 
 งานนี้แก้ source ของ LIFE IT Smart Service Center ในระบบเดิม ใช้ React/TypeScript/Vite และ component เดิม ไม่เพิ่ม runtime dependency และไม่ deploy production
