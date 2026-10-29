@@ -275,7 +275,7 @@ textarea:focus-visible,
 
 .module-page-content {
   width: 100%;
-  max-width: 1800px;
+  max-width: 1680px;
   margin-inline: auto;
   animation: life-page-enter 180ms ease-out both;
 }
@@ -892,9 +892,14 @@ textarea:focus-visible,
 /* The desktop workspace uses a denser baseline while retaining the user's A-/A+ preference. */
 @media (min-width: 1280px) {
   html { font-size: calc(93.75% * var(--font-scale)); }
-  .life-app { --ui-card-padding: 1.2rem; --ui-page-gutter: 1.5rem; --ui-section-gap: 1.4rem; }
-  .life-app.life-app #main-content { padding-block: 1.15rem; }
+  .life-app { --ui-card-padding: 20px; --ui-page-gutter: 24px; --ui-section-gap: 24px; --ui-field-gap: 16px; }
+  .life-app.life-app #main-content { padding-block: var(--ui-section-gap); }
   .life-app [data-ui='data-table'] tbody td { padding-block: 0.55rem; }
+}
+
+/* Full-HD desktop is the reference layout: equal gutters and shared card spacing. */
+@media (min-width: 1600px) {
+  .life-app { --ui-page-gutter: 32px; --ui-card-padding: 24px; }
 }
 
 .detail-route-modal { max-width: min(94vw, 1600px); }
