@@ -252,11 +252,11 @@ export function HomePage() {
     <div className="space-y-3" data-testid="dashboard-page">
       {/* แสดงเหนือทุกอย่างเฉพาะบัญชีที่ยังไม่เคยปิด — ตัวการ์ดเป็นผู้ตัดสินใจเองว่าจะแสดงหรือไม่ */}
       <OnboardingCard />
-      <section className="rounded-[13px] border border-hairline bg-white px-5 py-5 shadow-card dark:border-white/[.08] dark:bg-white/[.035] sm:px-[26px] sm:py-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <section className="life-page-header dashboard-overview">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-4xl">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-primary-700 dark:text-primary-300">{copy.eyebrow} · {formatThaiDate(new Date().toISOString(), 'd MMM yyyy')} {dashboard.data && <Freshness generatedAt={dashboard.data.generatedAt} className="font-normal normal-case tracking-normal" />}</p>
-            <h1 className="mt-3 text-[30px] font-extrabold leading-[1.22] text-ink-heading [text-wrap:pretty] dark:text-[#e8eef9] sm:text-[40px]">
+            <h1 className="mt-2 text-[26px] font-semibold leading-[1.5] text-ink-heading [text-wrap:pretty] dark:text-[#e8eef9]">
               วันนี้มี <span className={dashboard.data?.alertCount ? 'text-danger-700 dark:text-red-300' : 'text-primary-700 dark:text-primary-300'}>{dashboard.data?.alertCount ?? '—'} เรื่อง</span> ที่ควรจัดการก่อนงานอื่น
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-white/45">สวัสดี {me?.profile.full_name?.split(' ')[0] ?? 'ผู้ใช้งาน'} — {copy.title} พร้อมสรุปสิ่งที่ทำต่อได้จากข้อมูลจริงตามสิทธิ์ของคุณ</p>
@@ -267,7 +267,7 @@ export function HomePage() {
             <Button size="sm" variant="outline" onClick={exportDashboard} disabled={!dashboard.data || dashboard.data.upcoming.length === 0}><Download className="h-4 w-4" aria-hidden="true" />ส่งออกรายงาน</Button>
           </div>
         </div>
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-hairline-row pt-3 dark:border-white/[.07]">
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-hairline-row pt-3 dark:border-white/[.07]">
           <div className="flex rounded-[8px] bg-surface-muted p-0.5 dark:bg-white/[.07]" role="group" aria-label="ช่วงติดตามล่วงหน้า">
             {LEAD_OPTIONS.map((option) => (
               <button key={option.value} type="button" onClick={() => setLeadDays(option.value)} aria-pressed={leadDays === option.value} className={`min-h-8 min-w-14 rounded-[6px] px-3 text-[11.5px] font-semibold ${leadDays === option.value ? 'bg-white text-primary-700 shadow-sm dark:bg-white/[.1] dark:text-primary-300' : 'text-slate-500 hover:text-primary-700 dark:text-white/45'}`}>{option.label}</button>

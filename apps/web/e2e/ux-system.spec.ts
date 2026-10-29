@@ -16,6 +16,7 @@ for (const width of [390, 768, 1440]) {
       // Mobile exposes the same persistent scale through the account menu.
       if (width < 640) await page.getByRole('button', { name: 'บัญชีผู้ใช้', exact: true }).click();
       const baseFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+      const baseBodySize = await page.evaluate(() => parseFloat(getComputedStyle(document.body).fontSize));
       const increase = page.getByRole('button', { name: 'เพิ่มขนาดตัวอักษร', exact: true }).filter({ visible: true });
       await increase.click();
       await increase.click();
@@ -30,7 +31,7 @@ for (const width of [390, 768, 1440]) {
       await expect(dialog.getByRole('button', { name: 'เปิด Ticket', exact: true })).toBeInViewport();
       const field = dialog.getByLabel(/หัวข้อปัญหา/);
       await expect(field).toBeFocused();
-      expect(await field.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(Math.floor(baseFontSize * 1.2));
+      expect(await field.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(Math.floor(baseBodySize * 1.2));
       expect(await field.evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
       await page.screenshot({ path: testInfo.outputPath(`create-${width}-${theme}-120.png`) });
       await page.keyboard.press('Escape');

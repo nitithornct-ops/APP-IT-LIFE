@@ -70,15 +70,15 @@ for (const width of [320, 390]) {
 }
 
 for (const width of [1024, 1440]) {
-  test(`desktop shell at ${width}px retains a 4rem collapsed menu and clear account actions`, async ({ page }, testInfo) => {
+  test(`desktop shell at ${width}px retains a 68px collapsed menu and clear account actions`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/tickets');
     await expect(page.getByRole('link', { name: ticket.title, exact: true })).toBeVisible();
     const sidebar = page.locator('#app-sidebar');
-    await expect(sidebar).toHaveCSS('width', '240px');
+    await expect(sidebar).toHaveCSS('width', '244px');
     await expectPageFits(page);
     await page.getByRole('button', { name: 'ย่อเมนู', exact: true }).click();
-    const collapsedWidth = width >= 1280 ? 60 : 64;
+    const collapsedWidth = 68;
     await expect(sidebar).toHaveCSS('width', `${collapsedWidth}px`);
     await expect(page.locator('.app-topbar')).toHaveCSS('min-height', '64px');
     await expect(sidebar.locator('a[href="/tickets"]')).toBeVisible();
@@ -86,7 +86,7 @@ for (const width of [1024, 1440]) {
     expect(main!.x).toBe(collapsedWidth);
     await page.screenshot({ path: testInfo.outputPath(`shell-collapsed-${width}.png`) });
     await page.getByRole('button', { name: 'ขยายเมนู', exact: true }).click();
-    await expect(sidebar).toHaveCSS('width', '240px');
+    await expect(sidebar).toHaveCSS('width', '244px');
     await expectPageFits(page);
     await page.getByRole('button', { name: 'บัญชีผู้ใช้', exact: true }).click();
     await expect(page.getByRole('button', { name: 'ออกจากระบบ', exact: true })).toBeVisible();

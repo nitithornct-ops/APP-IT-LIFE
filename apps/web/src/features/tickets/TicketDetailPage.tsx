@@ -545,7 +545,7 @@ export function TicketDetailPage() {
         primaryAction={canReopen ? <ReopenButton ticketId={ticket.id} /> : undefined}
       />
 
-      <section aria-label="ความคืบหน้าการแจ้งซ่อม" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <section data-ui="card" aria-label="ความคืบหน้าการแจ้งซ่อม" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
         <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {TICKET_FLOW_STEPS.map((step, index) => <li key={step.label} aria-current={!isTicketFlowInterrupted(ticket.status) && index === getTicketFlowIndex(ticket.status, ticket.worklogs) ? 'step' : undefined} className={`rounded-lg px-3 py-2 text-sm ${index <= getTicketFlowIndex(ticket.status, ticket.worklogs) ? 'bg-primary-50 text-primary-800 dark:bg-primary-950 dark:text-primary-200' : 'bg-slate-50 text-slate-500 dark:bg-slate-900'}`}><span className="font-semibold">{index + 1}. {step.label}</span></li>)}
         </ol>

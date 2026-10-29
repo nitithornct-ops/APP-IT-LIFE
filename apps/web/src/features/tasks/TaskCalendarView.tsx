@@ -143,7 +143,7 @@ export function TaskCalendarView({ tasks, onSelect, onCreate }: { tasks: Task[];
   });
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-card dark:border-slate-700 dark:bg-slate-800 sm:p-4" data-testid="task-calendar-view">
+    <section data-ui="card" className="rounded-lg border border-slate-200 bg-white p-3 shadow-card dark:border-slate-700 dark:bg-slate-800 sm:p-4" data-testid="task-calendar-view">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-slate-500 dark:text-slate-400">เลือกชื่องานเพื่อดูรายละเอียด หรือลากงานเพื่อเปลี่ยนวันครบกำหนด</p>
         <div className="flex flex-wrap items-center gap-2">

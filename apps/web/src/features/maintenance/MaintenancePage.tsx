@@ -604,7 +604,7 @@ export function MaintenancePage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
+      <section data-ui="card" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
         {view === 'list' ? (
           <>
             <div className="p-3">

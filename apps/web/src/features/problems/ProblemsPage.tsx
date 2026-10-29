@@ -324,7 +324,7 @@ function PublishKnownErrorButton({ item, canManage }: { item: KnownError; canMan
 }
 
 function CompactEmpty({ children }: { children: string }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-card dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{children}</div>;
+  return <div data-ui="card" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-card dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{children}</div>;
 }
 
 export function ProblemsPage() {

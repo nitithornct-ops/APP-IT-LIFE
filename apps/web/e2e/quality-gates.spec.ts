@@ -28,6 +28,7 @@ test('login passes the accessibility and responsive layout gate', async ({ page 
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
     .analyze();
   expect(accessibility.violations, JSON.stringify(accessibility.violations, null, 2)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('login-actual.png'), fullPage: true });
 
   // WebKit is the cross-engine functional/accessibility gate. Chromium's three
   // fixed viewports additionally provide committed visual-regression baselines.

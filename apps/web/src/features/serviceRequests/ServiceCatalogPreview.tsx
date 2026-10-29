@@ -76,7 +76,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function metadataCard(label: string, value: ReactNode, icon: ReactNode) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/50">
+    <div data-ui="card" className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/50">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {icon}
         <span>{label}</span>

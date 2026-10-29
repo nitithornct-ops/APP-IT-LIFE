@@ -5,10 +5,14 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { App } from './App';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './index.css';
+import './styles/fonts.css';
 import './styles/system.css';
 import { AuthProvider } from './stores/authContext';
 import { ThemeProvider } from './stores/themeContext';
 import { ToastProvider } from './components/ui/Toast';
+import { initializeDensity } from './stores/density';
+
+initializeDensity();
 
 if ('serviceWorker' in navigator) {
   void navigator.serviceWorker.register('/sw.js').catch(() => undefined);

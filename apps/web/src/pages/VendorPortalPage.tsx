@@ -10,7 +10,7 @@ import { clearVendorSessionToken, vendorPortalApiFetch } from '../services/vendo
 import type { VendorPortalProfile, VendorPortalTicket, VendorPortalTicketDetail } from '../types/vendorPortal';
 import { formatThaiDate } from '../utils/date';
 
-const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100';
+const fieldClass = 'mt-1 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100';
 const emptyWorkForm = {
   vendorIssueNo: '', slaCategory: 'Minor Case', receivedAt: '', workStartedAt: '', workCompletedAt: '',
   receivedDuration: '', workaroundDuration: '', analysisDuration: '', resolutionDuration: '',
@@ -26,7 +26,7 @@ function reviewLabel(status?: string | null): { text: string; className: string 
   if (status === 'Accepted') return { text: 'IT ตรวจรับแล้ว', className: 'bg-emerald-100 text-emerald-800' };
   if (status === 'Revision Requested') return { text: 'ขอให้แก้ไข', className: 'bg-rose-100 text-rose-800' };
   if (status === 'Submitted') return { text: 'รอ IT ตรวจรับ', className: 'bg-amber-100 text-amber-800' };
-  return { text: 'รอบริษัทดำเนินการ', className: 'bg-slate-100 text-slate-600' };
+  return { text: 'รอบริษัทดำเนินการ', className: 'bg-[var(--color-surface-secondary)] text-slate-600' };
 }
 
 export function VendorPortalPage() {
@@ -177,23 +177,23 @@ export function VendorPortalPage() {
     setLoginStep('password'); setMfaFactorId(null); setMfaCode('');
   }
 
-  if (loading && !profile) return <main className="public-portal min-h-screen bg-slate-50"><PublicBrand /><div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></div></main>;
+  if (loading && !profile) return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)]"><PublicBrand /><div className="flex justify-center py-24" role="status"><Loader2 className="h-8 w-8 animate-spin text-primary-600" /></div></main>;
 
-  if (!profile && loginStep === 'mfa') return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  if (!profile && loginStep === 'mfa') return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)] px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
+    <section data-ui="card" className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
       <h1 className="text-xl font-extrabold text-slate-900">ยืนยันตัวตนด้วย MFA</h1>
       <p className="mt-2 text-sm text-slate-500">กรอกรหัส 6 หลักจากแอป Authenticator เพื่อเข้าใช้งาน Vendor Portal</p>
       <form data-ui="form-stack" className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void verifyLoginMfa(); }}>
         <label className="block text-sm font-semibold">รหัส MFA<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className={`${fieldClass} text-center font-mono text-xl tracking-[0.3em]`} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <Button type="submit" className="w-full" isLoading={loggingIn}><ShieldCheck className="h-4 w-4" />ยืนยันและเข้าใช้งาน</Button>
       </form>
       <button type="button" onClick={() => { void supabase.auth.signOut(); setLoginStep('password'); setMfaFactorId(null); setMfaCode(''); }} className="mt-4 w-full text-sm font-semibold text-slate-500">ยกเลิก</button>
     </section>
   </div></main>;
 
-  if (!profile) return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  if (!profile) return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)] px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
+    <section data-ui="card" className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-100 text-primary-700"><Building2 className="h-6 w-6" /></div>
       <h1 className="mt-4 text-xl font-extrabold text-slate-900">Outsource Portal</h1>
       <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบเพื่อดูเฉพาะงานแจ้งซ่อมที่ส่งต่อให้บริษัทของท่าน</p>
@@ -201,7 +201,7 @@ export function VendorPortalPage() {
         <label className="block text-sm font-semibold">รหัสบริษัท<input required autoComplete="organization" value={login.vendorCode} onChange={(e) => setLogin((current) => ({ ...current, vendorCode: e.target.value.toUpperCase() }))} className={fieldClass} placeholder="VND-..." /></label>
         <label className="block text-sm font-semibold">Username<input required autoComplete="username" maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" value={login.username} onChange={(e) => setLogin((current) => ({ ...current, username: e.target.value.toLowerCase() }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่าน<input required type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin((current) => ({ ...current, password: e.target.value }))} className={fieldClass} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <TurnstileWidget ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
         <Button type="submit" className="w-full" isLoading={loggingIn} disabled={!captchaToken}><ShieldCheck className="h-4 w-4" />เข้าสู่ระบบบริษัท</Button>
       </form>
@@ -209,15 +209,15 @@ export function VendorPortalPage() {
   </div></main>;
 
   /* Retired temporary-password screen; invitations are completed on the dedicated Auth/MFA page.
-  if (profile.mustChangePassword) return <main className="public-portal min-h-screen bg-slate-50 px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
-    <section className="mt-6 rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
+  if (profile.mustChangePassword) return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)] px-4 py-8"><div className="mx-auto max-w-md"><PublicBrand />
+    <section className="mt-6 rounded-2xl border border-amber-200 bg-[var(--color-surface)] p-6 shadow-sm">
       <h1 className="text-xl font-extrabold text-slate-900">กรุณาเปลี่ยนรหัสผ่าน</h1>
       <p className="mt-2 text-sm text-slate-600">เพื่อความปลอดภัย กรุณาเปลี่ยนรหัสผ่านเริ่มต้นก่อนใช้งาน Outsource Portal</p>
       <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); void submitPasswordChange(); }}>
         <label className="block text-sm font-semibold">รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={passwordChange.currentPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, currentPassword: e.target.value }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">รหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.newPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, newPassword: e.target.value }))} className={fieldClass} /></label>
         <label className="block text-sm font-semibold">ยืนยันรหัสผ่านใหม่<input required type="password" minLength={8} autoComplete="new-password" value={passwordChange.confirmPassword} onChange={(e) => setPasswordChange((current) => ({ ...current, confirmPassword: e.target.value }))} className={fieldClass} /></label>
-        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
         <Button type="submit" className="w-full" isLoading={changingPassword}>บันทึกรหัสผ่านใหม่</Button>
       </form>
       <button type="button" onClick={() => void logout()} className="mt-4 w-full text-sm font-semibold text-slate-500">ออกจากระบบ</button>
@@ -229,11 +229,11 @@ export function VendorPortalPage() {
     const submission = detail.submission;
     const canSubmit = !submission || submission.review_status === 'Revision Requested';
     const response = submission?.response ?? {};
-    return <main className="public-portal min-h-screen bg-slate-50 px-4 py-6"><div className="mx-auto max-w-4xl">
+    return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)] px-4 py-6"><div className="mx-auto max-w-4xl">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={() => setDetail(null)} className="inline-flex items-center gap-1 text-sm font-bold text-primary-700"><ArrowLeft className="h-4 w-4" />กลับรายการงาน</button><button type="button" onClick={() => void logout()} className="inline-flex items-center gap-1 text-xs text-slate-500"><LogOut className="h-4 w-4" />ออกจากระบบ</button></header>
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="font-mono text-xs font-bold text-primary-700">{detail.ticket.ticket_no}</p><h1 className="mt-1 text-xl font-extrabold text-slate-900">{detail.ticket.title}</h1><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{detail.ticket.ticket_categories?.name ?? 'งาน IT'}</span><span>•</span><span>ความเร่งด่วน {detail.ticket.priority}</span>{detail.ticket.location && <><span>•</span><span>{detail.ticket.location}</span></>}</div><div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap">{detail.ticket.description}</div></section>
+      <section data-ui="card" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"><p className="font-mono text-xs font-bold text-primary-700">{detail.ticket.ticket_no}</p><h1 className="mt-1 text-xl font-extrabold text-slate-900">{detail.ticket.title}</h1><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{detail.ticket.ticket_categories?.name ?? 'งาน IT'}</span><span>•</span><span>ความเร่งด่วน {detail.ticket.priority}</span>{detail.ticket.location && <><span>•</span><span>{detail.ticket.location}</span></>}</div><div className="mt-4 rounded-xl bg-[var(--color-surface-secondary)] p-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap">{detail.ticket.description}</div></section>
       {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-700">{error}</p>}
-      {!canSubmit && submission ? <section className="mt-4 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm"><p className="flex items-center gap-2 font-bold text-emerald-800"><CheckCircle2 className="h-5 w-5" />บริษัทส่งผลการดำเนินงานและลงนามแล้ว</p><p className="mt-2 text-sm text-slate-600">ฉบับที่ {submission.revision} · ส่งเมื่อ {formatThaiDate(submission.submitted_at, 'd MMM yyyy HH:mm')}</p><span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${reviewLabel(submission.review_status).className}`}>{reviewLabel(submission.review_status).text}</span>{submission.signature_url && <div className="mt-4 rounded-xl border bg-slate-50 p-3 text-center"><img className="mx-auto max-h-28" src={submission.signature_url} alt="ลายเซ็นบริษัท" /></div>}<dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="font-bold">สาเหตุ</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.rootCause ?? '—')}</dd></div><div><dt className="font-bold">วิธีแก้ไข</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.resolution ?? '—')}</dd></div><div className="sm:col-span-2"><dt className="font-bold">ผลการทดสอบ</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.testResult ?? '—')}</dd></div></dl></section> : <section className="mt-4 rounded-2xl border border-primary-200 bg-white p-5 shadow-sm">
+      {!canSubmit && submission ? <section data-ui="card" className="mt-4 rounded-2xl border border-emerald-200 bg-[var(--color-surface)] p-5 shadow-sm"><p className="flex items-center gap-2 font-bold text-emerald-800"><CheckCircle2 className="h-5 w-5" />บริษัทส่งผลการดำเนินงานและลงนามแล้ว</p><p className="mt-2 text-sm text-slate-600">ฉบับที่ {submission.revision} · ส่งเมื่อ {formatThaiDate(submission.submitted_at, 'd MMM yyyy HH:mm')}</p><span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${reviewLabel(submission.review_status).className}`}>{reviewLabel(submission.review_status).text}</span>{submission.signature_url && <div className="mt-4 rounded-xl border bg-[var(--color-surface-secondary)] p-3 text-center"><img className="mx-auto max-h-28" src={submission.signature_url} alt="ลายเซ็นบริษัท" /></div>}<dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="font-bold">สาเหตุ</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.rootCause ?? '—')}</dd></div><div><dt className="font-bold">วิธีแก้ไข</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.resolution ?? '—')}</dd></div><div className="sm:col-span-2"><dt className="font-bold">ผลการทดสอบ</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{String(response.testResult ?? '—')}</dd></div></dl></section> : <section data-ui="card" className="mt-4 rounded-2xl border border-primary-200 bg-[var(--color-surface)] p-5 shadow-sm">
         <div className="mb-4"><p className="flex items-center gap-2 text-lg font-extrabold text-slate-900"><FileSignature className="h-5 w-5 text-primary-700" />ส่วนที่ 3: การแก้ไขปัญหาโดยผู้รับจ้าง</p><p className="mt-1 text-sm text-slate-500">บริษัทแก้ไขได้เฉพาะข้อมูลในส่วนนี้ เมื่อลงนามแล้วระบบจะส่งให้ IT ตรวจรับ</p>{submission?.review_note && <p className="mt-3 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-700">สิ่งที่ IT ขอให้แก้ไข: {submission.review_note}</p>}</div>
         <div data-ui="form-grid" className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-semibold">Vendor Ticket No.<input maxLength={120} value={work.vendorIssueNo} onChange={(e) => setWork((v) => ({ ...v, vendorIssueNo: e.target.value }))} className={fieldClass} /></label>
@@ -262,11 +262,11 @@ export function VendorPortalPage() {
     </div></main>;
   }
 
-  return <main className="public-portal min-h-screen bg-slate-50 px-4 py-6"><div className="mx-auto max-w-5xl">
-    <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#0B1B36] p-5 text-white"><div><p className="text-xs font-bold text-primary-300">{profile.vendorCode}</p><h1 className="mt-1 text-xl font-extrabold">{profile.vendorName}</h1><p className="mt-1 text-xs text-white/60">{profile.fullName}{profile.position ? ` · ${profile.position}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => void loadTickets()} className="rounded-lg bg-white/10 p-2" aria-label="โหลดรายการใหม่"><RefreshCw className="h-4 w-4" /></button><button type="button" onClick={() => void logout()} className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold"><LogOut className="h-4 w-4" />ออกจากระบบ</button></div></header>
-    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 font-extrabold text-slate-900"><ClipboardList className="h-5 w-5 text-primary-700" />งานแจ้งซ่อมที่ส่งต่อ Outsource</h2><p className="mt-1 text-xs text-slate-500">แสดงเฉพาะงานที่กำลังส่งต่อให้บริษัทของท่าน</p></div><span className="rounded-full bg-primary-100 px-3 py-1 text-sm font-bold text-primary-800">{tickets.length} งาน</span></div>
+  return <main className="life-public public-portal min-h-screen bg-[var(--color-surface-secondary)] px-4 py-6"><div className="mx-auto max-w-5xl">
+    <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#0B1B36] p-5 text-white"><div><p className="text-xs font-bold text-primary-300">{profile.vendorCode}</p><h1 className="mt-1 text-xl font-extrabold">{profile.vendorName}</h1><p className="mt-1 text-xs text-white/60">{profile.fullName}{profile.position ? ` · ${profile.position}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => void loadTickets()} className="rounded-lg bg-[var(--color-surface)]/10 p-2" aria-label="โหลดรายการใหม่"><RefreshCw className="h-4 w-4" /></button><button type="button" onClick={() => void logout()} className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-surface)]/10 px-3 py-2 text-xs font-bold"><LogOut className="h-4 w-4" />ออกจากระบบ</button></div></header>
+    <section data-ui="card" className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"><div className="flex items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 font-extrabold text-slate-900"><ClipboardList className="h-5 w-5 text-primary-700" />งานแจ้งซ่อมที่ส่งต่อ Outsource</h2><p className="mt-1 text-xs text-slate-500">แสดงเฉพาะงานที่กำลังส่งต่อให้บริษัทของท่าน</p></div><span className="rounded-full bg-primary-100 px-3 py-1 text-sm font-bold text-primary-800">{tickets.length} งาน</span></div>
       {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-700">{error}</p>}
-      {tickets.length === 0 ? <div className="py-16 text-center text-slate-400"><ClipboardList className="mx-auto h-10 w-10" /><p className="mt-3 text-sm">ยังไม่มีงานที่ส่งต่อให้บริษัท</p></div> : <div className="mt-4 grid gap-3">{tickets.map((ticket) => { const review = reviewLabel(ticket.latest_submission?.review_status); return <button type="button" key={ticket.id} onClick={() => void openTicket(ticket.id)} className="rounded-xl border border-slate-200 p-4 text-left transition hover:border-primary-300 hover:bg-primary-50/40"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-mono text-xs font-bold text-primary-700">{ticket.ticket_no}</p><p className="mt-1 font-bold text-slate-900">{ticket.title}</p><p className="mt-1 text-xs text-slate-500">{ticket.ticket_categories?.name ?? 'งาน IT'} · ส่งต่อเมื่อ {ticket.outsource_sent_at ? formatThaiDate(ticket.outsource_sent_at, 'd MMM yyyy HH:mm') : '—'}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${review.className}`}>{review.text}</span></div></button>; })}</div>}
+      {tickets.length === 0 ? <div className="py-16 text-center text-slate-400"><ClipboardList className="mx-auto h-10 w-10" /><p className="mt-3 text-sm">ยังไม่มีงานที่ส่งต่อให้บริษัท</p></div> : <div className="mt-4 grid gap-3">{tickets.map((ticket) => { const review = reviewLabel(ticket.latest_submission?.review_status); return <button type="button" key={ticket.id} onClick={() => void openTicket(ticket.id)} className="rounded-xl border border-[var(--color-border)] p-4 text-left transition hover:border-primary-300 hover:bg-primary-50/40"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-mono text-xs font-bold text-primary-700">{ticket.ticket_no}</p><p className="mt-1 font-bold text-slate-900">{ticket.title}</p><p className="mt-1 text-xs text-slate-500">{ticket.ticket_categories?.name ?? 'งาน IT'} · ส่งต่อเมื่อ {ticket.outsource_sent_at ? formatThaiDate(ticket.outsource_sent_at, 'd MMM yyyy HH:mm') : '—'}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${review.className}`}>{review.text}</span></div></button>; })}</div>}
     </section>
   </div></main>;
 }

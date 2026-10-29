@@ -94,7 +94,7 @@ export function LineTicketDetail({ detail, onBack, onSign, onSendMessage, onReop
         </div>
 
         {sla && (
-          <div className="flex items-center gap-2 rounded-card border border-hairline bg-white px-3 py-2.5 shadow-card dark:border-slate-700 dark:bg-slate-900">
+          <div data-ui="card" className="flex items-center gap-2 rounded-card border border-hairline bg-white px-3 py-2.5 shadow-card dark:border-slate-700 dark:bg-slate-900">
             <SlaBadge display={sla} />
             <span className="text-[11px] text-slate-500 dark:text-slate-400">ครบกำหนด {thaiDayTime(ticket.due_at!)}</span>
           </div>
@@ -156,7 +156,7 @@ export function LineTicketDetail({ detail, onBack, onSign, onSendMessage, onReop
         </section>
 
         {ticket.assignee_name_snapshot && (
-          <section className="flex items-center gap-3 rounded-card border border-hairline bg-white p-3.5 shadow-card dark:border-slate-700 dark:bg-slate-900">
+          <section data-ui="card" className="flex items-center gap-3 rounded-card border border-hairline bg-white p-3.5 shadow-card dark:border-slate-700 dark:bg-slate-900">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200">
               <Headset className="h-4 w-4" aria-hidden="true" />
             </span>

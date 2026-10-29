@@ -1,0 +1,1081 @@
+{
+  "routes": [
+    {
+      "route": "/login",
+      "pages": [
+        "LoginPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/mfa",
+      "pages": [
+        "MfaChallengePage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/forgot-password",
+      "pages": [
+        "ForgotPasswordPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/reset-password",
+      "pages": [
+        "ResetPasswordPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/health",
+      "pages": [
+        "HealthPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/line",
+      "pages": [
+        "LinePortalPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/line/callback",
+      "pages": [
+        "LineCallbackPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/vendor/forms",
+      "pages": [
+        "VendorFormPortalPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/vendor/forms/:token",
+      "pages": [
+        "VendorFormPortalPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/vendor/portal",
+      "pages": [
+        "VendorPortalPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/vendor/portal/accept-invite",
+      "pages": [
+        "VendorPortalInvitePage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/",
+      "pages": [
+        "HomePage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/war-room",
+      "pages": [
+        "WarRoomPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/profile",
+      "pages": [
+        "ProfilePage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/files/:id/view",
+      "pages": [
+        "AttachmentImagePage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/system-status",
+      "pages": [
+        "SystemStatusPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/pdf-tools",
+      "pages": [
+        "PdfToolsPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/my-work",
+      "pages": [
+        "MyWorkPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/tasks",
+      "pages": [
+        "TasksPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/incidents",
+      "pages": [
+        "IncidentsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/incidents/:id",
+      "pages": [
+        "IncidentDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/problems",
+      "pages": [
+        "ProblemsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/problems/:id",
+      "pages": [
+        "ProblemDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/changes",
+      "pages": [
+        "ChangesPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/changes/:id",
+      "pages": [
+        "ChangeDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/vendors-contracts",
+      "pages": [
+        "VendorContractsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/assets",
+      "pages": [
+        "AssetsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/assets/:id",
+      "pages": [
+        "AssetDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/asset-borrow",
+      "pages": [
+        "AssetBorrowPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/maintenance",
+      "pages": [
+        "MaintenancePage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/inventory-items",
+      "pages": [
+        "InventoryPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/software-licenses",
+      "pages": [
+        "LicensesPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/vulnerabilities",
+      "pages": [
+        "VulnerabilitiesPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/backup-monitoring",
+      "pages": [
+        "BackupMonitoringPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/workflows",
+      "pages": [
+        "WorkflowsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/knowledge",
+      "pages": [
+        "KnowledgePage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/governance",
+      "pages": [
+        "GovernancePage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/reports",
+      "pages": [
+        "ReportCenterPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/cmdb",
+      "pages": [
+        "CmdbPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/cmdb/relationships",
+      "pages": [
+        "CiRelationshipsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/cmdb/:id",
+      "pages": [
+        "ConfigurationItemDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/employee-assignments",
+      "pages": [
+        "EmployeeAssignmentsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/forms",
+      "pages": [
+        "FormManagementPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/tickets",
+      "pages": [
+        "TicketsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/tickets/:id/form",
+      "pages": [
+        "TicketFormPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/tickets/:id",
+      "pages": [
+        "TicketDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/service-requests",
+      "pages": [
+        "ServiceRequestsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/service-requests/:id",
+      "pages": [
+        "ServiceRequestDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/access-requests",
+      "pages": [
+        "AccessRequestsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/access-requests/:id",
+      "pages": [
+        "AccessRequestDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/users",
+      "pages": [
+        "UsersPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/roles",
+      "pages": [
+        "RolesPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/permission-matrix",
+      "pages": [
+        "PermissionMatrixPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/master-data",
+      "pages": [
+        "MasterDataPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/employees",
+      "pages": [
+        "EmployeesPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/service-catalog",
+      "pages": [
+        "ServiceCatalogPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/access-registry",
+      "pages": [
+        "AccessRegistryPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/approval-groups",
+      "pages": [
+        "ApprovalGroupsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/audit-logs",
+      "pages": [
+        "AuditLogsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/settings",
+      "pages": [
+        "SettingsPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/line-links",
+      "pages": [
+        "LineLinksPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/integrations",
+      "pages": [
+        "IntegrationCenterPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/field/tickets/:id/close",
+      "pages": [
+        "FieldCloseTicketPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/field/scan",
+      "pages": [
+        "AssetVerificationPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/field/repair",
+      "pages": [
+        "AssetScanPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/admin/technician-skills",
+      "pages": [
+        "TechnicianSkillMatrixPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "*",
+      "pages": [
+        "NotFoundPage"
+      ],
+      "guard": false,
+      "redirect": false
+    },
+    {
+      "route": "/tickets/:id",
+      "pages": [
+        "TicketDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/assets/:id",
+      "pages": [
+        "AssetDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/incidents/:id",
+      "pages": [
+        "IncidentDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/problems/:id",
+      "pages": [
+        "ProblemDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/changes/:id",
+      "pages": [
+        "ChangeDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/cmdb/:id",
+      "pages": [
+        "ConfigurationItemDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/service-requests/:id",
+      "pages": [
+        "ServiceRequestDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    },
+    {
+      "route": "/access-requests/:id",
+      "pages": [
+        "AccessRequestDetailPage"
+      ],
+      "guard": true,
+      "redirect": false
+    }
+  ],
+  "pages": [
+    {
+      "file": "apps/web/src/pages/AttachmentImagePage.tsx",
+      "patterns": [
+        "PageTitle"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/ForgotPasswordPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/HealthPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/HomePage.tsx",
+      "patterns": [
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/LineCallbackPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/LinePortalPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/LoginPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/MfaChallengePage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/NotFoundPage.tsx",
+      "patterns": [
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/ProfilePage.tsx",
+      "patterns": [
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/ResetPasswordPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/SystemStatusPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/VendorFormPortalPage.tsx",
+      "patterns": [
+        "Card",
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/VendorPortalInvitePage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/VendorPortalPage.tsx",
+      "patterns": [
+        "life-public"
+      ]
+    },
+    {
+      "file": "apps/web/src/pages/WarRoomPage.tsx",
+      "patterns": []
+    },
+    {
+      "file": "apps/web/src/features/accessRequests/AccessRequestDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/accessRequests/AccessRequestsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/AccessRegistryPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/ApprovalGroupsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/AuditLogsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/EmployeesPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/IntegrationCenterPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/LineLinksPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/MasterDataPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/PermissionMatrixPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/RolesPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/ServiceCatalogPage.tsx",
+      "patterns": []
+    },
+    {
+      "file": "apps/web/src/features/admin/SettingsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/admin/UsersPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/assets/AssetBorrowPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/assets/AssetDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/assets/AssetsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/backupMonitoring/BackupMonitoringPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/changes/ChangeDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/changes/ChangesPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/cmdb/CiRelationshipsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/cmdb/CmdbPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/cmdb/ConfigurationItemDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/employeeAssignments/EmployeeAssignmentsPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/fieldWork/AssetScanPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/fieldWork/AssetVerificationPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/fieldWork/FieldCloseTicketPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/forms/FormManagementPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/governance/GovernancePage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/incidents/IncidentDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/incidents/IncidentsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/inventory/InventoryPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/knowledge/KnowledgePage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/licenses/LicensesPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/maintenance/MaintenancePage.tsx",
+      "patterns": [
+        "PageHeader",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/myWork/MyWorkPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/pdfTools/PdfToolsPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/problems/ProblemDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/problems/ProblemsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/reports/ReportCenterPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/serviceRequests/ServiceRequestDetailPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/serviceRequests/ServiceRequestsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/tasks/TasksPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/technicianSkills/TechnicianSkillMatrixPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/tickets/TicketDetailPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "Card"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/tickets/TicketFormPage.tsx",
+      "patterns": [
+        "form-document",
+        "form-page-sheet"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/tickets/TicketsPage.tsx",
+      "patterns": [
+        "PageHeader",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/vendorsContracts/VendorContractsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/vulnerabilities/VulnerabilitiesPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    },
+    {
+      "file": "apps/web/src/features/workflows/WorkflowsPage.tsx",
+      "patterns": [
+        "PageTitle",
+        "Card",
+        "DataTable"
+      ]
+    }
+  ]
+}

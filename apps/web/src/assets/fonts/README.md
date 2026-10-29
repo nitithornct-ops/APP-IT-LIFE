@@ -1,23 +1,9 @@
 # UI and document fonts
 
-The UI requests `Sukhumvit Set`, then falls back to Tahoma, Arial and sans-serif.
-There are currently **no Sukhumvit Set webfont files** in this repository.
-The family name can resolve an installed system font; it does not provide a
-consistent webfont across Windows, Android, iOS and other devices.
+Aurora uses self-hosted Inter for Latin/numbers and Noto Sans Thai for Thai, with system-ui and sans-serif fallbacks. styles/fonts.css registers real 400/500/600/700 faces with font-display: swap. No external font request or extra CSP origin is required.
 
-To complete webfont delivery, obtain files licensed for web embedding:
+Sources: https://github.com/google/fonts/tree/main/ofl/inter and https://github.com/google/fonts/tree/main/ofl/notosansthai . Matching SIL Open Font License texts: inter-OFL.txt and notosansthai-OFL.txt. Retrieved from the Google Fonts CSS API on 2026-10-29, then losslessly compressed from TTF to WOFF2 with fontTools/Brotli. Retain the licenses when redistributing.
 
-- Regular (400), preferably WOFF2.
-- Medium (500) and/or Semibold (600), matching the actual available font files.
-- Bold (700) if used; do not register the same regular file as multiple weights.
-- The accompanying license or permission covering web redistribution.
+aurora-ui-0 through aurora-ui-3 are Inter 400/500/600/700; aurora-ui-4 through aurora-ui-7 are Noto Sans Thai 400/500/600/700. Total UI font assets: 527,996 bytes. Chromium CDP verifies actual Thai glyph rendering in e2e/aurora.spec.ts.
 
-After receiving these files, add matching `@font-face` declarations with
-`font-display: swap`, verify the rendered Thai glyph font using browser font
-inspection, then repeat the responsive and enlarged-text screenshots.
-Do not download an unverified copy or point CSS to nonexistent font URLs.
-
-TH Sarabun New's existing regular, bold, italic and bold-italic WOFF files remain
-the document fonts. Their license files are retained. `--font-document` controls
-the A4 editor and ticket sheets; shared exports separately embed `FormThai`.
-Changing `--font-app` must not change these document metrics or export fonts.
+Existing TH Sarabun New regular, bold, italic and bold-italic WOFF files remain the document fonts, with their existing licenses. --font-document controls A4 editors and ticket sheets; shared exports separately embed FormThai. UI font, font size and density must not change document metrics or export fonts.

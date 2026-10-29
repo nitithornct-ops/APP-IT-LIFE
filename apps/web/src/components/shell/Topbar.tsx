@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut, Menu, Search, UserCircle } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, Plus, Search, UserCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { NAV_GROUPS } from '../../config/navigation';
@@ -6,6 +6,7 @@ import { useAuth } from '../../stores/authContext';
 import { NotificationBell } from '../NotificationBell';
 import { FontSizeControl } from './FontSizeControl';
 import { ThemeToggle } from './ThemeToggle';
+import { DensityControl } from './DensityControl';
 
 function useCurrentPageContext(): { group: string; page: string } {
   const location = useLocation();
@@ -33,7 +34,7 @@ interface TopbarProps {
 const iconButton = 'flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-white/[.07]';
 
 export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette }: TopbarProps) {
-  const { me, signOut } = useAuth();
+  const { me, signOut, hasPermission } = useAuth();
   const context = useCurrentPageContext();
   const location = useLocation();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -92,6 +93,8 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
       </button>
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+        {hasPermission('ticket.create') && <Link to="/tickets?create=1" aria-label="สร้าง Ticket ด่วน" title="สร้าง Ticket ด่วน" className={`${iconButton} hidden lg:flex`}><Plus className="h-5 w-5" aria-hidden="true" /></Link>}
+        <DensityControl />
         <FontSizeControl />
         <ThemeToggle />
         <NotificationBell />
@@ -120,6 +123,8 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{me?.roles[0]?.role_name_th}</p>
               </div>
               <div className="border-b border-slate-100 px-3 py-3 dark:border-slate-700 sm:hidden"><p className="mb-2 text-sm">ขนาดตัวอักษร</p><FontSizeControl mobile /></div>
+              <div className="border-b border-slate-100 px-3 py-3 dark:border-slate-700 xl:hidden"><DensityControl mobile /></div>
+              {hasPermission('ticket.create') && <Link to="/tickets?create=1" onClick={() => setAccountOpen(false)} className="flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm text-[var(--color-action)] hover:bg-[var(--color-action-soft)] lg:hidden"><Plus className="h-4 w-4" aria-hidden="true" />สร้าง Ticket ด่วน</Link>}
               <Link to="/profile" onClick={() => setAccountOpen(false)} className="mt-1 flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-200 dark:hover:bg-slate-700"><UserCircle className="h-4 w-4" aria-hidden="true" />โปรไฟล์ของฉัน</Link>
               <button type="button" onClick={() => { setAccountOpen(false); void signOut(); }} className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-300 dark:hover:bg-red-950/40"><LogOut className="h-4 w-4" aria-hidden="true" />ออกจากระบบ</button>
             </div>

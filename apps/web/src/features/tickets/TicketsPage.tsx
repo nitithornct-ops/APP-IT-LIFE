@@ -431,18 +431,20 @@ export function TicketsPage() {
    * ใช้ฟอร์มเดียวกับปุ่ม "เปิด Ticket" ปกติ ไม่ทำฟอร์มแยกให้ตรรกะ SLA/หมวดหมู่แตกกันสองทาง
    */
   const newForAssetId = searchParams.get('newForAsset') ?? '';
+  const quickCreate = searchParams.get('create') === '1';
   const canCreateTicket = hasPermission('ticket.create');
   useEffect(() => {
-    if (newForAssetId && canCreateTicket) setShowCreate(true);
-  }, [newForAssetId, canCreateTicket]);
+    if ((newForAssetId || quickCreate) && canCreateTicket) setShowCreate(true);
+  }, [newForAssetId, quickCreate, canCreateTicket]);
   const closeCreate = useCallback(() => {
     setShowCreate(false);
-    if (!newForAssetId) return;
+    if (!newForAssetId && !quickCreate) return;
     // ล้าง param ทิ้ง ไม่งั้นการรีเฟรชหน้าจะเด้งฟอร์มขึ้นมาใหม่ทุกครั้ง
     const next = new URLSearchParams(searchParams);
     next.delete('newForAsset');
+    next.delete('create');
     setSearchParams(next, { replace: true });
-  }, [newForAssetId, searchParams, setSearchParams]);
+  }, [newForAssetId, quickCreate, searchParams, setSearchParams]);
   const ticketNavigationState = { ticketReturnTo: `/tickets${searchParams.size ? `?${searchParams}` : ''}` };
   // รายการที่เลือกอยู่นอก URL เพราะเป็นสิ่งที่ทำแล้วจบ ไม่ใช่สถานะที่ควรแชร์ผ่านลิงก์
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -694,10 +696,10 @@ export function TicketsPage() {
           }
         />
 
-        {ticketsQuery.isLoading && <div className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800"><LoadingState label="กำลังโหลดรายการ Ticket..." /></div>}
+        {ticketsQuery.isLoading && <div data-ui="card" className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800"><LoadingState label="กำลังโหลดรายการ Ticket..." /></div>}
 
         {ticketsQuery.isError && (
-          <div className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
+          <div data-ui="card" className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
             <QueryError
               title="โหลดรายการ Ticket ไม่สำเร็จ"
               error={ticketsQuery.error}
@@ -708,7 +710,7 @@ export function TicketsPage() {
         )}
 
         {ticketsQuery.data && ticketsQuery.data.items.length === 0 && (
-          <div className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
+          <div data-ui="card" className="rounded-card border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
             <EmptyState
               icon={<TicketIcon className="h-10 w-10" aria-hidden="true" />}
               title="ไม่พบรายการแจ้งซ่อม"
@@ -781,7 +783,7 @@ export function TicketsPage() {
                         <p className="mt-1 text-xs text-slate-400">{ticket.outsource_name ? `Outsource: ${ticket.outsource_name}` : 'ทีมภายใน'}</p>
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2"><Link to={`/tickets/${ticket.id}`} state={ticketNavigationState} className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-primary-700">เปิดรายละเอียด</Link><details className="relative"><summary className="min-h-11 cursor-pointer px-3 py-3 text-sm">เพิ่มเติม</summary><div className="rounded-lg border border-slate-200 bg-white p-2 dark:bg-slate-800">
+                        <div className="flex flex-wrap items-center justify-end gap-2"><Link to={`/tickets/${ticket.id}`} state={ticketNavigationState} className="inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-[var(--color-border-strong)] px-3 text-sm font-semibold text-[var(--color-action)]">เปิดรายละเอียด</Link><details className="relative"><summary className="min-h-11 cursor-pointer px-3 py-3 text-sm">เพิ่มเติม</summary><div data-ui="card" className="rounded-lg border border-slate-200 bg-white p-2 dark:bg-slate-800">
                         <RowActions
                           recordLabel={ticket.ticket_no}
                           iconOnly

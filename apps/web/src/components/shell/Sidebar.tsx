@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronsLeft, ChevronsRight, X } from 'lucide-react';
+import { ChevronDown, ChevronsLeft, ChevronsRight, Star, X } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useNavItems } from '../../hooks/useNavItems';
 import { apiFetch } from '../../services/apiClient';
@@ -15,6 +15,14 @@ interface SidebarProps {
 }
 
 const SIDEBAR_GROUPS_KEY = 'itlife-sidebar-closed-groups';
+const FAVORITES_KEY = 'itlife-sidebar-favorites';
+
+function readFavorites(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string').slice(0, 8) : [];
+  } catch { return []; }
+}
 
 function readClosedGroups(): string[] {
   try {
@@ -43,6 +51,24 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
   const [scrollEdges, setScrollEdges] = useState({ top: false, bottom: false });
   const [logoFailed, setLogoFailed] = useState(false);
   const [closedGroups, setClosedGroups] = useState<string[]>(readClosedGroups);
+  const [favorites, setFavorites] = useState<string[]>(readFavorites);
+  const allowedItems = groups.flatMap(group => group.items);
+  const pinnedItems = allowedItems.filter(item => favorites.includes(item.path));
+  const currentItem = allowedItems.filter(item => pathMatches(location.pathname, item.path)).sort((a, b) => b.path.length - a.path.length)[0];
+  const currentPinned = currentItem ? favorites.includes(currentItem.path) : false;
+  // Move pins rather than duplicating navigation entries. Both groups use the
+  // existing permission-filtered items, so removed permissions remove pins too.
+  const displayGroups = [
+    ...(pinnedItems.length ? [{ title: 'รายการโปรด', items: pinnedItems }] : []),
+    ...groups.map(group => ({ ...group, items: group.items.filter(item => !favorites.includes(item.path)) })).filter(group => group.items.length),
+  ];
+  const toggleCurrentPin = () => {
+    if (!currentItem) return;
+    const next = currentPinned ? favorites.filter(path => path !== currentItem.path) : [...favorites.slice(-7), currentItem.path];
+    setFavorites(next);
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); } catch { /* Keep pins available for this session. */ }
+    setClosedGroups(current => current.filter(title => title !== 'รายการโปรด'));
+  };
   const logoUrl = brandingQuery.data?.logoUrl ?? '';
   const organizationName = brandingQuery.data?.organizationName || 'LIFE IT';
 
@@ -86,9 +112,11 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
   }, [closedGroups]);
 
   useEffect(() => {
-    const activeGroup = groups.find((group) => group.items.some((item) => pathMatches(location.pathname, item.path)));
-    if (activeGroup) setClosedGroups((current) => current.filter((title) => title !== activeGroup.title));
-  }, [groups, location.pathname]);
+    const activeGroupTitle = favorites.some(path => pathMatches(location.pathname, path))
+      ? 'รายการโปรด'
+      : groups.find(group => group.items.some(item => pathMatches(location.pathname, item.path)))?.title;
+    if (activeGroupTitle) setClosedGroups(current => current.filter(title => title !== activeGroupTitle));
+  }, [favorites, groups, location.pathname]);
 
   const toggleGroup = (title: string) => {
     setClosedGroups((current) => current.includes(title)
@@ -142,12 +170,12 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         role={mobileOpen && !desktop ? 'dialog' : undefined}
         aria-modal={mobileOpen && !desktop ? true : undefined}
         className={cn(
-          'fixed inset-y-0 left-0 flex w-[240px] max-w-[calc(100vw-48px)] flex-col border-r border-white/[.07] bg-primary-900 text-white shadow-[8px_0_28px_rgba(16,42,92,.12)] transition-[transform,width] duration-200 motion-reduce:transition-none dark:bg-primary-950 dark:text-[#e8eef9] lg:z-sidebar',
-          collapsed && 'lg:w-16',
+          'fixed inset-y-0 left-0 flex w-[244px] max-w-[calc(100vw-48px)] flex-col aurora-sidebar border-r border-[var(--color-glass-border)] bg-[var(--color-sidebar)] text-[var(--color-text)] shadow-card transition-[transform,width] duration-200 motion-reduce:transition-none lg:z-sidebar',
+          collapsed && 'lg:w-[68px]',
           mobileOpen ? 'visible z-mobile-drawer translate-x-0' : 'invisible -translate-x-full lg:visible lg:translate-x-0',
         )}
       >
-        <div className="flex min-h-[var(--app-header-height,64px)] items-center gap-2.5 border-b border-white/[.07] px-3">
+        <div className="flex min-h-[var(--app-header-height,64px)] items-center gap-2.5 border-b border-[var(--color-border)] px-3">
           <div className={cn(
             'flex h-9 w-9 min-w-9 items-center justify-center overflow-hidden rounded-xl border text-xs font-bold shadow-nav',
             logoUrl && !logoFailed ? 'border-white/20 bg-white p-1' : 'border-primary-500 bg-primary-700 text-white',
@@ -157,10 +185,10 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
               : 'LI'}
           </div>
           <div className={cn('min-w-0 leading-tight', collapsed && 'lg:hidden')}>
-            <p className="truncate text-sm font-bold leading-6 text-white" title={organizationName}>{organizationName}</p>
-            <p className="truncate text-xs font-medium leading-5 text-white/70">ศูนย์บริการไอที</p>
+            <p className="truncate text-sm font-bold leading-6 text-[var(--color-heading)]" title={organizationName}>{organizationName}</p>
+            <p className="truncate text-xs font-medium leading-5 text-[var(--color-text-muted)]">IT Smart Service Center</p>
           </div>
-          <button type="button" data-drawer-close onClick={onCloseMobile} aria-label="ปิดเมนูหลัก" className="ml-auto flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white lg:hidden"><X className="h-5 w-5" aria-hidden="true" /></button>
+          <button type="button" data-drawer-close onClick={onCloseMobile} aria-label="ปิดเมนูหลัก" className="ml-auto flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-heading)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 lg:hidden"><X className="h-5 w-5" aria-hidden="true" /></button>
         </div>
 
         <div className="relative min-h-0 flex-1">
@@ -170,7 +198,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
             className="sidebar-scrollbar h-full overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3"
             aria-label="เมนูหลัก"
           >
-            {groups.map((group) => {
+            {displayGroups.map((group) => {
               const groupClosed = closedGroups.includes(group.title);
               const groupActive = group.items.some((item) => pathMatches(location.pathname, item.path));
               return (
@@ -180,11 +208,11 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                   onClick={() => toggleGroup(group.title)}
                   aria-expanded={!groupClosed}
                   className={cn(
-                    'flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-semibold leading-5 text-white/70 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+                    'flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-semibold leading-5 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-heading)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                     collapsed && 'lg:hidden',
                   )}
                 >
-                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', groupActive ? 'bg-primary-400' : 'bg-white/20')} aria-hidden="true" />
+                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', groupActive ? 'bg-primary-400' : 'bg-[var(--color-border-strong)]')} aria-hidden="true" />
                   <span className="min-w-0 flex-1 break-words">{group.title}</span>
                   <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform duration-200', groupClosed && '-rotate-90')} aria-hidden="true" />
                 </button>
@@ -204,11 +232,11 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                     aria-label={item.label}
                     className={({ isActive }) =>
                       cn(
-                        'group/nav my-0.5 flex min-h-[44px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+                        'group/nav my-0.5 flex min-h-[44px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                         collapsed && 'lg:mx-auto lg:w-11 lg:justify-center lg:px-0',
                         isActive
-                          ? 'bg-primary-700 font-semibold text-white shadow-nav'
-                          : 'text-white/80 hover:bg-white/[.07] hover:text-white',
+                          ? 'bg-[var(--color-sidebar-active)] font-semibold text-[var(--color-heading)] shadow-sm'
+                          : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-heading)]',
                       )
                     }
                   >
@@ -226,25 +254,26 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
           <div
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-x-3 top-0 h-5 bg-gradient-to-b from-primary-900 to-transparent transition-opacity duration-200 dark:from-primary-950',
+              'pointer-events-none absolute inset-x-3 top-0 h-5 bg-gradient-to-b from-[var(--color-sidebar)] to-transparent transition-opacity duration-200',
               scrollEdges.top ? 'opacity-100' : 'opacity-0',
             )}
           />
           <div
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-x-3 bottom-0 h-6 bg-gradient-to-t from-primary-900 to-transparent transition-opacity duration-200 dark:from-primary-950',
+              'pointer-events-none absolute inset-x-3 bottom-0 h-6 bg-gradient-to-t from-[var(--color-sidebar)] to-transparent transition-opacity duration-200',
               scrollEdges.bottom ? 'opacity-100' : 'opacity-0',
             )}
           />
         </div>
 
-        <div className="hidden min-h-16 items-center border-t border-white/[.07] px-2 lg:flex">
-          <span className={cn('flex-1 px-1 text-xs font-medium text-white/60', collapsed && 'hidden')}>LIFE IT · พร้อมให้บริการ</span>
+        <div className="hidden min-h-16 items-center border-t border-[var(--color-border)] px-2 lg:flex">
+          <span className={cn('flex-1 px-1 text-xs font-medium text-[var(--color-text-muted)]', collapsed && 'hidden')}>LIFE IT · พร้อมให้บริการ</span>
+          {currentItem && !collapsed && <button type="button" onClick={toggleCurrentPin} aria-pressed={currentPinned} aria-label={currentPinned ? 'นำหน้านี้ออกจากรายการโปรด' : 'เพิ่มหน้านี้ในรายการโปรด'} title={currentPinned ? 'นำหน้านี้ออกจากรายการโปรด' : 'เพิ่มหน้านี้ในรายการโปรด'} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[var(--color-action)] hover:bg-[var(--color-sidebar-active)]"><Star className="h-4 w-4" fill={currentPinned ? 'currentColor' : 'none'} aria-hidden="true" /></button>}
           <button
             type="button"
             onClick={onToggleCollapsed}
-            className="flex h-11 min-h-[44px] w-11 min-w-[44px] items-center justify-center rounded-xl text-white/70 hover:bg-white/[.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            className="flex h-11 min-h-[44px] w-11 min-w-[44px] items-center justify-center rounded-xl text-[var(--color-text-muted)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-heading)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
             title={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
           >

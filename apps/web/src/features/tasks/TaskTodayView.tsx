@@ -69,7 +69,7 @@ export function TaskTodayView({ tasks, onSelect }: { tasks: Task[]; onSelect: (i
   const today = tasks.filter((task) => task.due_days === 0);
 
   const renderGroup = (title: string, items: Task[], overdueGroup = false) => (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
+    <section data-ui="card" className="rounded-lg border border-slate-200 bg-white shadow-card dark:border-slate-700 dark:bg-slate-800">
       <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-700">
         <h3 className={overdueGroup ? 'text-sm font-bold text-red-700 dark:text-red-300' : 'text-sm font-bold text-slate-800 dark:text-slate-100'}>{title}</h3>
         <span className="text-xs font-semibold text-slate-400">{items.length} งาน</span>

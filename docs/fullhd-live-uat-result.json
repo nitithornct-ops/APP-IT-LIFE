@@ -1,0 +1,168 @@
+{
+  "environment": "GitHub staging",
+  "sourceCommit": "72f5a37d5b9d4bad8183cba71fd94497424a6e6f",
+  "workflowRun": "https://github.com/nitithornct-ops/APP-IT-LIFE/actions/runs/40815047128",
+  "suite": {
+    "passed": 263,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0
+  },
+  "liveUat": {
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cases": [
+    {
+      "spec": "assets-modal.live.spec.ts",
+      "title": "asset create, edit and action forms open as bounded popups",
+      "result": "passed"
+    },
+    {
+      "spec": "dashboard.live.spec.ts",
+      "title": "live API returns role-aware and RLS-aware dashboard summaries",
+      "result": "passed"
+    },
+    {
+      "spec": "dashboard.live.spec.ts",
+      "title": "admin dashboard renders operational cards and urgent data",
+      "result": "passed"
+    },
+    {
+      "spec": "dashboard.live.spec.ts",
+      "title": "regular user dashboard keeps organizational records out of the personal view",
+      "result": "passed"
+    },
+    {
+      "spec": "employees-assets.live.spec.ts",
+      "title": "employee register and all action forms render as bounded popups",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Requester completes its route and permission-boundary checks",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Technician completes its route and permission-boundary checks",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Approver completes its route and permission-boundary checks",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Manager completes its route and permission-boundary checks",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Admin completes its route and permission-boundary checks",
+      "result": "passed"
+    },
+    {
+      "spec": "external-uat.live.spec.ts",
+      "title": "Vendor accesses the isolated company portal with an AAL2 session on mobile",
+      "result": "passed"
+    },
+    {
+      "spec": "governance.live.spec.ts",
+      "title": "live API covers all active Governance surfaces, workflows and RBAC",
+      "result": "passed"
+    },
+    {
+      "spec": "governance.live.spec.ts",
+      "title": "admin UI renders all sections and creates a high risk record",
+      "result": "passed"
+    },
+    {
+      "spec": "governance.live.spec.ts",
+      "title": "regular user sees only AI/Awareness and can e-sign policy",
+      "result": "passed"
+    },
+    {
+      "spec": "maintenance-modal.live.spec.ts",
+      "title": "PM dashboard and every primary action use bounded popups",
+      "result": "passed"
+    },
+    {
+      "spec": "reports.live.spec.ts",
+      "title": "live API returns every standard report, enforces RBAC and records exports",
+      "result": "passed"
+    },
+    {
+      "spec": "reports.live.spec.ts",
+      "title": "admin UI renders report controls, data and all report tabs",
+      "result": "passed"
+    },
+    {
+      "spec": "reports.live.spec.ts",
+      "title": "regular employee is denied the Report Center route",
+      "result": "passed"
+    },
+    {
+      "spec": "serviceCatalog.live.spec.ts",
+      "title": "workspace matches catalog, request and management flows",
+      "result": "passed"
+    },
+    {
+      "spec": "settings-audit.live.spec.ts",
+      "title": "live API enforces Settings and Audit role boundaries",
+      "result": "passed"
+    },
+    {
+      "spec": "settings-audit.live.spec.ts",
+      "title": "administrator can view and safely edit an allowlisted setting",
+      "result": "passed"
+    },
+    {
+      "spec": "settings-audit.live.spec.ts",
+      "title": "auditor can inspect Audit Trail and Login History without Settings access",
+      "result": "passed"
+    },
+    {
+      "spec": "tasks.live.spec.ts",
+      "title": "task command center renders on desktop and switches to calendar",
+      "result": "passed"
+    },
+    {
+      "spec": "tasks.live.spec.ts",
+      "title": "primary task actions call the API and update the interface",
+      "result": "passed"
+    },
+    {
+      "spec": "tasks.live.spec.ts",
+      "title": "task command center remains contained on mobile",
+      "result": "passed"
+    },
+    {
+      "spec": "ticket-actions.live.spec.ts",
+      "title": "opens the shared work panel from the Ticket list and explains final statuses",
+      "result": "passed"
+    },
+    {
+      "spec": "ticket-actions.live.spec.ts",
+      "title": "sorts the Ticket list by SLA due date and keeps the sort across pages",
+      "result": "passed"
+    },
+    {
+      "spec": "ticket-actions.live.spec.ts",
+      "title": "keeps the Ticket list filter and sort in the URL across reload and browser back",
+      "result": "passed"
+    },
+    {
+      "spec": "ticket-actions.live.spec.ts",
+      "title": "selects tickets and reports bulk results per ticket",
+      "result": "passed"
+    },
+    {
+      "spec": "ticket-form.live.spec.ts",
+      "title": "signs one Ticket and shows that signature on its automatic form",
+      "result": "passed"
+    }
+  ]
+}

@@ -18,7 +18,7 @@ vi.mock('../../hooks/useNavItems', () => ({
   useNavItems: () => [{ title: 'งานบริการ', items: navigation.items }],
 }));
 vi.mock('../../stores/authContext', () => ({
-  useAuth: () => ({ me: { profile: { full_name: 'ผู้ใช้ ทดสอบ' }, roles: [{ role_name_th: 'เจ้าหน้าที่' }] }, signOut }),
+  useAuth: () => ({ me: { profile: { full_name: 'ผู้ใช้ ทดสอบ' }, roles: [{ role_name_th: 'เจ้าหน้าที่' }] }, signOut, hasPermission: () => false }),
 }));
 vi.mock('../NotificationBell', () => ({ NotificationBell: () => <button aria-label="การแจ้งเตือน" /> }));
 vi.mock('./ThemeToggle', () => ({ ThemeToggle: () => <button aria-label="ธีม" /> }));

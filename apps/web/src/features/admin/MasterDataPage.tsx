@@ -742,7 +742,7 @@ function CreateAccessControlItemForm({
 
       <div className="sm:col-span-2">
         <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Actions ที่ item นี้อนุญาต</span>
-        <div className="flex flex-wrap gap-3 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+        <div data-ui="card" className="flex flex-wrap gap-3 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
           {ACCESS_ITEM_ACTIONS.map((action) => <label key={action} className="flex items-center gap-1.5 text-xs"><input type="checkbox" value={action} {...register('permissionActions')} />{action}</label>)}
         </div>
         {errors.permissionActions && <p className="mt-1 text-xs text-red-600">{errors.permissionActions.message}</p>}
