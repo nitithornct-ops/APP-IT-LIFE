@@ -10,7 +10,8 @@ it('keeps valid dependency counts when the database includes malformed entries',
   expect(parseUserDeletionDependencies(`USER_HAS_DEPENDENCIES:${JSON.stringify(rows)}`)).toEqual([valid]);
 });
 
-it.each(['permission denied', 'USER_HAS_DEPENDENCIES:invalid-json', 'USER_HAS_DEPENDENCIES:{}', 'USER_HAS_DEPENDENCIES:null'])
-  ('does not turn an unrelated or malformed error into a dependency summary: %s', (message) => {
+it.each(['permission denied', 'USER_HAS_DEPENDENCIES:invalid-json', 'USER_HAS_DEPENDENCIES:{}', 'USER_HAS_DEPENDENCIES:null'])(
+  'does not turn an unrelated or malformed error into a dependency summary: %s', (message) => {
     expect(parseUserDeletionDependencies(message)).toEqual([]);
-  });
+  },
+);
