@@ -78,6 +78,9 @@ test('task command center renders on desktop and switches to calendar', async ({
 });
 
 test('primary task actions call the API and update the interface', async ({ page }) => {
+  // Login, create, start, edit, export and complete each cross the live network.
+  // Keep each assertion bounded while allowing the full multi-action journey.
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await login(page);
 
@@ -116,7 +119,16 @@ test('primary task actions call the API and update the interface', async ({ page
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^my-tasks-\d{4}-\d{2}-\d{2}\.csv$/);
 
+  const completeResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && /\/api\/v1\/tasks\/[^/]+\/status$/.test(new URL(response.url()).pathname)
+    && response.request().postDataJSON()?.status === 'เสร็จแล้ว'
+  ));
   await page.getByLabel('ทำงานเสร็จ งานทดสอบ Action', { exact: true }).click();
+  const completeResponse = await completeResponsePromise;
+  const completion = await completeResponse.json();
+  expect(completeResponse.ok(), JSON.stringify(completion)).toBeTruthy();
+  expect(completion).toMatchObject({ success: true, data: { status: 'เสร็จแล้ว' } });
   await expect(page.getByText('งานทดสอบ Action', { exact: true })).toHaveCount(0);
 });
 
