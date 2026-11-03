@@ -2,6 +2,7 @@ import { DataTable, TablePagination } from '../../components/table/DataTable';
 import { useTableParams } from '../../hooks/useTableParams';
 import { ExportCsvButton } from '../../components/table/ExportCsvButton';
 import { RowActions } from '../../components/table/RowActions';
+import { DeleteUserModal } from './DeleteUserModal';
 import { ConfirmModal, DeleteConfirmModal, DetailModal, FormModal } from '../../components/ui/Modal';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1044,6 +1045,7 @@ export function UsersPage() {
   const [showCreateLocal, setShowCreateLocal] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [pendingStatusChange, setPendingStatusChange] = useState<UserListItem | null>(null);
+  const [pendingDeletion, setPendingDeletion] = useState<UserListItem | null>(null);
   const [pendingMfaChange, setPendingMfaChange] = useState<UserListItem | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<UserListItem | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -1173,6 +1175,8 @@ export function UsersPage() {
           {statusError && <p role="alert" className="text-sm text-red-600">{statusError}</p>}
         </ConfirmModal>
       )}
+
+      {pendingDeletion && <DeleteUserModal key={pendingDeletion.id} userId={pendingDeletion.id} identity={loginIdentityOf(pendingDeletion)} onClose={() => setPendingDeletion(null)} />}
 
       {pendingMfaChange && (
         <ConfirmModal
@@ -1313,16 +1317,12 @@ export function UsersPage() {
                             onClick: () => { setStatusError(null); setPendingStatusChange(user); },
                           },
                           {
-                            kind: 'delete',
+                            kind: 'custom',
+                            icon: UserMinus,
                             label: user.status === 'active' ? 'ลบไม่ได้ (ต้องระงับก่อน)' : 'ลบผู้ใช้งาน',
                             disabled: user.status === 'active',
-                            confirmTitle: `ลบผู้ใช้งาน "${loginIdentityOf(user)}" ถาวร`,
-                            confirmDescription: 'การลบจะนำบัญชีออกจากระบบ Auth และไม่สามารถกู้คืนได้ หากต้องการเก็บประวัติการทำงาน ให้ใช้การระงับบัญชีแทน',
-                            confirmLabel: 'ลบผู้ใช้งานถาวร',
-                            reasonLabel: 'เหตุผลการลบ',
-                            reasonPlaceholder: 'ระบุเหตุผลอย่างน้อย 3 ตัวอักษร',
                             permission: 'user.manage',
-                            deleteEndpoint: `/api/v1/users/${user.id}`,
+                            onClick: () => setPendingDeletion(user),
                           },
                         ]}
                       />

@@ -9,6 +9,7 @@ create schema if not exists auth;
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
   email text,
+  deleted_at timestamptz,
   raw_user_meta_data jsonb not null default '{}'::jsonb
 );
 
@@ -20,6 +21,15 @@ language sql
 stable
 as $$
   select nullif(current_setting('app.current_user_id', true), '')::uuid;
+$$;
+
+-- Same signed-claims context that PostgREST supplies after token validation.
+create or replace function auth.jwt()
+returns jsonb
+language sql
+stable
+as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb;
 $$;
 
 -- Role จำลองให้ตรงกับ Supabase จริง: anon (ไม่ได้ login), authenticated (login แล้ว),

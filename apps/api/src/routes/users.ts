@@ -13,6 +13,7 @@ import { dbFailJson } from '../utils/dbError';
 import { fail, ok } from '../utils/response';
 import { cleanSearch } from '../utils/search';
 import { zodValidationHook } from '../utils/validation';
+import { parseUserDeletionDependencies } from '../utils/userDeletion';
 import {
   userAccessGroupMembershipSchema,
   userAccessReviewCreateSchema,
@@ -46,6 +47,7 @@ usersRoute.get('/options', requireAnyPermission(['role.view', 'role.manage', 'us
   const { data, error } = await createAdminClient(c.env)
     .from('profiles')
     .select('id, full_name, email, username, status')
+    .is('account_deleted_at', null)
     .eq('status', 'active')
     .order('full_name', { ascending: true })
     .limit(1000);
@@ -65,6 +67,7 @@ usersRoute.get('/', requirePermission('user.manage'), zValidator('query', listUs
       'id, employee_code, full_name, email, username, phone, department_id, position_id, supervisor_id, status, mfa_enabled, last_login_at, last_password_change_at, account_source, employment_status, created_at',
       { count: 'exact' },
     )
+    .is('account_deleted_at', null)
     .range(...paginationRange(page, pageSize));
   query = applySort(query, { sort, order }, USER_SORT_COLUMNS, { column: 'created_at', ascending: false });
 
@@ -367,6 +370,10 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
   // หลัง requirePermission('user.manage') ตรวจสิทธิ์เรียบร้อย และบันทึก audit ทุกครั้ง
   const auditBefore = await loadAuditSnapshot(supabase, 'profiles', targetId);
 
+  if (auditBefore?.account_deleted_at) {
+    return c.json(fail(reqId, 'USER_ACCOUNT_DELETED', 'บัญชีนี้ถูกลบแล้ว ไม่สามารถเปิดใช้งานอีกได้'), 409);
+  }
+
   if (!auditBefore) {
     return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้ที่ระบุ'), 404);
   }
@@ -424,10 +431,39 @@ usersRoute.patch('/:id', requirePermission('user.manage'), zValidator('json', up
 /**
  * ลบบัญชีผู้ใช้งานถาวรผ่าน Supabase Auth Admin API
  *
- * การลบจะทำได้เฉพาะบัญชีที่ระงับแล้ว และฐานข้อมูลจะตรวจซ้ำว่าไม่มีข้อมูลธุรกิจ
- * อ้างอิงอยู่ เพื่อไม่ให้การลบบัญชีลบ Ticket/Task/หลักฐานงานตาม ON DELETE CASCADE
- * ไปโดยไม่ตั้งใจ
+ * บัญชีต้องระงับแล้ว: hard deletion ต้องไม่มีข้อมูลอ้างอิง ส่วน preserve-history
+ * ใช้ Auth soft deletion และเก็บ profile ไว้เป็นจุดอ้างอิงของประวัติงาน
  */
+usersRoute.get('/:id/deletion-preview', requirePermission('user.manage'), async (c) => {
+  const reqId = c.get('requestId');
+  const targetId = c.req.param('id')!;
+  if (!z.string().guid().safeParse(targetId).success) {
+    return c.json(fail(reqId, 'USER_ID_INVALID', 'รหัสผู้ใช้งานไม่ถูกต้อง'), 400);
+  }
+  if (targetId === c.get('userId')) {
+    return c.json(fail(reqId, 'USER_SELF_DELETE_FORBIDDEN', 'ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้'), 409);
+  }
+  const admin = createAdminClient(c.env);
+  const { error } = await admin.rpc('assert_user_deletion_safe', { user_id_input: targetId });
+  if (error && !error.message?.startsWith('USER_HAS_DEPENDENCIES:')) {
+    if (error.message === 'USER_NOT_FOUND') {
+      return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
+    }
+    if (!['USER_MUST_BE_INACTIVE', 'LAST_SUPER_ADMIN'].includes(error.message ?? '')) {
+      return dbFailJson(c, 'USER_DELETE_PREVIEW_FAILED', error, 'ตรวจสอบข้อมูลก่อนลบไม่สำเร็จ กรุณาลองใหม่');
+    }
+    const code = error.message === 'USER_MUST_BE_INACTIVE' ? 'USER_MUST_BE_INACTIVE'
+      : error.message === 'LAST_SUPER_ADMIN' ? 'LAST_SUPER_ADMIN' : 'USER_DELETE_PREVIEW_FAILED';
+    const message = code === 'USER_MUST_BE_INACTIVE' ? 'กรุณาระงับบัญชีก่อนลบผู้ใช้งาน'
+      : code === 'LAST_SUPER_ADMIN' ? 'ไม่สามารถลบผู้ดูแลระบบสูงสุดคนสุดท้ายได้' : 'ตรวจสอบข้อมูลก่อนลบไม่สำเร็จ กรุณาลองใหม่';
+    return c.json(fail(reqId, code, message), 409);
+  }
+  return c.json(ok(reqId, {
+    hasDependencies: Boolean(error),
+    dependencies: parseUserDeletionDependencies(error?.message ?? ''),
+  }));
+});
+
 usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', deleteUserSchema, zodValidationHook), async (c) => {
   const reqId = c.get('requestId');
   const actorId = c.get('userId');
@@ -446,9 +482,12 @@ usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', d
   if (!auditBefore) {
     return c.json(fail(reqId, 'USER_NOT_FOUND', 'ไม่พบผู้ใช้งานที่ระบุ'), 404);
   }
+  if (auditBefore.account_deleted_at) {
+    return c.json(ok(reqId, { id: targetId, removed: true, mode: 'preserve-history' }));
+  }
 
   const { error: safetyError } = await admin.rpc('assert_user_deletion_safe', { user_id_input: targetId });
-  if (safetyError) {
+  if (safetyError && !(body.mode === 'preserve-history' && safetyError.message?.startsWith('USER_HAS_DEPENDENCIES:'))) {
     const message = safetyError.message ?? '';
     if (message.includes('USER_MUST_BE_INACTIVE')) {
       return c.json(fail(reqId, 'USER_MUST_BE_INACTIVE', 'กรุณาระงับบัญชีก่อนลบผู้ใช้งานถาวร'), 409);
@@ -462,7 +501,9 @@ usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', d
     return dbFailJson(c, 'USER_DELETE_SAFETY_CHECK_FAILED', safetyError, 'ตรวจสอบความปลอดภัยก่อนลบผู้ใช้งานไม่สำเร็จ');
   }
 
-  const { error: deleteError } = await admin.auth.admin.deleteUser(targetId);
+  // The database trigger marks the retained profile deleted in the same Auth
+  // transaction, so a failed deletion cannot hide an otherwise usable account.
+  const { error: deleteError } = await admin.auth.admin.deleteUser(targetId, body.mode === 'preserve-history');
   if (deleteError) {
     const message = deleteError.message ?? '';
     if (/foreign key|constraint|referenced/i.test(message)) {
@@ -481,7 +522,7 @@ usersRoute.delete('/:id', requirePermission('user.manage'), zValidator('json', d
     module: 'user',
     targetTable: 'profiles',
     targetId,
-    detail: { reason: body.reason, mode: 'hard' },
+    detail: { reason: body.reason, mode: body.mode },
     requestId: reqId,
     before: auditBefore,
   });
