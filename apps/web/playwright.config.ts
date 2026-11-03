@@ -6,6 +6,9 @@ const webUrl = liveE2E ? 'http://localhost:5173' : 'http://localhost:4173';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // Live journeys include authentication, uploads and several database round trips.
+  // Give the whole journey its own budget; individual assertions stay bounded below.
+  timeout: liveE2E ? 90_000 : 30_000,
   reporter: process.env.CI
     ? [['list'], ['json', { outputFile: 'test-results/results.json' }]]
     : 'list',
