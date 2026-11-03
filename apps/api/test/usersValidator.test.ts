@@ -53,6 +53,11 @@ describe('updating a user', () => {
 });
 
 describe('deleting a user', () => {
+  it('requires an explicit supported mode to preserve history', () => {
+    expect(deleteUserSchema.parse({ reason: 'พนักงานลาออก' }).mode).toBe('hard');
+    expect(deleteUserSchema.parse({ reason: 'พนักงานลาออก', mode: 'preserve-history' }).mode).toBe('preserve-history');
+    expect(deleteUserSchema.safeParse({ reason: 'พนักงานลาออก', mode: 'force' }).success).toBe(false);
+  });
   it('requires a bounded reason for the destructive operation', () => {
     expect(deleteUserSchema.safeParse({ reason: 'พนักงานลาออก' }).success).toBe(true);
     expect(deleteUserSchema.safeParse({ reason: '  ' }).success).toBe(false);

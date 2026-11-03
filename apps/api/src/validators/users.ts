@@ -70,6 +70,7 @@ export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const deleteUserSchema = z.object({
   reason: z.string().trim().min(3).max(1000),
+  mode: z.enum(['hard', 'preserve-history']).default('hard'),
 }).strict();
 
 export type DeleteUserInput = z.infer<typeof deleteUserSchema>;
