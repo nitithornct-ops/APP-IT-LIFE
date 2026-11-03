@@ -11,6 +11,8 @@ export interface NotificationInput {
   link?: string | null;
   /** False when the caller already sends a richer LINE message for this same event. */
   line?: boolean;
+  eventContext?: Record<string, string | number | boolean | null>;
+  dependsOnOutboxId?: string;
 }
 
 /**
@@ -67,6 +69,7 @@ function notificationRow(input: NotificationInput) {
     body: input.body ?? null,
     link: input.link ?? null,
     send_line: input.line !== false,
+    ...(input.eventContext ? { event_context: input.eventContext } : {}),
   };
 }
 
@@ -81,7 +84,10 @@ export function isValidNotificationPayload(input: unknown): input is Notificatio
     && candidate.title.trim().length > 0
     && (candidate.body == null || typeof candidate.body === 'string')
     && (candidate.link == null || typeof candidate.link === 'string')
-    && (candidate.line == null || typeof candidate.line === 'boolean');
+    && (candidate.line == null || typeof candidate.line === 'boolean')
+    && (candidate.dependsOnOutboxId === undefined || (typeof candidate.dependsOnOutboxId === 'string' && candidate.dependsOnOutboxId.trim().length > 0))
+    && (candidate.eventContext === undefined || (candidate.eventContext !== null && typeof candidate.eventContext === 'object'
+      && !Array.isArray(candidate.eventContext) && Object.values(candidate.eventContext).every((value) => value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))));
 }
 
 interface NotificationOutboxRow {
@@ -93,6 +99,7 @@ interface NotificationOutboxRow {
 
 interface LineNotificationOutboxPayload extends NotificationInput {
   notificationId: string;
+  policy?: { backoffSeconds?: number };
 }
 
 interface LineNotificationOutboxRow {
@@ -117,9 +124,12 @@ async function recordChannelSuccess(supabase: SupabaseClient, channel: string, l
 }
 
 export function isValidLineNotificationPayload(input: unknown): input is LineNotificationOutboxPayload {
+  const policy = (input as Partial<LineNotificationOutboxPayload> | null)?.policy;
   return isValidNotificationPayload(input)
     && typeof (input as Partial<LineNotificationOutboxPayload>).notificationId === 'string'
-    && Boolean((input as Partial<LineNotificationOutboxPayload>).notificationId?.trim());
+    && Boolean((input as Partial<LineNotificationOutboxPayload>).notificationId?.trim())
+    && (policy === undefined || (policy !== null && typeof policy === 'object' && (policy.backoffSeconds === undefined
+      || (Number.isFinite(policy.backoffSeconds) && Number.isInteger(policy.backoffSeconds) && policy.backoffSeconds >= 1 && policy.backoffSeconds <= 86400))));
 }
 
 /** Dispatch queued notifications with a claim-before-send state transition and bounded retry. */
@@ -172,10 +182,20 @@ export async function dispatchNotificationOutbox(
       result.failed += 1;
       continue;
     }
+    if (payload.dependsOnOutboxId) {
+      const parent = await supabase.from('integration_outbox').select('status').eq('id', payload.dependsOnOutboxId).maybeSingle();
+      if (parent.error) throw new Error('notification_dependency_load_failed');
+      if (!parent.data || parent.data.status === 'COMPLETED' || parent.data.status === 'CANCELLED') {
+        const cancelled = await supabase.from('integration_outbox').update({ status: 'CANCELLED', next_attempt_at: null, last_error: 'delivery resolved before escalation' }).eq('id', candidate.id).eq('status', 'PROCESSING');
+        if (cancelled.error) throw new Error('notification_escalation_cancel_failed');
+        result.completed += 1;
+        continue;
+      }
+    }
     const deliveryStartedAt = Date.now();
-    const delivery = await supabase.from('notifications').insert(notificationRow(payload));
+    const delivery = await supabase.from('notifications').insert({ id: candidate.id, ...notificationRow(payload) });
 
-    if (!delivery.error) {
+    if (!delivery.error || delivery.error.code === '23505') {
       const deliveryLatencyMs = Date.now() - deliveryStartedAt;
       const { error: completeError } = await supabase.from('integration_outbox').update({
         status: 'COMPLETED',
@@ -310,7 +330,11 @@ export async function dispatchLineNotificationOutbox(
     }
 
     const isDead = nextAttempt >= Number(candidate.max_attempts);
-    const retryAt = new Date(now.getTime() + Math.min(60, 2 ** nextAttempt) * 60_000).toISOString();
+    const configuredBackoff = payload.policy?.backoffSeconds;
+    const retryDelayMs = typeof configuredBackoff === 'number' && Number.isFinite(configuredBackoff) && configuredBackoff >= 1 && configuredBackoff <= 86400
+      ? Math.min(86400, configuredBackoff * 2 ** Math.max(0, nextAttempt - 1)) * 1000
+      : Math.min(60, 2 ** nextAttempt) * 60_000;
+    const retryAt = new Date(now.getTime() + retryDelayMs).toISOString();
     const { error: failureError } = await supabase.from('integration_outbox').update({
       status: isDead ? 'DEAD' : 'ERROR', next_attempt_at: isDead ? null : retryAt,
       last_error: (delivery.error ?? 'LINE delivery failed').slice(0, 1000),
