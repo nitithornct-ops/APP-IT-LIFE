@@ -249,7 +249,7 @@ export function HomePage() {
   };
 
   return (
-    <div className="space-y-3" data-testid="dashboard-page">
+    <div className="space-y-6" data-testid="dashboard-page">
       {/* แสดงเหนือทุกอย่างเฉพาะบัญชีที่ยังไม่เคยปิด — ตัวการ์ดเป็นผู้ตัดสินใจเองว่าจะแสดงหรือไม่ */}
       <OnboardingCard />
       <section className="life-page-header dashboard-overview">
@@ -270,7 +270,7 @@ export function HomePage() {
         <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-hairline-row pt-3 dark:border-white/[.07]">
           <div className="flex rounded-[8px] bg-surface-muted p-0.5 dark:bg-white/[.07]" role="group" aria-label="ช่วงติดตามล่วงหน้า">
             {LEAD_OPTIONS.map((option) => (
-              <button key={option.value} type="button" onClick={() => setLeadDays(option.value)} aria-pressed={leadDays === option.value} className={`min-h-8 min-w-14 rounded-[6px] px-3 text-[11.5px] font-semibold ${leadDays === option.value ? 'bg-white text-primary-700 shadow-sm dark:bg-white/[.1] dark:text-primary-300' : 'text-slate-500 hover:text-primary-700 dark:text-white/45'}`}>{option.label}</button>
+              <button key={option.value} type="button" onClick={() => setLeadDays(option.value)} aria-pressed={leadDays === option.value} className={`min-h-11 min-w-14 rounded-[6px] px-3 text-[11.5px] font-semibold ${leadDays === option.value ? 'bg-white text-primary-700 shadow-sm dark:bg-white/[.1] dark:text-primary-300' : 'text-slate-500 hover:text-primary-700 dark:text-white/45'}`}>{option.label}</button>
             ))}
           </div>
           <Button size="sm" variant="ghost" onClick={() => void dashboard.refetch()} disabled={dashboard.isFetching}><RefreshCw className={`h-4 w-4 ${dashboard.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />รีเฟรช</Button>
@@ -360,7 +360,7 @@ export function HomePage() {
             {dashboard.data.mode === 'executive' && dashboard.data.decisions && <DecisionCard decisions={dashboard.data.decisions} generatedAt={dashboard.data.generatedAt} leadDays={dashboard.data.leadDays} />}
           </div>}
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
             <Card className="overflow-hidden">
               <CardHeader className="flex flex-wrap items-center justify-between gap-3">
                 <span>สุขภาพงานควบคุมเชิงปฏิบัติการ</span>

@@ -583,12 +583,12 @@ export function DataTable({
     <div
       data-ui="data-table"
       className={cn(
-        'min-w-0 w-full overflow-visible rounded-card border border-hairline bg-white shadow-card dark:border-white/[.08] dark:bg-white/[.035]',
+        'min-w-0 w-full overflow-visible rounded-card border border-[var(--color-border)] bg-[var(--color-surface)] shadow-card',
         containerClassName,
       )}
     >
       {showToolbar && (
-        <div className="flex flex-col gap-2 border-b border-hairline bg-surface-header p-3 lg:flex-row lg:items-center lg:justify-between dark:border-white/[.07] dark:bg-white/[.028]">
+        <div className="flex flex-col gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-secondary)] p-3 lg:flex-row lg:items-center lg:justify-between">
           {!isServerMode && <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
             <label className="relative block min-w-0 flex-1 sm:max-w-xs">
               <span className="sr-only">ค้นหาในตาราง</span>

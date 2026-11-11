@@ -52,7 +52,7 @@ export function FilterBar({
   return (
     <form
       data-ui="filter-bar"
-      className={cn('rounded-card border border-hairline bg-white p-[var(--ui-card-padding)] shadow-card dark:border-white/[.08] dark:bg-white/[.035]', className)}
+      className={cn('rounded-card border border-[var(--color-border)] bg-[var(--color-surface)] p-[var(--ui-card-padding)] shadow-card', className)}
       onSubmit={handleSubmit}
       role="search"
     >

@@ -39,6 +39,13 @@
 :root {
   color-scheme: light;
 
+  --color-accent: #f6821f;
+  --color-accent-hover: #c75a0a;
+  /* White text on #C75A0A is 4.29:1; controls use this AA-safe shade. */
+  --color-accent-button-hover: #b34d00;
+  --color-accent-ink: #182b49;
+  --color-brand-blue: #287db3;
+
   /* LIFE IT logo foundation: navy, royal blue, gold, and white. The
      life-green names remain as compatibility aliases for existing components. */
   --life-green-950: #102d4f;
@@ -64,40 +71,40 @@
   --line-brand: #047a36;
   --line-brand-hover: #03642d;
 
-  --color-bg: #f0f9ff;
+  --color-bg: #f7f9fc;
   --color-surface: #ffffff;
-  --color-glass: rgb(255 255 255 / 0.72);
-  --color-glass-border: rgb(255 255 255 / 0.75);
-  --color-sidebar: #e8f5ff;
-  --color-sidebar-active: #cce9fa;
-  --color-aurora-glow: rgb(120 198 234 / 0.22);
-  --color-surface-secondary: #e8f5ff;
-  --color-surface-green: #f0f9ff;
-  --color-border: #cce3f0;
-  --color-border-strong: #a7cde3;
-  --color-text: #173e65;
-  --color-text-secondary: #365976;
-  --color-text-muted: #526d85;
-  --color-heading: #173e65;
-  --color-action: #287db3;
-  --color-action-hover: #206994;
-  --color-action-soft: #f0f9ff;
-  --color-success: #166534;
+  --color-glass: var(--color-surface);
+  --color-glass-border: var(--color-border);
+  --color-sidebar: #ffffff;
+  --color-sidebar-active: #fff1e6;
+  --color-aurora-glow: transparent;
+  --color-surface-secondary: #f1f5f9;
+  --color-surface-green: #f7f9fc;
+  --color-border: #e2e7ee;
+  --color-border-strong: #94a3b8;
+  --color-text: #243247;
+  --color-text-secondary: #526176;
+  --color-text-muted: #64748b;
+  --color-heading: #182b49;
+  --color-action: #b34d00;
+  --color-action-hover: #92400e;
+  --color-action-soft: #fff1e6;
+  --color-success: #15803d;
   --color-success-soft: #e7f5ec;
   --color-warning: #b45309;
   --color-warning-soft: #fef3e2;
   --color-danger: #b91c1c;
   --color-danger-soft: #fdecec;
-  --color-info: #0f766e;
-  --color-info-soft: #e6fffb;
+  --color-info: #2563eb;
+  --color-info-soft: #eff6ff;
 
   --radius-sm: 6px;
   --radius-default: 8px;
   --radius-card: 10px;
-  --radius-large: 16px;
-  --radius-modal: 16px;
-  --shadow-card: 0 1px 2px rgb(16 42 92 / 0.04), 0 8px 26px rgb(16 42 92 / 0.07);
-  --shadow-hover: 0 14px 34px rgb(16 42 92 / 0.11);
+  --radius-large: 10px;
+  --radius-modal: 10px;
+  --shadow-card: 0 1px 2px rgb(24 43 73 / 0.04);
+  --shadow-hover: 0 2px 6px rgb(24 43 73 / 0.08);
   --shadow-elevated: 0 24px 64px rgb(16 42 92 / 0.2);
   /* Self-hosted OFL UI fonts. Document metrics use their own family below. */
   --font-app: 'Inter', 'Noto Sans Thai', system-ui, sans-serif;
@@ -128,36 +135,36 @@
 
 .dark {
   color-scheme: dark;
-  --color-bg: #071429;
-  --color-surface: #0d1e38;
-  --color-glass: rgb(13 30 56 / 0.86);
-  --color-glass-border: rgb(189 232 250 / 0.12);
-  --color-sidebar: #0c2038;
-  --color-sidebar-active: #173e65;
-  --color-aurora-glow: rgb(40 125 179 / 0.12);
-  --color-surface-secondary: #12294a;
-  --color-surface-green: #153764;
-  --color-border: rgb(255 255 255 / 0.08);
-  --color-border-strong: rgb(255 255 255 / 0.12);
-  --color-text: #e8eef9;
-  --color-text-secondary: #c1cde0;
-  --color-text-muted: #a9b9d2;
-  --color-heading: #eaf2ff;
-  --color-action: #78c6ea;
-  --color-action-hover: #bde8fa;
-  --color-action-soft: #153764;
+  --color-bg: #101722;
+  --color-surface: #182231;
+  --color-glass: var(--color-surface);
+  --color-glass-border: var(--color-border);
+  --color-sidebar: #141e2c;
+  --color-sidebar-active: #39291f;
+  --color-aurora-glow: transparent;
+  --color-surface-secondary: #202d3e;
+  --color-surface-green: #202d3e;
+  --color-border: #334155;
+  --color-border-strong: #64748b;
+  --color-text: #e2e8f0;
+  --color-text-secondary: #c1cbd9;
+  --color-text-muted: #a3b2c5;
+  --color-heading: #f1f5f9;
+  --color-action: #ffab66;
+  --color-action-hover: #ffc99e;
+  --color-action-soft: #39291f;
   --color-success: #4ade80;
   --color-success-soft: rgb(74 222 128 / 0.12);
   --color-warning: #fbbf24;
   --color-warning-soft: rgb(251 191 36 / 0.12);
   --color-danger: #f87171;
   --color-danger-soft: rgb(248 113 113 / 0.12);
-  --color-info: #5eead4;
-  --color-info-soft: rgb(94 234 212 / 0.14);
+  --color-info: #93c5fd;
+  --color-info-soft: #1d3554;
   --color-purple: #d8b4fe;
   --color-purple-soft: rgb(124 58 237 / 0.16);
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 28px rgb(0 0 0 / 0.18);
-  --shadow-hover: 0 16px 38px rgb(0 0 0 / 0.24);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.12);
+  --shadow-hover: 0 2px 6px rgb(0 0 0 / 0.18);
   --shadow-elevated: 0 24px 64px rgb(0 0 0 / 0.36);
 }
 
@@ -241,10 +248,7 @@ textarea:focus-visible,
   z-index: var(--z-background);
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse at 90% 0%, var(--color-aurora-glow), transparent 42rem),
-    radial-gradient(ellipse at 5% 90%, var(--color-aurora-glow), transparent 34rem),
-    var(--color-bg);
+  background: var(--color-bg);
 }
 
 .life-app svg.lucide,
@@ -259,21 +263,19 @@ textarea:focus-visible,
 }
 
 .app-topbar {
-  border-color: var(--color-border) !important;
-  background: var(--color-glass);
-  box-shadow: 0 1px 0 rgb(11 27 54 / 0.035);
-  backdrop-filter: blur(14px);
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .life-global-search {
-  border-color: transparent !important;
-  border-radius: 999px !important;
-  background: var(--color-surface-secondary) !important;
+  border-color: var(--color-border);
+  border-radius: var(--radius-default);
+  background: var(--color-bg);
 }
 
 .life-global-search:hover {
-  border-color: var(--color-border-strong) !important;
-  background: var(--color-surface-green) !important;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-secondary);
 }
 
 .life-bottom-nav {
@@ -358,9 +360,9 @@ textarea:focus-visible,
 .life-public [data-ui='card'],
 .public-sheet,
 .public-auth-panel {
-  border-color: var(--color-glass-border);
+  border-color: var(--color-border);
   border-radius: var(--radius-card);
-  background: var(--color-glass);
+  background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
 
@@ -425,42 +427,9 @@ textarea:focus-visible,
 }
 
 .life-page-header--hero {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  min-height: 112px;
-  border-color: transparent;
-  background: linear-gradient(120deg, var(--life-green-900) 0%, var(--life-green-600) 58%, var(--life-green-400) 100%);
-  color: #fff;
-  box-shadow: 0 20px 44px rgb(11 27 54 / 0.2);
+  border-top: 3px solid var(--color-accent);
+  background: var(--color-surface);
 }
-
-.life-page-header--hero::before,
-.life-page-header--hero::after {
-  position: absolute;
-  z-index: -1;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 999px;
-  content: '';
-}
-
-.life-page-header--hero::before {
-  top: -90px;
-  right: -30px;
-  width: 250px;
-  height: 250px;
-}
-
-.life-page-header--hero::after {
-  right: 116px;
-  bottom: -96px;
-  width: 190px;
-  height: 190px;
-  box-shadow: 0 0 0 34px rgb(255 255 255 / 0.035);
-}
-
-.life-page-header--hero :where(h1, p, span) { color: inherit !important; }
-.life-page-header--hero .life-page-eyebrow { color: var(--life-gold) !important; }
 
 /* Data tables ------------------------------------------------------------ */
 .life-app table,
@@ -508,7 +477,7 @@ textarea:focus-visible,
 }
 
 .life-app table tbody tr:hover td:first-child {
-  box-shadow: inset 3px 0 0 var(--life-green-500);
+  box-shadow: inset 3px 0 0 var(--color-brand-blue);
 }
 
 /* Sidebar scrollbar ------------------------------------------------------ */
@@ -527,12 +496,13 @@ textarea:focus-visible,
 }
 .sidebar-scrollbar:hover::-webkit-scrollbar-thumb { background: rgb(143 176 238 / 0.36); }
 
-.life-app aside a[aria-current='page'] svg {
-  color: var(--life-green-600) !important;
+.life-app aside a[aria-current='page'] {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+  color: var(--color-action);
 }
 
-.dark .life-app aside a[aria-current='page'] svg {
-  color: var(--life-green-300) !important;
+.life-app aside a[aria-current='page'] svg {
+  color: var(--color-action);
 }
 
 /* Modal, toast and loading ---------------------------------------------- */
@@ -565,32 +535,13 @@ textarea:focus-visible,
 
 /* Public service and authentication surfaces --------------------------- */
 .public-auth-page {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 14% 16%, rgb(143 176 238 / 0.18), transparent 20rem),
-    radial-gradient(circle at 88% 82%, rgb(29 78 216 / 0.16), transparent 23rem),
-    linear-gradient(135deg, var(--color-bg), var(--color-surface-green));
-}
-
-.public-auth-page::before {
-  position: fixed;
-  z-index: -1;
-  top: -8rem;
-  right: -5rem;
-  width: 24rem;
-  height: 24rem;
-  border: 1px solid rgb(29 78 216 / 0.2);
-  border-radius: 999px;
-  box-shadow: 0 0 0 3rem rgb(29 78 216 / 0.035), 0 0 0 7rem rgb(29 78 216 / 0.025);
-  content: '';
+  background: var(--color-bg);
 }
 
 .public-auth-panel {
-  border-top: 4px solid var(--life-green-500) !important;
-  border-radius: var(--radius-large) !important;
-  box-shadow: 0 24px 70px rgb(11 27 54 / 0.16) !important;
+  border-top: 3px solid var(--color-accent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .public-brand-lockup {
@@ -607,7 +558,7 @@ textarea:focus-visible,
   flex: 0 0 auto;
   place-items: center;
   border-radius: 13px;
-  background: linear-gradient(145deg, var(--life-green-900) 0%, var(--life-green-600) 68%, var(--life-gold) 100%);
+  background: var(--life-green-900);
   box-shadow: 0 8px 18px rgb(11 27 54 / 0.2);
   color: #fff;
   font-size: 0.95rem;
@@ -625,17 +576,17 @@ textarea:focus-visible,
 
 .public-primary-button {
   min-height: 44px;
-  border: 1px solid var(--life-green-600) !important;
-  border-radius: 10px !important;
-  background: var(--life-green-600) !important;
-  color: #fff !important;
-  box-shadow: 0 6px 16px rgb(29 78 216 / 0.24) !important;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-default);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
 }
 
 .public-primary-button:hover {
-  border-color: var(--life-green-700) !important;
-  background: var(--life-green-700) !important;
-  box-shadow: 0 10px 24px rgb(23 58 138 / 0.24) !important;
+  border-color: var(--color-accent-button-hover);
+  background: var(--color-accent-button-hover);
+  color: #fff;
 }
 
 .public-primary-button:disabled {
@@ -702,34 +653,14 @@ textarea:focus-visible,
 }
 
 .public-portal-hero {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background: linear-gradient(120deg, var(--life-green-900), var(--life-green-600) 58%, var(--life-green-400));
-  box-shadow: 0 18px 38px rgb(11 27 54 / 0.18);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-accent);
+  background: var(--color-surface);
 }
 
-.public-portal-hero::after {
-  position: absolute;
-  z-index: -1;
-  top: -5rem;
-  right: -2rem;
-  width: 14rem;
-  height: 14rem;
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: 999px;
-  box-shadow: 0 0 0 2.5rem rgb(255 255 255 / 0.035);
-  content: '';
-}
-
-.public-portal-hero h1,
-.public-portal-hero > div > p {
-  color: #fff !important;
-}
-
-.public-portal-hero > div > p:first-child {
-  color: var(--life-gold) !important;
-}
+.public-portal-hero h1 { color: var(--color-heading); }
+.public-portal-hero > div > p { color: var(--color-text-secondary); }
+.public-portal-hero > div > p:first-child { color: var(--color-action); }
 
 /* Rich form designer and print surfaces --------------------------------- */
 .form-toolbar-button,

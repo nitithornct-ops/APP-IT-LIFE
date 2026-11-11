@@ -6,8 +6,8 @@ type Variant = 'primary' | 'secondary' | 'outline' | 'success' | 'danger' | 'gho
 type Size = 'sm' | 'md';
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'border border-primary-600 bg-primary-600 text-white shadow-action hover:border-primary-700 hover:bg-primary-700',
-  secondary: 'border border-primary-950 bg-primary-950 text-white hover:bg-primary-900',
+  primary: 'border border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-ink)] hover:border-[var(--color-accent-button-hover)] hover:bg-[var(--color-accent-button-hover)] hover:text-white',
+  secondary: 'border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-heading)] hover:bg-[var(--color-surface-secondary)]',
   outline:
     'bg-white text-slate-700 border border-slate-300 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700',
   success: 'border border-success-600 bg-success-600 text-white hover:bg-success-700 dark:border-emerald-500 dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400',

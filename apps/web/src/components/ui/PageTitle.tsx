@@ -32,7 +32,7 @@ export function PageTitle({ eyebrow, title, description, meta, leading, variant 
         <span
           className={cn(
             'mt-0.5 grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-primary-200 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-900/40 dark:text-primary-200',
-            variant === 'hero' && 'border-white/20 bg-white/10 text-white',
+            variant === 'hero' && 'border-[var(--color-border)] bg-[var(--color-action-soft)] text-[var(--color-action)]',
           )}
           aria-hidden="true"
         >

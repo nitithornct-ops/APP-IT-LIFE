@@ -68,7 +68,7 @@ export function AppShell() {
   const hasNativeHero = location.pathname === '/';
 
   return (
-    <div className="life-app relative min-h-screen bg-surface-page dark:bg-[#060d1c]">
+    <div className="life-app relative min-h-screen bg-[var(--color-bg)]">
       <div className="life-app-background" aria-hidden="true" />
       <a href="#main-content" className="skip-link">
         ข้ามไปยังเนื้อหาหลัก

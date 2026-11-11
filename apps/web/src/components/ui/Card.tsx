@@ -8,7 +8,7 @@ export function Card({ className, 'data-ui': dataUi = 'card', ...rest }: CardPro
     <div
       data-ui={dataUi}
       className={cn(
-        'rounded-card border border-hairline bg-white shadow-card transition-[border-color,box-shadow,transform] duration-150 dark:border-white/[.08] dark:bg-white/[.035]',
+        'rounded-card border border-[var(--color-border)] bg-[var(--color-surface)] shadow-card transition-[border-color,box-shadow] duration-150',
         className,
       )}
       {...rest}
@@ -21,7 +21,7 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
     <div
       data-ui="card-header"
       className={cn(
-        'border-b border-hairline-row p-[var(--ui-card-padding)] text-lg font-semibold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
+        'border-b border-hairline-row p-[var(--ui-card-padding)] text-base font-semibold text-ink-heading dark:border-white/[.07] dark:text-[#e8eef9]',
         className,
       )}
       {...rest}
