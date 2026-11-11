@@ -18,7 +18,7 @@ test('global queue cards clear personal scope and unrelated list filters', async
   const params = new URL(page.url()).searchParams;
   expect(params.get('status')).toBe('ใหม่');
   for (const key of ['assigneeId', 'mine', 'priority', 'categoryId', 'search']) expect(params.has(key)).toBe(false);
-  await expect(page.getByRole('button', { name: 'รายการทั้งหมด', exact: true })).toHaveAttribute('class', /bg-primary/);
+  await expect(page.getByRole('button', { name: 'รายการทั้งหมด', exact: true })).toHaveAttribute('data-variant', 'primary');
 });
 
 for (const width of [390, 768, 1440, 1920]) {
