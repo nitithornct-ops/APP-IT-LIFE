@@ -10,6 +10,8 @@ The implementation follows the existing architecture: inventory → semantic tok
 
 ## Tokens and accessibility decisions
 
+Typography follow-up: reduced the UI root baseline from 16px to 15px (6.25%) so the user's 100% setting feels more compact. A−/A+ still scales the baseline normally; document point sizes and touch targets are preserved. Ran 12 existing shell/font/print regression checks and 3 login accessibility/visual checks against the updated local preview; all passed. Login baselines and login evidence are refreshed. The other Before/After images record the initial redesign before this small typography adjustment.
+
 | Role | Light | Dark |
 |---|---|---|
 | Accent | #F6821F | #F6821F |

@@ -113,6 +113,8 @@
   --font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
   --color-purple: #6d28d9;
   --color-purple-soft: #f3edfe;
+  /* Slightly denser UI at 100%; A−/A+ still scales this baseline. */
+  --font-base-size: 93.75%;
   --font-scale: 1;
 
   /* Shared application layer scale. Keep this in sync with tailwind.config.js. */
@@ -171,7 +173,7 @@
 html {
   min-width: 320px;
   background: var(--color-bg);
-  font-size: calc(100% * var(--font-scale));
+  font-size: calc(var(--font-base-size) * var(--font-scale));
   scroll-behavior: smooth;
 }
 
@@ -742,7 +744,7 @@ textarea:focus-visible,
 
 /* Responsive data tables ------------------------------------------------- */
 @media (max-width: 639px) {
-  html { font-size: calc(100% * var(--font-scale)); }
+  html { font-size: calc(var(--font-base-size) * var(--font-scale)); }
 
   .life-app #main-content {
     padding: 0.85rem 0.85rem 6.25rem;
