@@ -75,7 +75,7 @@ export function KpiStrip({
             ? 'flex min-h-[124px] w-full flex-col rounded-card border border-hairline bg-white px-4 py-4 text-left shadow-card transition-[border-color,box-shadow,transform] dark:border-white/[.08] dark:bg-white/[.035]'
             : 'flex min-h-[104px] w-full items-center gap-3 rounded-card border border-b-2 border-hairline bg-white px-4 py-3 text-left shadow-card transition-[border-color,box-shadow,transform] dark:border-white/[.08] dark:bg-white/[.035]',
           variant === 'default' && tone.border,
-          (item.href || item.onClick) && 'hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-slate-700',
+          (item.href || item.onClick) && 'hover:border-[var(--color-border-strong)] hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-slate-700',
           item.active && 'border-primary-300 bg-primary-50 dark:bg-slate-700',
         );
         const ariaLabel = item.ariaLabel ?? `${item.label}: ${String(item.value)}`;

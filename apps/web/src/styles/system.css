@@ -26,7 +26,7 @@
 }
 
 .dark {
-  --ui-primary-text: var(--life-green-200);
+  --ui-primary-text: var(--color-action);
 }
 
 /* Density changes spacing only; A−/A+ remains the sole font scale control. */
@@ -49,8 +49,8 @@
   --ui-control-height: 44px;
 }
 
-.aurora-sidebar { backdrop-filter: blur(16px); }
-.dashboard-overview { background: var(--color-glass); }
+.aurora-sidebar { background: var(--color-sidebar); }
+.dashboard-overview { background: var(--color-surface); border-top: 3px solid var(--color-accent); }
 .module-page-content > :where(.space-y-3, .space-y-4, .space-y-5, .space-y-6) > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--ui-section-gap);
 }
@@ -165,6 +165,7 @@
 }
 
 [data-ui='kpi-strip'] > * {
+  background: var(--color-surface);
   min-width: 0;
   padding: var(--ui-card-padding);
 }
@@ -201,7 +202,8 @@
 }
 
 [data-ui='card-header'] {
-  background: var(--color-surface-secondary);
+  font-size: 1rem;
+  background: var(--color-surface);
   border-radius: var(--radius-card) var(--radius-card) 0 0;
 }
 

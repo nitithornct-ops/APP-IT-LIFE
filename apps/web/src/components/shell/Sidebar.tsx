@@ -170,14 +170,14 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
         role={mobileOpen && !desktop ? 'dialog' : undefined}
         aria-modal={mobileOpen && !desktop ? true : undefined}
         className={cn(
-          'fixed inset-y-0 left-0 flex w-[244px] max-w-[calc(100vw-48px)] flex-col aurora-sidebar border-r border-[var(--color-glass-border)] bg-[var(--color-sidebar)] text-[var(--color-text)] shadow-card transition-[transform,width] duration-200 motion-reduce:transition-none lg:z-sidebar',
+          'fixed inset-y-0 left-0 flex w-[244px] max-w-[calc(100vw-48px)] flex-col aurora-sidebar border-r border-[var(--color-border)] bg-[var(--color-sidebar)] text-[var(--color-text)] transition-[transform,width] duration-200 motion-reduce:transition-none lg:z-sidebar',
           collapsed && 'lg:w-[68px]',
           mobileOpen ? 'visible z-mobile-drawer translate-x-0' : 'invisible -translate-x-full lg:visible lg:translate-x-0',
         )}
       >
         <div className="flex min-h-[var(--app-header-height,64px)] items-center gap-2.5 border-b border-[var(--color-border)] px-3">
           <div className={cn(
-            'flex h-9 w-9 min-w-9 items-center justify-center overflow-hidden rounded-xl border text-xs font-bold shadow-nav',
+            'flex h-9 w-9 min-w-9 items-center justify-center overflow-hidden rounded-lg border text-xs font-bold shadow-nav',
             logoUrl && !logoFailed ? 'border-white/20 bg-white p-1' : 'border-primary-500 bg-primary-700 text-white',
           )}>
             {logoUrl && !logoFailed
@@ -235,7 +235,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                         'group/nav my-0.5 flex min-h-[44px] items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                         collapsed && 'lg:mx-auto lg:w-11 lg:justify-center lg:px-0',
                         isActive
-                          ? 'bg-[var(--color-sidebar-active)] font-semibold text-[var(--color-heading)] shadow-sm'
+                          ? 'bg-[var(--color-sidebar-active)] font-semibold text-[var(--color-action)]'
                           : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-heading)]',
                       )
                     }

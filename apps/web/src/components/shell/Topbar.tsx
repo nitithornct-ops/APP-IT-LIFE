@@ -31,7 +31,7 @@ interface TopbarProps {
   onOpenCommandPalette: () => void;
 }
 
-const iconButton = 'flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-white/[.07]';
+const iconButton = 'flex h-11 min-h-[44px] w-11 min-w-[44px] shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-white/[.07]';
 
 export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette }: TopbarProps) {
   const { me, signOut, hasPermission } = useAuth();
@@ -62,7 +62,7 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
   }, [accountOpen]);
 
   return (
-    <header className="app-topbar sticky top-0 z-header flex min-h-[var(--app-header-height,64px)] items-center gap-1 border-b border-hairline bg-white px-2 dark:border-white/[.07] dark:bg-[#0a1224] sm:gap-2 sm:px-[18px]">
+    <header className="app-topbar sticky top-0 z-header flex min-h-[var(--app-header-height,64px)] items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-2 sm:gap-2 sm:px-[18px]">
       <button
         type="button"
         onClick={onOpenMobileMenu}
@@ -74,10 +74,10 @@ export function Topbar({ mobileMenuOpen, onOpenMobileMenu, onOpenCommandPalette 
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
 
-      <div className="min-w-0 flex-1 lg:max-w-[280px]" aria-label={`${context.group} / ${context.page}`}>
+      <nav className="min-w-0 flex-1 lg:max-w-[240px]" aria-label={`${context.group} / ${context.page}`}>
         <p className="hidden truncate text-xs font-medium leading-5 text-slate-500 dark:text-slate-400 sm:block">{context.group}</p>
-        <p className="truncate text-sm font-bold leading-6 text-ink-heading dark:text-slate-100" title={context.page}>{context.page}</p>
-      </div>
+        <p className="truncate text-sm font-bold leading-6 text-ink-heading dark:text-slate-100" title={context.page} aria-current="page">{context.page}</p>
+      </nav>
 
       <button
         type="button"
