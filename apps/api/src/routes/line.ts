@@ -1213,6 +1213,7 @@ lineRoute.get(
       admin
         .from('profiles')
         .select('id, employee_code, full_name, email, status')
+        .is('account_deleted_at', null)
         .order('full_name')
         .limit(1000),
       admin
